@@ -142,19 +142,9 @@ export function SessionItem({
       menuContent={
         <SessionMenu
           item={item}
-          sessionStatuses={ctx.sessionStatuses}
-          labels={ctx.labels}
-          onLabelsChange={ctx.onLabelsChange ? (ls) => ctx.onLabelsChange!(item.id, ls) : undefined}
           onRename={() => ctx.onRenameClick(item.id, title)}
-          onFlag={() => ctx.onFlag?.(item.id)}
-          onUnflag={() => ctx.onUnflag?.(item.id)}
           onArchive={() => ctx.onArchive?.(item.id)}
           onUnarchive={() => ctx.onUnarchive?.(item.id)}
-          onMarkUnread={() => ctx.onMarkUnread(item.id)}
-          onSessionStatusChange={(s) => ctx.onSessionStatusChange(item.id, s)}
-          onOpenInNewWindow={() => ctx.onOpenInNewWindow(item)}
-          onSendToWorkspace={ctx.onSendToWorkspace ? () => ctx.onSendToWorkspace!([item.id]) : undefined}
-          hasRemoteWorkspaces={ctx.hasRemoteWorkspaces ?? false}
           onDelete={() => ctx.onDelete(item.id)}
         />
       }

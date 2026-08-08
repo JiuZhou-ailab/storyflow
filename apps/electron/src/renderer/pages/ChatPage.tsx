@@ -77,7 +77,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   } = useSessionDraftActions()
   const {
     onMarkSessionRead,
-    onMarkSessionUnread,
     onSetActiveViewingSession,
   } = useSessionReadActions()
   const {
@@ -103,8 +102,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onArchiveSession,
     onUnarchiveSession,
     onRenameSession,
-    onFlagSession,
-    onUnflagSession,
     onDeleteSession,
     onSessionStatusChange,
   } = useSessionBatchActions()
@@ -467,14 +464,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     setRenameDialogOpen(false)
   }, [sessionId, renameName, displayTitle, onRenameSession])
 
-  const handleFlag = React.useCallback(() => {
-    onFlagSession(sessionId)
-  }, [sessionId, onFlagSession])
-
-  const handleUnflag = React.useCallback(() => {
-    onUnflagSession(sessionId)
-  }, [sessionId, onUnflagSession])
-
   const handleArchive = React.useCallback(() => {
     onArchiveSession(sessionId)
   }, [sessionId, onArchiveSession])
@@ -483,32 +472,13 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onUnarchiveSession(sessionId)
   }, [sessionId, onUnarchiveSession])
 
-  const handleMarkUnread = React.useCallback(() => {
-    onMarkSessionUnread(sessionId)
-  }, [sessionId, onMarkSessionUnread])
-
   const handleSessionStatusChange = React.useCallback((state: string) => {
     onSessionStatusChange(sessionId, state)
   }, [sessionId, onSessionStatusChange])
 
-  const handleLabelsChange = React.useCallback((newLabels: string[]) => {
-    onSessionLabelsChange?.(sessionId, newLabels)
-  }, [sessionId, onSessionLabelsChange])
-
   const handleDelete = React.useCallback(async () => {
     await onDeleteSession(sessionId)
   }, [sessionId, onDeleteSession])
-
-  const handleOpenInNewWindow = React.useCallback(async () => {
-    const route = routes.view.allSessions(sessionId)
-    const separator = route.includes('?') ? '&' : '?'
-    const url = `craftagents://${route}${separator}window=focused`
-    try {
-      await window.electronAPI?.openUrl(url)
-    } catch (error) {
-      console.error('[ChatPage] openUrl failed:', error)
-    }
-  }, [sessionId])
 
   const compactInfoButton = React.useMemo(() => {
     if (!isCompactMode || !sessionMeta) return undefined
@@ -537,32 +507,16 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const titleMenu = React.useMemo(() => sessionMeta ? (
     <SessionMenu
       item={sessionMeta}
-      sessionStatuses={sessionStatuses ?? []}
-      labels={labels ?? []}
-      onLabelsChange={handleLabelsChange}
       onRename={handleRename}
-      onFlag={handleFlag}
-      onUnflag={handleUnflag}
       onArchive={handleArchive}
       onUnarchive={handleUnarchive}
-      onMarkUnread={handleMarkUnread}
-      onSessionStatusChange={handleSessionStatusChange}
-      onOpenInNewWindow={handleOpenInNewWindow}
       onDelete={handleDelete}
     />
   ) : null, [
     sessionMeta,
-    sessionStatuses,
-    labels,
-    handleLabelsChange,
     handleRename,
-    handleFlag,
-    handleUnflag,
     handleArchive,
     handleUnarchive,
-    handleMarkUnread,
-    handleSessionStatusChange,
-    handleOpenInNewWindow,
     handleDelete,
   ])
 

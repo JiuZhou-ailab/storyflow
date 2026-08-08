@@ -908,7 +908,6 @@ function AppShellContent({
     onArchiveSession,
     onUnarchiveSession,
     onMarkSessionRead,
-    onMarkSessionUnread,
     onSessionStatusChange,
     onRenameSession,
     onCreateSession,
@@ -5454,16 +5453,10 @@ function AppShellContent({
                   onUnflag={onUnflagSession}
                   onArchive={onArchiveSession}
                   onUnarchive={onUnarchiveSession}
-                  onMarkUnread={onMarkSessionUnread}
                   onSessionStatusChange={onSessionStatusChange}
                   onRename={onRenameSession}
                   onFocusChatInput={(targetSessionId) => {
                     focusChatInputForSession(targetSessionId ?? focusedSessionId ?? session.selected)
-                  }}
-                  onOpenInNewWindow={(selectedMeta) => {
-                    if (activeWorkspaceId) {
-                      window.electronAPI.openSessionInNewWindow(activeWorkspaceId, selectedMeta.id)
-                    }
                   }}
                   onNavigateToView={(view) => {
                     if (view === 'allSessions') {

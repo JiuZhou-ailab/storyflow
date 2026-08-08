@@ -1,3 +1,7 @@
+// input: Playground session fixtures and shared SessionList row contracts
+// output: Interactive previews for session search, selection, and status states
+// pos: Renderer playground registry for the production session-list components
+
 import * as React from 'react'
 import type { ComponentEntry } from './types'
 import type { SessionMeta } from '@/atoms/sessions'
@@ -85,9 +89,7 @@ function createMockContext(overrides: Partial<SessionListContextValue> = {}): Se
   return {
     onRenameClick: () => {},
     onSessionStatusChange: () => {},
-    onMarkUnread: () => {},
     onDelete: async () => true,
-    onOpenInNewWindow: () => {},
     onFocusZone: () => {},
     onKeyDown: () => {},
     sessionStatuses: mockSessionStatuses,

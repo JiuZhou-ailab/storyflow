@@ -1,3 +1,7 @@
+// input: Shared session-list actions, status/label configuration, and keyboard intent
+// output: Narrow context consumed by session rows and batch-selection controls
+// pos: Subscription boundary between SessionList and its row-level descendants
+
 import { createContext, useContext } from "react"
 import type { LabelConfig } from "@craft-agent/shared/labels"
 import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
@@ -11,10 +15,8 @@ export interface SessionListContextValue {
   onUnflag?: (sessionId: string) => void
   onArchive?: (sessionId: string) => void
   onUnarchive?: (sessionId: string) => void
-  onMarkUnread: (sessionId: string) => void
   onDelete: (sessionId: string, skipConfirmation?: boolean) => Promise<boolean>
   onLabelsChange?: (sessionId: string, labels: string[]) => void
-  onOpenInNewWindow: (item: SessionMeta) => void
   onSendToWorkspace?: (sessionIds: string[]) => void
   onFocusZone: () => void
   onKeyDown: (e: React.KeyboardEvent, item: SessionMeta) => void

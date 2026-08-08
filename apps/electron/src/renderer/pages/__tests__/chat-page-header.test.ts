@@ -1,5 +1,5 @@
 // input: Chat page, activity rail, and shared session menu source contracts
-// output: Regression coverage for minimal chat header controls
+// output: Regression coverage for minimal chat header and session-menu controls
 // pos: Keeps duplicate session navigation out of the Electron chat header
 
 import { readFileSync } from 'fs'
@@ -25,6 +25,12 @@ describe('chat page header actions', () => {
     expect(activityRailSource).toContain('aria-label="新建任务"')
     expect(activityRailSource).toContain('onCreateConversation={onCreateConversationInProject')
     expect(sessionMenuSource).toContain('<ShareMenuItems sessionId={sessionId}')
+    expect(sessionMenuSource).not.toContain('MessagingSessionMenuItem')
+    expect(sessionMenuSource).not.toContain('openInNewPanel')
+    expect(sessionMenuSource).not.toContain('openInNewWindow')
+    expect(sessionMenuSource).not.toContain('refreshTitle')
+    expect(sessionMenuSource).not.toContain('copyPath')
+    expect(sessionMenuSource).not.toContain('copyId')
   })
 
   it('places chat titles at the leading edge with an independent menu trigger', () => {

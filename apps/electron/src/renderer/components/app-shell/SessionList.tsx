@@ -50,13 +50,10 @@ interface SessionListProps {
   onUnflag?: (sessionId: string) => void
   onArchive?: (sessionId: string) => void
   onUnarchive?: (sessionId: string) => void
-  onMarkUnread: (sessionId: string) => void
   onSessionStatusChange: (sessionId: string, state: SessionStatusId) => void
   onRename: (sessionId: string, name: string) => void
   /** Called when Enter is pressed to focus chat input for a specific session */
   onFocusChatInput?: (sessionId?: string) => void
-  /** Called when user wants to open a session in a new window */
-  onOpenInNewWindow?: (session: SessionMeta) => void
   /** Called to navigate to a specific view (e.g., 'allSessions', 'flagged') */
   onNavigateToView?: (view: 'allSessions' | 'flagged') => void
   /** Whether search mode is active */
@@ -122,11 +119,9 @@ export function SessionList({
   onUnflag,
   onArchive,
   onUnarchive,
-  onMarkUnread,
   onSessionStatusChange,
   onRename,
   onFocusChatInput,
-  onOpenInNewWindow,
   searchActive,
   searchQuery = '',
   onSearchChange,
@@ -727,7 +722,6 @@ export function SessionList({
 
   // --- Context value (shared across all SessionItems) ---
   const handleFocusZone = useCallback(() => focusZone('navigator', { intent: 'click', moveFocus: false }), [focusZone])
-  const handleOpenInNewWindow = useCallback((item: SessionMeta) => onOpenInNewWindow?.(item), [onOpenInNewWindow])
   const resolvedSearchQuery = isSearchMode ? highlightQuery : searchQuery
 
   const listContext = useMemo((): SessionListContextValue => ({
@@ -737,10 +731,8 @@ export function SessionList({
     onUnflag: onUnflag ? handleUnflagWithToast : undefined,
     onArchive: onArchive ? handleArchiveWithToast : undefined,
     onUnarchive: onUnarchive ? handleUnarchiveWithToast : undefined,
-    onMarkUnread,
     onDelete: handleDeleteWithToast,
     onLabelsChange,
-    onOpenInNewWindow: handleOpenInNewWindow,
     onSendToWorkspace: (ids: string[]) => setSendToWorkspace(ids),
     onFocusZone: handleFocusZone,
     onKeyDown: handleKeyDown,
@@ -754,8 +746,8 @@ export function SessionList({
     handleRenameClick, onSessionStatusChange,
     onFlag, handleFlagWithToast, onUnflag, handleUnflagWithToast,
     onArchive, handleArchiveWithToast, onUnarchive, handleUnarchiveWithToast,
-    onMarkUnread, handleDeleteWithToast, onLabelsChange,
-    handleOpenInNewWindow, setSendToWorkspace, handleFocusZone, handleKeyDown,
+    handleDeleteWithToast, onLabelsChange,
+    setSendToWorkspace, handleFocusZone, handleKeyDown,
     sessionStatuses, labelById, labels,
     isMultiSelectActive,
     isCompactMode, hasRemoteWorkspaces,
