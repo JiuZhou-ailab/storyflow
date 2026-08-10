@@ -102,7 +102,6 @@ export interface ISessionManager {
     storedAttachments?: StoredAttachment[],
     options?: SendMessageOptions,
     existingMessageId?: string,
-    _isAuthRetry?: boolean,
     onAck?: (messageId: string) => void,
   ): Promise<void>
   queryOnce(sessionId: string, request: OneShotLlmRequest): Promise<OneShotLlmResult>

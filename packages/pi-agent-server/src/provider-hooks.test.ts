@@ -52,7 +52,7 @@ describe('createProviderHooks', () => {
     expect(headers['anthropic-beta']).toBe('existing-beta,context-1m-2025-08-07');
   });
 
-  test('correlates Pi retries without grouping the next model call', async () => {
+  test('does not rewrite provider failures to control Pi retry', async () => {
     const handlers = new Map<string, (event: never, context: never) => unknown>();
     const extension = createProviderHooks({ enable1MContext: false });
     const factory = typeof extension === 'function' ? extension : extension.factory;
@@ -72,25 +72,29 @@ describe('createProviderHooks', () => {
       { type: 'after_provider_response', status: 520, headers: {} } as never,
       {} as never,
     );
+    const providerFailure = {
+      role: 'assistant',
+      stopReason: 'error',
+      errorMessage: '520 error code: 520',
+    };
     const normalized = await handlers.get('message_end')!(
       {
         type: 'message_end',
-        message: { role: 'assistant', stopReason: 'error', errorMessage: '520 error code: 520' },
+        message: providerFailure,
       } as never,
       { model: { contextWindow: 128_000 } } as never,
     );
-    expect(normalized).toMatchObject({
-      message: { errorMessage: '520 error code: 520 (server error)' },
-    });
+    expect(normalized).toBeUndefined();
+    expect(providerFailure.errorMessage).toBe('520 error code: 520');
 
     const retryHeaders = {};
     await handlers.get('before_provider_headers')!(
       { type: 'before_provider_headers', headers: retryHeaders } as never,
       { model: { api: 'openai-responses', provider: 'custom-endpoint' } } as never,
     );
-    expect(retryHeaders['x-storyflow-model-call-id']).toBe(firstHeaders['x-storyflow-model-call-id']);
+    expect(retryHeaders['x-storyflow-model-call-id']).not.toBe(firstHeaders['x-storyflow-model-call-id']);
     expect(firstHeaders['x-storyflow-attempt']).toBe('0');
-    expect(retryHeaders['x-storyflow-attempt']).toBe('1');
+    expect(retryHeaders['x-storyflow-attempt']).toBe('0');
 
     await handlers.get('message_end')!(
       { type: 'message_end', message: { role: 'assistant', stopReason: 'stop' } } as never,

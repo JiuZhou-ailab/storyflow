@@ -102,13 +102,6 @@ export interface ManagedSession {
   messagesLoaded: boolean;
   pendingAuthRequestId?: string;
   pendingAuthRequest?: AuthRequest;
-  lastSentMessage?: string;
-  lastSentAttachments?: FileAttachment[];
-  lastSentStoredAttachments?: StoredAttachment[];
-  lastSentOptions?: SendMessageOptions;
-  authRetryAttempted?: boolean;
-  authRetrySafe?: boolean;
-  authRetryInProgress?: boolean;
   hidden?: boolean;
   branchFromMessageId?: string;
   branchContextStrategy?: 'sdk-fork' | 'seeded-fresh-session';

@@ -1030,8 +1030,6 @@ function AppContent() {
   useEffect(() => {
     // Handoff events end streaming and may change list-visible metadata.
     const handoffEventTypes = new Set(['complete', 'error', 'interrupted', 'typed_error', 'session_status_changed', 'session_flagged', 'session_unflagged', 'name_changed', 'labels_changed', 'title_generated', 'async_operation'])
-    const retryTimeouts = new Set<ReturnType<typeof setTimeout>>()
-
     // Helper to handle side effects (same logic for both paths)
     const handleEffects = (effects: Effect[], sessionId: string, eventType: string) => {
       for (const effect of effects) {
@@ -1077,18 +1075,6 @@ function AppContent() {
           }
           case 'credential_request': {
             setPendingCredentials(prevCreds => appendUniqueRequestForSession(prevCreds, sessionId, effect.request))
-            break
-          }
-          case 'auto_retry': {
-            // A source was auto-activated, automatically re-send the original message
-            // Add suffix to indicate the source was activated
-            const messageWithSuffix = `${effect.originalMessage}\n\n[${effect.sourceSlug} activated]`
-            // Use setTimeout to ensure the previous turn has fully completed
-            const timer = setTimeout(() => {
-              retryTimeouts.delete(timer)
-              window.electronAPI.sendMessage(effect.sessionId, messageWithSuffix)
-            }, 100)
-            retryTimeouts.add(timer)
             break
           }
           case 'restore_input': {
@@ -1232,8 +1218,6 @@ function AppContent() {
     })
 
     return () => {
-      for (const timer of retryTimeouts) clearTimeout(timer)
-      retryTimeouts.clear()
       cleanup()
     }
   }, [

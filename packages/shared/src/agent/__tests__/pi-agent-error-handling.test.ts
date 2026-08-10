@@ -111,6 +111,29 @@ describe('PiAgent subprocess error handling', () => {
     agent.destroy()
   })
 
+  it('completes only the matching prompt command without forging a Pi settlement event', () => {
+    const agent = new PiAgent(createConfig())
+    let completions = 0
+    ;(agent as any).activePromptId = 'turn-2'
+    ;(agent as any).eventQueue.complete = () => { completions++ }
+
+    ;(agent as any).handleLine(JSON.stringify({
+      type: 'prompt_result',
+      id: 'turn-1',
+      status: 'failed',
+    }))
+    expect(completions).toBe(0)
+
+    ;(agent as any).handleLine(JSON.stringify({
+      type: 'prompt_result',
+      id: 'turn-2',
+      status: 'failed',
+    }))
+    expect(completions).toBe(1)
+
+    agent.destroy()
+  })
+
   it('maps raw HTML subprocess errors to typed proxy_error events', () => {
     const agent = new PiAgent(createConfig())
 

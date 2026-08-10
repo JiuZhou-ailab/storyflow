@@ -154,7 +154,8 @@ describe('source_test auto-enable', () => {
 
     const text = result.content[0]?.text ?? '';
     expect(text).toContain('Source auto-enabled in config');
-    expect(text).toContain('turn will auto-restart');
+    expect(text).toContain('available on your next message');
+    expect(text).not.toContain('auto-restart');
     expect(activated).toBe('craft-kb');
 
     const persisted = JSON.parse(
@@ -181,7 +182,8 @@ describe('source_test auto-enable', () => {
     // No "auto-enabled in config" line because enabled was already true.
     expect(text).not.toContain('auto-enabled in config');
     expect(activated).toBe('craft-kb');
-    expect(text).toContain('turn will auto-restart');
+    expect(text).toContain('available on your next message');
+    expect(text).not.toContain('auto-restart');
   });
 
   it('autoEnable: false skips both the flag flip and the activation callback', async () => {
@@ -295,7 +297,7 @@ describe('source_test auto-enable', () => {
     expect(persisted.enabled).toBe(true);
   });
 
-  it('successful activation reports a single auto-restart message (backend-agnostic)', async () => {
+  it('successful activation reports next-turn availability without replay', async () => {
     writeSource(tempDir, 'craft-kb', { enabled: true });
 
     const ctx = createCtx(tempDir, {
@@ -306,11 +308,9 @@ describe('source_test auto-enable', () => {
     const result = await handleSourceTest(ctx, { sourceSlug: 'craft-kb' });
     const text = result.content[0]?.text ?? '';
 
-    // Both backends route through the same source_activated + auto_retry machinery
-    // now, so the user-visible message is one line — no Claude vs Pi branching.
-    expect(text).toContain('turn will auto-restart');
+    expect(text).toContain('available on your next message');
     expect(text).not.toContain('tools available now');
-    expect(text).not.toContain('available on your next message');
+    expect(text).not.toContain('auto-restart');
   });
 });
 

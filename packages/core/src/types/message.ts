@@ -613,7 +613,6 @@ export type AgentEvent =
   | { type: 'task_progress'; toolUseId: string; elapsedSeconds: number; turnId?: string }
   | { type: 'task_completed'; taskId: string; status: 'completed' | 'failed' | 'stopped'; outputFile?: string; summary?: string; turnId?: string }
   | { type: 'shell_killed'; shellId: string; turnId?: string }
-  | { type: 'source_activated'; sourceSlug: string; originalMessage: string }
   | { type: 'usage_update'; usage: { contextTokens: number; contextWindow?: number } }
   | { type: 'steer_undelivered'; message: string };
 

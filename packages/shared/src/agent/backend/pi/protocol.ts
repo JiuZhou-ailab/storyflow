@@ -141,6 +141,7 @@ export type PiOutboundAgentEvent = AgentSessionEvent | EnrichedAssistantMessageE
 export type PiOutboundMessage =
   | { type: 'ready'; sessionId: string | null }
   | { type: 'event'; event: PiOutboundAgentEvent }
+  | { type: 'prompt_result'; id: string; status: 'completed_without_agent' | 'failed' }
   | {
       type: 'pre_tool_use_request';
       requestId: string;

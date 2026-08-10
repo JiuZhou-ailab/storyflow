@@ -131,7 +131,6 @@ describe('sendMessage durability', () => {
         undefined,
         undefined,
         undefined,
-        undefined,
         (messageId) => {
           ackedMessageId = messageId
           onDiskAtAck = readPersistedMessageIds(sessionId).includes(messageId)
@@ -166,7 +165,6 @@ describe('sendMessage durability', () => {
         undefined,
         undefined,
         undefined,
-        undefined,
         () => {
           titleOnDiskAtAck = readPersistedTitle(sessionId)
           observedOrder.push('ack')
@@ -193,7 +191,6 @@ describe('sendMessage durability', () => {
     await sm.sendMessage(
       sessionId,
       'queued message',
-      undefined,
       undefined,
       undefined,
       undefined,

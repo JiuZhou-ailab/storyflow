@@ -1,19 +1,15 @@
 // input: Pi SDK lifecycle events and streamed tool output
-// output: Craft agent events with stable tool names, results, and failure status
-// pos: Semantic boundary between Pi runtime events and renderer-visible session state
+// output: Renderer-visible product events with stable tool names and failure status
+// pos: One-way projection from Pi runtime facts into Storyflow session state
 
 /**
  * Pi SDK Event Adapter
  *
- * Maps Pi Agent Core events (AgentEvent / AgentSessionEvent) to
- * Craft Agent's AgentEvent format for UI compatibility.
- *
- * Pi emits fine-grained lifecycle events. We translate them into
- * the same event vocabulary the renderer already understands from
- * Claude / Codex / Copilot backends.
+ * Maps Pi Agent Core events (AgentEvent / AgentSessionEvent) to the
+ * product event vocabulary without controlling Pi lifecycle.
  */
 
-import type { AgentEvent as CraftAgentEvent, TurnUsage } from '@craft-agent/core/types';
+import type { AgentEvent as ProductAgentEvent, TurnUsage } from '@craft-agent/core/types';
 import type {
   AgentEvent as PiAgentEvent,
 } from '@earendil-works/pi-agent-core';
@@ -49,7 +45,7 @@ const SDK_AUTOCOMPACT_RACE_SIGNATURE = /_autoCompactionAbortController\.signal/;
 type PiEvent = PiAgentEvent | AgentSessionEvent | { type: 'entry_appended' };
 
 /**
- * Maps Pi SDK events to Craft AgentEvents for UI compatibility.
+ * Maps Pi SDK facts to renderer-visible Product Host events.
  *
  * Event mapping:
  * - message_update (text_delta in assistantMessageEvent) → text_delta
@@ -130,7 +126,7 @@ export class PiEventAdapter extends BaseEventAdapter {
     return `${base}__${prefix}${this.subTurnCounter++}`;
   }
 
-  private completeEvent(): CraftAgentEvent {
+  private completeEvent(): ProductAgentEvent {
     const usage = this.getTurnUsageSnapshot();
     return usage
       ? { type: 'complete', usage }
@@ -175,9 +171,9 @@ export class PiEventAdapter extends BaseEventAdapter {
   }
 
   /**
-   * Adapt a Pi SDK event to zero or more Craft AgentEvents.
+   * Adapt a Pi SDK event to zero or more product events.
    */
-  *adaptEvent(event: PiEvent): Generator<CraftAgentEvent> {
+  *adaptEvent(event: PiEvent): Generator<ProductAgentEvent> {
     switch (event.type) {
       // ============================================================
       // Agent lifecycle events
@@ -300,8 +296,8 @@ export class PiEventAdapter extends BaseEventAdapter {
             break;
           }
 
-          // Classify the error — auth/billing errors should be typed so SessionManager
-          // can trigger its auth-retry pipeline (refresh token + resend).
+          // Classify the error for Product Host presentation. Pi retains retry
+          // ownership; typed errors do not authorize the Host to replay the turn.
           const parsed = parseError(new Error(msg.errorMessage));
           const isClassified = parsed.code !== 'unknown_error';
           if (isClassified) {

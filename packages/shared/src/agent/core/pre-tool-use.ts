@@ -1,14 +1,12 @@
 // input: Normalized tool requests, permission state, and optional filesystem boundaries
 // output: Shared allow, block, prompt, interception, and input-transform decisions
-// pos: Provider-independent tool authorization pipeline in the Agent Kernel
+// pos: Storyflow Product Host capability authorization before Pi tool execution
 
 /**
  * Shared PreToolUse utilities and centralized PreToolUse pipeline.
  *
- * Individual utility functions (path expansion, config validation, etc.)
- * are used by the centralized `runPreToolUseChecks()` pipeline, which all
- * four agent backends (Claude, Codex, Copilot, Pi) call with normalized input
- * and then translate the result to their SDK-specific format.
+ * PiAgentToolHost calls the centralized `runPreToolUseChecks()` pipeline with
+ * normalized Pi input and returns its decision through Pi Extension hooks.
  *
  * Pipeline steps:
  * 1. Permission mode check: Block tools disallowed by current mode

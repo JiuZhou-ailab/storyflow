@@ -169,7 +169,6 @@ async function ensureSession(): Promise<AgentSession> {
     thinkingLevel: piThinkingLevel,
     activeSubagentSessions,
     buildProxyTools,
-    prepareToolDefinitions,
     createSessionToolHooks,
     getCurrentUserMessage: () => currentUserMessage,
     requestHostTool,
@@ -187,7 +186,6 @@ async function ensureSession(): Promise<AgentSession> {
 
 const {
   createSessionToolHooks,
-  prepareToolDefinitions,
   buildProxyTools,
   requestHostTool,
   executeSessionRewind,
@@ -437,10 +435,10 @@ async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>):
       streamingBehavior: 'followUp',
     });
 
-    // Extension commands can finish without starting an agent turn. Mirror that
-    // completion into the existing stream so the host does not wait forever.
+    // Extension commands can finish without starting an agent turn. Complete
+    // the correlated host command without manufacturing a Pi lifecycle event.
     if (!sawAgentSettled && session.isIdle) {
-      send({ type: 'event', event: { type: 'agent_settled' } });
+      send({ type: 'prompt_result', id: msg.id, status: 'completed_without_agent' });
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -458,7 +456,7 @@ async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>):
     send({ type: 'error', message: errorMsg, code: 'prompt_error' });
     // Prompt preflight/Extension failures may not start a Pi run.
     if (!sawAgentSettled) {
-      send({ type: 'event', event: { type: 'agent_settled' } });
+      send({ type: 'prompt_result', id: msg.id, status: 'failed' });
     }
   } finally {
     if (currentPromptAttemptState === promptAttemptState) {

@@ -33,15 +33,6 @@ export interface ProjectResourceLoaderResult {
   settingsManager: SettingsManager;
 }
 
-export function createStoryflowRetrySettings() {
-  return {
-    enabled: true,
-    maxRetries: 1,
-    baseDelayMs: 2_000,
-    provider: { maxRetries: 0 },
-  };
-}
-
 async function seedDefaultPiPackages(
   cwd: string,
   agentDir: string,
@@ -79,7 +70,6 @@ class StoryflowResourceLoader extends DefaultResourceLoader {
     await super.reload(options);
     this.runtimeSettingsManager.applyOverrides({
       enableSkillCommands: true,
-      retry: createStoryflowRetrySettings(),
     });
   }
 }

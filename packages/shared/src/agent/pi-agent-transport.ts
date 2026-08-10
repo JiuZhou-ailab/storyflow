@@ -1,6 +1,6 @@
 // input: Resolved runtime config, credentials, and typed Pi JSONL process messages
-// output: Subprocess lifecycle, correlated RPC transport, and provider event delivery
-// pos: Transport layer beneath the Pi tool host and chat lifecycle
+// output: Subprocess lifecycle, correlated protocol results, and Pi event delivery
+// pos: Policy-free Boundary Protocol beneath the Product Host projection
 
 /**
  * Pi Backend (Subprocess RPC Client)
@@ -13,8 +13,8 @@
  * This file manages subprocess lifecycle, JSONL protocol, event forwarding,
  * and proxy tool routing for MCP/API sources.
  *
- * Auth is API key based. Keys are retrieved from the credential manager
- * and passed to the subprocess during initialization.
+ * Credentials are supplied by the Product Host; Pi owns provider use and
+ * returns OAuth rotations for persistence.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -106,6 +106,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
   // State
   protected _isProcessing: boolean = false;
   protected abortReason?: AbortReason;
+  protected activePromptId: string | null = null;
 
   // Event adapter
   protected adapter: PiEventAdapter;
@@ -673,6 +674,13 @@ export abstract class PiAgentTransport extends PiAgentHost {
         this.handleSubprocessEvent(msg.event as Record<string, unknown>);
         break;
 
+      case 'prompt_result':
+        if (msg.id === this.activePromptId) {
+          this.activePromptId = null;
+          this.eventQueue.complete();
+        }
+        break;
+
       case 'credential_update': {
         const provider = typeof msg.provider === 'string' ? msg.provider : '';
         const credential = msg.credential as {
@@ -843,9 +851,8 @@ export abstract class PiAgentTransport extends PiAgentHost {
           });
         }
 
-        // The subprocess follows prompt failures with a synthetic agent_settled event.
-        // If it doesn't, handleSubprocessExit()
-        // will complete the queue when the process exits.
+        // A correlated prompt_result closes failures that never started a Pi run.
+        // Native runs close only on Pi's agent_settled event.
         break;
       }
 
@@ -859,10 +866,10 @@ export abstract class PiAgentTransport extends PiAgentHost {
    */
   protected handleSubprocessEvent(event: Record<string, unknown>): void {
     // The subprocess sends Pi SDK AgentSessionEvent objects serialized as JSON.
-    // Feed them through PiEventAdapter to convert to Craft AgentEvents.
+    // Feed them through PiEventAdapter to derive Product Host events.
     const eventType = event.type as string;
 
-    // Adapt event to CraftAgentEvents
+    // Adapt the Pi fact to renderer-visible product events.
     // The event adapter expects typed PiAgentEvent/AgentSessionEvent objects,
     // but since we're receiving plain JSON, we cast through unknown.
     for (const agentEvent of this.adapter.adaptEvent(event as any)) {
@@ -897,6 +904,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
     // Pi emits agent_settled only after retries, compaction and queued
     // continuations have drained. It is the sole stream completion signal.
     if (eventType === 'agent_settled') {
+      this.activePromptId = null;
       this.eventQueue.complete();
     }
   }

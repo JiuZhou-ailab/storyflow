@@ -304,7 +304,7 @@ describe('createProjectResourceLoader', () => {
       .toEqual(['custom-npm']);
   });
 
-  it('uses Pi as the single retry owner', async () => {
+  it('leaves retry policy to Pi settings', async () => {
     const { settingsManager } = await createProjectResourceLoader({
       cwd: createRoot(),
       globalRoot: createRoot(),
@@ -313,10 +313,10 @@ describe('createProjectResourceLoader', () => {
 
     expect(settingsManager.getRetrySettings()).toEqual({
       enabled: true,
-      maxRetries: 1,
+      maxRetries: 3,
       baseDelayMs: 2_000,
     });
-    expect(settingsManager.getProviderRetrySettings()).toMatchObject({ maxRetries: 0 });
+    expect(settingsManager.getProviderRetrySettings()).toMatchObject({ maxRetries: undefined });
     expect(settingsManager.getHttpIdleTimeoutMs()).toBe(5 * 60 * 1000);
   });
 

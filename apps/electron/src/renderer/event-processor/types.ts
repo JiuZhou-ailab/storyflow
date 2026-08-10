@@ -479,17 +479,6 @@ export interface AuthCompletedEvent {
 }
 
 /**
- * Source activated event - a source was auto-activated mid-turn
- * Caller should re-send the original message to retry with the now-active source
- */
-export interface SourceActivatedEvent {
-  type: 'source_activated'
-  sessionId: string
-  sourceSlug: string
-  originalMessage: string
-}
-
-/**
  * Usage update event - real-time context usage during processing
  * Allows UI to show growing context as agent processes, not just on complete
  */
@@ -548,7 +537,6 @@ export type AgentEvent =
   | SessionUnsharedEvent
   | AuthRequestEvent
   | AuthCompletedEvent
-  | SourceActivatedEvent
   | UsageUpdateEvent
 
 /**
@@ -560,7 +548,6 @@ export type Effect =
   | { type: 'credential_request'; request: CredentialRequest }
   | { type: 'generate_title'; sessionId: string; userMessage: string }
   | { type: 'permission_mode_changed'; sessionId: string; permissionMode: PermissionMode; previousPermissionMode?: PermissionMode; transitionDisplay?: string; modeVersion?: number; changedAt?: string; changedBy?: 'user' | 'system' | 'restore' | 'automation' | 'unknown' }
-  | { type: 'auto_retry'; sessionId: string; originalMessage: string; sourceSlug: string }
   | { type: 'restore_input'; text: string }
   | { type: 'toast_error'; message: string }
 

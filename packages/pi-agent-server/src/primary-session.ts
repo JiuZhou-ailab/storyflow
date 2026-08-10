@@ -7,12 +7,6 @@ import { mkdirSync, readdirSync, statSync, existsSync } from 'node:fs';
 import {
   createAgentSession,
   SessionManager as PiSessionManager,
-  createReadToolDefinition,
-  createBashToolDefinition,
-  createEditToolDefinition,
-  createGrepToolDefinition,
-  createFindToolDefinition,
-  createLsToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import type {
   AgentSession,
@@ -53,7 +47,6 @@ interface PrimaryPiSessionContext {
   thinkingLevel?: CreateAgentSessionOptions['thinkingLevel'];
   activeSubagentSessions: Set<AgentSession>;
   buildProxyTools(): ToolDefinition<any, any>[];
-  prepareToolDefinitions(tools: ToolDefinition<any, any>[]): ToolDefinition<any, any>[];
   createSessionToolHooks(state: {
     getSession(): AgentSession | null;
     getUserRequest(): string;
@@ -103,7 +96,6 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
     thinkingLevel: piThinkingLevel,
     activeSubagentSessions,
     buildProxyTools,
-    prepareToolDefinitions,
     createSessionToolHooks,
     getCurrentUserMessage,
     requestHostTool,
@@ -129,27 +121,16 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
   );
   const webTools = [searchTool, webFetchTool];
 
-  // Pi SDK registration contract:
-  //   - `customTools` accepts ToolDefinition[] — our schema-adapted objects go here
-  //   - `tools` is a string[] name allowlist — MUST include every tool we want active,
-  //     otherwise Pi SDK defaults to the built-in [read, bash, edit, write] set and
-  //     silently filters out everything else. Custom tool names with matching built-in
-  //     names override the SDK's raw implementation inside _refreshToolRegistry, so
-  //     our hooked versions take effect (permissions + large-response summarization).
-  //   - Do NOT pass tool *objects* to `tools` — `allowedToolNames = new Set(options.tools)`
-  //     then `.has(name)` returns false for every string lookup → zero tools active.
-  const builtinDefs = [
-    createReadToolDefinition(cwd),
-    createBashToolDefinition(cwd),
-    createEditToolDefinition(cwd),
-    createCreateOnlyWriteToolDefinition(cwd),
-    createGrepToolDefinition(cwd),
-    createFindToolDefinition(cwd),
-    createLsToolDefinition(cwd),
-  ];
+  // Pi owns its built-in tool implementations. Storyflow registers only
+  // product capabilities plus the create-only write safety contract.
+  const nativeToolNames = ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls'];
   const proxyTools = buildProxyTools();
-  const allTools = prepareToolDefinitions([...builtinDefs, ...webTools, ...proxyTools]);
-  const toolAllowlist = allTools.map(t => t.name);
+  const customTools: ToolDefinition<any, any>[] = [
+    createCreateOnlyWriteToolDefinition(cwd),
+    ...webTools,
+    ...proxyTools,
+  ];
+  const toolAllowlist = [...nativeToolNames, ...webTools.map(tool => tool.name), ...proxyTools.map(tool => tool.name)];
   const systemPromptOverride = createSystemPromptOverride();
   const toolHooks = createSessionToolHooks({
     getSession: () => activeSession,
@@ -166,7 +147,7 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
     authStorage,
     modelRegistry,
     thinkingLevel: piThinkingLevel,
-    toolDefinitions: allTools,
+    toolDefinitions: customTools,
     activeSessions: activeSubagentSessions,
     providerHooks,
     createSessionHooks: (context: SubagentHookContext) => createSessionToolHooks({
@@ -176,14 +157,14 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
       toolResultTokens: 0,
     }),
   });
-  debugLog(`Session tools: ${builtinDefs.length} builtin + ${webTools.length} web + ${proxyTools.length} proxy = ${allTools.length} total`);
+  debugLog(`Session tools: ${nativeToolNames.length} Pi native + ${webTools.length} web + ${proxyTools.length} proxy`);
 
   // Build session options
   const sessionOptions: CreateAgentSessionOptions = {
     cwd,
     authStorage,
     modelRegistry,
-    customTools: allTools,
+    customTools,
     tools: toolAllowlist,
     agentDir,
     ...(piThinkingLevel ? { thinkingLevel: piThinkingLevel } : {}),
@@ -312,7 +293,7 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
     }
   }
 
-  // Create the session — tools flow through customTools + allowlist (see comment above).
+  // Create the session with Pi-native tools plus explicit Product Host capabilities.
   const { session } = await createAgentSession(sessionOptions);
   activeSession = session;
 
@@ -394,7 +375,7 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
     throw error;
   }
 
-  debugLog(`Created Pi session: ${session.sessionId} (${allTools.length} tools)`);
+  debugLog(`Created Pi session: ${session.sessionId} (${toolAllowlist.length} tools)`);
 
   // Notify main process of session ID
   send({ type: 'session_id_update', sessionId: session.sessionId });

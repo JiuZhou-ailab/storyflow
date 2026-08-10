@@ -1,6 +1,6 @@
-// input: Workspace sessions, agent backends, persistence stores, and runtime services
-// output: Session lifecycle orchestration, chat events, persistence, and queue handling
-// pos: Central server-core boundary between UI/session state and provider-specific agents
+// input: Workspace sessions, Pi product projections, persistence stores, and Host services
+// output: Durable product session state, projected Pi events, and explicit user commands
+// pos: Storyflow Product Host session boundary; Pi owns Agent turn execution
 
 import type { EventSink } from '@craft-agent/server-core/transport'
 import type { ISessionManager, IBrowserPaneManager, ExecutePromptAutomationInput } from '@craft-agent/server-core/handlers'
@@ -2762,6 +2762,14 @@ export class SessionManager implements ISessionManager {
     return managedModelAccess
   }
 
+  private async refreshManagedCredentialForNextTurn(managed: ManagedSession): Promise<void> {
+    try {
+      await this.ensureManagedCredentialForSession(managed, true)
+    } catch (error) {
+      sessionLog.warn(`[managed-access] Credential refresh failed for ${managed.id}: ${error instanceof Error ? error.message : error}`)
+    }
+  }
+
   /**
    * Get or create agent for a session (lazy loading)
    * Creates the appropriate backend agent based on LLM connection.
@@ -3502,7 +3510,7 @@ export class SessionManager implements ISessionManager {
       }
 
       // Note: Credential requests now flow through onAuthRequest (unified auth flow)
-      // The legacy onCredentialRequest callback has been removed from CraftAgent
+      // The legacy onCredentialRequest callback has been removed from the product projection
       // Auth refresh for mid-session token expiry is handled by the error handler in sendMessage
       // which destroys/recreates the agent to get fresh credentials
 
@@ -3796,17 +3804,6 @@ export class SessionManager implements ISessionManager {
               ok: false,
               reason: 'Activation failed — source may be unusable (disabled/unauthenticated) or server build failed. Check session logs.',
             }
-          }
-          // Pi needs the current turn to end before new tools are visible; it picks up
-          // proxy tool defs on the next handlePrompt (`toolsChanged` flag in pi-agent-server).
-          // Mark a pending restart on the agent; PiAgent consumes it after
-          // the next tool_result, yield source_activated, and forceAbort. The renderer's
-          // auto_retry effect then resends the original user message with a
-          // "[{slug} activated]" suffix — landing in a fresh turn with tools live.
-          // Same machinery as the tool-call-error auto-retry path.
-          const userMessage = managed.agent?.getCurrentTurnUserMessage?.() ?? ''
-          if (userMessage) {
-            managed.agent?.setPendingSourceActivationRestart({ sourceSlug, userMessage })
           }
           return { ok: true, availability: 'next-turn' as const }
         },
@@ -5049,12 +5046,12 @@ export class SessionManager implements ISessionManager {
         )
       if (!isManagedAuthError) throw error
 
-      await this.ensureManagedCredentialForSession(managed, true)
-      sessionLog.warn('[queryOnce] retrying one-shot LLM request after managed access refresh', {
+      await this.refreshManagedCredentialForNextTurn(managed)
+      sessionLog.warn('[queryOnce] managed auth failed; automatic replay is disabled', {
         sessionId,
         error: errorText,
       })
-      return (await this.getOrCreateAgent(managed)).queryLlm(request)
+      throw error
     }
   }
 
@@ -5078,7 +5075,6 @@ export class SessionManager implements ISessionManager {
     storedAttachments?: StoredAttachment[],
     options?: SendMessageOptions,
     existingMessageId?: string,
-    _isAuthRetry?: boolean,
     /**
      * Internal hook fired after the user message has been pushed to
      * `managed.messages` and persisted to disk, but before the model-streaming
@@ -5298,30 +5294,11 @@ export class SessionManager implements ISessionManager {
     }
 
     managed.lastMessageAt = Date.now()
-    if (!_isAuthRetry || managed.turnStartedAt === undefined) {
-      managed.turnStartedAt = userMessage?.timestamp ?? Date.now()
-    }
+    managed.turnStartedAt = userMessage?.timestamp ?? Date.now()
     this.setProcessing(managed, true)
     managed.streamingText = ''
     managed.processingGeneration++
     managed.turnStartFinalMessageId = this.getLastFinalOutputMessageId(managed.messages)
-
-    // Reset auth retry flag for this new message (allows one retry per message)
-    // IMPORTANT: Skip reset if this is an auth retry call - the flag is already true
-    // and resetting it would allow infinite retry loops
-    // Note: authRetryInProgress is NOT reset here - it's managed by the retry logic
-    if (!_isAuthRetry) {
-      managed.authRetryAttempted = false
-    }
-    managed.authRetrySafe = true
-
-    // Store message/attachments for potential retry after auth refresh
-    // (SDK subprocess caches token at startup, so if it expires mid-session,
-    // we need to recreate the agent and retry the message)
-    managed.lastSentMessage = message
-    managed.lastSentAttachments = attachments
-    managed.lastSentStoredAttachments = storedAttachments
-    managed.lastSentOptions = options
 
     // Capture the generation to detect if a new request supersedes this one.
     // This prevents the finally block from clobbering state when a follow-up message arrives.
@@ -5568,15 +5545,6 @@ export class SessionManager implements ISessionManager {
         // Handle complete event - SDK always sends this (even after interrupt)
         // This is the central place where processing ends
         if (event.type === 'complete') {
-          // Skip normal completion handling if auth retry is in progress
-          // The retry will handle its own completion
-          if (managed.authRetryInProgress) {
-            sessionLog.info('Chat completed but auth retry is in progress, skipping normal completion handling')
-            sendSpan.mark('chat.complete.auth_retry_pending')
-            sendSpan.end()
-            return  // Exit function - retry will handle completion
-          }
-
           // Auth/plan handoff paths already stopped processing and emitted a complete
           // event to the renderer. Ignore the backend's trailing complete to avoid
           // double cleanup and duplicate UI completion events.
@@ -5884,129 +5852,6 @@ export class SessionManager implements ISessionManager {
       sessionId,
       messageId,
     }, managed.workspace.id)
-  }
-
-  /**
-   * Attempt auth retry: refresh token, destroy agent, resend last message.
-   * Shared by both typed_error and plain error auth-retry paths.
-   * Returns true if retry was initiated, false if conditions not met.
-   */
-  private attemptAuthRetry(
-    sessionId: string,
-    managed: ManagedSession,
-    workspaceId: string,
-    failureErrorCode?: string,
-    beforeRetry?: () => Promise<void>,
-  ): boolean {
-    if (managed.authRetryAttempted || managed.authRetrySafe === false || !managed.lastSentMessage) return false
-
-    sessionLog.info(`Auth error detected, attempting token refresh and retry for session ${sessionId}`)
-    managed.authRetryAttempted = true
-    managed.authRetryInProgress = true
-
-    // Emit lightweight info so the user sees progress instead of a scary red error
-    this.sendEvent({
-      type: 'info',
-      sessionId,
-      message: 'Token expired, refreshing session…',
-      timestamp: this.monotonic(),
-    }, workspaceId)
-
-    setImmediate(async () => {
-      try {
-        await beforeRetry?.()
-
-        // Dispose the agent — the new agent's postInit() reads fresh auth.
-        sessionLog.info(`[auth-retry] Destroying agent for session ${sessionId}`)
-        await this.disposeManagedAgentRuntime(managed, 'authentication retry')
-
-        // Retry the message
-        const retryMessage = managed.lastSentMessage
-        const retryAttachments = managed.lastSentAttachments
-        const retryStoredAttachments = managed.lastSentStoredAttachments
-        const retryOptions = managed.lastSentOptions
-
-        if (retryMessage) {
-          sessionLog.info(`[auth-retry] Retrying message for session ${sessionId}`)
-          this.setProcessing(managed, false)
-
-          // Remove the user message that was added for this failed attempt
-          // so we don't get duplicate messages when retrying
-          const lastUserMsgIndex = managed.messages.findLastIndex(m => m.role === 'user')
-          if (lastUserMsgIndex !== -1) {
-            managed.messages.splice(lastUserMsgIndex, 1)
-          }
-
-          managed.authRetryInProgress = false
-
-          await this.sendMessage(
-            sessionId,
-            retryMessage,
-            retryAttachments,
-            retryStoredAttachments,
-            retryOptions,
-            undefined,  // existingMessageId
-            true        // _isAuthRetry - prevents infinite retry loop
-          )
-          sessionLog.info(`[auth-retry] Retry completed for session ${sessionId}`)
-        } else {
-          managed.authRetryInProgress = false
-        }
-      } catch (retryError) {
-        managed.authRetryInProgress = false
-        sessionLog.error(`[auth-retry] Failed to retry after auth refresh for session ${sessionId}:`, retryError)
-        sessionRuntimeHooks.captureException(retryError, { errorSource: 'auth-retry', sessionId })
-        const failedMessage: Message = {
-          id: generateMessageId(),
-          role: 'error',
-          content: 'Authentication could not be refreshed. Retry or sign in again.',
-          timestamp: this.monotonic(),
-          errorCode: failureErrorCode,
-        }
-        managed.messages.push(failedMessage)
-        this.sendEvent({
-          type: 'error',
-          sessionId,
-          error: 'Authentication could not be refreshed. Retry or sign in again.',
-          timestamp: failedMessage.timestamp,
-        }, workspaceId)
-        void this.onProcessingStopped(sessionId, 'error').catch(error => {
-          sessionLog.error('Failed to stop processing after authentication refresh failure:', error)
-        })
-      }
-    })
-
-    return true
-  }
-
-  private attemptManagedModelAccessRetry(
-    sessionId: string,
-    managed: ManagedSession,
-    workspaceId: string,
-    connectionSlug: string,
-    failureErrorCode?: string,
-  ): boolean {
-    const retryStarted = this.attemptAuthRetry(
-      sessionId,
-      managed,
-      workspaceId,
-      failureErrorCode,
-      async () => {
-        await sessionRuntimeHooks.ensureManagedModelAccessToken(true)
-      },
-    )
-    if (!retryStarted && managed.authRetrySafe === false && !managed.authRetryAttempted) {
-      // Refresh the capability for the next model call, but never replay a turn
-      // after tools may have produced external side effects.
-      void sessionRuntimeHooks.ensureManagedModelAccessToken(true)
-        .then(result => result.refreshed
-          ? this.reloadConnectionCredentials(connectionSlug, { token: result.token })
-          : undefined)
-        .catch(error => {
-          sessionLog.warn(`[auth-retry] Managed credential refresh failed for ${sessionId}: ${error instanceof Error ? error.message : error}`)
-        })
-    }
-    return retryStarted
   }
 
   /**
@@ -6705,7 +6550,6 @@ export class SessionManager implements ISessionManager {
       }
 
       case 'tool_start': {
-        managed.authRetrySafe = false
         const toolInput = await captureWriteOriginalContent({
           toolName: event.toolName,
           input: event.input,
@@ -6752,7 +6596,7 @@ export class SessionManager implements ISessionManager {
         const existingStartMsg = managed.messages.find(m => m.toolUseId === event.toolUseId)
         const isDuplicateEvent = !!existingStartMsg
 
-        // Use parentToolUseId directly from the event — CraftAgent resolves this
+        // Use parentToolUseId directly from the projected Pi event
         // from SDK's parent_tool_use_id (authoritative, handles parallel Tasks correctly).
         // No stack or map needed; the event carries the correct parent from the start.
         const parentToolUseId = event.parentToolUseId
@@ -6872,7 +6716,7 @@ export class SessionManager implements ISessionManager {
 
         sessionLog.info(`RESULT MATCH: toolUseId=${event.toolUseId}, found=${!!existingToolMsg}, toolName=${existingToolMsg?.toolName || toolName}, wasComplete=${wasAlreadyComplete}`)
 
-        // parentToolUseId comes from CraftAgent (SDK-authoritative) or existing message
+        // parentToolUseId comes from Pi (runtime-authoritative) or the existing message
         const parentToolUseId = existingToolMsg?.parentToolUseId || event.parentToolUseId
 
         if (existingToolMsg) {
@@ -7034,10 +6878,9 @@ export class SessionManager implements ISessionManager {
 
         if (isPlainAuthError) {
           const connectionSlug = resolveManagedConnectionSlug(managed)
-          const retryStarted = isManagedDefaultGatewayConnection(connectionSlug)
-            ? this.attemptManagedModelAccessRetry(sessionId, managed, workspaceId, connectionSlug)
-            : this.attemptAuthRetry(sessionId, managed, workspaceId)
-          if (retryStarted) break
+          if (isManagedDefaultGatewayConnection(connectionSlug)) {
+            void this.refreshManagedCredentialForNextTurn(managed)
+          }
         }
 
         // AgentEvent uses `message` not `error`
@@ -7071,23 +6914,11 @@ export class SessionManager implements ISessionManager {
         // Typed errors have structured information - send both formats for compatibility
         sessionLog.info('typed_error:', JSON.stringify(typedError, null, 2))
 
-        // Check for auth errors that can be retried by refreshing the token
-        // The SDK subprocess caches the token at startup, so if it expires mid-session,
-        // we get invalid_api_key errors. We can fix this by:
-        // 1. Resetting the summarization client cache
-        // 2. Destroying the agent (new agent's postInit() refreshes the token)
-        // 3. Retrying the message
         const isAuthError = typedError.code === 'invalid_api_key' ||
           typedError.code === 'expired_oauth_token'
 
-        if (isAuthError) {
-          const retryStarted = isManagedDefaultGatewayConnection(connectionSlug)
-            ? this.attemptManagedModelAccessRetry(sessionId, managed, workspaceId, connectionSlug, typedError.code)
-            : this.attemptAuthRetry(sessionId, managed, workspaceId, typedError.code)
-          if (retryStarted) {
-            // Don't add error message or send to renderer - we're handling it via retry
-            break
-          }
+        if (isAuthError && isManagedDefaultGatewayConnection(connectionSlug)) {
+          void this.refreshManagedCredentialForNextTurn(managed)
         }
 
         // Build rich error message with all diagnostic fields for persistence and UI display
@@ -7174,19 +7005,8 @@ export class SessionManager implements ISessionManager {
         }, workspaceId)
         break
 
-      case 'source_activated':
-        // A source was auto-activated mid-turn, forward to renderer for auto-retry
-        sessionLog.info(`Source "${event.sourceSlug}" activated, notifying renderer for auto-retry`)
-        this.sendEvent({
-          type: 'source_activated',
-          sessionId,
-          sourceSlug: event.sourceSlug,
-          originalMessage: event.originalMessage,
-        }, workspaceId)
-        break
-
       case 'complete':
-        // Complete event from CraftAgent - accumulate usage from this turn
+        // Projected Pi completion - accumulate usage from this turn
         // Actual 'complete' sent to renderer comes from the finally block in sendMessage
         this.accumulateTurnUsage(managed, event.usage)
 

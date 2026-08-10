@@ -77,7 +77,7 @@ describe('managed default gateway auth error normalization', () => {
     expect(reloadCredentials).toHaveBeenCalledWith({ token: 'managed-model-token' })
   })
 
-  it('force-refreshes and safely retries a managed turn before any tool ran', async () => {
+  it('refreshes managed access for the next user turn without replaying the failed turn', async () => {
     const sm = new SessionManager()
     const managed = createManagedSession({
       id: 'managed-retry',
@@ -88,14 +88,14 @@ describe('managed default gateway auth error normalization', () => {
       rootPath: '/tmp/managed-retry',
       createdAt: Date.now(),
     } as never, { messagesLoaded: true }) as any
+    const reloadCredentials = jest.fn().mockResolvedValue(true)
     const disposeForRestart = jest.fn().mockResolvedValue(undefined)
     managed.agent = {
+      reloadCredentials,
       disposeForRestart,
       isProcessing: () => false,
     }
     managed.isProcessing = true
-    managed.authRetrySafe = true
-    managed.lastSentMessage = 'hello'
     managed.messages = [{ id: 'user-1', role: 'user', content: 'hello', timestamp: 1 }]
     ;(sm as any).sessions.set(managed.id, managed)
     const sendMessage = jest.fn().mockResolvedValue(undefined)
@@ -113,11 +113,13 @@ describe('managed default gateway auth error normalization', () => {
     await new Promise(resolve => setTimeout(resolve, 10))
 
     expect(ensureManagedModelAccessToken).toHaveBeenCalledWith(true)
-    expect(disposeForRestart).toHaveBeenCalledTimes(1)
-    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(reloadCredentials).toHaveBeenCalledWith({ token: 'managed-token' })
+    expect(disposeForRestart).not.toHaveBeenCalled()
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(managed.messages.at(-1)?.role).toBe('error')
   })
 
-  it('does not replay a managed turn after tool activity', async () => {
+  it('may recycle an idle runtime for rotated access without replaying the failed turn', async () => {
     const sm = new SessionManager()
     const managed = createManagedSession({
       id: 'managed-no-replay',
@@ -128,10 +130,9 @@ describe('managed default gateway auth error normalization', () => {
       rootPath: '/tmp/managed-no-replay',
       createdAt: Date.now(),
     } as never, { messagesLoaded: true }) as any
-    managed.agent = { isProcessing: () => false, dispose: () => {} }
+    const dispose = jest.fn()
+    managed.agent = { isProcessing: () => false, dispose }
     managed.isProcessing = true
-    managed.authRetrySafe = false
-    managed.lastSentMessage = 'hello'
     ;(sm as any).sessions.set(managed.id, managed)
     const sendMessage = jest.fn().mockResolvedValue(undefined)
     ;(sm as any).sendMessage = sendMessage
@@ -149,5 +150,6 @@ describe('managed default gateway auth error normalization', () => {
 
     expect(sendMessage).not.toHaveBeenCalled()
     expect(ensureManagedModelAccessToken).toHaveBeenCalledWith(true)
+    expect(dispose).toHaveBeenCalledTimes(1)
   })
 })

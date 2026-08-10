@@ -190,7 +190,6 @@ describe('AbortReason enum', () => {
     expect(AbortReason.PlanSubmitted as string).toBe('plan_submitted');
     expect(AbortReason.AuthRequest as string).toBe('auth_request');
     expect(AbortReason.Redirect as string).toBe('redirect');
-    expect(AbortReason.SourceActivated as string).toBe('source_activated');
     expect(AbortReason.Timeout as string).toBe('timeout');
     expect(AbortReason.InternalError as string).toBe('internal_error');
   });

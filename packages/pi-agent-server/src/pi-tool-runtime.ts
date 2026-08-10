@@ -26,7 +26,6 @@ import type {
   PiOutboundMessage,
   PiProxyToolDefinition,
 } from '../../shared/src/agent/backend/pi/protocol.ts';
-import { normalizeCraftToolArgumentsForSchema } from './craft-metadata-schema.ts';
 import {
   PRODUCT_TREE_HEAD_TYPE,
   executeProductRewind,
@@ -114,21 +113,6 @@ async function requestPreToolUseApproval(
   }
 
   return response.action === 'modify' && response.input ? response.input : input;
-}
-
-function prepareToolDefinitions(tools: ToolDefinition<any, any>[]): ToolDefinition<any, any>[] {
-  return tools.map((tool) => {
-    const originalPrepareArguments = tool.prepareArguments;
-    const prepareArguments: ToolDefinition<any, any>['prepareArguments'] = (args) => {
-      const normalized = normalizeCraftToolArgumentsForSchema(tool.name, tool.parameters, args);
-      return originalPrepareArguments ? originalPrepareArguments(normalized) : normalized;
-    };
-
-    return {
-      ...tool,
-      prepareArguments,
-    };
-  });
 }
 
 async function prepareToolInput(
@@ -317,7 +301,6 @@ async function executeSessionRewind(
 
   return {
     createSessionToolHooks,
-    prepareToolDefinitions,
     buildProxyTools,
     requestHostTool,
     requestConversationRewind,

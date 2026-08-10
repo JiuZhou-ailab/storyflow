@@ -2,6 +2,7 @@
 
 状态：Accepted
 日期：2026-08-04
+修订：2026-08-08
 
 ## 背景
 
@@ -17,6 +18,9 @@ Agent runtime。产品必须投影 Pi 的公共契约，而不是镜像 Pi 的�
 
 - Pi `AgentSession` 是唯一 Agent Runtime，拥有会话树、compaction、retry、
   Extension 生命周期、Skill/Prompt/Theme/Context 发现和 Provider 协议。
+- Pi 的 retry settings、Provider retry classifier、queued continuation、abort 与 settlement
+  是同一个状态机。Storyflow 不覆盖 retry 次数，不改写错误来诱导 retry，也不根据静默时长
+  猜测失败；产品层只保留 12 小时绝对安全上限，具体 Provider/Tool 超时归各自原生生命周期。
 - Pi 的 canonical `agentDir`、file-backed `SettingsManager`、`DefaultPackageManager`
   与 `DefaultResourceLoader` 是用户资源、package 和 Extension 的唯一运行时事实源。
 - Pi 的 System Prompt builder 是最终提示装配权威。Storyflow 只通过
@@ -28,21 +32,34 @@ Agent runtime。产品必须投影 Pi 的公共契约，而不是镜像 Pi 的�
   `agentDir` 表达会话隔离。
 - Storyflow 只保留 Product Host 能力：OS/Electron 生命周期、Workspace 与项目身份、
   内容与协作数据、产品导航、Host 工具权限、远端传输，以及模型凭据和 endpoint 注册。
+- 两者只通过无策略的 typed Boundary Protocol 连接：Storyflow 向 Pi 提供不可变上下文、
+  capability、凭据和显式用户命令；Pi 向 Storyflow 返回事实事件与相关结果。协议层不得把错误
+  翻译成 retry/replay/abort/settlement，也不得制造 Pi 原生事件。
 - Pi `AuthStorage` 负责 OAuth 刷新与并发锁；Storyflow 只提供初始凭据，并把 Pi 返回的
   轮换凭据持久化到产品凭据存储，不实现第二套 Provider 刷新器。
+- Storyflow 托管模型 token 是 Product Host capability，不伪装成第二套 Agent 认证状态机。
+  Host 可在显式请求前预检并把轮换 token 推送给 Pi；请求中途失效时只为下一次显式请求刷新，
+  不销毁 Agent、不删除消息、不自动重放当前 turn。
 - Storyflow 不再按 Provider 选择 Agent Runtime，也不保留单实现 factory。Anthropic、
   OpenAI、Bedrock 与 custom endpoint 都只是 Pi 的模型/认证 Provider。
 - Web Search 是独立 Host capability，只使用自己的 AnySearch 凭据或无凭据的 fallback；
   不复用模型 Provider 的 API key/OAuth token，也不在 Storyflow 复制其私有搜索协议。
 - Storyflow 的 UI 和 RPC 只投影 Pi 的公共 state、event、command、diagnostic 和资源契约；
   不复制 Pi 的状态机，不依赖 TUI component，也不建立第二套 Extension registry。
+- Storyflow Source 激活只改变下一轮可用 capability。它不得中断当前 Pi turn、发出自动重试
+  effect，或重放原始用户消息；当前工具调用按现有授权结果完成或失败。
+- Pi 内置 read/bash/edit/grep/find/ls 使用 SDK 原生实现。Storyflow 工具和权限通过 Pi 官方
+  registry/Extension hooks 注入；唯一内置覆盖是 create-only write 数据安全契约，防止无损恢复
+  之前覆盖已有文件。
 - Pi 会话树是 rewind/branch 的运行时事实源；Storyflow 只在 Pi Session 中保存稳定的
   产品消息边界，并在树导航成功后原子裁剪自己的消息投影。不存在边界映射时安全拒绝，
   不用易漂移的消息序号猜测。
 - Pi `navigateTree()` 的 leaf 只存在内存中；Storyflow 在目标 leaf 下追加一个不进入模型上下文
   的 Pi custom entry，使重启后的 `continueRecent()` 仍恢复同一条活动分支。
-- `agent_settled` 是一次产品请求完成的唯一信号；`agent_end` 只表示 Pi 内部一轮运行结束，
-  不得绕过 Pi 原生 retry、compaction 或 queued continuation 提前关闭请求。
+- 对真实 Agent turn，`agent_settled` 是唯一完成信号；`agent_end` 只表示 Pi 内部一轮运行结束，
+  不得绕过 Pi 原生 retry、compaction 或 queued continuation 提前关闭请求。未启动 Agent 的
+  Extension command 或 prompt preflight failure 使用相关 `prompt_result` 关闭 Host 请求，不能
+  伪造 `agent_settled`。
 - Storyflow 旧 Skills 目录暂作为显式兼容输入；旧 Extensions 不再扫描或执行。新 package
   安装、启停、更新和删除走 Pi package/settings 契约。兼容输入不成为新的写入目标。
 - 用户级 Pi Extensions 默认加载。项目级可执行 Extensions 必须经过明确的 Host 授权

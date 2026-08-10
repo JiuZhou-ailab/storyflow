@@ -168,8 +168,8 @@ describe('createSubagentExtension', () => {
     ]);
     expect(createdOptions[0]?.thinkingLevel).toBe('high');
     expect(createdOptions[0]?.sessionManager?.isPersisted()).toBe(false);
-    expect(createdOptions[0]?.settingsManager?.getRetrySettings()).toMatchObject({ maxRetries: 1 });
-    expect(createdOptions[0]?.settingsManager?.getProviderRetrySettings()).toMatchObject({ maxRetries: 0 });
+    expect(createdOptions[0]?.settingsManager?.getRetrySettings()).toMatchObject({ maxRetries: 3 });
+    expect(createdOptions[0]?.settingsManager?.getProviderRetrySettings()).toMatchObject({ maxRetries: undefined });
     expect(result.details).toMatchObject({
       kind: 'storyflow-subagent',
       result: {

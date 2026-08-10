@@ -351,10 +351,8 @@ export interface SessionToolContext {
    * Available when the host runs alongside SessionManager.
    *
    * `availability` is always `'next-turn'` when activation succeeds: Pi reloads
-   * proxy tools on the next `handlePrompt`, so the current turn must end before new tools
-   * are callable. The backend handles this via the existing source_activated + auto_retry
-   * machinery — the current turn is aborted and the renderer resends the user's
-   * original message with a `[{slug} activated]` suffix.
+   * proxy tools on the next `handlePrompt`, so the current Pi turn is never aborted
+   * or replayed just to expose the new capability.
    */
   activateSourceInSession?(sourceSlug: string): Promise<{
     ok: boolean;

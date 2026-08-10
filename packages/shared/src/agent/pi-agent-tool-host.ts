@@ -128,11 +128,6 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
               return;
             }
             this.debug(`PreToolUse(sessionId=${sessionId}): Source "${sourceSlug}" activated successfully`);
-            this.eventQueue.enqueue({
-              type: 'source_activated' as const,
-              sourceSlug,
-              originalMessage: '',
-            });
           } catch (err) {
             const reason = sourceExists
               ? `Source "${sourceSlug}" could not be activated: ${err}`

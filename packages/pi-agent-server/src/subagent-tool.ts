@@ -22,7 +22,6 @@ import {
   type PiSubagentTaskResult,
   type PiSubagentUsage,
 } from '../../shared/src/agent/backend/pi/subagent-contract.ts';
-import { createStoryflowRetrySettings } from './project-resource-loader.ts';
 
 const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'web_search', 'web_fetch'] as const;
 const WORKSPACE_WRITE_TOOLS = [...READ_ONLY_TOOLS, 'edit', 'write', 'bash'] as const;
@@ -216,7 +215,7 @@ export function createSubagentExtension(
               if (signal?.aborted) {
                 throw new Error('Subagent execution aborted');
               }
-              const settingsManager = SettingsManager.inMemory({ retry: createStoryflowRetrySettings() });
+              const settingsManager = SettingsManager.inMemory();
               const resourceLoader = new DefaultResourceLoader({
                 cwd: options.cwd,
                 agentDir: options.agentDir,

@@ -206,7 +206,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     expect(queryCalls).toBe(1)
   })
 
-  it('retries one-shot calls only after refreshing invalid managed access', async () => {
+  it('refreshes invalid managed access for a later one-shot call without replaying', async () => {
     const managed = buildSession('query-once-managed-auth-refresh')
     managed.llmConnection = 'storyflow-managed'
     let queryCalls = 0
@@ -220,14 +220,13 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     ;(sm as any).getOrCreateAgent = async () => ({
       queryLlm: async () => {
         queryCalls++
-        if (queryCalls === 1) throw new Error('model_access_token_invalid')
-        return { text: 'ok' }
+        throw new Error('model_access_token_invalid')
       },
     })
 
     await expect(sm.queryOnce(managed.id, { prompt: 'summarize' } as never))
-      .resolves.toEqual({ text: 'ok' })
-    expect(queryCalls).toBe(2)
+      .rejects.toThrow('model_access_token_invalid')
+    expect(queryCalls).toBe(1)
     expect(ensureCalls).toBe(1)
   })
 

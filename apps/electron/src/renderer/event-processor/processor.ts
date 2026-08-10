@@ -207,18 +207,6 @@ export function processEvent(
     case 'auth_completed':
       return handleAuthCompleted(state, event)
 
-    case 'source_activated':
-      // Source was auto-activated mid-turn, emit effect to auto-retry
-      return {
-        state,
-        effects: [{
-          type: 'auto_retry',
-          sessionId: event.sessionId,
-          originalMessage: event.originalMessage,
-          sourceSlug: event.sourceSlug,
-        }],
-      }
-
     case 'usage_update':
       return handleUsageUpdate(state, event)
 

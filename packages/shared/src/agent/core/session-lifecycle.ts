@@ -26,9 +26,6 @@ export enum AbortReason {
   /** New message sent while processing (silent redirect) */
   Redirect = 'redirect',
 
-  /** Source activation requested - need to restart with new tools */
-  SourceActivated = 'source_activated',
-
   /** Session timeout */
   Timeout = 'timeout',
 

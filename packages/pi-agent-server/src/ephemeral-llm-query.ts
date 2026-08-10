@@ -25,7 +25,6 @@ import {
   type LLMQueryResult,
 } from '../../shared/src/agent/llm-tool.ts';
 import { createProviderHooks } from './provider-hooks.ts';
-import { createStoryflowRetrySettings } from './project-resource-loader.ts';
 import { createSystemPromptOverride } from './system-prompt-override.ts';
 import { resolvePiModel, isDeniedMiniModelId, isModelNotFoundError } from './model-resolution.ts';
 import { pickProviderAppropriateMiniModel } from './pick-mini-model.ts';
@@ -82,7 +81,7 @@ export async function queryLlmWithEphemeralPiSession(
       );
     }
 
-    const settingsManager = SettingsManager.inMemory({ retry: createStoryflowRetrySettings() });
+    const settingsManager = SettingsManager.inMemory();
     const ephemeralOptions: CreateAgentSessionOptions = {
       cwd: context.cwd,
       authStorage,

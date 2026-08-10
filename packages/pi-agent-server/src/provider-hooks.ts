@@ -3,8 +3,7 @@
 // pos: Narrow provider extension below session orchestration and above Pi transports.
 
 import type { InlineExtension } from '@earendil-works/pi-coding-agent';
-import { isContextOverflow, isRetryableAssistantError } from '@earendil-works/pi-ai/compat';
-import type { AssistantMessage, ProviderHeaders } from '@earendil-works/pi-ai';
+import type { ProviderHeaders } from '@earendil-works/pi-ai';
 import { randomUUID } from 'node:crypto';
 import { clearLastApiError, setStoredError } from '../../shared/src/provider-diagnostics.ts';
 
@@ -23,7 +22,7 @@ export function createProviderHooks(options: { enable1MContext: boolean }): Inli
   return {
     name: 'storyflow-provider-hooks',
     factory(pi) {
-      let activeModelCall: { id: string; attempt: number; status?: number } | undefined;
+      let activeModelCall: { id: string; attempt: number } | undefined;
 
       pi.on('before_agent_start', () => {
         activeModelCall = undefined;
@@ -40,29 +39,11 @@ export function createProviderHooks(options: { enable1MContext: boolean }): Inli
         setAnthropicBeta(event.headers, CONTEXT_1M_BETA, options.enable1MContext);
       });
 
-      pi.on('message_end', (event, context) => {
-        if (event.message.role !== 'assistant') return;
-        let message = event.message as AssistantMessage;
-        const overflow = isContextOverflow(message, context.model?.contextWindow ?? 0);
-        if (
-          !overflow
-          && message.stopReason === 'error'
-          && message.errorMessage
-          && activeModelCall?.status !== undefined
-          && activeModelCall.status >= 500
-          && activeModelCall.status < 600
-          && !isRetryableAssistantError(message)
-        ) {
-          // ponytail: remove when Pi classifies every HTTP 5xx instead of a fixed subset.
-          message = { ...message, errorMessage: `${message.errorMessage} (server error)` };
-        }
-        const retryable = !overflow && isRetryableAssistantError(message);
-        if (!retryable) activeModelCall = undefined;
-        return message === event.message ? undefined : { message };
+      pi.on('message_end', (event) => {
+        if (event.message.role === 'assistant') activeModelCall = undefined;
       });
 
       pi.on('after_provider_response', (event) => {
-        if (activeModelCall) activeModelCall.status = event.status;
         if (event.status < 400) {
           clearLastApiError();
           return;

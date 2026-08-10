@@ -1,6 +1,6 @@
-// input: Resolved backend/runtime context and Pi subprocess protocol events
-// output: Pi-backed Agent implementation using the shared permission pipeline
-// pos: Provider adapter beneath the shared Agent Kernel
+// input: Storyflow session context and typed Pi subprocess protocol events
+// output: Product session projection backed by one Pi AgentSession
+// pos: Product Host adapter above the single Pi Agent Kernel
 
 /**
  * Pi Backend (Subprocess RPC Client)
@@ -32,7 +32,7 @@ import { getBackendRuntime } from './backend/internal/driver-types.ts';
 import type { ThinkingLevel } from './thinking-levels.ts';
 import type { Workspace } from '../config/storage.ts';
 
-// System prompt for Craft Agent context
+// Product prompt inputs supplied to Pi's native prompt assembly
 import { getSystemPrompt } from '../prompts/system.ts';
 import { getCoAuthorPreference } from '../config/preferences.ts';
 
@@ -218,6 +218,7 @@ export class PiAgent extends PiAgentToolHost {
 
       // Send prompt to subprocess
       const turnId = `turn-${++this.rpcIdCounter}`;
+      this.activePromptId = turnId;
       this.send({
         type: 'prompt',
         id: turnId,
@@ -228,27 +229,9 @@ export class PiAgent extends PiAgentToolHost {
         rewindBoundary: options?.rewindBoundary,
       });
 
-      // Yield events as they arrive. After each tool_result, check whether
-      // a session-scoped tool (source_test) activated a new source — if so,
-      // yield source_activated and force-abort the turn for auto-retry.
-      // Pi's subprocess only picks up new proxy tools on the next handlePrompt,
-      // so the restart
-      // is needed here too.
+      // Yield the Pi-owned turn until its native settlement event closes the queue.
       for await (const event of this.eventQueue.drain()) {
         yield event;
-        if (event.type === 'tool_result') {
-          const pendingRestart = this.consumePendingSourceActivationRestart();
-          if (pendingRestart) {
-            this.debug(`source_test activated "${pendingRestart.sourceSlug}", interrupting turn for auto-retry`);
-            yield {
-              type: 'source_activated' as const,
-              sourceSlug: pendingRestart.sourceSlug,
-              originalMessage: pendingRestart.userMessage,
-            };
-            this.forceAbort(AbortReason.SourceActivated);
-            return;
-          }
-        }
       }
     } catch (error) {
       if (error instanceof Error && error.message.includes('abort')) {

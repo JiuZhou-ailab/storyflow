@@ -45,11 +45,15 @@ Pi's `AgentSession`, the single Agent runtime used by every Runtime Domain; doma
 _Avoid_: Free-conversation system, project Agent
 
 **Pi Runtime Projection**:
-Storyflow's product representation of Pi's public runtime contracts, events, resources, commands, and state. It maps stable Pi behavior into desktop and cloud surfaces without copying Pi internals.
+Storyflow's derived product representation of Pi's public runtime contracts, events, resources, commands, and state. It maps stable Pi behavior into desktop and cloud surfaces without copying Pi internals or controlling Pi lifecycle transitions.
 _Avoid_: Pi wrapper runtime, Pi UI clone, mirrored Agent state
 
+**Boundary Protocol**:
+The policy-free typed command, result, event, and Host-capability channel between the Product Host and Agent Kernel. Storyflow may send immutable context, capability definitions, credentials, and explicit user commands; Pi returns runtime facts and correlated results. The channel must not translate Pi failures into retry, replay, abort, settlement, or fabricated Pi events.
+_Avoid_: Orchestration runtime, recovery controller, compatibility state machine
+
 **Product Host**:
-The Storyflow boundary that owns operating-system lifecycle, Workspace identity, product data, collaboration, navigation, and remote transport while delegating Agent execution to Pi.
+The Storyflow boundary that owns operating-system lifecycle, Workspace identity, product data, collaboration, navigation, Host capabilities, credentials, and remote transport while delegating Agent execution, retry, compaction, queueing, abort, and settlement to Pi.
 _Avoid_: Agent runtime, orchestration kernel
 
 **Subagent Run**:
