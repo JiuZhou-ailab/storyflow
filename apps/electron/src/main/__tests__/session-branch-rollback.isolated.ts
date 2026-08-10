@@ -186,7 +186,6 @@ mock.module('@craft-agent/shared/agent/backend', () => ({
   },
   cleanupSourceRuntimeArtifacts: async () => {},
   fetchBackendModels: async () => ({ models: [] }),
-  initializeBackendHostRuntime: () => {},
   resolveBackendHostTooling: () => ({
     sourceCredentialManager: null,
     sourceServerBuilder: null,

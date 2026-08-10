@@ -1,3 +1,7 @@
+// input: Storyflow connection, authentication, and host runtime configuration
+// output: Public Pi backend configuration boundary
+// pos: Backend-facing agent API barrel
+
 /**
  * Pi Runtime Configuration Boundary
  *
@@ -25,7 +29,6 @@ export type {
   PermissionCallback,
   PlanCallback,
   AuthCallback,
-  SourceChangeCallback,
   SourceActivationCallback,
   ChatOptions,
   RecoveryMessage,
@@ -47,7 +50,6 @@ export {
   resolveRequiredBackendContext,
   resolveSetupTestConnectionHint,
   resolvePiAgentConfig,
-  initializeBackendHostRuntime,
   resolveBackendHostTooling,
   fetchBackendModels,
   validateStoredBackendConnection,

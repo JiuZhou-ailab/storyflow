@@ -1,3 +1,7 @@
+// input: Provider-agnostic Product Host capability modules
+// output: Public core types, managers, and path utilities
+// pos: Shared agent core API barrel
+
 /**
  * Core Agent Module
  *
@@ -8,11 +12,6 @@
  * - PermissionManager: Tool permission evaluation and mode management
  * - SourceManager: External data source state tracking
  * - PromptBuilder: System prompt and context building
- * - PathProcessor: Path expansion and normalization
- * - ConfigValidator: Pre-write configuration validation
- * - ConfigWatcherManager: Hot-reload config file watching
- * - SessionLifecycleManager: Session state and abort handling
- * - UsageTracker: Token usage and context window tracking
  * - PrerequisiteManager: Prerequisite reading enforcement (guide.md before source tools)
  */
 
@@ -25,10 +24,6 @@ export type {
   SourceManagerConfig,
   PromptBuilderConfig,
   ContextBlockOptions,
-  PathProcessorConfig,
-  ConfigValidatorConfig,
-  ConfigValidationResult,
-  ConfigFileType,
   // Re-exported from mode-types
   PermissionMode,
   ModeConfig,
@@ -39,27 +34,6 @@ export type {
   // Re-exported from mode-manager
   ToolCheckResult,
 } from './types.ts';
-
-// Config Watcher Manager types
-export type {
-  ConfigWatcherManagerCallbacks,
-  ConfigWatcherManagerConfig,
-} from './config-watcher-manager.ts';
-
-// Session Lifecycle types
-export type {
-  SessionState,
-  SessionLifecycleConfig,
-} from './session-lifecycle.ts';
-export { AbortReason } from './session-lifecycle.ts';
-
-// Usage Tracker types
-export type {
-  MessageUsage,
-  SessionUsage,
-  UsageUpdate,
-  UsageTrackerConfig,
-} from './usage-tracker.ts';
 
 // Constants
 export {
@@ -77,36 +51,13 @@ export { SourceManager } from './source-manager.ts';
 // Prompt Builder
 export { PromptBuilder } from './prompt-builder.ts';
 
-// Path Processor
+// Path utilities
 export {
-  PathProcessor,
-  // Re-exported utilities
   expandPath,
   normalizePath,
   pathStartsWith,
   toPortablePath,
-} from './path-processor.ts';
-
-// Config Validator
-export { ConfigValidator } from './config-validator.ts';
-
-// Config Watcher Manager
-export {
-  ConfigWatcherManager,
-  createConfigWatcherManager,
-} from './config-watcher-manager.ts';
-
-// Session Lifecycle
-export {
-  SessionLifecycleManager,
-  createSessionLifecycleManager,
-} from './session-lifecycle.ts';
-
-// Usage Tracker
-export {
-  UsageTracker,
-  createUsageTracker,
-} from './usage-tracker.ts';
+} from '../../utils/paths.ts';
 
 // PreToolUse Utilities
 export {

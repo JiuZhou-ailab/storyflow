@@ -66,16 +66,6 @@ export function resolvePiAgentConfig(args: {
 }
 
 /**
- * Initialize backend host runtime wiring once at app startup.
- * Keeps Pi runtime/bootstrap details behind backend internals.
- */
-export function initializeBackendHostRuntime(args: {
-  hostRuntime: BackendHostRuntimeContext;
-}): void {
-  resolveBackendRuntimePaths(args.hostRuntime);
-}
-
-/**
  * Resolve backend-managed host tooling paths (e.g. ripgrep) from generic host runtime metadata.
  */
 export function resolveBackendHostTooling(args: {

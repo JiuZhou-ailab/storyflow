@@ -17,7 +17,7 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { expandPath } from './path-processor.ts';
+import { expandPath } from '../../utils/paths.ts';
 import { isBrowserToolNameOrAlias } from '../browser-tool-names.ts';
 import { getBrowserToolEnabled } from '../../config/storage.ts';
 

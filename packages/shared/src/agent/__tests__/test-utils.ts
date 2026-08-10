@@ -114,7 +114,7 @@ export class TestAgent extends PiAgentHost {
   private _isProcessing: boolean = false;
 
   constructor(config: BackendConfig) {
-    super(config, 'test-model', 100_000);
+    super(config, 'test-model');
   }
 
   protected async *chatImpl(
@@ -158,7 +158,6 @@ export class TestAgent extends PiAgentHost {
   }
 
   // Expose protected state for testing
-  getConfigWatcherManager() { return this.configWatcherManager; }
   prepareSkill(message: string) { return this.prepareSkillCommand(message); }
 
   // Helper to reset tracking

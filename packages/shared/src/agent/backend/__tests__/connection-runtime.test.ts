@@ -15,7 +15,6 @@ import { describe, it, expect, beforeEach } from 'bun:test';
 import { join } from 'node:path';
 import {
   fetchBackendModels,
-  initializeBackendHostRuntime,
   connectionAuthTypeToBackendAuthType,
   resolveBackendContext,
   resolvePiAgentConfig,
@@ -147,24 +146,6 @@ describe('Pi connection/runtime APIs', () => {
     expect(config.connectionSlug).toBe('openai-direct');
     expect(config.model).toBe('gpt-5.5');
     expect(config.runtime?.piAuthProvider).toBe('openai-codex');
-  });
-
-  it('initializeBackendHostRuntime bootstraps without throwing in dev runtime', () => {
-    expect(() => initializeBackendHostRuntime({
-      hostRuntime: {
-        appRootPath: process.cwd(),
-        isPackaged: false,
-      },
-    })).not.toThrow();
-  });
-
-  it('initializeBackendHostRuntime does not require a second agent runtime', () => {
-    expect(() => initializeBackendHostRuntime({
-      hostRuntime: {
-        appRootPath: join(process.cwd(), 'apps', 'electron', 'dist'),
-        isPackaged: false,
-      },
-    })).not.toThrow();
   });
 
   it('resolveBackendContext remains connection-only without a stored connection', () => {

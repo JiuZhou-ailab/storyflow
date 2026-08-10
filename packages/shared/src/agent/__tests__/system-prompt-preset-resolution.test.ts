@@ -41,7 +41,6 @@ function createBackendConfig(overrides: Partial<BackendConfig> = {}): BackendCon
     },
     model: "claude-test",
     isHeadless: true,
-    skipConfigWatcher: true,
     ...overrides,
   };
 }

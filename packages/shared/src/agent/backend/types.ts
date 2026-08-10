@@ -28,9 +28,18 @@ import type { SourceManager } from '../core/source-manager.ts';
 import type { SystemPromptPreset } from '../../prompts/system.ts';
 import type { LLMQueryRequest, LLMQueryResult } from '../llm-tool.ts';
 
-// Import AbortReason and RecoveryMessage from core module (single source of truth)
-import { AbortReason, type RecoveryMessage } from '../core/index.ts';
-export { AbortReason, type RecoveryMessage };
+import type { RecoveryMessage } from '../core/types.ts';
+export type { RecoveryMessage };
+
+/** Why Product Host control interrupted the active Pi turn. */
+export enum AbortReason {
+  UserStop = 'user_stop',
+  PlanSubmitted = 'plan_submitted',
+  AuthRequest = 'auth_request',
+  Redirect = 'redirect',
+  Timeout = 'timeout',
+  InternalError = 'internal_error',
+}
 
 import type { ModelProvider, ModelThinkingLevelMap } from '../../config/models.ts';
 
@@ -123,12 +132,6 @@ export type PlanCallback = (planPath: string) => void | Promise<void>;
  * Called when a source requires authentication.
  */
 export type AuthCallback = (request: AuthRequest) => void;
-
-/**
- * Source change callback signature.
- * Called when a source is activated, deactivated, or modified.
- */
-export type SourceChangeCallback = (slug: string, source: LoadedSource | null) => void;
 
 /**
  * Source activation request callback.
@@ -226,9 +229,6 @@ export interface CoreBackendConfig {
 
   /** Headless mode flag (disables interactive tools) */
   isHeadless?: boolean;
-
-  /** Skip agent-level config file watching (server already owns a workspace-level watcher) */
-  skipConfigWatcher?: boolean;
 
   /** Debug mode configuration */
   debugMode?: {

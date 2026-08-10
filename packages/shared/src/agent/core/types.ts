@@ -1,3 +1,7 @@
+// input: Workspace, session, source, prompt, and permission domain types
+// output: Provider-agnostic Product Host contracts
+// pos: Shared agent core type boundary
+
 /**
  * Core Agent Types
  *
@@ -116,36 +120,3 @@ export interface ContextBlockOptions {
   /** Whether local MCP is enabled */
   localMcpEnabled?: boolean;
 }
-
-/**
- * Configuration for PathProcessor
- */
-export interface PathProcessorConfig {
-  /** Home directory (defaults to os.homedir()) */
-  homeDir?: string;
-}
-
-/**
- * Configuration for ConfigValidator
- */
-export interface ConfigValidatorConfig {
-  /** Workspace path for config files */
-  workspacePath?: string;
-}
-
-/**
- * Result of config validation
- */
-export interface ConfigValidationResult {
-  /** Whether the config is valid */
-  valid: boolean;
-  /** Validation errors if invalid */
-  errors?: string[];
-  /** Validation warnings (valid but potentially problematic) */
-  warnings?: string[];
-}
-
-/**
- * Detected config file type
- */
-export type ConfigFileType = 'json' | 'toml' | 'yaml' | null;

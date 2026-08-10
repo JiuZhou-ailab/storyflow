@@ -1,3 +1,7 @@
+// input: Pi runtime, Product Host capabilities, and session-scoped state
+// output: Public Storyflow agent API
+// pos: Root agent package barrel
+
 // Pi is Storyflow's only production agent runtime.
 export type { AgentEvent } from '@craft-agent/core/types';
 export * from './conversation-summary.ts';
@@ -135,12 +139,12 @@ export {
   type PermissionCallback,
   type PlanCallback,
   type AuthCallback,
-  type SourceChangeCallback,
   type SourceActivationCallback,
   type ChatOptions,
   type RecoveryMessage,
   type SdkMcpServerConfig as BackendMcpServerConfig,
   // Enums
+  AbortReason,
   AbortReason as BackendAbortReason,
 } from './backend/index.ts';
 

@@ -223,7 +223,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
   constructor(config: BackendConfig) {
     const resolvedModel = config.model || '';
     const modelDef = getModelById(resolvedModel);
-    super(config, resolvedModel, modelDef?.contextWindow);
+    super(config, resolvedModel);
 
     this._supportsBranching = true;
 
@@ -237,9 +237,6 @@ export abstract class PiAgentTransport extends PiAgentHost {
       this.adapter.setMiniModel(config.miniModel);
     }
 
-    if (!config.isHeadless) {
-      this.startConfigWatcher();
-    }
   }
 
   /**

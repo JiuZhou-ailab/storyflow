@@ -3040,7 +3040,6 @@ export class SessionManager implements ISessionManager {
           mcpPool: managed.mcpPool,
           envOverrides,
           isHeadless: !AGENT_FLAGS.defaultModesEnabled,
-          skipConfigWatcher: true, // Server owns workspace-level ConfigWatcher — don't duplicate in agents
           automationSystem: this.automationSystems.get(managed.workspace.rootPath),
           systemPromptPreset: managed.systemPromptPreset,
           debugMode: _platform?.isDebugMode ? { enabled: true, logFilePath: _platform.getLogFilePath?.() } : undefined,

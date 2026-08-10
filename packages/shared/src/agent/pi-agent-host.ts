@@ -20,7 +20,6 @@ import type {
   PermissionCallback,
   PlanCallback,
   AuthCallback,
-  SourceChangeCallback,
   SourceActivationCallback,
   SdkMcpServerConfig,
   BackendConfig,
@@ -34,9 +33,6 @@ import type { Workspace } from '../config/storage.ts';
 import { PermissionManager } from './core/permission-manager.ts';
 import { SourceManager } from './core/source-manager.ts';
 import { PromptBuilder } from './core/prompt-builder.ts';
-import { PathProcessor } from './core/path-processor.ts';
-import { ConfigWatcherManager, type ConfigWatcherManagerCallbacks } from './core/config-watcher-manager.ts';
-import { UsageTracker, type UsageUpdate } from './core/usage-tracker.ts';
 import { PrerequisiteManager } from './core/prerequisite-manager.ts';
 
 // Automation system for agent events
@@ -107,9 +103,6 @@ export abstract class PiAgentHost {
   protected permissionManager: PermissionManager;
   protected sourceManager: SourceManager;
   protected promptBuilder: PromptBuilder;
-  protected pathProcessor: PathProcessor;
-  protected configWatcherManager: ConfigWatcherManager | null = null;
-  protected usageTracker: UsageTracker;
   protected prerequisiteManager: PrerequisiteManager;
   protected automationSystem?: AutomationSystem;
 
@@ -130,13 +123,9 @@ export abstract class PiAgentHost {
   onPermissionRequest: PermissionCallback | null = null;
   onPlanSubmitted: PlanCallback | null = null;
   onAuthRequest: AuthCallback | null = null;
-  onSourceChange: SourceChangeCallback | null = null;
-  onSourcesListChange: ((sources: LoadedSource[]) => void) | null = null;
-  onConfigValidationError: ((file: string, errors: string[]) => void) | null = null;
   onPermissionModeChange: ((mode: PermissionMode) => void) | null = null;
   onDebug: ((message: string) => void) | null = null;
   onSourceActivationRequest: SourceActivationCallback | null = null;
-  onUsageUpdate: ((update: UsageUpdate) => void) | null = null;
   onBackendAuthRequired: ((reason: string) => void) | null = null;
   onSpawnSession: ((request: SpawnSessionRequest) => Promise<SpawnSessionResult>) | null = null;
 
@@ -144,7 +133,7 @@ export abstract class PiAgentHost {
   // Constructor
   // ============================================================
 
-  constructor(config: BackendConfig, defaultModel: string, contextWindow?: number) {
+  constructor(config: BackendConfig, defaultModel: string) {
     this.config = config;
     // Use session's workingDirectory if set (user-changeable), fallback to workspace root
     this.workingDirectory = config.session?.workingDirectory ?? config.workspace.rootPath ?? process.cwd();
@@ -177,16 +166,6 @@ export abstract class PiAgentHost {
       isHeadless: config.isHeadless,
     });
 
-    // PathProcessor: expands ~ and normalizes paths
-    this.pathProcessor = new PathProcessor();
-
-    // UsageTracker: token usage and context window tracking
-    this.usageTracker = new UsageTracker({
-      contextWindow,
-      onUsageUpdate: (update) => this.onUsageUpdate?.(update),
-      onDebug: (msg) => this.debug(msg),
-    });
-
     // PrerequisiteManager: blocks source tool calls until guide.md is read
     this.prerequisiteManager = new PrerequisiteManager({
       workspaceRootPath: config.workspace.rootPath,
@@ -195,61 +174,6 @@ export abstract class PiAgentHost {
 
     // AutomationSystem: workspace-level automations from automations.json
     this.automationSystem = config.automationSystem;
-  }
-
-  // ============================================================
-  // Config Watcher Management
-  // ============================================================
-
-  /**
-   * Start the config file watcher for hot-reloading changes.
-   * Called by subclass constructor in non-headless mode.
-   */
-  protected startConfigWatcher(): void {
-    if (this.configWatcherManager) {
-      return; // Already running
-    }
-    if (this.config.skipConfigWatcher) {
-      this.debug('Config watching skipped (managed by server)');
-      return;
-    }
-
-    const callbacks: ConfigWatcherManagerCallbacks = {
-      onSourceChange: (slug, source) => {
-        this.debug(`Source changed: ${slug} ${source ? 'updated' : 'deleted'}`);
-        this.onSourceChange?.(slug, source);
-      },
-      onSourcesListChange: (sources) => {
-        this.debug(`Sources list changed: ${sources.length} sources`);
-        this.onSourcesListChange?.(sources);
-      },
-      onValidationError: (file, errors) => {
-        this.debug(`Config validation error: ${file}`);
-        this.onConfigValidationError?.(file, errors);
-      },
-    };
-
-    this.configWatcherManager = new ConfigWatcherManager(
-      {
-        workspaceRootPath: this.config.workspace.rootPath,
-        isHeadless: this.config.isHeadless,
-        onDebug: (msg) => this.debug(msg),
-      },
-      callbacks
-    );
-    this.configWatcherManager.start();
-    this.debug('Config watcher started');
-  }
-
-  /**
-   * Stop the config file watcher.
-   */
-  protected stopConfigWatcher(): void {
-    if (this.configWatcherManager) {
-      this.configWatcherManager.stop();
-      this.configWatcherManager = null;
-      this.debug('Config watcher stopped');
-    }
   }
 
   // ============================================================
@@ -349,7 +273,6 @@ export abstract class PiAgentHost {
    * Subclasses should override to clear provider-specific state.
    */
   clearHistory(): void {
-    this.usageTracker.reset();
     this.prerequisiteManager.resetReadState();
     this.debug('History cleared');
   }
@@ -643,10 +566,8 @@ export abstract class PiAgentHost {
    * Subclasses MUST call super.destroy() and add provider-specific cleanup.
    */
   destroy(): void {
-    this.stopConfigWatcher();
     this.permissionManager.clearWhitelists();
     this.sourceManager.resetSeenSources();
-    this.usageTracker.reset();
 
     // Disconnect MCP pool to avoid connection leaks
     if (this.config.mcpPool) {

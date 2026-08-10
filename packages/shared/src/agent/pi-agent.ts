@@ -471,8 +471,6 @@ export class PiAgent extends PiAgentToolHost {
   }
 
   destroy(): void {
-    this.stopConfigWatcher();
-
     // Unregister session-scoped tool callbacks
     if (this.config.session?.id) {
       unregisterSessionScopedToolCallbacks(this.config.session.id);
@@ -485,8 +483,6 @@ export class PiAgent extends PiAgentToolHost {
   }
 
   async disposeForRestart(): Promise<void> {
-    this.stopConfigWatcher();
-
     if (this.config.session?.id) {
       unregisterSessionScopedToolCallbacks(this.config.session.id);
     }
