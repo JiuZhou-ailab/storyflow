@@ -3,8 +3,12 @@
 // pos: Guards removal of Storyflow's former speculative call_llm prefetch workaround.
 
 import { expect, test } from 'bun:test';
-import { Agent } from '@earendil-works/pi-agent-core';
+import { Agent, type StreamFn } from '@earendil-works/pi-agent-core';
+
+const unusedStream: StreamFn = () => {
+  throw new Error('constructor-only test must not stream');
+};
 
 test('Pi defaults tool execution mode to parallel', () => {
-  expect(new Agent().toolExecution).toBe('parallel');
+  expect(new Agent({ streamFn: unusedStream }).toolExecution).toBe('parallel');
 });
