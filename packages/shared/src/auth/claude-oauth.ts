@@ -1,8 +1,9 @@
 // input: Claude OAuth start/cancel/code submission from the product host
 // output: Pi-issued Anthropic OAuth credentials without product-owned PKCE or token exchange
-// pos: Two-step RPC bridge into Pi AuthStorage.login()
+// pos: Two-step RPC bridge into Pi's provider-owned OAuth login
 
-import { AuthStorage } from '@earendil-works/pi-coding-agent'
+import type { Models } from '@earendil-works/pi-ai'
+import { builtinModels } from '@earendil-works/pi-ai/providers/all'
 
 const PROVIDER_ID = 'anthropic'
 const FLOW_TTL_MS = 10 * 60 * 1000
@@ -44,26 +45,26 @@ function deferred<T>(): {
   return { promise, resolve, reject }
 }
 
-function createPendingFlow(): PendingFlow {
-  const authStorage = AuthStorage.inMemory()
+function createPendingFlow(models: Pick<Models, 'login'>): PendingFlow {
   const authUrl = deferred<string>()
   const authorizationCode = deferred<string>()
   const abortController = new AbortController()
 
-  const login = authStorage.login(PROVIDER_ID, {
-    onAuth: info => authUrl.resolve(info.url),
-    onDeviceCode: () => {},
-    onPrompt: () => authorizationCode.promise,
-    onManualCodeInput: () => authorizationCode.promise,
-    onSelect: async () => undefined,
+  const login = models.login(PROVIDER_ID, 'oauth', {
     signal: abortController.signal,
+    notify(event) {
+      if (event.type === 'auth_url') authUrl.resolve(event.url)
+    },
+    prompt(prompt) {
+      if (prompt.type === 'manual_code') return authorizationCode.promise
+      throw new Error(`Unexpected Anthropic OAuth prompt: ${prompt.type}`)
+    },
   })
   void login.catch(error => {
     authUrl.reject(error instanceof Error ? error : new Error(String(error)))
   })
 
-  const completion = login.then(() => {
-    const credential = authStorage.get(PROVIDER_ID)
+  const completion = login.then(credential => {
     if (credential?.type !== 'oauth') {
       throw new Error('Pi completed OAuth without returning Anthropic credentials')
     }
@@ -102,9 +103,11 @@ function createPendingFlow(): PendingFlow {
 let pendingFlow: PendingFlow | null = null
 
 /** Start Pi's Anthropic login and expose its single completion to the RPC bridge. */
-export async function prepareClaudeOAuth(): Promise<PreparedClaudeOAuth> {
+export async function prepareClaudeOAuth(
+  models: Pick<Models, 'login'> = builtinModels(),
+): Promise<PreparedClaudeOAuth> {
   clearOAuthState()
-  const flow = createPendingFlow()
+  const flow = createPendingFlow(models)
   pendingFlow = flow
   try {
     const authUrl = await flow.authUrl

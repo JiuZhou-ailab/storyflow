@@ -7,7 +7,7 @@ import type { PiInitMessage } from '../../shared/src/agent/backend/pi/protocol.t
 import { PiModelRuntime } from './pi-model-runtime.ts';
 
 describe('PiModelRuntime', () => {
-  it('rebuilds auth storage from the current config after reset', () => {
+  it('rebuilds credential storage from the current config after reset', async () => {
     const config: PiInitMessage = {
       type: 'init',
       apiKey: '',
@@ -23,16 +23,12 @@ describe('PiModelRuntime', () => {
     };
     const runtime = new PiModelRuntime(() => config, () => {}, () => {});
 
-    expect(runtime.createAuthenticatedRegistry().authStorage.get('anthropic')).toEqual({
-      type: 'api_key',
-      key: 'first',
-    });
+    const firstModels = await runtime.getModelsRuntime();
+    expect((await firstModels.getAuth('anthropic'))?.auth.apiKey).toBe('first');
 
     config.piAuth = { provider: 'anthropic', credential: { type: 'api_key', key: 'second' } };
     runtime.resetAuth();
-    expect(runtime.createAuthenticatedRegistry().authStorage.get('anthropic')).toEqual({
-      type: 'api_key',
-      key: 'second',
-    });
+    const secondModels = await runtime.getModelsRuntime();
+    expect((await secondModels.getAuth('anthropic'))?.auth.apiKey).toBe('second');
   });
 });

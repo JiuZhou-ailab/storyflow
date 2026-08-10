@@ -3,11 +3,8 @@
 // pos: Focused contract tests for the Pi custom endpoint policy.
 
 import { describe, expect, it } from 'bun:test'
-import {
-  AuthStorage as PiAuthStorage,
-  ModelRegistry as PiModelRegistry,
-} from '@earendil-works/pi-coding-agent'
-import { clampThinkingLevel } from '@earendil-works/pi-ai'
+import { ModelRuntime } from '@earendil-works/pi-coding-agent'
+import { clampThinkingLevel, InMemoryCredentialStore } from '@earendil-works/pi-ai'
 import {
   buildCustomEndpointModelDef,
   normalizeCustomEndpointModelEntry,
@@ -165,22 +162,23 @@ describe('resolveRuntimeCredentialProviderNames', () => {
   })
 
   it('rotates the credential read by an already-registered synthetic provider', async () => {
-    const authStorage = PiAuthStorage.inMemory()
-    const registry = PiModelRegistry.inMemory(authStorage)
-    registry.registerProvider('custom-endpoint', {
+    const credentials = new InMemoryCredentialStore()
+    await credentials.modify('custom-endpoint', async () => ({ type: 'api_key', key: 'old-token' }))
+    const models = await ModelRuntime.create({ credentials, modelsPath: null })
+    models.registerProvider('custom-endpoint', {
       baseUrl: 'https://model.example.com/v1',
       apiKey: 'old-token',
       api: 'openai-completions',
       models: [buildCustomEndpointModelDef('test-model')],
     })
 
-    authStorage.set('openai', { type: 'api_key', key: 'new-token' })
-    expect(await registry.getApiKeyForProvider('custom-endpoint')).toBe('old-token')
+    await credentials.modify('openai', async () => ({ type: 'api_key', key: 'new-token' }))
+    expect((await models.getAuth('custom-endpoint'))?.auth.apiKey).toBe('old-token')
 
     for (const provider of resolveRuntimeCredentialProviderNames('openai', true)) {
-      authStorage.set(provider, { type: 'api_key', key: 'new-token' })
+      await credentials.modify(provider, async () => ({ type: 'api_key', key: 'new-token' }))
     }
-    expect(await registry.getApiKeyForProvider('custom-endpoint')).toBe('new-token')
+    expect((await models.getAuth('custom-endpoint'))?.auth.apiKey).toBe('new-token')
   })
 })
 

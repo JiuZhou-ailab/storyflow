@@ -10,10 +10,9 @@ import {
   SettingsManager,
   type AgentSession,
   type AgentSessionEvent,
-  type AuthStorage,
   type CreateAgentSessionOptions,
   type InlineExtension,
-  type ModelRegistry,
+  type ModelRuntime,
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import {
@@ -55,8 +54,7 @@ export type SubagentDetails = PiSubagentDetails;
 export interface CreateSubagentExtensionOptions {
   cwd: string;
   agentDir: string;
-  authStorage: AuthStorage;
-  modelRegistry: ModelRegistry;
+  modelRuntime: ModelRuntime;
   toolDefinitions: ToolDefinition<any, any>[];
   activeSessions?: Set<AgentSession>;
   thinkingLevel?: Parameters<AgentSession['setThinkingLevel']>[0];
@@ -235,8 +233,7 @@ export function createSubagentExtension(
               session = await createSession({
                 cwd: options.cwd,
                 agentDir: options.agentDir,
-                authStorage: options.authStorage,
-                modelRegistry: options.modelRegistry,
+                modelRuntime: options.modelRuntime,
                 model: ctx.model,
                 thinkingLevel: options.thinkingLevel,
                 customTools: options.toolDefinitions.filter(

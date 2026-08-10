@@ -3,6 +3,8 @@
 // pos: Minimal Storyflow configuration bridge into the sole Pi runtime
 
 import type { LlmConnection } from '../../../../config/storage.ts';
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai';
+import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { getAllPiModels, getPiModelsForAuthProvider } from '../../../../config/models-pi.ts';
 import type { ModelFetchResult } from '../../../../config/model-fetcher.ts';
 import type { ResolvedBackendRuntimePaths } from '../runtime-resolver.ts';
@@ -20,16 +22,27 @@ function resolvePiAuthProvider(connection: { providerType?: string; piAuthProvid
 async function fetchCopilotModels(
   githubToken: string,
 ): Promise<ReturnType<typeof getPiModelsForAuthProvider>> {
-  const { refreshGitHubCopilotToken } = await import('@earendil-works/pi-ai/oauth');
-  const credentials = await refreshGitHubCopilotToken(githubToken);
-  if (!Array.isArray(credentials.availableModelIds)) {
+  const credentials = new InMemoryCredentialStore();
+  await credentials.modify('github-copilot', async () => ({
+    type: 'oauth',
+    access: '',
+    refresh: githubToken,
+    expires: 0,
+  }));
+  const models = builtinModels({ credentials });
+  await models.getAuth('github-copilot');
+  const refreshed = await credentials.read('github-copilot');
+  const availableModelIds = refreshed?.type === 'oauth'
+    ? refreshed.availableModelIds
+    : undefined;
+  if (!Array.isArray(availableModelIds)) {
     throw new Error('Pi did not return the available GitHub Copilot models');
   }
-  const availableModelIds = new Set(
-    credentials.availableModelIds.filter((id): id is string => typeof id === 'string'),
+  const availableIds = new Set(
+    availableModelIds.filter((id): id is string => typeof id === 'string'),
   );
   return getPiModelsForAuthProvider('github-copilot')
-    .filter(model => availableModelIds.has(model.id.replace(/^pi\//, '')));
+    .filter(model => availableIds.has(model.id.replace(/^pi\//, '')));
 }
 
 export function buildPiRuntime(args: {

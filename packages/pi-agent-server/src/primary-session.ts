@@ -10,9 +10,8 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import type {
   AgentSession,
-  AuthStorage,
   CreateAgentSessionOptions,
-  ModelRegistry,
+  ModelRuntime,
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import type { UserQuestionResponse } from '../../session-tools-core/src/types.ts';
@@ -42,8 +41,7 @@ interface PrimaryPiSessionContext {
   config: PiInitMessage;
   cwd: string;
   agentDir: string;
-  authStorage: AuthStorage;
-  modelRegistry: ModelRegistry;
+  modelRuntime: ModelRuntime;
   thinkingLevel?: CreateAgentSessionOptions['thinkingLevel'];
   activeSubagentSessions: Set<AgentSession>;
   buildProxyTools(): ToolDefinition<any, any>[];
@@ -91,8 +89,7 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
     config,
     cwd,
     agentDir,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     thinkingLevel: piThinkingLevel,
     activeSubagentSessions,
     buildProxyTools,
@@ -144,8 +141,7 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
   const subagentExtension = createSubagentExtension({
     cwd,
     agentDir,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     thinkingLevel: piThinkingLevel,
     toolDefinitions: customTools,
     activeSessions: activeSubagentSessions,
@@ -162,8 +158,7 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
   // Build session options
   const sessionOptions: CreateAgentSessionOptions = {
     cwd,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     customTools,
     tools: toolAllowlist,
     agentDir,
@@ -269,7 +264,7 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
   if (config.model) {
     try {
       const piModel = resolvePiModel(
-        modelRegistry,
+        modelRuntime,
         config.model,
         config.piAuth?.provider,
         Boolean(config.customEndpoint && config.baseUrl?.trim()),

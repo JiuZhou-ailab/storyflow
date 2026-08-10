@@ -22,12 +22,12 @@ import { mkdirSync } from 'node:fs';
 
 // Pi SDK
 import {
-  ModelRegistry as PiModelRegistry,
   getAgentDir,
 } from '@earendil-works/pi-coding-agent';
 import type {
   AgentSession,
   AgentSessionEvent,
+  ModelRuntime,
 } from '@earendil-works/pi-coding-agent';
 
 // Pi AI types
@@ -91,7 +91,7 @@ installNetworkProxy();
 // ============================================================
 
 let piSession: AgentSession | null = null;
-let piModelRegistry: PiModelRegistry | null = null;
+let piModelsRuntime: ModelRuntime | null = null;
 let unsubscribeEvents: (() => void) | null = null;
 let systemPromptOverride: ReturnType<typeof createSystemPromptOverride> | null = null;
 
@@ -157,15 +157,14 @@ async function ensureSession(): Promise<AgentSession> {
   const piThinkingLevel = THINKING_TO_PI[
     initConfig.thinkingLevel as keyof typeof THINKING_TO_PI
   ];
-  const { authStorage, modelRegistry } = modelRuntime.createAuthenticatedRegistry();
-  piModelRegistry = modelRegistry;
+  const piModels = await modelRuntime.getModelsRuntime();
+  piModelsRuntime = piModels;
 
   const created = await createPrimaryPiSession({
     config: initConfig,
     cwd,
     agentDir,
-    authStorage,
-    modelRegistry,
+    modelRuntime: piModels,
     thinkingLevel: piThinkingLevel,
     activeSubagentSessions,
     buildProxyTools,
@@ -207,12 +206,11 @@ const {
 
 async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
   if (!initConfig) throw new Error('Cannot run queryLlm: init not received');
-  const { authStorage, modelRegistry } = modelRuntime.createAuthenticatedRegistry();
+  const piModels = await modelRuntime.getModelsRuntime();
   return queryLlmWithEphemeralPiSession(request, {
     config: initConfig,
     cwd: modelRuntime.resolvedCwd(),
-    authStorage,
-    modelRegistry,
+    modelRuntime: piModels,
     preferCustomEndpoint: modelRuntime.prefersCustomEndpoint(),
     debug: debugLog,
   });
@@ -333,6 +331,7 @@ async function handleInit(msg: Extract<PiInboundMessage, { type: 'init' }>): Pro
   }
 
   modelRuntime.resetAuth();
+  piModelsRuntime = null;
   initConfig = msg;
 
   // Azure OpenAI requires a tenant-specific endpoint URL.
@@ -677,12 +676,12 @@ async function handleUpdateRuntimeConfig(
       customModels: msg.customModels,
     };
 
-    if (piModelRegistry && initConfig.baseUrl?.trim() && initConfig.customEndpoint) {
-      modelRuntime.refreshCustomEndpointModels(piModelRegistry);
+    if (piModelsRuntime && initConfig.baseUrl?.trim() && initConfig.customEndpoint) {
+      modelRuntime.refreshCustomEndpointModels(piModelsRuntime);
     }
 
-    if (piSession && piModelRegistry) {
-      const piModel = modelRuntime.resolveModel(piModelRegistry, msg.model, 'runtime_config');
+    if (piSession && piModelsRuntime) {
+      const piModel = modelRuntime.resolveModel(piModelsRuntime, msg.model, 'runtime_config');
 
       if (!piModel) {
         throw new Error(`Could not resolve model after runtime update: ${msg.model}`);
@@ -704,11 +703,11 @@ async function handleUpdateRuntimeConfig(
 
 async function handleSetModel(msg: Extract<PiInboundMessage, { type: 'set_model' }>): Promise<void> {
   debugLog(`[set_model] Received: ${msg.model}`);
-  if (!piSession || !piModelRegistry) {
+  if (!piSession || !piModelsRuntime) {
     debugLog(`[set_model] No active session or model registry, ignoring`);
     return;
   }
-  const piModel = modelRuntime.resolveModel(piModelRegistry, msg.model, 'set_model');
+  const piModel = modelRuntime.resolveModel(piModelsRuntime, msg.model, 'set_model');
 
   if (!piModel) {
     debugLog(`[set_model] Could not resolve model: ${msg.model}`);
@@ -867,7 +866,7 @@ async function processMessage(msg: PiInboundMessage): Promise<void> {
 
     case 'token_update': {
       try {
-        modelRuntime.updateCredential(msg.piAuth);
+        await modelRuntime.updateCredential(msg.piAuth);
         send({ type: 'token_update_result', id: msg.id, success: true });
       } catch (error) {
         send({

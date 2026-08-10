@@ -1,4 +1,4 @@
-// input: Mock Pi model registries and provider preferred-model ordering
+// input: Mock Pi ModelRuntime catalogs and provider preferred-model ordering
 // output: Regression coverage for provider-appropriate summarization model selection
 // pos: Unit test for the Pi subprocess mini-model fallback
 
@@ -6,7 +6,7 @@ import { describe, expect, it } from 'bun:test';
 import { pickProviderAppropriateMiniModel } from './pick-mini-model.ts';
 
 /**
- * Minimal mock of PiModelRegistry — mirrors the pattern from model-resolution.test.ts.
+ * Minimal mock of Pi ModelRuntime — mirrors the pattern from model-resolution.test.ts.
  */
 function createMockRegistry(
   providers: Record<string, Array<{ id: string; name: string; provider?: string }>>,
@@ -16,12 +16,12 @@ function createMockRegistry(
   );
 
   return {
-    find(provider: string, modelId: string) {
+    getModel(provider: string, modelId: string) {
       const models = providers[provider];
       if (!models) return undefined;
       return models.find(m => m.id === modelId || m.name === modelId) ?? undefined;
     },
-    getAll() {
+    getModels() {
       return allModels;
     },
   } as any;

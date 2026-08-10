@@ -12,10 +12,9 @@ import type {
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import {
-  AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent';
@@ -41,13 +40,11 @@ function registerSubagent(
 
 describe('createSubagentExtension', () => {
   test('registers as a real Pi Extension tool without a persistent session', async () => {
-    const authStorage = AuthStorage.inMemory();
-    const modelRegistry = ModelRegistry.inMemory(authStorage);
+    const modelRuntime = await ModelRuntime.create({ modelsPath: null });
     const extension = createSubagentExtension({
       cwd: process.cwd(),
       agentDir: process.cwd(),
-      authStorage,
-      modelRegistry,
+      modelRuntime,
       toolDefinitions: [],
       createSessionHooks: () => ({
         name: 'test-hooks',
@@ -70,8 +67,7 @@ describe('createSubagentExtension', () => {
 
     const { session } = await createAgentSession({
       cwd: process.cwd(),
-      authStorage,
-      modelRegistry,
+      modelRuntime,
       resourceLoader,
       settingsManager,
       sessionManager: SessionManager.inMemory(process.cwd()),
@@ -119,8 +115,7 @@ describe('createSubagentExtension', () => {
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
-      authStorage: {} as never,
-      modelRegistry: {} as never,
+      modelRuntime: {} as never,
       thinkingLevel: 'high',
       toolDefinitions: ['read', 'grep', 'find', 'ls', 'web_search', 'web_fetch', 'edit', 'write', 'bash'].map(
         name => ({
@@ -194,8 +189,7 @@ describe('createSubagentExtension', () => {
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
-      authStorage: {} as never,
-      modelRegistry: {} as never,
+      modelRuntime: {} as never,
       toolDefinitions: ['read', 'grep', 'find', 'ls'].map(name => ({
         name,
         label: name,
@@ -265,8 +259,7 @@ describe('createSubagentExtension', () => {
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
-      authStorage: {} as never,
-      modelRegistry: {} as never,
+      modelRuntime: {} as never,
       toolDefinitions: ['read', 'grep', 'find', 'ls'].map(name => ({
         name,
         label: name,
@@ -330,8 +323,7 @@ describe('createSubagentExtension', () => {
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
-      authStorage: {} as never,
-      modelRegistry: {} as never,
+      modelRuntime: {} as never,
       toolDefinitions: [],
       createSessionHooks: () => ({ name: 'test-hooks', factory() {} }),
       async createSession() {
@@ -383,8 +375,7 @@ describe('createSubagentExtension', () => {
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
-      authStorage: {} as never,
-      modelRegistry: {} as never,
+      modelRuntime: {} as never,
       toolDefinitions: ['read', 'grep', 'find', 'ls', 'edit', 'write', 'bash'].map(
         name => ({
           name,
@@ -466,8 +457,7 @@ describe('createSubagentExtension', () => {
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
-      authStorage: {} as never,
-      modelRegistry: {} as never,
+      modelRuntime: {} as never,
       toolDefinitions: [],
       createSessionHooks: () => ({
         name: 'test-hooks',
@@ -522,8 +512,7 @@ describe('createSubagentExtension', () => {
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
-      authStorage: {} as never,
-      modelRegistry: {} as never,
+      modelRuntime: {} as never,
       toolDefinitions: [],
       activeSessions,
       createSessionHooks: () => ({
@@ -591,8 +580,7 @@ describe('createSubagentExtension', () => {
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
-      authStorage: {} as never,
-      modelRegistry: {} as never,
+      modelRuntime: {} as never,
       toolDefinitions: [],
       createSessionHooks: () => ({
         name: 'test-hooks',
@@ -667,8 +655,7 @@ describe('createSubagentExtension', () => {
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
-      authStorage: {} as never,
-      modelRegistry: {} as never,
+      modelRuntime: {} as never,
       toolDefinitions: [],
       createSessionHooks: () => ({
         name: 'test-hooks',
@@ -742,8 +729,7 @@ describe('createSubagentExtension', () => {
     const extension = createSubagentExtension({
       cwd: '/workspace',
       agentDir: '/agent',
-      authStorage: {} as never,
-      modelRegistry: {} as never,
+      modelRuntime: {} as never,
       toolDefinitions: [],
       createSessionHooks: () => ({ name: 'test-hooks', factory() {} }),
       async createSession() {

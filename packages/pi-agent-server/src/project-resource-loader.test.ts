@@ -16,9 +16,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  AuthStorage,
   createAgentSession,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
 } from '@earendil-works/pi-coding-agent';
 
@@ -143,13 +142,11 @@ describe('createProjectResourceLoader', () => {
       systemPromptOverride: promptController.overrideResourcePrompt,
       extensionFactories: [promptController.extension],
     });
-    const authStorage = AuthStorage.inMemory();
-    const modelRegistry = ModelRegistry.inMemory(authStorage);
+    const modelRuntime = await ModelRuntime.create({ modelsPath: null });
     const { session } = await createAgentSession({
       cwd,
       agentDir,
-      authStorage,
-      modelRegistry,
+      modelRuntime,
       resourceLoader,
       settingsManager,
       sessionManager: SessionManager.inMemory(cwd),

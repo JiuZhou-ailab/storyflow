@@ -11,9 +11,8 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import type {
   AgentSessionEvent,
-  AuthStorage,
   CreateAgentSessionOptions,
-  ModelRegistry,
+  ModelRuntime,
 } from '@earendil-works/pi-coding-agent';
 import { getDefaultSummarizationModel } from '../../shared/src/config/models.ts';
 import { THINKING_TO_PI } from '../../shared/src/agent/backend/pi/constants.ts';
@@ -32,8 +31,7 @@ import { pickProviderAppropriateMiniModel } from './pick-mini-model.ts';
 interface EphemeralLlmQueryContext {
   config: PiInitMessage;
   cwd: string;
-  authStorage: AuthStorage;
-  modelRegistry: ModelRegistry;
+  modelRuntime: ModelRuntime;
   preferCustomEndpoint: boolean;
   debug: (message: string) => void;
 }
@@ -42,7 +40,7 @@ export async function queryLlmWithEphemeralPiSession(
   request: LLMQueryRequest,
   context: EphemeralLlmQueryContext,
 ): Promise<LLMQueryResult> {
-  const { config, authStorage, modelRegistry, preferCustomEndpoint, debug } = context;
+  const { config, modelRuntime, preferCustomEndpoint, debug } = context;
   debug('[queryLlm] Starting');
 
   const piThinkingLevel = THINKING_TO_PI[
@@ -54,13 +52,13 @@ export async function queryLlmWithEphemeralPiSession(
   if (config.piAuth) {
     const authProvider = config.piAuth.provider;
     const bareModel = model.startsWith('pi/') ? model.slice(3) : model;
-    const resolved = resolvePiModel(modelRegistry, bareModel, authProvider, preferCustomEndpoint);
+    const resolved = resolvePiModel(modelRuntime, bareModel, authProvider, preferCustomEndpoint);
     const resolvedProvider = (resolved as { provider?: string } | undefined)?.provider;
     const isCompatible = resolvedProvider === authProvider || resolvedProvider === 'custom-endpoint';
     if (!resolved || !isCompatible || isDeniedMiniModelId(model, piAuthProvider)) {
       const providerDefault = authProvider === 'anthropic'
         ? undefined
-        : pickProviderAppropriateMiniModel(authProvider, modelRegistry, preferCustomEndpoint);
+        : pickProviderAppropriateMiniModel(authProvider, modelRuntime, preferCustomEndpoint);
       const fallback = providerDefault ?? getDefaultSummarizationModel();
       debug(`[queryLlm] Model ${bareModel} incompatible with ${authProvider} (resolved: ${resolvedProvider}), falling back to ${fallback}`);
       model = fallback;
@@ -70,7 +68,7 @@ export async function queryLlmWithEphemeralPiSession(
   const runQueryWithModel = async (modelId: string): Promise<string> => {
     debug(`[queryLlm] Using model: ${modelId}`);
     const piModel = resolvePiModel(
-      modelRegistry,
+      modelRuntime,
       modelId,
       config.piAuth?.provider,
       preferCustomEndpoint,
@@ -84,8 +82,7 @@ export async function queryLlmWithEphemeralPiSession(
     const settingsManager = SettingsManager.inMemory();
     const ephemeralOptions: CreateAgentSessionOptions = {
       cwd: context.cwd,
-      authStorage,
-      modelRegistry,
+      modelRuntime,
       tools: [],
       sessionManager: PiSessionManager.inMemory(),
       settingsManager,
@@ -185,7 +182,7 @@ export async function queryLlmWithEphemeralPiSession(
       const retryModel = fallbackCandidates.find(candidate => {
         if (triedModels.has(candidate)) return false;
         const resolved = resolvePiModel(
-          modelRegistry,
+          modelRuntime,
           candidate,
           config.piAuth?.provider,
           preferCustomEndpoint,

@@ -1083,7 +1083,7 @@ export interface ResolvedAuthEnvVars {
 /**
  * Resolve authentication environment variables for an LLM connection.
  *
- * This only supplies process-level compatibility variables. Pi AuthStorage
+ * This only supplies process-level compatibility variables. Pi ModelRuntime
  * owns every credential consumed by the agent runtime.
  *
  * @param connection - The LLM connection config
@@ -1121,7 +1121,7 @@ export async function resolveAuthEnvVars(
       return { envVars, success: false, warning: `No API key found for: ${connectionSlug}` };
     }
   } else if (authType === 'oauth') {
-    // ADR 0018: Pi AuthStorage owns OAuth token resolution, refresh, and locking.
+    // ADR 0018: Pi ModelRuntime owns OAuth token resolution and refresh; CredentialStore owns locking.
     // Projecting OAuth into process.env would create a second stale credential source.
     return { envVars, success: true };
   } else if (authType === 'environment') {

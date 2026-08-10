@@ -1,18 +1,14 @@
 /**
  * input: Current Pi init config, credential updates, and custom endpoint model definitions.
- * output: Authenticated Pi model registries, resolved models, and credential update propagation.
+ * output: One authenticated Pi ModelRuntime, resolved models, and credential update propagation.
  * pos: Owns provider authentication and model registration for the Pi child process.
  */
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import {
-  AuthStorage as PiAuthStorage,
-  ModelRegistry as PiModelRegistry,
-} from '@earendil-works/pi-coding-agent';
-import type { AuthCredential } from '@earendil-works/pi-coding-agent';
+import { ModelRuntime } from '@earendil-works/pi-coding-agent';
+import type { Credential } from '@earendil-works/pi-ai';
 import type {
-  PiCredential,
   PiCustomEndpointApi,
   PiInboundMessage,
   PiOutboundMessage,
@@ -29,12 +25,13 @@ import {
   type CustomEndpointModelOverrides,
 } from './custom-endpoint-models.ts';
 import { resolvePiModel } from './model-resolution.ts';
-import { ProductAuthStorageBackend } from './product-auth-storage.ts';
+import { ProductCredentialStore } from './product-auth-storage.ts';
 
 type InitConfig = Extract<PiInboundMessage, { type: 'init' }>;
 
 export class PiModelRuntime {
-  private authStorage: PiAuthStorage | null = null;
+  private credentialStore: ProductCredentialStore | null = null;
+  private runtimePromise: Promise<ModelRuntime> | null = null;
   private lastReportedOAuthCredential = '';
   private customEndpointModelIds = new Set<string>();
   private readonly customModelOverrides = new Map<string, CustomEndpointModelOverrides>();
@@ -59,20 +56,32 @@ export class PiModelRuntime {
   }
 
   resetAuth(): void {
-    this.authStorage = null;
+    this.credentialStore = null;
+    this.runtimePromise = null;
     this.lastReportedOAuthCredential = '';
   }
 
-  createAuthenticatedRegistry(): {
-    authStorage: PiAuthStorage;
-    modelRegistry: PiModelRegistry;
-  } {
+  getModelsRuntime(): Promise<ModelRuntime> {
+    if (!this.runtimePromise) {
+      const pending = this.createModelsRuntime();
+      this.runtimePromise = pending;
+      void pending.catch(() => {
+        if (this.runtimePromise === pending) {
+          this.runtimePromise = null;
+          this.credentialStore = null;
+        }
+      });
+    }
+    return this.runtimePromise;
+  }
+
+  private async createModelsRuntime(): Promise<ModelRuntime> {
     const config = this.getConfig();
-    if (!this.authStorage) {
-      const initialCredentials: Record<string, PiCredential> = {};
-      const hasCustomEndpoint = !!config?.baseUrl?.trim();
-      if (config?.piAuth) {
-        const { provider, credential } = config.piAuth;
+    const initialCredentials: Record<string, Credential> = {};
+    const hasCustomEndpoint = !!config?.baseUrl?.trim();
+    if (config?.piAuth) {
+      const { provider, credential } = config.piAuth;
+      if (credential.type !== 'iam') {
         for (const credentialProvider of resolveRuntimeCredentialProviderNames(
           provider,
           hasCustomEndpoint && !!config.customEndpoint,
@@ -83,22 +92,25 @@ export class PiModelRuntime {
           ? JSON.stringify(credential)
           : '';
         this.debug(`Injected ${credential.type} credential for provider(s): ${Object.keys(initialCredentials).join(', ')}`);
-      } else if (config?.apiKey) {
-        initialCredentials.anthropic = { type: 'api_key', key: config.apiKey };
-        this.debug('Injected API key into auth storage (legacy fallback)');
       }
-      this.authStorage = PiAuthStorage.fromStorage(new ProductAuthStorageBackend(
-        JSON.stringify(initialCredentials),
-        serialized => this.reportAuthStorageChange(serialized),
-      ));
+    } else if (config?.apiKey) {
+      initialCredentials.anthropic = { type: 'api_key', key: config.apiKey };
+      this.debug('Injected API key into credential storage (legacy fallback)');
     }
 
-    const modelRegistry = PiModelRegistry.inMemory(this.authStorage);
-    this.refreshCustomEndpointModels(modelRegistry);
-    return { authStorage: this.authStorage, modelRegistry };
+    this.credentialStore = await ProductCredentialStore.create(
+      initialCredentials,
+      (providerId, credential) => this.reportCredentialChange(providerId, credential),
+    );
+    const models = await ModelRuntime.create({
+      credentials: this.credentialStore,
+      modelsPath: null,
+    });
+    this.refreshCustomEndpointModels(models);
+    return models;
   }
 
-  refreshCustomEndpointModels(registry: PiModelRegistry): void {
+  refreshCustomEndpointModels(models: ModelRuntime): void {
     const config = this.getConfig();
     const hasCustomEndpoint = !!config?.baseUrl?.trim();
     this.customEndpointModelIds.clear();
@@ -109,7 +121,7 @@ export class PiModelRuntime {
         : [config.model || 'default']
       ).map(normalizeCustomEndpointModelEntry);
       this.registerCustomEndpointModels(
-        registry,
+        models,
         config.customEndpoint.api,
         config.baseUrl!.trim(),
         modelEntries,
@@ -119,10 +131,10 @@ export class PiModelRuntime {
     }
   }
 
-  resolveModel(registry: PiModelRegistry, modelId: string, scope: string) {
+  resolveModel(models: ModelRuntime, modelId: string, scope: string) {
     const config = this.getConfig();
     let model = resolvePiModel(
-      registry,
+      models,
       modelId,
       config?.piAuth?.provider,
       this.prefersCustomEndpoint(),
@@ -130,22 +142,27 @@ export class PiModelRuntime {
     if (!model && config?.baseUrl?.trim() && config.customEndpoint) {
       const bareId = stripPiPrefix(modelId);
       this.registerCustomEndpointModels(
-        registry,
+        models,
         config.customEndpoint.api,
         config.baseUrl.trim(),
         [{ id: bareId }],
       );
-      model = registry.find(this.getCustomEndpointProviderName(), bareId) ?? undefined;
+      model = models.getModel(this.getCustomEndpointProviderName(), bareId) ?? undefined;
       this.debug(`[${scope}] Dynamically registered custom endpoint model: ${bareId}`);
     }
     return model;
   }
 
-  updateCredential(piAuth: InitConfig['piAuth']): void {
-    if (!this.authStorage) throw new Error('AuthStorage is not initialized');
+  async updateCredential(piAuth: InitConfig['piAuth']): Promise<void> {
+    if (!this.credentialStore || !this.runtimePromise) {
+      throw new Error('ModelRuntime is not initialized');
+    }
     if (!piAuth) throw new Error('Credential update is missing provider auth');
     const config = this.getConfig();
     const { provider, credential } = piAuth;
+    if (credential.type === 'iam') {
+      throw new Error('IAM credentials require a subprocess restart');
+    }
     const credentialProviders = resolveRuntimeCredentialProviderNames(
       provider,
       !!config?.baseUrl?.trim() && !!config.customEndpoint,
@@ -156,8 +173,17 @@ export class PiModelRuntime {
     }
     try {
       for (const credentialProvider of credentialProviders) {
-        this.authStorage.set(credentialProvider, credential as unknown as AuthCredential);
+        await this.credentialStore.modify(credentialProvider, async () => credential);
       }
+      const models = await this.runtimePromise;
+      const refreshed = await models.refresh({
+        allowNetwork: false,
+        providers: credentialProviders,
+      });
+      const refreshError = credentialProviders
+        .map(providerId => refreshed.errors.get(providerId))
+        .find((error): error is Error => error !== undefined);
+      if (refreshError) throw refreshError;
     } catch (error) {
       this.lastReportedOAuthCredential = previousFingerprint;
       throw error;
@@ -168,7 +194,7 @@ export class PiModelRuntime {
   }
 
   private registerCustomEndpointModels(
-    registry: PiModelRegistry,
+    modelsRuntime: ModelRuntime,
     api: PiCustomEndpointApi,
     baseUrl: string,
     models: CustomEndpointModelEntry[],
@@ -192,7 +218,7 @@ export class PiModelRuntime {
     }
     const modelIds = [...this.customEndpointModelIds];
     const providerName = this.getCustomEndpointProviderName();
-    registry.registerProvider(providerName, {
+    modelsRuntime.registerProvider(providerName, {
       baseUrl,
       apiKey: this.resolveCustomEndpointApiKey(),
       api,
@@ -226,11 +252,10 @@ export class PiModelRuntime {
     });
   }
 
-  private reportAuthStorageChange(serialized: string): void {
+  private reportCredentialChange(providerId: string, credential: Credential | undefined): void {
     const config = this.getConfig();
     const provider = config?.piAuth?.provider;
-    if (!provider) return;
-    const credential = (JSON.parse(serialized) as Record<string, PiCredential | undefined>)[provider];
+    if (!provider || providerId !== provider) return;
     if (credential?.type !== 'oauth') return;
     const fingerprint = JSON.stringify(credential);
     if (fingerprint === this.lastReportedOAuthCredential) return;

@@ -1,9 +1,9 @@
+// input: Fake Pi provider-owned OAuth login interactions and product RPC calls
+// output: Regression coverage for manual, callback, cancellation, and validation flows
+// pos: Contract test for the Claude OAuth bridge
+
 import { afterEach, describe, expect, it } from 'bun:test'
-import {
-  registerOAuthProvider,
-  unregisterOAuthProvider,
-  type OAuthLoginCallbacks,
-} from '@earendil-works/pi-ai/oauth'
+import type { AuthInteraction, Credential, Models } from '@earendil-works/pi-ai'
 import {
   clearOAuthState,
   exchangeClaudeCode,
@@ -13,33 +13,35 @@ import {
 
 afterEach(() => {
   clearOAuthState()
-  unregisterOAuthProvider('anthropic')
 })
+
+function fakeModels(
+  login: (interaction: AuthInteraction) => Promise<Credential>,
+): Pick<Models, 'login'> {
+  return {
+    async login(providerId, type, interaction) {
+      expect(providerId).toBe('anthropic')
+      expect(type).toBe('oauth')
+      return login(interaction)
+    },
+  }
+}
 
 describe('Claude OAuth Pi bridge', () => {
   it('keeps the two-step product flow while Pi owns login and credentials', async () => {
     let submittedCode = ''
-    registerOAuthProvider({
-      id: 'anthropic',
-      name: 'Fake Anthropic',
-      async login(callbacks: OAuthLoginCallbacks) {
-        callbacks.onAuth({ url: 'https://example.test/authorize' })
-        submittedCode = await callbacks.onManualCodeInput!()
-        return {
-          access: 'pi-access',
-          refresh: 'pi-refresh',
-          expires: 123456,
-        }
-      },
-      async refreshToken(credentials) {
-        return credentials
-      },
-      getApiKey(credentials) {
-        return credentials.access
-      },
+    const models = fakeModels(async interaction => {
+      interaction.notify({ type: 'auth_url', url: 'https://example.test/authorize' })
+      submittedCode = await interaction.prompt({ type: 'manual_code', message: 'Code' })
+      return {
+        type: 'oauth',
+        access: 'pi-access',
+        refresh: 'pi-refresh',
+        expires: 123456,
+      }
     })
 
-    const prepared = await prepareClaudeOAuth()
+    const prepared = await prepareClaudeOAuth(models)
     expect(prepared.authUrl).toBe('https://example.test/authorize')
     expect(prepared.wasCodeSubmitted()).toBe(false)
     expect(hasValidOAuthState()).toBe(true)
@@ -55,26 +57,17 @@ describe('Claude OAuth Pi bridge', () => {
   })
 
   it('exposes automatic Pi callback completion without manual code submission', async () => {
-    registerOAuthProvider({
-      id: 'anthropic',
-      name: 'Fake Anthropic',
-      async login(callbacks: OAuthLoginCallbacks) {
-        callbacks.onAuth({ url: 'https://example.test/authorize' })
-        return {
-          access: 'callback-access',
-          refresh: 'callback-refresh',
-          expires: 654321,
-        }
-      },
-      async refreshToken(credentials) {
-        return credentials
-      },
-      getApiKey(credentials) {
-        return credentials.access
-      },
+    const models = fakeModels(async interaction => {
+      interaction.notify({ type: 'auth_url', url: 'https://example.test/authorize' })
+      return {
+        type: 'oauth',
+        access: 'callback-access',
+        refresh: 'callback-refresh',
+        expires: 654321,
+      }
     })
 
-    const prepared = await prepareClaudeOAuth()
+    const prepared = await prepareClaudeOAuth(models)
 
     expect(await prepared.completion).toEqual({
       accessToken: 'callback-access',
@@ -86,23 +79,13 @@ describe('Claude OAuth Pi bridge', () => {
   })
 
   it('cancels the pending Pi login', async () => {
-    registerOAuthProvider({
-      id: 'anthropic',
-      name: 'Fake Anthropic',
-      async login(callbacks: OAuthLoginCallbacks) {
-        callbacks.onAuth({ url: 'https://example.test/authorize' })
-        await callbacks.onManualCodeInput!()
-        throw new Error('unreachable')
-      },
-      async refreshToken(credentials) {
-        return credentials
-      },
-      getApiKey(credentials) {
-        return credentials.access
-      },
+    const models = fakeModels(async interaction => {
+      interaction.notify({ type: 'auth_url', url: 'https://example.test/authorize' })
+      await interaction.prompt({ type: 'manual_code', message: 'Code' })
+      throw new Error('unreachable')
     })
 
-    const prepared = await prepareClaudeOAuth()
+    const prepared = await prepareClaudeOAuth(models)
     clearOAuthState()
 
     expect(prepared.wasCancelled()).toBe(true)
@@ -111,19 +94,13 @@ describe('Claude OAuth Pi bridge', () => {
   })
 
   it('rejects an empty manual code without consuming the pending flow', async () => {
-    registerOAuthProvider({
-      id: 'anthropic',
-      name: 'Fake Anthropic',
-      async login(callbacks: OAuthLoginCallbacks) {
-        callbacks.onAuth({ url: 'https://example.test/authorize' })
-        await callbacks.onManualCodeInput!()
-        return { access: 'unused', refresh: 'unused', expires: 1 }
-      },
-      async refreshToken(credentials) { return credentials },
-      getApiKey(credentials) { return credentials.access },
+    const models = fakeModels(async interaction => {
+      interaction.notify({ type: 'auth_url', url: 'https://example.test/authorize' })
+      await interaction.prompt({ type: 'manual_code', message: 'Code' })
+      return { type: 'oauth', access: 'unused', refresh: 'unused', expires: 1 }
     })
 
-    await prepareClaudeOAuth()
+    await prepareClaudeOAuth(models)
     expect(exchangeClaudeCode('   ')).rejects.toThrow('Authorization code is required')
     expect(hasValidOAuthState()).toBe(true)
   })

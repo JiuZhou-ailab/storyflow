@@ -789,7 +789,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
     error?: string
   }> => {
     try {
-      const { loginGitHubCopilot } = await import('@earendil-works/pi-ai/oauth')
+      const { builtinModels } = await import('@earendil-works/pi-ai/providers/all')
       const credentialManager = getCredentialManager()
 
       // Cancel any previous in-flight flow
@@ -801,29 +801,33 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       // Use Pi SDK's login flow — this handles the device code flow AND
       // the critical Copilot token exchange that determines the correct
       // API endpoint for the user's subscription tier (individual/business/enterprise).
-      const credentials = await loginGitHubCopilot({
-        onDeviceCode: ({ userCode, verificationUri }) => {
-          deps.platform.logger?.info(`[GitHub OAuth] Device code: ${userCode}`)
-          pushTyped(server, RPC_CHANNELS.copilot.DEVICE_CODE, { to: 'client', clientId: ctx.clientId }, {
-            userCode,
-            verificationUri,
-          })
-          // Open GitHub device code page on the client's machine
-          server.invokeClient(ctx.clientId, CLIENT_OPEN_EXTERNAL, verificationUri).catch(err => {
-            deps.platform.logger?.warn(`Failed to open browser for GitHub OAuth: ${err}`)
-          })
-        },
-        onPrompt: async () => {
-          // Pi SDK asks for GitHub Enterprise domain — return empty for github.com
-          return ''
-        },
-        onProgress: (message) => {
-          deps.platform.logger?.info(`[GitHub OAuth] ${message}`)
-        },
+      const credentials = await builtinModels().login('github-copilot', 'oauth', {
         signal: copilotOAuthAbort.signal,
+        async prompt(prompt) {
+          // Pi asks for the GitHub Enterprise domain; this product flow targets github.com.
+          if (prompt.type === 'text') return ''
+          throw new Error(`Unexpected GitHub Copilot OAuth prompt: ${prompt.type}`)
+        },
+        notify(event) {
+          if (event.type === 'device_code') {
+            deps.platform.logger?.info(`[GitHub OAuth] Device code: ${event.userCode}`)
+            pushTyped(server, RPC_CHANNELS.copilot.DEVICE_CODE, { to: 'client', clientId: ctx.clientId }, {
+              userCode: event.userCode,
+              verificationUri: event.verificationUri,
+            })
+            server.invokeClient(ctx.clientId, CLIENT_OPEN_EXTERNAL, event.verificationUri).catch(err => {
+              deps.platform.logger?.warn(`Failed to open browser for GitHub OAuth: ${err}`)
+            })
+          } else if (event.type === 'progress') {
+            deps.platform.logger?.info(`[GitHub OAuth] ${event.message}`)
+          }
+        },
       })
 
       copilotOAuthAbort = null
+      if (credentials.type !== 'oauth') {
+        throw new Error('Pi completed GitHub Copilot login without OAuth credentials')
+      }
 
       // Store the full OAuth credential:
       // - accessToken = Copilot API token (contains proxy-ep for correct endpoint)

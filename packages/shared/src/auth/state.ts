@@ -6,7 +6,7 @@
  * - Workspace/MCP configuration
  *
  * Legacy credentials are migrated one-way during config startup. Token
- * refresh belongs to Pi AuthStorage and is intentionally absent here.
+ * refresh belongs to Pi ModelRuntime and is intentionally absent here.
  */
 
 import { getCredentialManager } from '../credentials/index.ts';

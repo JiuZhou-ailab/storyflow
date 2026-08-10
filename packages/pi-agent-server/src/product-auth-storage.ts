@@ -1,52 +1,52 @@
-// input: Initial product credentials and Pi AuthStorage lock callbacks
-// output: Process-local serialized storage that reports every credential rotation
-// pos: Product persistence adapter for Pi-owned OAuth refresh
+// input: Initial product credentials and Pi CredentialStore mutations
+// output: Pi-native in-memory storage that reports every committed credential change
+// pos: Product persistence listener for Pi-owned OAuth refresh
 
-import type { AuthStorageBackend } from '@earendil-works/pi-coding-agent';
+import {
+  InMemoryCredentialStore,
+  type AuthOperationOptions,
+  type Credential,
+} from '@earendil-works/pi-ai';
 
-type LockResult<T> = { result: T; next?: string };
-
-export class ProductAuthStorageBackend implements AuthStorageBackend {
-  private value: string;
-  private asyncTail: Promise<void> = Promise.resolve();
-  private pendingAsync = 0;
-
-  constructor(
-    initialValue: string,
-    private readonly onChange: (next: string) => void,
+export class ProductCredentialStore extends InMemoryCredentialStore {
+  private constructor(
+    private readonly onChange: (providerId: string, credential: Credential | undefined) => void,
   ) {
-    this.value = initialValue;
+    super();
   }
 
-  withLock<T>(fn: (current: string | undefined) => LockResult<T>): T {
-    if (this.pendingAsync > 0) {
-      throw new Error('Cannot synchronously update auth storage while OAuth refresh is active');
+  static async create(
+    initialCredentials: Readonly<Record<string, Credential>>,
+    onChange: (providerId: string, credential: Credential | undefined) => void,
+  ): Promise<ProductCredentialStore> {
+    const store = new ProductCredentialStore(onChange);
+    for (const [providerId, credential] of Object.entries(initialCredentials)) {
+      await store.seed(providerId, credential);
     }
-    const { result, next } = fn(this.value);
-    if (next !== undefined) this.commit(next);
-    return result;
+    return store;
   }
 
-  async withLockAsync<T>(
-    fn: (current: string | undefined) => Promise<LockResult<T>>,
-  ): Promise<T> {
-    this.pendingAsync += 1;
-    const previous = this.asyncTail;
-    let release!: () => void;
-    this.asyncTail = new Promise<void>(resolve => { release = resolve; });
-    await previous;
-    try {
-      const { result, next } = await fn(this.value);
-      if (next !== undefined) this.commit(next);
-      return result;
-    } finally {
-      this.pendingAsync -= 1;
-      release();
-    }
+  override async modify(
+    providerId: string,
+    fn: (current: Credential | undefined) => Promise<Credential | undefined>,
+    options?: AuthOperationOptions,
+  ): Promise<Credential | undefined> {
+    let changed = false;
+    const credential = await super.modify(providerId, async current => {
+      const next = await fn(current);
+      changed = next !== undefined;
+      return next;
+    }, options);
+    if (changed) this.onChange(providerId, credential);
+    return credential;
   }
 
-  private commit(next: string): void {
-    this.value = next;
-    this.onChange(next);
+  override async delete(providerId: string, options?: AuthOperationOptions): Promise<void> {
+    await super.delete(providerId, options);
+    this.onChange(providerId, undefined);
+  }
+
+  private seed(providerId: string, credential: Credential): Promise<Credential | undefined> {
+    return super.modify(providerId, async () => credential);
   }
 }

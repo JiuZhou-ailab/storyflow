@@ -5,10 +5,9 @@
 import { resolve } from 'node:path';
 
 import {
-  AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent';
@@ -54,13 +53,11 @@ const resourceLoader = new DefaultResourceLoader({
 });
 await resourceLoader.reload();
 
-const authStorage = AuthStorage.inMemory();
-const modelRegistry = ModelRegistry.inMemory(authStorage);
+const modelRuntime = await ModelRuntime.create({ modelsPath: null });
 const { session } = await createAgentSession({
   cwd,
   agentDir,
-  authStorage,
-  modelRegistry,
+  modelRuntime,
   resourceLoader,
   settingsManager,
   sessionManager: SessionManager.inMemory(cwd),

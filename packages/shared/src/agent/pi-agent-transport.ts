@@ -539,7 +539,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
    * Build AWS environment variables from piAuth credentials for the subprocess.
    *
    * The Pi SDK's Bedrock provider reads from the AWS default credential chain
-   * (env vars), not from Pi AuthStorage. We inject at spawn time so credentials
+   * (env vars), not from Pi CredentialStore. We inject at spawn time so credentials
    * are scoped to the subprocess and don't leak to the main process.
    *
    * NOTE: IAM credentials (especially STS session tokens) are immutable after
@@ -571,7 +571,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
     return env;
   }
 
-  /** Persist a credential rotated by Pi's native AuthStorage. */
+  /** Persist a credential rotated by Pi's ModelRuntime. */
   protected async persistOAuthCredential(
     provider: string,
     credential: { type: 'oauth'; access: string; refresh: string; expires: number },

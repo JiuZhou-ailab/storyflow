@@ -17,7 +17,11 @@
  * NEVER import this file from renderer components or from files that the renderer imports.
  */
 
-import { getProviders, getModels } from '@earendil-works/pi-ai/compat';
+import {
+  getBuiltinModels,
+  getBuiltinProviders,
+  type BuiltinProvider,
+} from '@earendil-works/pi-ai/providers/all';
 import type { KnownProvider, Model, Api } from '@earendil-works/pi-ai';
 import type { ModelDefinition } from './models.ts';
 
@@ -92,7 +96,8 @@ function isBareBedrockClaudeModel(modelId: string): boolean {
  */
 export function getPiModelsForAuthProvider(piAuthProvider: string): ModelDefinition[] {
   try {
-    const models = getModels(piAuthProvider as KnownProvider);
+    if (!getBuiltinProviders().includes(piAuthProvider as BuiltinProvider)) return [];
+    const models = getBuiltinModels(piAuthProvider as BuiltinProvider);
     if (models.length > 0) {
       return models
         .filter(m => !isExcludedPiModel(m.id))
@@ -113,9 +118,9 @@ export function getPiModelsForAuthProvider(piAuthProvider: string): ModelDefinit
  */
 export function getAllPiModels(): ModelDefinition[] {
   const allModels: ModelDefinition[] = [];
-  for (const provider of getProviders()) {
+  for (const provider of getBuiltinProviders()) {
     try {
-      const models = getModels(provider);
+      const models = getBuiltinModels(provider);
       allModels.push(...models
         .filter(m => !isExcludedPiModel(m.id))
         .map(piModelToDefinition)
@@ -178,7 +183,7 @@ function formatProviderName(key: string): string {
  * Get all Pi providers available for API key authentication.
  */
 export function getPiApiKeyProviders(): PiProviderInfo[] {
-  return getProviders()
+  return getBuiltinProviders()
     .filter(p => !PI_EXCLUDED_PROVIDERS.has(p))
     .map(p => {
       const display = PI_PROVIDER_DISPLAY[p];
@@ -204,7 +209,8 @@ export function getPiApiKeyProviders(): PiProviderInfo[] {
  */
 export function getPiProviderBaseUrl(provider: string): string | undefined {
   try {
-    const models = getModels(provider as Parameters<typeof getModels>[0]);
+    if (!getBuiltinProviders().includes(provider as BuiltinProvider)) return undefined;
+    const models = getBuiltinModels(provider as BuiltinProvider);
     return models[0]?.baseUrl || undefined;
   } catch {
     return undefined;

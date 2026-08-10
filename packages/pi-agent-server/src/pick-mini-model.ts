@@ -1,4 +1,8 @@
-import type { ModelRegistry as PiModelRegistry } from '@earendil-works/pi-coding-agent';
+// input: Auth provider, Pi ModelRuntime catalog, and custom-endpoint preference
+// output: First usable provider-appropriate mini model ID
+// pos: Fallback selector for disposable Pi completions
+
+import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import { resolvePiModel, isDeniedMiniModelId } from './model-resolution.ts';
 import { PI_PREFERRED_DEFAULTS } from '../../shared/src/config/llm-connections.ts';
 
@@ -21,14 +25,14 @@ import { PI_PREFERRED_DEFAULTS } from '../../shared/src/config/llm-connections.t
  */
 export function pickProviderAppropriateMiniModel(
   authProvider: string,
-  modelRegistry: PiModelRegistry,
+  models: ModelRuntime,
   preferCustomEndpoint: boolean,
 ): string | undefined {
   const preferred = PI_PREFERRED_DEFAULTS[authProvider];
   if (!preferred || preferred.length === 0) return undefined;
   for (const candidate of preferred) {
     if (isDeniedMiniModelId(candidate, authProvider)) continue;
-    const resolved = resolvePiModel(modelRegistry, candidate, authProvider, preferCustomEndpoint);
+    const resolved = resolvePiModel(models, candidate, authProvider, preferCustomEndpoint);
     if (resolved) return candidate;
   }
   return undefined;

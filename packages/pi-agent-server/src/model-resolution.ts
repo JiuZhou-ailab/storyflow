@@ -1,11 +1,15 @@
-import type { ModelRegistry as PiModelRegistry } from '@earendil-works/pi-coding-agent';
+// input: Pi ModelRuntime catalog, requested model ID, and authenticated provider
+// output: One provider-compatible Pi model or an unavailable-model classification
+// pos: Canonical model resolution policy shared by primary and ephemeral sessions
+
+import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
 
 // Re-export from shared so the auth-aware mini-model denylist has a single
 // source of truth (also used by `getMiniModel()` at selection time).
 export { isDeniedMiniModelId } from '../../shared/src/config/llm-connections.ts';
 
 // Re-export the PiModel type used by callers
-type PiModel<T = any> = ReturnType<PiModelRegistry['find']>;
+type PiModel = ReturnType<ModelRuntime['getModel']>;
 
 /**
  * Resolve a Pi SDK model from the registry, with optional custom-endpoint precedence.
@@ -17,7 +21,7 @@ type PiModel<T = any> = ReturnType<PiModelRegistry['find']>;
  * 4. Common provider fallback list (includes 'custom-endpoint')
  */
 export function resolvePiModel(
-  modelRegistry: PiModelRegistry,
+  models: ModelRuntime,
   modelId: string,
   piAuthProvider?: string,
   preferCustomEndpoint?: boolean,
@@ -27,7 +31,7 @@ export function resolvePiModel(
 
   // Custom-endpoint takes precedence when configured
   if (preferCustomEndpoint) {
-    const custom = modelRegistry.find('custom-endpoint', bareId);
+    const custom = models.getModel('custom-endpoint', bareId);
     if (custom) return custom;
   }
 
@@ -36,7 +40,7 @@ export function resolvePiModel(
   // multiple providers (e.g., "gpt-5.2" under both "openai" and
   // "azure-openai-responses") and the wrong one matches first.
   if (piAuthProvider) {
-    const exact = modelRegistry.find(piAuthProvider, bareId);
+    const exact = models.getModel(piAuthProvider, bareId);
     if (exact) {
       // MiniMax CN API rejects model IDs with the 'MiniMax-' prefix (e.g. 500 for
       // 'MiniMax-M2.5-highspeed') but accepts bare names ('M2.5-highspeed').
@@ -53,7 +57,7 @@ export function resolvePiModel(
   // a different provider (e.g. "gpt-5.4" under "azure-openai-responses"
   // when authed as "github-copilot") would be returned, and the Pi SDK
   // would fail with "No API key found for <wrong-provider>".
-  const allModels = modelRegistry.getAll();
+  const allModels = models.getModels();
   const match = allModels.find(m =>
     (m.id === bareId || m.name === bareId) &&
     (!piAuthProvider || (m as any).provider === piAuthProvider || (m as any).provider === 'custom-endpoint'),
@@ -65,7 +69,7 @@ export function resolvePiModel(
   for (const provider of providers) {
     // Skip providers incompatible with the authenticated provider
     if (piAuthProvider && provider !== piAuthProvider && provider !== 'custom-endpoint') continue;
-    const model = modelRegistry.find(provider, bareId);
+    const model = models.getModel(provider, bareId);
     if (model) return model;
   }
 
