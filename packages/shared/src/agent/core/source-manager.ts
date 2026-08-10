@@ -18,6 +18,7 @@
 
 import { join } from 'node:path';
 import type { LoadedSource } from '../../sources/types.ts';
+import type { TurnProjection } from './types.ts';
 import { sourceNeedsAuthentication } from '../../sources/credential-manager.ts';
 import type { SourceManagerConfig } from './types.ts';
 
@@ -160,7 +161,7 @@ export class SourceManager {
    *
    * @returns Formatted XML string for context injection
    */
-  formatSourceState(): string {
+  formatSourceState(): TurnProjection {
     // Use intended active slugs (what UI shows) rather than just what built successfully
     const activeSlugs = [...this.intendedSlugs].sort();
 
@@ -215,13 +216,11 @@ export class SourceManager {
       parts.push(`Inactive: ${inactiveList.join(', ')}`);
     }
 
-    // Persistent reminder: if any active source has a guide, remind the LLM every message
+    // Host policy stays separate from Source-authored names, taglines, paths, and errors.
     const activeSourcesWithGuides = activeSources.filter(
       (s) => s.guide?.raw && !GUIDE_EXEMPT_SLUGS.has(s.config.slug)
     );
-    if (activeSourcesWithGuides.length > 0) {
-      parts.push('Read each source\'s guide.md before first tool use — calls are blocked until guide is read.');
-    }
+    let hasGuides = activeSourcesWithGuides.length > 0;
 
     // Source descriptions (shown once per session when first introduced)
     if (unseenSources.length > 0) {
@@ -230,7 +229,6 @@ export class SourceManager {
       if (!isFirstMessage) {
         parts.push('New:');
       }
-      let hasGuides = false;
       for (const s of unseenSources) {
         const tagline = s.config.tagline || s.config.provider;
         parts.push(`- ${s.config.slug}: ${tagline}`);
@@ -239,10 +237,6 @@ export class SourceManager {
           parts.push(`  Guide: ${join(s.folderPath, 'guide.md')}`);
           hasGuides = true;
         }
-      }
-      if (hasGuides) {
-        parts.push('');
-        parts.push('IMPORTANT: You MUST read a source\'s guide with the Read tool BEFORE using any of its tools. Tool calls WILL BE REJECTED if the guide has not been read first.');
       }
     }
 
@@ -272,7 +266,12 @@ export class SourceManager {
       output += `\n</source_issue>`;
     }
 
-    return output;
+    return {
+      ...(hasGuides ? {
+        policy: '<source_policy>Before using any Source tool, read that Source\'s guide path listed in the turn data. Tool calls are blocked until the guide has been read for the current context.</source_policy>',
+      } : {}),
+      data: output,
+    };
   }
 
   // ============================================================

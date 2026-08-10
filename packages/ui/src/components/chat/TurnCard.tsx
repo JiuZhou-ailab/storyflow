@@ -307,8 +307,6 @@ export interface TurnCardProps {
   onOpenFile?: (path: string) => void
   /** Callback when URL is clicked */
   onOpenUrl?: (url: string) => void
-  /** @deprecated The response footer no longer exposes a raw Markdown action. */
-  onPopOut?: (text: string) => void
   /** Callback to open turn details in a new window */
   onOpenDetails?: () => void
   /** Callback to open individual activity details in Monaco */

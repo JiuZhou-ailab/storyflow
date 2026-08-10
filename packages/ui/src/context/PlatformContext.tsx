@@ -1,3 +1,7 @@
+// input: Host-provided navigation, preview, clipboard, and diff actions
+// output: Optional platform capabilities exposed to shared React components
+// pos: Dependency-injection boundary between shared UI and Electron/web hosts
+
 /**
  * PlatformContext - Abstraction layer for platform-specific actions
  *
@@ -47,12 +51,6 @@ export interface PlatformActions {
    * Web: Could show inline modal with monospace output
    */
   onOpenTerminalPreview?: (sessionId: string, toolUseId: string) => void
-
-  /**
-   * Open a markdown preview window
-   * Web: Could show fullscreen modal
-   */
-  onOpenMarkdownPreview?: (content: string) => void
 
   /**
    * Open a multi-file diff view

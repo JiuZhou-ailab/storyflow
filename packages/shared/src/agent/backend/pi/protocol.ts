@@ -87,7 +87,10 @@ export type PiInboundMessage =
       id: string;
       message: string;
       systemPrompt: string;
-      dynamicSystemPrompt?: string;
+      /** Applied through Pi's before_agent_start hook as transient system policy. */
+      turnPolicy?: string;
+      /** Applied through Pi's context hook as transient data, never appended to session messages. */
+      turnContext?: string;
       images?: Array<{ type: 'image'; data: string; mimeType: string }>;
       rewindBoundary?: {
         visibleUserMessageId?: string;

@@ -12,7 +12,6 @@ import { Mathematics } from '@tiptap/extension-mathematics'
 import Image from '@tiptap/extension-image'
 import FileHandler from '@tiptap/extension-file-handler'
 import { Markdown as OfficialMarkdown } from '@tiptap/markdown'
-import { Markdown as LegacyMarkdown } from 'tiptap-markdown'
 import type { Editor } from '@tiptap/react'
 import { EditorState } from '@tiptap/pm/state'
 import {
@@ -50,8 +49,6 @@ import { cn } from '../../lib/utils'
 import 'katex/dist/katex.min.css'
 import './tiptap-editor.css'
 import './extensions/animated-task-item.css'
-
-export type MarkdownEngine = 'legacy' | 'official'
 
 function useEditorToolbarRefresh(editor: Editor) {
   const [, setVersion] = React.useState(0)
@@ -212,10 +209,6 @@ function TiptapFixedToolbar({
   )
 }
 
-
-function getLegacyMarkdown(editor: { storage: { markdown?: { getMarkdown?: () => string } } }): string {
-  return editor.storage.markdown?.getMarkdown?.() ?? ''
-}
 
 function getOfficialMarkdown(editor: { getMarkdown?: () => string }): string {
   return editor.getMarkdown?.() ?? ''
@@ -404,12 +397,6 @@ export interface TiptapMarkdownEditorProps {
   className?: string
   /** Whether the editor is editable */
   editable?: boolean
-  /**
-   * Migration flag for markdown engine foundations.
-   * - `legacy`: tiptap-markdown (default for safe rollout)
-   * - `official`: @tiptap/markdown + mathematics extension
-   */
-  markdownEngine?: MarkdownEngine
   /** Show a fixed formatting toolbar above the editable document. */
   showToolbar?: boolean
   /** Optional document action rendered at the end of the fixed toolbar. */
@@ -435,7 +422,6 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
   placeholder = 'Write something...',
   className,
   editable = true,
-  markdownEngine = 'legacy',
   showToolbar = false,
   toolbarAccessory,
   surface = 'default',
@@ -457,8 +443,6 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
   // Ref for the editor instance — used by the Mathematics onClick callback
   // which is created at extension-configure time (before useEditor returns).
   const editorRef = React.useRef<Editor | null>(null)
-
-  const useOfficialMarkdown = markdownEngine === 'official'
 
   const extensions = React.useMemo(() => {
     const base = [
@@ -496,53 +480,38 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
       TiptapSlashMenu,
     ]
 
-    if (useOfficialMarkdown) {
-      return [
-        ...base,
-        Mathematics.configure({
-          inlineOptions: {
-            onClick: (_node, pos) => {
-              const e = editorRef.current
-              if (!e) return
-              e.chain().focus().setNodeSelection(pos).run()
-              // Emit after selection so BubbleMenu mounts, then the event activates the input
-              queueMicrotask(() => (e as any).emit(INLINE_MATH_EDIT_EVENT))
-            },
-          },
-          katexOptions: {
-            throwOnError: false,
-            strict: false,
-          },
-        }),
-        OfficialMarkdown.configure({
-          markedOptions: {
-            gfm: true,
-          },
-        }),
-      ]
-    }
-
     return [
       ...base,
-      LegacyMarkdown.configure({
-        html: false,
-        transformPastedText: true,
-        transformCopiedText: true,
+      Mathematics.configure({
+        inlineOptions: {
+          onClick: (_node, pos) => {
+            const e = editorRef.current
+            if (!e) return
+            e.chain().focus().setNodeSelection(pos).run()
+            // Emit after selection so BubbleMenu mounts, then the event activates the input
+            queueMicrotask(() => (e as any).emit(INLINE_MATH_EDIT_EVENT))
+          },
+        },
+        katexOptions: {
+          throwOnError: false,
+          strict: false,
+        },
+      }),
+      OfficialMarkdown.configure({
+        markedOptions: {
+          gfm: true,
+        },
       }),
     ]
-  }, [placeholder, useOfficialMarkdown])
+  }, [placeholder])
 
-  const initialContent = useOfficialMarkdown
-    ? preprocessMarkdownForOfficial(content)
-    : content
+  const initialContent = preprocessMarkdownForOfficial(content)
 
   const getMarkdownSnapshot = React.useCallback((): string => {
     const activeEditor = editorRef.current
     if (!activeEditor) return content
-    return useOfficialMarkdown
-      ? postprocessMarkdownFromOfficial(getOfficialMarkdown(activeEditor as { getMarkdown?: () => string }))
-      : getLegacyMarkdown(activeEditor as { storage: { markdown?: { getMarkdown?: () => string } } })
-  }, [content, useOfficialMarkdown])
+    return postprocessMarkdownFromOfficial(getOfficialMarkdown(activeEditor as { getMarkdown?: () => string }))
+  }, [content])
 
   React.useImperativeHandle(ref, () => ({
     getMarkdownSnapshot,
@@ -552,7 +521,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
     extensions,
     content: initialContent,
     immediatelyRender: false,
-    ...(useOfficialMarkdown ? { contentType: 'markdown' as const } : {}),
+    contentType: 'markdown',
     editable,
     editorProps: {
       attributes: {
@@ -595,14 +564,12 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         onDocumentChangedRef.current?.()
         return
       }
-      const md = useOfficialMarkdown
-        ? postprocessMarkdownFromOfficial(getOfficialMarkdown(editor as { getMarkdown?: () => string }))
-        : getLegacyMarkdown(editor as { storage: { markdown?: { getMarkdown?: () => string } } })
+      const md = postprocessMarkdownFromOfficial(getOfficialMarkdown(editor as { getMarkdown?: () => string }))
       lastEmittedMarkdownRef.current = md
       onUpdateRef.current?.(md)
       onDocumentChangedRef.current?.()
     },
-  }, [useOfficialMarkdown, extensions])
+  }, [extensions])
 
   // Keep editorRef in sync for the Mathematics onClick callback
   editorRef.current = editor
@@ -615,7 +582,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
   }, [editor, editable])
 
   React.useEffect(() => {
-    if (!editor || !useOfficialMarkdown) return
+    if (!editor) return
 
     const markdown = reviewDiffOriginalContent
     if (markdown == null) {
@@ -632,7 +599,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
     } catch {
       editor.view.dispatch(editor.state.tr.setMeta(TIPTAP_REVIEW_DIFF_KEY, { previousDoc: null }))
     }
-  }, [editor, reviewDiffOriginalContent, useOfficialMarkdown])
+  }, [editor, reviewDiffOriginalContent])
 
   // Sync content when the selected task changes (key prop handles this,
   // but as a safety net for direct content prop changes)
@@ -651,9 +618,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         return
       }
 
-      const currentMd = useOfficialMarkdown
-        ? postprocessMarkdownFromOfficial(getOfficialMarkdown(editor as { getMarkdown?: () => string }))
-        : getLegacyMarkdown(editor as { storage: { markdown?: { getMarkdown?: () => string } } })
+      const currentMd = postprocessMarkdownFromOfficial(getOfficialMarkdown(editor as { getMarkdown?: () => string }))
       const syncAction = getIncomingContentSyncAction({
         previousContent: prevContentRef.current,
         incomingContent: content,
@@ -667,15 +632,11 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
 
       try {
         isApplyingExternalContentRef.current = true
-        if (useOfficialMarkdown) {
-          const normalized = preprocessMarkdownForOfficial(content)
-          editor.commands.setContent(normalized, {
-            contentType: 'markdown',
-            emitUpdate: false,
-          } as never)
-        } else {
-          editor.commands.setContent(content, { emitUpdate: false })
-        }
+        const normalized = preprocessMarkdownForOfficial(content)
+        editor.commands.setContent(normalized, {
+          contentType: 'markdown',
+          emitUpdate: false,
+        } as never)
         // Drop undo stack from the previous document when content is replaced
         // externally (chapter switch). Without this, reused editors retain prior
         // document history and inflate memory across open/close cycles.
@@ -702,7 +663,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         }
       })
     }
-  }, [editor, content, useOfficialMarkdown])
+  }, [editor, content])
 
   return (
     <div

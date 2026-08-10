@@ -196,10 +196,22 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
     expect(editorPanelSource).toContain('editable={!loading}')
   })
 
-  it('does not rewrite panel stack for same-route writing navigations (chapter switch)', () => {
-    // Behavioral: handleSelectNovelFile re-calls navigate('writing') on every chapter
-    // click. An identical focused route must leave panelStack referentially unchanged,
-    // otherwise identity thrash re-renders AppShell and forces a replaceState URL sync.
+  it('keeps chapter selection local and same-route navigation idempotent', () => {
+    const selectHandlerSource = appShellSource.slice(
+      appShellSource.indexOf('const handleSelectNovelFile = React.useCallback'),
+      appShellSource.indexOf('const handleSelectNovelFileByPath'),
+    )
+    const selectByPathSource = appShellSource.slice(
+      appShellSource.indexOf('const handleSelectNovelFileByPath = React.useCallback'),
+      appShellSource.indexOf('const handleOpenNovelWorkspaceStart'),
+    )
+    expect(selectHandlerSource).not.toContain('onOpenWritingWorkspace()')
+    expect(selectHandlerSource).toContain('if (!saved) return false')
+    expect(selectByPathSource).toContain('const selected = await handleSelectNovelFile(file)')
+    expect(selectByPathSource).toContain('if (selected && !isWritingNavigation(navState)')
+    expect(selectByPathSource).toContain('!isWritingNavigation(navState) && !isSessionsNavigation(navState)')
+
+    // Other identical route requests must still preserve panel identity.
     const store = createStore()
     store.set(updateFocusedPanelRouteAtom, 'writing' as never)
     const stackAfterFirst = store.get(panelStackAtom)

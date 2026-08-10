@@ -269,7 +269,8 @@ describe('novel writing workspace layout', () => {
     expect(editorPanelSource).toContain('TiptapMarkdownEditor')
     expect(editorPanelSource).toContain('showToolbar')
     expect(editorPanelSource).toContain('surface="manuscript"')
-    expect(editorPanelSource).toContain("markdownEngine=\"official\"")
+    expect(tiptapEditorSource).toContain("from '@tiptap/markdown'")
+    expect(tiptapEditorSource).not.toContain("from 'tiptap-markdown'")
     expect(editorPanelSource).not.toContain('DocumentViewMode')
     expect(editorPanelSource).not.toContain('ShikiCodeEditor')
     expect(editorPanelSource).not.toContain('common.preview')
@@ -810,14 +811,25 @@ describe('novel writing workspace layout', () => {
 
   it('creates git freshness checkpoints around writing workspace agent turns', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
+    const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf-8')
     const storageSource = readFileSync(new URL('../../../lib/local-storage.ts', import.meta.url), 'utf-8')
+    const preparationSource = appShellSource.slice(
+      appShellSource.indexOf('const prepareNovelWorkspaceBriefForSend'),
+      appShellSource.indexOf('const checkpointNovelWorkspaceAgentTurn'),
+    )
 
     expect(storageSource).toContain("workspaceVersionKnownCommit: 'workspace-version-known-commit'")
     expect(appShellSource).toContain('prepareNovelWorkspaceBriefForSend')
     expect(appShellSource).toContain("reason: 'user-preprompt'")
     expect(appShellSource).toContain("reason: 'agent-turn'")
     expect(appShellSource).toContain('window.electronAPI.compareWorkspaceVersions')
-    expect(appShellSource).toContain('oneTimeContext: mergeOneTimeContext')
+    expect(appShellSource).toContain('workspaceFreshnessContext: preparation.brief')
+    expect(appSource).toContain('workspaceFreshnessContext: sendOptions?.workspaceFreshnessContext')
+    expect(appShellSource).toContain('const accepted = await onSendMessage')
+    expect(appShellSource).toContain('accepted === true && preparation.checkpoint')
+    expect(preparationSource).not.toContain('setKnownWorkspaceCommit(')
+    expect(appSource).toContain('return true')
+    expect(appShellSource).not.toContain('Before editing these files')
   })
 
   it('hides the generic content panel close button for owned navigation or a sole panel', () => {

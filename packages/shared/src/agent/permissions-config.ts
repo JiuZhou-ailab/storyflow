@@ -1,3 +1,7 @@
+// input: Bundled, workspace, and Source permission JSON files.
+// output: Validated merged permission rules and canonical endpoint decisions.
+// pos: Persistent configuration authority for Product Host permission checks.
+
 /**
  * Safe Mode Configuration
  *
@@ -16,6 +20,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { debug } from '../utils/debug.ts';
 import { readJsonFileSync, safeJsonParse } from '../utils/files.ts';
+import { canonicalizeApiPath } from '../sources/api-path.ts';
 import { CONFIG_DIR } from '../config/paths.ts';
 import { getBundledAssetsDir } from '../utils/paths.ts';
 import { getSourcePath } from '../sources/storage.ts';
@@ -554,8 +559,9 @@ export function isApiEndpointAllowed(
   if (upperMethod === 'GET') return true;
 
   // Check fine-grained endpoint rules
+  const canonicalPath = canonicalizeApiPath(path);
   for (const rule of config.allowedApiEndpoints) {
-    if (rule.method === upperMethod && rule.pathPattern.test(path)) {
+    if (rule.method === upperMethod && rule.pathPattern.test(canonicalPath)) {
       return true;
     }
   }

@@ -59,6 +59,9 @@ export interface ApiSourceOperation {
   parameters?: ApiOperationParameter[];
 }
 
+/** HTTP semantics retained by the host for permission checks. */
+export type ApiOperationPermission = Pick<ApiSourceOperation, 'method' | 'path' | 'parameters'>;
+
 /**
  * Google service types for OAuth scope selection
  */

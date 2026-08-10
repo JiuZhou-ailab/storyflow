@@ -304,6 +304,8 @@ type FilterMode = 'include' | 'exclude'
 interface NovelWorkspaceBriefPreparation {
   shouldSend: boolean
   brief?: string
+  checkpoint?: { rootPath: string; commitHash: string }
+  agentTouchedPaths?: string[]
 }
 
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
@@ -316,7 +318,7 @@ const WRITING_ASSISTANT_MIN_WIDTH = 320
 // file tree rather than matching the manuscript's reading width.
 const WORKSPACE_DIRECTORY_MIN_WIDTH = 220
 const WORKSPACE_DIRECTORY_MAX_WIDTH = 460
-const WORKSPACE_DIRECTORY_DEFAULT_WIDTH = 300
+const WORKSPACE_DIRECTORY_DEFAULT_WIDTH = WORKSPACE_DIRECTORY_MIN_WIDTH
 /** Fraction of the window the manuscript column takes before the user resizes it. */
 const DEFAULT_DOCUMENT_DOCK_WIDTH_RATIO = 0.34
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
@@ -342,13 +344,6 @@ function remapWorkspacePath(path: string, sourcePath: string, destinationPath: s
   if (normalizedPath === normalizedSource) return destinationPath
   if (!normalizedPath.startsWith(`${normalizedSource}/`)) return path
   return `${normalizeWorkspacePath(destinationPath)}${normalizedPath.slice(normalizedSource.length)}`
-}
-
-function mergeOneTimeContext(existing: string | undefined, addition: string | undefined): string | undefined {
-  const next = addition?.trim()
-  if (!next) return existing
-  const current = existing?.trim()
-  return current ? `${current}\n\n${next}` : next
 }
 
 function getKnownWorkspaceCommit(rootPath: string, sessionId: string): string | undefined {
@@ -387,8 +382,6 @@ function buildNovelWorkspaceFreshnessBrief(
     'Unknown changes:',
     ...visibleChanges.map(change => `- ${formatWorkspaceChange(change)}`),
     overflow > 0 ? `- ...and ${overflow} more file(s)` : undefined,
-    '',
-    'Before editing these files, read the latest content first.',
     '</workspace-brief>',
   ].filter((line): line is string => line !== undefined)
 
@@ -3077,10 +3070,9 @@ function AppShellContent({
   const handleSelectNovelFile = React.useCallback(async (
     file: NovelWorkspaceFile,
     openMode: NovelDocumentOpenMode = 'append',
-  ) => {
+  ): Promise<boolean> => {
     if (file.path === selectedNovelFilePath) {
-      onOpenWritingWorkspace()
-      return
+      return true
     }
 
     const switchStartedAt = performance.now()
@@ -3091,7 +3083,7 @@ function AppShellContent({
       phase: 'saveBeforeSwitch',
       durationMs: performance.now() - saveStartedAt,
     })
-    if (!saved) return
+    if (!saved) return false
 
     novelDocumentSwitchStartRef.current = {
       filePath: file.path,
@@ -3110,8 +3102,8 @@ function AppShellContent({
       phase: 'select',
       durationMs: performance.now() - switchStartedAt,
     })
-    onOpenWritingWorkspace()
-  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, onOpenWritingWorkspace, selectedNovelFilePath])
+    return true
+  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, selectedNovelFilePath])
 
   const handleSelectNovelFileByPath = React.useCallback(async (filePath: string | null) => {
     if (!filePath) return
@@ -3120,8 +3112,11 @@ function AppShellContent({
       onOpenFile(filePath)
       return
     }
-    await handleSelectNovelFile(file)
-  }, [handleSelectNovelFile, novelWorkspaceFileByPath, onOpenFile])
+    const selected = await handleSelectNovelFile(file)
+    if (selected && !isWritingNavigation(navState) && !isSessionsNavigation(navState)) {
+      onOpenWritingWorkspace()
+    }
+  }, [handleSelectNovelFile, navState, novelWorkspaceFileByPath, onOpenFile, onOpenWritingWorkspace])
 
   const handleOpenNovelWorkspaceStart = React.useCallback(async () => {
     if (!selectedNovelFilePath) return
@@ -3158,21 +3153,22 @@ function AppShellContent({
       if (!headCommit) return { shouldSend: true }
 
       const previousCommit = getKnownWorkspaceCommit(novelWorkspaceRoot, sessionId)
+      const checkpoint = { rootPath: novelWorkspaceRoot, commitHash: headCommit }
+      const agentTouchedPaths = novelAgentTouchedPathsRef.current[sessionId] ?? []
       if (!previousCommit || previousCommit === headCommit) {
-        setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
-        return { shouldSend: true }
+        return { shouldSend: true, checkpoint, agentTouchedPaths }
       }
 
       const changedFiles = await window.electronAPI.compareWorkspaceVersions(novelWorkspaceRoot, previousCommit, headCommit)
-      const agentTouchedPaths = new Set(novelAgentTouchedPathsRef.current[sessionId] ?? [])
-      novelAgentTouchedPathsRef.current[sessionId] = []
+      const agentTouchedPathSet = new Set(agentTouchedPaths)
 
-      const unknownChanges = changedFiles.filter(change => !agentTouchedPaths.has(change.path))
-      setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
+      const unknownChanges = changedFiles.filter(change => !agentTouchedPathSet.has(change.path))
 
       return {
         shouldSend: true,
         brief: buildNovelWorkspaceFreshnessBrief(unknownChanges, selectedNovelFile?.relativePath),
+        checkpoint,
+        agentTouchedPaths,
       }
     } catch (error) {
       console.warn('[writing] Failed to prepare workspace freshness brief:', error)
@@ -3582,17 +3578,28 @@ function AppShellContent({
       : { shouldSend: true }
     if (!preparation.shouldSend) return
 
-    onSendMessage(sessionId, message, attachments, skillSlugs, badges, {
+    const accepted = await onSendMessage(sessionId, message, attachments, skillSlugs, badges, {
       ...options,
-      oneTimeContext: mergeOneTimeContext(options?.oneTimeContext, preparation.brief),
+      workspaceFreshnessContext: preparation.brief,
     })
+    if (accepted === true && preparation.checkpoint) {
+      setKnownWorkspaceCommit(
+        preparation.checkpoint.rootPath,
+        sessionId,
+        preparation.checkpoint.commitHash,
+      )
+      if (novelAgentTouchedPathsRef.current[sessionId] === preparation.agentTouchedPaths) {
+        novelAgentTouchedPathsRef.current[sessionId] = []
+      }
+    }
+    return accepted
   }, [effectiveSessionId, onSendMessage, prepareNovelWorkspaceBriefForSend])
 
   const handleSendNovelSelectionToChat = React.useCallback(async (message: string) => {
     if (!effectiveSessionId) return
     const saved = await ensureNovelDocumentSaved()
     if (!saved) return
-    handleNovelWorkspaceSendMessage(effectiveSessionId, message)
+    await handleNovelWorkspaceSendMessage(effectiveSessionId, message)
   }, [effectiveSessionId, ensureNovelDocumentSaved, handleNovelWorkspaceSendMessage])
 
   // The navigator column now holds exactly one role — the conversation list —

@@ -9,6 +9,8 @@ import {
   STORYFLOW_MODEL_ACCESS_BROKER_TOKEN_ENV,
   STORYFLOW_MODEL_ACCESS_BROKER_URL_ENV,
 } from '../managed-access.ts';
+import { getTrustedManagedSourcePolicy } from '../managed-source-policy.ts';
+import type { LoadedSource } from '../types.ts';
 
 const expectedGatewayBaseUrl = 'https://storyflow-model.zjding.com';
 
@@ -64,5 +66,51 @@ describe('Storyflow managed Source access', () => {
         modelAccessToken: 'short-lived-token',
       }), { preconnect: fetch.preconnect }),
     })).rejects.toThrow('does not match');
+  });
+
+  test('keeps managed authentication bound to the immutable built-in Catalog surface', () => {
+    const source: LoadedSource = {
+      config: {
+        id: 'builtin-storyflow-catalog',
+        name: 'Storyflow Catalog',
+        slug: 'storyflow-catalog',
+        enabled: true,
+        provider: 'storyflow',
+        type: 'api',
+        api: {
+          baseUrl: expectedGatewayBaseUrl,
+          authType: 'managed',
+          testEndpoint: { method: 'GET', path: '/v2/catalog/sources' },
+          operations: [
+            { name: 'list_sources', description: 'List sources.', method: 'GET', path: '/v2/catalog/sources' },
+            { name: 'list_ranking_snapshots', description: 'List snapshots.', method: 'GET', path: '/v2/ranking-snapshots' },
+            { name: 'search_rankings', description: 'Search rankings.', method: 'GET', path: '/v2/rankings' },
+            { name: 'get_conversion_manifest', description: 'Get manifest.', method: 'GET', path: '/v2/series/{source}/{sourceId}/manifest' },
+          ],
+        },
+      },
+      guide: null,
+      folderPath: '/global/sources/storyflow-catalog',
+      workspaceRootPath: '/global',
+      workspaceId: 'global',
+      origin: 'craft-global',
+    };
+
+    expect(getTrustedManagedSourcePolicy(source)).toEqual({ gatewayBaseUrl: expectedGatewayBaseUrl });
+    expect(() => getTrustedManagedSourcePolicy({ ...source, origin: 'workspace' }))
+      .toThrow('not available');
+    expect(() => getTrustedManagedSourcePolicy({
+      ...source,
+      config: {
+        ...source.config,
+        api: {
+          ...source.config.api!,
+          operations: [
+            ...source.config.api!.operations!,
+            { name: 'chat', description: 'Call a model.', method: 'POST', path: '/v1/responses' },
+          ],
+        },
+      },
+    })).toThrow('not available');
   });
 });

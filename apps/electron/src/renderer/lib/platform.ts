@@ -1,3 +1,7 @@
+// input: Browser platform metadata and renderer-local path strings.
+// output: Platform flags, labels, and deterministic file-link path resolution.
+// pos: Shared renderer boundary for platform-specific behavior.
+
 /**
  * Platform Detection Utilities
  *
@@ -67,4 +71,17 @@ export const PATH_SEP = isWindows ? '\\' : '/'
  */
 export function getPathBasename(path: string): string {
   return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || ''
+}
+
+/** Resolve a rendered relative file link against the cwd captured by its conversation. */
+export function resolveFileLinkTarget(path: string, basePath?: string): string {
+  const isAbsolute = path.startsWith('/')
+    || path.startsWith('~')
+    || /^[A-Za-z]:[\\/]/.test(path)
+    || path.startsWith('\\\\')
+  if (!basePath || isAbsolute) return path
+
+  const normalizedBase = basePath.replace(/\\/g, '/').replace(/\/+$/, '')
+  const normalizedPath = path.replace(/\\/g, '/').replace(/^\.\/+/, '')
+  return `${normalizedBase}/${normalizedPath}`
 }

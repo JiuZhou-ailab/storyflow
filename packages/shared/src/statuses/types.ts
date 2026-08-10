@@ -1,3 +1,7 @@
+// input: Workspace status configuration data
+// output: Canonical status and status-collection types
+// pos: Shared type contract for status persistence and UI projection
+
 /**
  * Status Types
  *
@@ -73,24 +77,4 @@ export interface WorkspaceStatusConfig {
 
   /** Default status ID for new sessions (typically 'todo') */
   defaultStatusId: string;
-}
-
-/**
- * Input for creating a new status (via CRUD operations)
- */
-export interface CreateStatusInput {
-  label: string;
-  color?: EntityColor;
-  icon?: string; // Emoji or URL
-  category: StatusCategory;
-}
-
-/**
- * Input for updating an existing status
- */
-export interface UpdateStatusInput {
-  label?: string;
-  color?: EntityColor;
-  icon?: string; // Emoji or URL
-  category?: StatusCategory;
 }

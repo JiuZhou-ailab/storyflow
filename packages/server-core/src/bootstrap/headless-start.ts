@@ -3,6 +3,7 @@
 // pos: Owns the two-stage server lifecycle shared by Electron and headless hosts
 
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { uptime as osUptime } from 'node:os'
 import { join } from 'node:path'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
@@ -118,9 +119,7 @@ function validateTokenEntropy(token: string): { ok: boolean; warning?: string; e
  * Returns a 48-character hex string (192 bits of entropy).
  */
 export function generateServerToken(): string {
-  const bytes = new Uint8Array(24)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+  return randomBytes(24).toString('hex')
 }
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,7 @@
+// input: Bundled documentation assets and help-link metadata
+// output: Synchronized local docs and canonical product help URLs
+// pos: Shared documentation boundary for runtime and UI consumers
+
 /**
  * Documentation Utilities
  *
@@ -169,18 +173,6 @@ export function initializeDocs(): void {
 
 // Export the lazy getter for external access
 export { getBundledDocs };
-
-// Re-export source guides utilities (parsing only - bundled guides removed)
-export {
-  parseSourceGuide,
-  getSourceGuide,
-  getSourceGuideForDomain,
-  getSourceKnowledge,
-  extractDomainFromSource,
-  extractDomainFromUrl,
-  type ParsedSourceGuide,
-  type SourceGuideFrontmatter,
-} from './source-guides.ts';
 
 // Re-export doc links (for UI help popovers)
 export {

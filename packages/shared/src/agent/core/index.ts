@@ -77,7 +77,6 @@ export {
   // Functions
   expandToolPaths,
   stripToolMetadata,
-  stripMcpMetadata, // deprecated alias for backwards compatibility
   validateConfigWrite,
   // Centralized pipeline
   runPreToolUseChecks,

@@ -1,4 +1,7 @@
-// Re-export shared components from @craft-agent/ui
+// input: Shared Markdown UI and Electron streaming renderer
+// output: Renderer-facing Markdown component exports
+// pos: Electron Markdown component barrel
+
 export {
   Markdown,
   MemoizedMarkdown,
@@ -10,7 +13,6 @@ export {
   type RenderMode,
   type TiptapMarkdownEditorHandle,
   type TiptapMarkdownEditorProps,
-  type MarkdownEngine,
 } from '@craft-agent/ui'
 
 // Local Electron-specific component

@@ -169,6 +169,7 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
   // permission hooks cannot be bypassed by non-persisted/free contexts.
   const { resourceLoader, settingsManager } = await createProjectResourceLoader({
     cwd,
+    contextRoot: config.projectRoot,
     agentDir,
     systemPromptOverride: systemPromptOverride.overrideResourcePrompt,
     extensionFactories: [

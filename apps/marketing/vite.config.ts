@@ -28,7 +28,7 @@ export default defineConfig({
     sourcemap: true,
   },
   optimizeDeps: {
-    include: ["react", "react-dom", "lucide-react"],
+    include: ["react", "react-dom"],
   },
   server: {
     port: 5176,

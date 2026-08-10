@@ -1,5 +1,5 @@
-// input: Current cwd, Pi user resources, Storyflow product prompt, and a diagnostic turn
-// output: Safe snapshot of the Pi-native stable prompt and effective per-turn prompt
+// input: Current cwd, bounded Pi user resources, Storyflow product prompt, and a diagnostic turn
+// output: Safe snapshots of the stable system prompt and transient per-turn model context
 // pos: Read-only prompt diagnostics that reuse the production composition boundary
 
 import { resolve } from 'node:path';
@@ -15,11 +15,11 @@ import {
 import { PromptBuilder } from '../../shared/src/agent/core/prompt-builder.ts';
 import { getPiAgentDir } from '../../shared/src/config/pi-user-paths.ts';
 import { getSystemPrompt } from '../../shared/src/prompts/system.ts';
-import { createSkillCatalogResourceLoader } from './project-resource-loader.ts';
 import {
-  buildEffectiveSystemPrompt,
-  createSystemPromptOverride,
-} from './system-prompt-override.ts';
+  createBoundedAgentsFilesOverride,
+  createSkillCatalogResourceLoader,
+} from './project-resource-loader.ts';
+import { createSystemPromptOverride } from './system-prompt-override.ts';
 
 const cwd = resolve(process.argv[2] ?? process.cwd());
 const agentDir = getPiAgentDir();
@@ -49,6 +49,7 @@ const resourceLoader = new DefaultResourceLoader({
   noPromptTemplates: true,
   noThemes: true,
   skillsOverride: () => skillLoader.getSkills(),
+  agentsFilesOverride: createBoundedAgentsFilesOverride({ cwd, agentDir }),
   systemPromptOverride: promptController.overrideResourcePrompt,
 });
 await resourceLoader.reload();
@@ -82,24 +83,30 @@ try {
       lastUsedAt: now,
     },
   });
-  const dynamicPrompt = promptBuilder.buildContextParts({
+  const turnProjection = promptBuilder.buildTurnContext({
     plansFolderPath: `${cwd}/.craft-agent/prompt-snapshot/plans`,
     dataFolderPath: `${cwd}/.craft-agent/prompt-snapshot/data`,
-  }).join('\n\n');
+  });
+  const turnPolicy = turnProjection.system.join('\n\n');
+  const turnContext = turnProjection.data.join('\n\n');
   const stablePrompt = session.systemPrompt;
-  const effectivePrompt = buildEffectiveSystemPrompt(stablePrompt, dynamicPrompt);
 
-  console.log('STORYFLOW EFFECTIVE SYSTEM PROMPT SNAPSHOT');
+  console.log('STORYFLOW MODEL CONTEXT SNAPSHOT');
   console.log(`cwd: ${cwd}`);
   console.log(`agentDir: ${agentDir}`);
   console.log(`productPromptChars: ${productPrompt.length}`);
-  console.log(`piStablePromptChars: ${stablePrompt.length}`);
-  console.log(`dynamicPromptChars: ${dynamicPrompt.length}`);
-  console.log(`effectivePromptChars: ${effectivePrompt.length}`);
+  console.log(`stableSystemPromptChars: ${stablePrompt.length}`);
+  console.log(`transientTurnPolicyChars: ${turnPolicy.length}`);
+  console.log(`transientTurnDataChars: ${turnContext.length}`);
+  console.log(`stablePlusTransientChars: ${stablePrompt.length + turnPolicy.length + turnContext.length}`);
   console.log(`skills: ${resourceLoader.getSkills().skills.length}`);
   console.log('note: active-session Source state and executable Extension mutations are omitted');
-  console.log('\n--- EFFECTIVE PROMPT ---\n');
-  console.log(effectivePrompt);
+  console.log('\n--- STABLE SYSTEM PROMPT ---\n');
+  console.log(stablePrompt);
+  console.log('\n--- TRANSIENT SYSTEM POLICY ---\n');
+  console.log(turnPolicy);
+  console.log('\n--- TRANSIENT TURN DATA ---\n');
+  console.log(turnContext);
 } finally {
   session.dispose();
 }

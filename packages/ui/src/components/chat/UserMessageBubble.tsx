@@ -1,9 +1,13 @@
+// input: User message content, attachments, badges, queued state, and message actions
+// output: Dense right-aligned user message surface shared by Electron and web viewers
+// pos: Canonical user-turn presentation component for chat transcripts
+
 /**
  * UserMessageBubble - Shared user message component
  *
  * Displays user messages with right-aligned styling:
  * - Subtle background (5% foreground)
- * - Pill-shaped corners
+ * - Compact rounded corners
  * - Max width 80%
  * - Markdown rendering for links and code
  * - Optional file attachments with thumbnails
@@ -516,8 +520,8 @@ export function UserMessageBubble({
         )}
         <div
           className={cn(
-            "max-w-[80%] bg-user-message-bubble rounded-[16px] break-words min-w-0 select-text [&_p]:m-0",
-            compactMode ? "px-4 py-2" : "px-5 py-3.5"
+            "max-w-[80%] bg-user-message-bubble rounded-[12px] break-words min-w-0 select-text [&_p]:m-0 [&_p]:leading-5",
+            compactMode ? "px-4 py-2" : "px-5 py-2"
           )}
         >
           {showQueued && (
@@ -537,7 +541,7 @@ export function UserMessageBubble({
                 mode="minimal"
                 onUrlClick={onUrlClick}
                 onFileClick={onFileClick}
-                className="text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap"
+                className="text-sm leading-5 [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap"
               >
                 {displayContent}
               </Markdown>

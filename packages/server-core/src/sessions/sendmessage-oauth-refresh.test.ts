@@ -194,7 +194,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
   it('delegates one-shot network retries to Pi', async () => {
     const managed = buildSession('query-once-network-retry')
     let queryCalls = 0
-    ;(sm as any).getOrCreateAgent = async () => ({
+    ;(sm as any).getOrCreateAgentLocked = async () => ({
       queryLlm: async () => {
         queryCalls++
         throw new Error('network error')
@@ -217,7 +217,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
         return { token: 'managed-token', refreshed: Boolean(forceRefresh) }
       },
     })
-    ;(sm as any).getOrCreateAgent = async () => ({
+    ;(sm as any).getOrCreateAgentLocked = async () => ({
       queryLlm: async () => {
         queryCalls++
         throw new Error('model_access_token_invalid')

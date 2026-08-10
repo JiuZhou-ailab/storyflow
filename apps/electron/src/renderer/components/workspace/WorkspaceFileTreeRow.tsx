@@ -89,7 +89,7 @@ function RenameInput({ node }: { node: NodeRendererProps<WorkspaceFileTreeNode>[
       ref={inputRef}
       defaultValue={node.data.name}
       aria-label={node.data.name}
-      className="min-w-0 flex-1 rounded border border-ring/50 bg-background px-1 py-0.5 text-[12px] leading-4 outline-none"
+      className="min-w-0 flex-1 rounded border border-ring/50 bg-background px-1 py-0.5 text-[10px] leading-4 outline-none"
       onBlur={() => node.reset()}
       onClick={event => event.stopPropagation()}
       onKeyDown={(event) => {
@@ -170,7 +170,7 @@ export function WorkspaceFileTreeRow({
       style={style}
       data-tutorial={entry.type === 'root' ? 'writing-catalog' : undefined}
       className={cn(
-        'group flex h-full min-w-0 items-center gap-1.5 rounded-[6px] px-2 text-[12px] outline-none',
+        'group flex h-full min-w-0 items-center gap-1.5 rounded-[6px] px-2 text-[10px] outline-none',
         'text-foreground/85 hover:bg-foreground/[0.045]',
         entry.type === 'root' && 'font-medium',
         (entry.type === 'root' || node.isSelected) && 'bg-foreground/[0.07]',
@@ -221,7 +221,7 @@ export function WorkspaceFileTreeRow({
         <span className="min-w-0 flex-1 truncate text-left">{entry.name}</span>
       )}
       {entry.type !== 'file' && entry.fileCount > 0 ? (
-        <span className="ml-auto text-xs text-foreground/30 opacity-0 transition-opacity group-hover:opacity-100">
+        <span className="ml-auto text-[10px] text-foreground/30 opacity-0 transition-opacity group-hover:opacity-100">
           {entry.fileCount}
         </span>
       ) : null}

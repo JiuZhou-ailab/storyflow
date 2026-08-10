@@ -10,6 +10,7 @@ import { isSourceUsable } from './storage.ts';
 import { createApiServer, type SummarizeCallback } from './api-tools.ts';
 import { debug } from '../utils/debug.ts';
 import { normalizeMcpUrl } from './mcp-url.ts';
+import { getTrustedManagedSourcePolicy } from './managed-source-policy.ts';
 export { normalizeMcpUrl } from './mcp-url.ts';
 
 /**
@@ -213,6 +214,7 @@ export class SourceServerBuilder {
     // First-party managed APIs use the Storyflow login broker instead of a
     // per-Source credential. The host supplies a short-lived token getter.
     if (authType === 'managed') {
+      getTrustedManagedSourcePolicy(source);
       if (!getToken) {
         debug(`[SourceServerBuilder] Managed API source ${source.config.slug} has no host token getter`);
         return null;

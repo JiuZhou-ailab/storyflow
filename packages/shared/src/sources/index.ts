@@ -39,6 +39,8 @@ export {
   createStoryflowManagedTokenGetter,
 } from './managed-access.ts';
 export type { StoryflowManagedAccessOptions } from './managed-access.ts';
+export { getTrustedManagedSourcePolicy } from './managed-source-policy.ts';
+export type { TrustedManagedSourcePolicy } from './managed-source-policy.ts';
 
 // Constants and helpers
 export {

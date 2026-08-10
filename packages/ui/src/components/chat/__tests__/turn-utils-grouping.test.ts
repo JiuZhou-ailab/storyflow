@@ -567,7 +567,6 @@ describe('response presentation', () => {
           },
           isStreaming: false,
           isComplete: true,
-          onPopOut: () => {},
         }))
     )
 

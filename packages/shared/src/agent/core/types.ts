@@ -44,6 +44,12 @@ export interface RecoveryMessage {
   content: string;
 }
 
+/** Trusted Host policy and untrusted turn data produced by one context source. */
+export interface TurnProjection {
+  policy?: string;
+  data: string;
+}
+
 /**
  * Configuration for PermissionManager
  */

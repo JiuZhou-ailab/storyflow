@@ -18,6 +18,7 @@ describe('ChatDisplay scroll layout', () => {
     expect(chatDisplaySource).toContain('className="relative flex-1 min-h-0 overflow-hidden"')
     expect(chatDisplaySource).toContain('className="h-full min-h-0 overflow-hidden"')
     expect(chatDisplaySource).toContain('viewportClassName="h-full min-h-0 overflow-y-auto overscroll-contain"')
+    expect(chatDisplaySource).toContain('compactMode ? "px-3 py-4 space-y-2" : [CHAT_LAYOUT.containerPaddingX, "pt-12 pb-8", CHAT_LAYOUT.messageSpacing]')
     expect(chatDisplaySource).toContain('scrollViewportRef.current')
     expect(chatDisplaySource).not.toContain('scrollIntoView(')
   })

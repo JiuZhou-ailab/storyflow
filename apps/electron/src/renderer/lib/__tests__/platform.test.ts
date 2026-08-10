@@ -1,5 +1,14 @@
+// input: Renderer platform strings and local file-link targets.
+// output: Regression coverage for platform detection and path resolution.
+// pos: Unit tests for renderer platform utilities.
+
 import { describe, expect, it } from 'bun:test'
-import { getDefaultColorThemeForPlatform, getPathBasename, getRendererPlatformName } from '../platform'
+import {
+  getDefaultColorThemeForPlatform,
+  getPathBasename,
+  getRendererPlatformName,
+  resolveFileLinkTarget,
+} from '../platform'
 
 describe('getRendererPlatformName', () => {
   it('normalizes Windows navigator platforms to win32', () => {
@@ -34,5 +43,20 @@ describe('getPathBasename', () => {
   it('reads folder names from Unix and Windows paths', () => {
     expect(getPathBasename('/Users/zjding/novels/九州/')).toBe('九州')
     expect(getPathBasename('D:\\写作项目\\九州')).toBe('九州')
+  })
+})
+
+describe('resolveFileLinkTarget', () => {
+  it('binds relative links to their base without rewriting absolute paths', () => {
+    expect(resolveFileLinkTarget('./notes/result.md', '/Users/zjding/project'))
+      .toBe('/Users/zjding/project/notes/result.md')
+    expect(resolveFileLinkTarget('.\\notes\\result.md', 'C:\\Users\\zjding\\project'))
+      .toBe('C:/Users/zjding/project/notes/result.md')
+    expect(resolveFileLinkTarget('/tmp/result.md', '/Users/zjding/project'))
+      .toBe('/tmp/result.md')
+    expect(resolveFileLinkTarget('D:\\result.md', '/Users/zjding/project'))
+      .toBe('D:\\result.md')
+    expect(resolveFileLinkTarget('\\\\server\\share\\result.md', '/Users/zjding/project'))
+      .toBe('\\\\server\\share\\result.md')
   })
 })

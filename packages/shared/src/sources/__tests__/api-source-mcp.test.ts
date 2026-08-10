@@ -98,6 +98,19 @@ describe('API source MCP server', () => {
       const tools = await client.listTools();
       expect(tools.map(tool => tool.name)).toEqual(['list_sources', 'search_rankings', 'get_manifest']);
       expect(tools[1]?.inputSchema.required).toEqual(['source']);
+      expect(serverConfig.toolPermissions).toEqual({
+        list_sources: { method: 'GET', path: '/v2/catalog/sources' },
+        search_rankings: {
+          method: 'GET',
+          path: '/v2/rankings',
+          parameters: config.operations?.[1]?.parameters,
+        },
+        get_manifest: {
+          method: 'GET',
+          path: '/v2/series/{source}/{sourceId}/manifest',
+          parameters: config.operations?.[2]?.parameters,
+        },
+      });
 
       await client.callTool('list_sources', {});
       await client.callTool('search_rankings', { source: 'reelshort' });

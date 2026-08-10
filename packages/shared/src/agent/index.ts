@@ -18,12 +18,6 @@ export {
   mergeSessionScopedToolCallbacks,
   type SessionScopedToolCallbacks,
 } from './session-scoped-tool-callback-registry.ts';
-export {
-  getSessionPlansDir,
-  getLastPlanFilePath,
-  clearPlanFileState,
-  isPathInPlansDir,
-} from './session-plan-state.ts';
 export type { BrowserPaneFns } from './browser-tools.ts';
 export type {
   AuthRequest,
@@ -68,10 +62,6 @@ export {
   type ModeConfig,
   type PermissionModeChangedBy,
 } from './mode-manager.ts';
-
-// Export plan types and permission mode messages
-export type { Plan, PlanStep, PlanState, PlanReviewRequest, PlanReviewResult } from './plan-types.ts';
-export { PERMISSION_MODE_MESSAGES, PERMISSION_MODE_PROMPTS } from './plan-types.ts';
 
 // Export thinking-levels - extended reasoning configuration
 export {

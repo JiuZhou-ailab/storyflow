@@ -70,12 +70,14 @@ function injectSession(
     workspace as never,
     { messagesLoaded: true },
   ) as unknown as {
+    id: string
     agent: AgentStub | null
     backendRuntimeSignature?: string
     backendRestartSignature?: string
     credentialRestartRequired?: boolean
     isProcessing: boolean
     llmConnection?: string
+    runtimeState?: 'invalidating' | 'deleting'
   }
   managed.agent = agent
   // Force a stale runtime signature so the helper's comparison always reaches
@@ -258,6 +260,66 @@ describe('refreshConnectionRuntime', () => {
     // Only one updateRuntimeConfig — the second call awaited the first via
     // the mutex, then saw matching signatures and bailed.
     expect(agent.updateRuntimeConfig).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds runtime disposal until a one-shot query settles', async () => {
+    let markStarted!: () => void
+    let finishQuery!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const queryGate = new Promise<void>(resolve => { finishQuery = resolve })
+    const agent = createAgentStub()
+    const dispose = jest.fn()
+    agent.dispose = dispose
+    ;(agent as any).queryLlm = async () => {
+      markStarted()
+      await queryGate
+      return { text: 'done' }
+    }
+    injectSession(sm, 'leased-query', tmpRoot, 'slug-A', agent)
+
+    const query = sm.queryOnce('leased-query', { prompt: 'summarize' } as never)
+    await started
+    const disposal = sm.disposeConnectionRuntimes('slug-A')
+    await Promise.resolve()
+    expect(dispose).not.toHaveBeenCalled()
+
+    finishQuery()
+    await expect(query).resolves.toEqual({ text: 'done' })
+    await disposal
+    expect(dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('invalidates every matching session before waiting for runtime disposal', async () => {
+    let markStarted!: () => void
+    let finishQuery!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const queryGate = new Promise<void>(resolve => { finishQuery = resolve })
+    const firstAgent = createAgentStub()
+    ;(firstAgent as any).queryLlm = async () => {
+      markStarted()
+      await queryGate
+      return { text: 'done' }
+    }
+    const first = injectSession(sm, 'signout-first', tmpRoot, 'slug-A', firstAgent)
+    const second = injectSession(sm, 'signout-second', tmpRoot, 'slug-A', createAgentStub())
+
+    const query = sm.queryOnce(first.id, { prompt: 'hold' } as never)
+    await started
+    const disposal = sm.disposeConnectionRuntimes('slug-A')
+    await Promise.resolve()
+
+    expect(first.runtimeState).toBe('invalidating')
+    expect(second.runtimeState).toBe('invalidating')
+    await expect(sm.queryOnce(second.id, { prompt: 'must not start' } as never))
+      .rejects.toThrow('closing')
+
+    finishQuery()
+    await query
+    await disposal
+    expect(first.runtimeState).toBeUndefined()
+    expect(second.runtimeState).toBeUndefined()
+    expect(first.agent).toBeNull()
+    expect(second.agent).toBeNull()
   })
 
   it('preserves per-model capabilities in the runtime refresh IPC payload', async () => {

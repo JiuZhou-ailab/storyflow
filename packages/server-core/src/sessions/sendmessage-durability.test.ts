@@ -1,6 +1,6 @@
-// input: SessionManager sendMessage persistence and performance tracking hooks
-// output: Regression coverage for pre-ack disk durability and accept-span evidence
-// pos: Guards sendMessage ack ordering before provider agent initialization
+// input: SessionManager persistence, transient context, performance hooks, and Pi runtime lifecycle
+// output: Regression coverage for durable messages, compatible leases, exclusive mutations, and deletion tombstones
+// pos: Guards send acceptance and runtime ownership across concurrent session operations
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
@@ -193,7 +193,7 @@ describe('sendMessage durability', () => {
       'queued message',
       undefined,
       undefined,
-      undefined,
+      { workspaceFreshnessContext: 'read chapter-2.md before editing' },
       undefined,
       (messageId) => {
         ackedMessageId = messageId
@@ -205,6 +205,219 @@ describe('sendMessage durability', () => {
     expect(ackedMessageId).not.toBeNull()
     expect(onDiskAtAck).toBe(true)
     expectAcceptMetric(acceptMetricAtAck, 'queued')
+
+    const restoredManager = new SessionManager()
+    const restored = createManagedSession(
+      { id: sessionId, name: 'restored queue' },
+      managed.workspace,
+      { messagesLoaded: false, isProcessing: true },
+    )
+    ;(restoredManager as unknown as { sessions: Map<string, unknown> }).sessions.set(sessionId, restored)
+    await (restoredManager as unknown as {
+      loadMessagesFromDisk(session: typeof restored): Promise<void>
+    }).loadMessagesFromDisk(restored)
+    expect(restored.messageQueue[0]?.options?.workspaceFreshnessContext)
+      .toBe('read chapter-2.md before editing')
+  })
+
+  it('keeps one-time and interruption context out of the durable model message', async () => {
+    const sessionId = 'transient-turn-context'
+    const managed = buildSession(sessionId)
+    managed.wasInterrupted = true
+    let captured: { message: string; oneTimeContext?: string; turnPolicy?: string } | undefined
+    ;(sm as unknown as { getOrCreateAgentLocked: () => Promise<unknown> }).getOrCreateAgentLocked = async () => ({
+      getModel: () => 'test-model',
+      setAllSources: () => {},
+      getSessionId: () => undefined,
+      chat: async function* (
+        message: string,
+        _attachments: unknown,
+        options: { oneTimeContext?: string; turnPolicy?: string },
+      ) {
+        captured = {
+          message,
+          oneTimeContext: options.oneTimeContext,
+          turnPolicy: options.turnPolicy,
+        }
+        yield { type: 'complete' }
+      },
+    })
+
+    await sm.sendMessage(
+      sessionId,
+      'hello',
+      undefined,
+      undefined,
+      {
+        oneTimeContext: 'OTHER TRANSIENT DATA',
+        workspaceFreshnessContext: '<workspace-brief>\nNOVEL WORKSPACE BRIEF\n</workspace-brief>',
+      },
+    )
+
+    expect(captured?.message).toBe('hello')
+    expect(captured?.oneTimeContext).toContain('OTHER TRANSIENT DATA')
+    expect(captured?.oneTimeContext).toContain('NOVEL WORKSPACE BRIEF')
+    expect(captured?.turnPolicy).toContain('previous assistant response was interrupted')
+    expect(captured?.turnPolicy).toContain('Before editing any listed file, read its latest content first')
+    expect(managed.wasInterrupted).toBe(false)
+    expect(readFileSync(getSessionFilePath(tmpRoot, sessionId), 'utf-8'))
+      .not.toContain('NOVEL WORKSPACE BRIEF')
+  })
+
+  it('shares one-shot queries with chat while disposal waits for the chat lease', async () => {
+    const sessionId = 'chat-runtime-lease'
+    const managed = buildSession(sessionId)
+    managed.llmConnection = 'lease-test'
+    let markStarted!: () => void
+    let finishChat!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const chatGate = new Promise<void>(resolve => { finishChat = resolve })
+    let disposeCalls = 0
+    const agent = {
+      isProcessing: () => false,
+      getModel: () => 'test-model',
+      setAllSources: () => {},
+      getSessionId: () => undefined,
+      dispose: () => { disposeCalls++ },
+      forceAbort: () => {},
+      queryLlm: async () => ({ text: 'rewritten', model: 'test-model' }),
+      chat: async function* () {
+        markStarted()
+        await chatGate
+        yield { type: 'complete' }
+      },
+    }
+    managed.agent = agent as never
+    ;(sm as any).getOrCreateAgentLocked = async () => agent
+
+    const send = sm.sendMessage(sessionId, 'hi')
+    await started
+
+    await expect(sm.queryOnce(sessionId, { prompt: 'rewrite' }))
+      .resolves.toEqual({ text: 'rewritten', model: 'test-model' })
+
+    const disposal = sm.disposeConnectionRuntimes('lease-test')
+    await Promise.resolve()
+    expect(disposeCalls).toBe(0)
+
+    finishChat()
+    await send
+    await disposal
+    expect(disposeCalls).toBe(1)
+  })
+
+  it('defers source runtime mutation until the active chat lease settles', async () => {
+    const sessionId = 'chat-source-writer'
+    const managed = buildSession(sessionId)
+    let markStarted!: () => void
+    let finishChat!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const chatGate = new Promise<void>(resolve => { finishChat = resolve })
+    let sourceUpdateCalls = 0
+    const agent = {
+      isProcessing: () => false,
+      getModel: () => 'test-model',
+      getSessionId: () => undefined,
+      getSummarizeCallback: () => async () => null,
+      setAllSources: () => {},
+      applyBridgeUpdates: async () => {},
+      setSourceServers: async () => { sourceUpdateCalls++ },
+      chat: async function* () {
+        markStarted()
+        await chatGate
+        yield { type: 'complete' }
+      },
+    }
+    managed.agent = agent as never
+    ;(sm as any).getOrCreateAgentLocked = async () => agent
+
+    const send = sm.sendMessage(sessionId, 'hi')
+    await started
+    const sourceUpdate = sm.setSessionSources(sessionId, [])
+    await Promise.resolve()
+    expect(sourceUpdateCalls).toBe(0)
+
+    finishChat()
+    await send
+    await sourceUpdate
+    expect(sourceUpdateCalls).toBe(1)
+  })
+
+  it('does not recreate or persist a session after deletion starts', async () => {
+    const sessionId = 'delete-runtime-tombstone'
+    const managed = buildSession(sessionId)
+    managed.name = undefined
+    let markStarted!: () => void
+    let finishChat!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const chatGate = new Promise<void>(resolve => { finishChat = resolve })
+    let titleCalls = 0
+    const agent = {
+      isProcessing: () => false,
+      getModel: () => 'test-model',
+      getSessionId: () => undefined,
+      setAllSources: () => {},
+      dispose: () => {},
+      forceAbort: () => { finishChat() },
+      generateTitle: async () => {
+        titleCalls++
+        return 'stale title'
+      },
+      chat: async function* () {
+        markStarted()
+        await chatGate
+        yield { type: 'complete' }
+      },
+    }
+    managed.agent = agent as never
+    ;(sm as any).getOrCreateAgentLocked = async () => agent
+
+    const send = sm.sendMessage(sessionId, 'Investigate runtime deletion safety')
+    await started
+    const deletion = sm.deleteSession(sessionId)
+    await Promise.all([send, deletion])
+    await Promise.resolve()
+
+    expect(titleCalls).toBe(0)
+    expect((sm as unknown as { sessions: Map<string, unknown> }).sessions.has(sessionId)).toBe(false)
+    expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
+  })
+
+  it('does not let deletion race ahead of an accepted send transaction', async () => {
+    const sessionId = 'delete-send-acceptance'
+    const managed = buildSession(sessionId)
+    let markPreflightStarted!: () => void
+    let finishPreflight!: () => void
+    const preflightStarted = new Promise<void>(resolve => { markPreflightStarted = resolve })
+    const preflightGate = new Promise<void>(resolve => { finishPreflight = resolve })
+    ;(sm as unknown as {
+      ensureMessagesLoaded(session: typeof managed): Promise<void>
+    }).ensureMessagesLoaded = async () => {
+      markPreflightStarted()
+      await preflightGate
+    }
+
+    let acked = false
+    const send = sm.sendMessage(
+      sessionId,
+      'accepted before deletion',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => { acked = true },
+    )
+    await preflightStarted
+    const deletion = sm.deleteSession(sessionId)
+    await Promise.resolve()
+    expect(managed.runtimeState).toBe('deleting')
+
+    finishPreflight()
+    await Promise.all([send, deletion])
+
+    expect(acked).toBe(true)
+    expect((sm as unknown as { sessions: Map<string, unknown> }).sessions.has(sessionId)).toBe(false)
+    expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
   })
 
   it('durably completes once with facade, first-event, and turn-usage evidence', async () => {
@@ -226,7 +439,7 @@ describe('sendMessage durability', () => {
       if (event?.type === 'text_complete') assistantCompleted = true
     })
     sm.setActiveViewingSession(sessionId, 'ws_test')
-    ;(sm as unknown as { getOrCreateAgent: () => Promise<unknown> }).getOrCreateAgent = async () => ({
+    ;(sm as unknown as { getOrCreateAgentLocked: () => Promise<unknown> }).getOrCreateAgentLocked = async () => ({
       getModel: () => 'test-model',
       setAllSources: () => {},
       getSessionId: () => undefined,

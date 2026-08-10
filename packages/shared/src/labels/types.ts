@@ -1,3 +1,7 @@
+// input: Workspace label configuration data
+// output: Canonical label, rule, and parsed-entry types
+// pos: Shared type contract for label persistence and UI projection
+
 /**
  * Label Types
  *
@@ -92,15 +96,6 @@ export interface CreateLabelInput {
   name: string;
   color?: EntityColor;
   parentId?: string; // Target parent label ID (null = root)
-  valueType?: 'string' | 'number' | 'date';
-}
-
-/**
- * Input for updating an existing label (name, color, valueType — cannot change ID or hierarchy)
- */
-export interface UpdateLabelInput {
-  name?: string;
-  color?: EntityColor;
   valueType?: 'string' | 'number' | 'date';
 }
 

@@ -161,6 +161,29 @@ class ScreenplayProjectTest(unittest.TestCase):
             self.assertTrue((project_dir / "story-metadata.md").is_file())
             self.assertTrue((project_dir / "episodes/001-source.md").is_file())
 
+    def test_project_state_cannot_escape_project_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "novel.txt"
+            source.write_text("第一章\n\n" + "故事开始。" * 100, encoding="utf-8")
+            project_dir = root / "screenplay"
+            screenplay_project.prepare(source, project_dir, "compact")
+            project_file = project_dir / "project.json"
+            project = json.loads(project_file.read_text(encoding="utf-8"))
+            script = project_dir / project["episodes"][0]["script_path"]
+            script.write_text(valid_script(1, "第一章", "测试。"), encoding="utf-8")
+
+            project["layout"]["versions_dir"] = "../../outside"
+            project_file.write_text(json.dumps(project, ensure_ascii=False), encoding="utf-8")
+            version = Path(screenplay_project.checkpoint(project_dir, 1)["version"])
+            self.assertTrue((project_dir / "版本").resolve() in version.parents)
+            self.assertFalse((root / "outside").exists())
+
+            project["episodes"][0]["script_path"] = "../../outside.md"
+            project_file.write_text(json.dumps(project, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(screenplay_project.ProjectError, "越过项目目录"):
+                screenplay_project.validate_episode(project_dir, 1)
+
     def test_cli_help_is_chinese(self) -> None:
         help_text = screenplay_project.build_parser().format_help()
         self.assertIn("用法：", help_text)

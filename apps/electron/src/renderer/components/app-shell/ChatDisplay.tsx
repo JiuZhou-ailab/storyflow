@@ -29,7 +29,6 @@ import {
   FileChangesSummary,
   extractOverlayCards,
   ActivityCardsOverlay,
-  CodePreviewOverlay,
   MultiDiffPreviewOverlay,
   DocumentFormattedMarkdownOverlay,
   type ActivityItem,
@@ -111,8 +110,6 @@ interface MarkdownOverlayState {
   type: 'markdown'
   content: string
   title: string
-  /** When true, show raw markdown source in code viewer instead of rendered preview */
-  forceCodeView?: boolean
 }
 
 /** Union of all overlay states, or null for no overlay */
@@ -1570,9 +1567,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     return undefined
   }, [pendingPermission, pendingCredential, pendingUserQuestion])
 
+  const rewindPendingRef = React.useRef(false)
+  const [rewindPending, setRewindPending] = useState(false)
   const handleRewindUserMessage = useCallback(async (message: Message) => {
     if (!session) return
     if (message.role !== 'user') return
+    if (rewindPendingRef.current) return
 
     if (!onDraftInputChange) {
       toast.error(t('chat.rewindUnavailable', 'This message cannot be safely rewound.'))
@@ -1592,6 +1592,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       }, 80)
     }
 
+    rewindPendingRef.current = true
+    setRewindPending(true)
     try {
       const result = await window.electronAPI.rewindSession(session.id, message.id)
       if (!result.success) {
@@ -1610,6 +1612,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     } catch (error) {
       console.error('[ChatDisplay] Failed to rewind conversation:', error)
       toast.error(t('chat.rewindFailed', 'Could not rewind conversation'))
+    } finally {
+      rewindPendingRef.current = false
+      setRewindPending(false)
     }
   }, [onDraftInputChange, session, t])
   const handleRewindUserMessageRef = React.useRef(handleRewindUserMessage)
@@ -1789,7 +1794,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               <div className={cn(
                 CHAT_LAYOUT.maxWidth,
                 "mx-auto min-w-0",
-                compactMode ? "px-3 py-4 space-y-2" : [CHAT_LAYOUT.containerPadding, CHAT_LAYOUT.messageSpacing]
+                compactMode ? "px-3 py-4 space-y-2" : [CHAT_LAYOUT.containerPaddingX, "pt-12 pb-8", CHAT_LAYOUT.messageSpacing]
               )}>
                 {/* Session-level AnimatePresence: Prevents layout jump when switching sessions */}
                 <AnimatePresence mode={compactMode ? "sync" : "wait"} initial={false}>
@@ -1918,7 +1923,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             onOpenUrl={onOpenUrl}
                             sessionId={session?.id}
                             compactMode={compactMode}
-                            onEdit={session.isProcessing ? undefined : () => {
+                            onEdit={session.isProcessing || rewindPending ? undefined : () => {
                               void handleRewindUserMessageRef.current(turn.message)
                             }}
                           />
@@ -2126,15 +2131,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             },
                           }))
                         }}
-                        onPopOut={(text) => {
-                          // Open raw markdown source in code viewer
-                          setOverlayState({
-                            type: 'markdown',
-                            content: text,
-                            title: 'Response Preview',
-                            forceCodeView: true,
-                          })
-                        }}
                         onOpenDetails={() => {
                           // Open turn details in markdown overlay
                           const markdown = formatTurnAsMarkdown(turn)
@@ -2320,29 +2316,15 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         />
       )}
 
-      {/* Markdown preview overlay (pop-out, turn details) */}
-      {/* forceCodeView: show raw markdown source in code viewer (used by "View as Markdown" button) */}
-      {/* otherwise: render formatted markdown (used by turn details, etc.) */}
+      {/* Markdown preview overlay (turn details) */}
       {overlayState?.type === 'markdown' && (
-        overlayState.forceCodeView ? (
-          <CodePreviewOverlay
-            isOpen={true}
-            onClose={handleCloseOverlay}
-            content={overlayState.content}
-            filePath="response.md"
-            language="markdown"
-            mode="read"
-            theme={isDark ? 'dark' : 'light'}
-          />
-        ) : (
-          <DocumentFormattedMarkdownOverlay
-            isOpen={true}
-            onClose={handleCloseOverlay}
-            content={overlayState.content}
-            onOpenUrl={onOpenUrl}
-            onOpenFile={onOpenFile}
-          />
-        )
+        <DocumentFormattedMarkdownOverlay
+          isOpen={true}
+          onClose={handleCloseOverlay}
+          content={overlayState.content}
+          onOpenUrl={onOpenUrl}
+          onOpenFile={onOpenFile}
+        />
       )}
     </div>
   )

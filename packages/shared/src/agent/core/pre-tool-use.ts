@@ -213,11 +213,6 @@ export function stripToolMetadata(
   };
 }
 
-/**
- * @deprecated Use stripToolMetadata instead. This alias is kept for backwards compatibility.
- */
-export const stripMcpMetadata = stripToolMetadata;
-
 // ============================================================
 // CONFIG FILE VALIDATION
 // ============================================================
@@ -502,6 +497,8 @@ export interface PreToolUseInput {
   toolName: string;
   /** Tool input object */
   input: Record<string, unknown>;
+  /** Host-owned HTTP semantics for a declarative in-process API tool. */
+  apiOperation?: { method: string; path: string };
   /** Current session ID */
   sessionId: string;
   /** Current permission mode */
@@ -647,6 +644,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
   const {
     toolName,
     input,
+    apiOperation,
     sessionId,
     permissionMode,
     workspaceRootPath,
@@ -701,7 +699,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     toolName,
     input,
     effectivePermissionMode,
-    { plansFolderPath, dataFolderPath, permissionsContext }
+    { plansFolderPath, dataFolderPath, permissionsContext, apiOperation }
   );
 
   if (!modeResult.allowed) {
@@ -802,6 +800,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
       permissionManager,
       permissionsContext,
       plansFolderPath,
+      apiOperation,
       onDebug,
     );
     if (promptInfo) {
@@ -946,8 +945,28 @@ export function shouldPromptInAskMode(
   permissionManager: PermissionManagerLike,
   permissionsContext: PermissionsContext,
   plansFolderPath?: string,
+  apiOperation?: { method: string; path: string },
   onDebug?: (message: string) => void,
 ): PromptInfo | null {
+
+  // Declarative API names are untrusted Source data. Decide from the
+  // host-owned HTTP method/path before any tool-name classification.
+  if (apiOperation) {
+    const method = apiOperation.method.toUpperCase();
+    const apiDescription = `${method} ${apiOperation.path}`;
+    if (method === 'GET' || isApiEndpointAllowed(method, apiOperation.path, permissionsContext)) {
+      return null;
+    }
+    if (permissionManager.isCommandWhitelisted(apiDescription)) {
+      onDebug?.(`Auto-allowing API "${apiDescription}" (previously approved)`);
+      return null;
+    }
+    return {
+      promptType: 'api_mutation',
+      description: `API: ${apiDescription}`,
+      command: apiDescription,
+    };
+  }
 
   // --- File writes ---
   if (FILE_WRITE_TOOLS.has(toolName)) {
@@ -1008,7 +1027,7 @@ export function shouldPromptInAskMode(
   if (toolName.startsWith('mcp__')) {
     // Check if it would be blocked in safe mode (= it's a mutation)
     const safeModeResult = shouldAllowToolInMode(
-      toolName, input, 'safe', { plansFolderPath }
+      toolName, input, 'safe', { plansFolderPath, apiOperation }
     );
     if (!safeModeResult.allowed) {
       // It's a mutation — check whitelist

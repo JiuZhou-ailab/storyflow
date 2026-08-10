@@ -161,7 +161,6 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
             onDocumentChanged={onDocumentChanged}
             placeholder={t('writing.emptySection')}
             editable={!loading}
-            markdownEngine="official"
             showToolbar
             toolbarAccessory={toolbarAccessory}
             surface="manuscript"

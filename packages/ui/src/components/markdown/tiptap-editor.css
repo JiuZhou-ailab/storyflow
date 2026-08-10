@@ -147,7 +147,7 @@
 }
 
 .tiptap-editor--manuscript .tiptap-editor-content {
-  padding: clamp(12px, 2vw, 24px) clamp(12px, 2.8vw, 36px) clamp(32px, 5vw, 64px);
+  padding: 4px 8px 24px;
   background: transparent;
 }
 
@@ -156,11 +156,11 @@
   width: min(100%, var(--tiptap-manuscript-width));
   min-height: 100%;
   margin: 0 auto;
-  padding: clamp(32px, 4.2vw, 52px) clamp(34px, 5vw, 62px);
+  padding: 16px clamp(20px, 2.4vw, 32px) 32px;
   background: transparent;
   color: var(--tiptap-manuscript-ink);
   font-family: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "Times New Roman", serif;
-  font-size: 16.5px;
+  font-size: 14.5px;
   line-height: var(--tiptap-manuscript-line-height);
   letter-spacing: 0;
   text-wrap: pretty;
@@ -236,7 +236,7 @@
 }
 
 .tiptap-editor--line-numbers.tiptap-editor--manuscript .tiptap-prose {
-  padding-left: clamp(48px, 5.8vw, 76px);
+  padding-left: clamp(44px, 3.6vw, 52px);
 }
 
 .tiptap-editor--manuscript .tiptap-prose p {
@@ -310,19 +310,19 @@
 
 @container (max-width: 520px) {
   .tiptap-editor--manuscript .tiptap-editor-content {
-    padding: 8px 0 40px;
+    padding: 4px 0 24px;
   }
 
   .tiptap-editor--manuscript .tiptap-prose {
     width: 100%;
-    padding: 34px 36px 48px;
+    padding: 16px 16px 28px;
     border-right: 0;
     border-left: 0;
     box-shadow: none;
   }
 
   .tiptap-editor--line-numbers.tiptap-editor--manuscript .tiptap-prose {
-    padding-left: 48px;
+    padding-left: 44px;
   }
 
   .tiptap-editor--line-numbers .tiptap-prose > *::before {
@@ -338,7 +338,7 @@
 
   .tiptap-editor--manuscript .tiptap-prose {
     width: 100%;
-    padding: 26px 22px 40px;
+    padding: 16px 12px 24px;
     border-right: 0;
     border-left: 0;
     box-shadow: none;
@@ -349,7 +349,7 @@
   }
 
   .tiptap-editor--line-numbers.tiptap-editor--manuscript .tiptap-prose {
-    padding-left: 22px;
+    padding-left: 12px;
   }
 }
 

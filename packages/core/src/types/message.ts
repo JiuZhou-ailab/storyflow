@@ -327,6 +327,8 @@ export interface Message {
   isPending?: boolean;
   // Queued: user message that is waiting to be processed (sent during ongoing response)
   isQueued?: boolean;
+  /** Minimal host context retained only until a queued message starts. */
+  queuedWorkspaceFreshnessContext?: string;
   // Intermediate text (commentary between tool calls, not final response)
   isIntermediate?: boolean;
   // Turn ID: Correlation ID from the API's message.id, groups all messages in an assistant turn
@@ -460,6 +462,8 @@ export interface StoredMessage {
   authWorkspace?: string;
   // Queued: user message that is waiting to be processed (persisted for recovery)
   isQueued?: boolean;
+  /** Minimal host context retained only until a queued message starts. */
+  queuedWorkspaceFreshnessContext?: string;
 }
 
 /**

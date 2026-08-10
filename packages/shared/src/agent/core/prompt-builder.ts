@@ -1,5 +1,5 @@
 // input: Workspace/session metadata, source state, preferences, and current filesystem shape
-// output: Per-turn prompt context blocks for Storyflow agent sessions
+// output: Per-turn system policy and data context blocks for Storyflow agent sessions
 // pos: Shared prompt-context builder used by Claude and Pi-backed sessions
 
 import { isLocalMcpEnabled } from '../../workspaces/storage.ts';
@@ -14,12 +14,13 @@ import { formatLanguageReminderForPrompt } from '../../i18n/language-policy.ts';
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../../sessions/storage.ts';
 import {
   buildWorkspaceStructureSnapshot,
-  renderWorkspaceStructureContext,
+  renderWorkspaceStructureProjection,
 } from './workspace-structure-context.ts';
 import type {
   PromptBuilderConfig,
   ContextBlockOptions,
   RecoveryMessage,
+  TurnProjection,
 } from './types.ts';
 
 /**
@@ -34,7 +35,7 @@ import type {
  * });
  *
  * // Build context blocks for a user message
- * const contextParts = promptBuilder.buildContextParts({
+ * const turnContext = promptBuilder.buildTurnContext({
  *   permissionMode: 'explore',
  *   plansFolderPath: '/path/to/plans',
  * });
@@ -55,46 +56,50 @@ export class PromptBuilder {
   // ============================================================
 
   /**
-   * Build all context parts for a user message.
-   * Returns an array of strings that should be prepended to the user message.
+   * Build host policy and untrusted data as separate per-turn projections.
    *
    * @param options - Context building options
-   * @param sourceStateBlock - Pre-formatted source state (from SourceManager)
-   * @returns Array of context strings
+   * @param sourceState - Host policy plus Source-authored turn data
+   * @returns System-policy and user-data context strings
    */
-  buildContextParts(
+  buildTurnContext(
     options: ContextBlockOptions,
-    sourceStateBlock?: string
-  ): string[] {
-    const parts: string[] = [];
+    sourceState?: TurnProjection
+  ): { system: string[]; data: string[] } {
+    const system: string[] = [];
+    const data: string[] = [];
 
     // Keep the least volatile context first so provider caches can reuse the
     // longest possible prefix across turns.
     if (this.workspaceRootPath) {
-      parts.push(`<workspace_root>${this.workspaceRootPath}</workspace_root>`);
+      data.push(`<workspace_root>${this.workspaceRootPath}</workspace_root>`);
     }
 
-    parts.push(this.formatWorkspaceCapabilities());
+    system.push(this.formatWorkspaceCapabilities());
 
     const workingDirContext = this.getWorkingDirectoryContext();
     if (workingDirContext) {
-      parts.push(workingDirContext);
+      data.push(workingDirContext);
     }
 
     const projectContextFiles = getProjectContextFilesPrompt(
       this.config.session?.workingDirectory ?? this.workspaceRootPath
     );
     if (projectContextFiles) {
-      parts.push(projectContextFiles);
+      data.push(projectContextFiles);
     }
 
-    const workspaceStructureContext = this.formatWorkspaceStructure();
-    if (workspaceStructureContext) {
-      parts.push(workspaceStructureContext);
+    const workspaceStructure = this.formatWorkspaceStructure();
+    if (workspaceStructure) {
+      if (workspaceStructure.policy) system.push(workspaceStructure.policy);
+      data.push(workspaceStructure.data);
     }
 
-    if (sourceStateBlock) {
-      parts.push(sourceStateBlock);
+    if (sourceState?.policy) {
+      system.push(sourceState.policy);
+    }
+    if (sourceState?.data) {
+      data.push(sourceState.data);
     }
 
     const sessionId = this.config.session?.id ?? `temp-${Date.now()}`;
@@ -102,19 +107,18 @@ export class PromptBuilder {
       getSessionPlansPath(this.workspaceRootPath, sessionId);
     const dataFolderPath = options.dataFolderPath ??
       getSessionDataPath(this.workspaceRootPath, sessionId);
-    parts.push(formatSessionState(sessionId, {
-      plansFolderPath,
-      dataFolderPath,
+    system.push(formatSessionState(sessionId, {
       consumeModeChangeUserSignal: true,
     }));
+    data.push(`<session_paths>\nplansFolderPath: ${plansFolderPath}\ndataFolderPath: ${dataFolderPath}\n</session_paths>`);
 
     // Current time changes every turn, so it must stay at the dynamic tail.
-    parts.push(getDateTimeContext());
+    system.push(getDateTimeContext());
     // Keep a final language reminder after provider-native Skills and other
     // discovered resources so human-facing output follows the selected locale.
-    parts.push(formatLanguageReminderForPrompt());
+    system.push(formatLanguageReminderForPrompt());
 
-    return parts;
+    return { system, data };
   }
 
   /**
@@ -157,7 +161,7 @@ export class PromptBuilder {
   /**
    * Format the current workspace structure as a bounded per-turn anchor.
    */
-  formatWorkspaceStructure(): string | null {
+  formatWorkspaceStructure(): TurnProjection | null {
     const sessionId = this.config.session?.id;
     const effectiveWorkingDir = this.config.session?.workingDirectory ??
       (sessionId ? getSessionPath(this.workspaceRootPath, sessionId) : undefined);
@@ -165,7 +169,7 @@ export class PromptBuilder {
 
     if (!structureRoot) return null;
 
-    return renderWorkspaceStructureContext(
+    return renderWorkspaceStructureProjection(
       buildWorkspaceStructureSnapshot(structureRoot),
       {
         activeWorkspaceRoot: this.workspaceRootPath || undefined,

@@ -217,13 +217,6 @@ export function getModelsByProvider(provider: ModelProvider): ModelDefinition[] 
 export const ANTHROPIC_MODELS = getModelsByProvider('anthropic');
 
 
-/**
- * Legacy compatibility export.
- * Used by existing code that imports MODELS (expects Claude models only).
- * @deprecated Use ANTHROPIC_MODELS or MODEL_REGISTRY instead
- */
-export const MODELS = ANTHROPIC_MODELS;
-
 // ============================================
 // MODEL ID HELPERS (Derived from Registry)
 // ============================================

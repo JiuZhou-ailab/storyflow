@@ -12,7 +12,6 @@ import type {
 import {
   getSessionScopedToolCallbacks,
 } from './session-scoped-tool-callback-registry.ts';
-import { setLastPlanFilePath } from './session-plan-state.ts';
 import { attachSessionSelfManagementBindings } from './session-self-management-bindings.ts';
 
 // Session tool proxy definitions (for registering with subprocess)
@@ -74,6 +73,7 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
     const checkResult = runPreToolUseChecks({
       toolName,
       input,
+      apiOperation: this.mcpPool?.getProxyToolPermission(toolName, input),
       sessionId,
       permissionMode: this.permissionManager.getPermissionMode(),
       workspaceRootPath: rootPath,
@@ -141,6 +141,7 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
         const postResult = runPreToolUseChecks({
           toolName,
           input,
+          apiOperation: this.mcpPool?.getProxyToolPermission(toolName, input),
           sessionId,
           permissionMode: this.permissionManager.getPermissionMode(),
           workspaceRootPath: rootPath,
@@ -321,7 +322,6 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
       workspacePath,
       workspaceId,
       onPlanSubmitted: async (planPath: string) => {
-        setLastPlanFilePath(sessionId, planPath);
         await this.onPlanSubmitted?.(planPath);
       },
       onAuthRequest: (request: unknown) => {

@@ -11,6 +11,6 @@ describe('SessionManager user iteration propagation', () => {
 
     expect(source).toContain("const userIteration = managed.messages.filter(message => message.role === 'user').length")
     expect(source).toContain('userIteration,')
-    expect(source).toContain('agent.chat(effectiveMessage, modelInputAttachments.attachments, {')
+    expect(source).toContain('agent.chat(message, modelInputAttachments.attachments, {')
   })
 })

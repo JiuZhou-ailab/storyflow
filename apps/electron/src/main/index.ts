@@ -78,6 +78,7 @@ import { shouldCreateWindowsAfterStartup } from './startup-state'
 import {
   createClientAuthConfigFromRuntimeEnv,
   createClientAuthService,
+  type ClientAuthChange,
   type ClientAuthService,
   type ClientAuthState,
 } from './client-auth'
@@ -505,44 +506,47 @@ app.whenReady().then(async () => {
     const managedModelAccessConfigured = Boolean(
       clientAuthConfig.authBrokerUrl ?? clientAuthConfig.feishuBrokerAuth?.brokerUrl,
     )
+    const propagateClientAuthRuntimeChange = async (change: ClientAuthChange): Promise<void> => {
+      if (!sessionManager) return
+      if (!change.session) {
+        await Promise.all(
+          MANAGED_LLM_CONNECTION_SLUGS.map(slug =>
+            sessionManager!.disposeConnectionRuntimes(slug)
+          ),
+        )
+        return
+      }
+      if (!change.modelAccessTokenChanged) return
+
+      const managedModelAccess = change.session.modelAccessToken
+        ? { token: change.session.modelAccessToken }
+        : undefined
+      await Promise.all(
+        MANAGED_LLM_CONNECTION_SLUGS.map(async slug => {
+          if (managedModelAccess) {
+            await sessionManager!.reloadConnectionCredentials(slug, managedModelAccess)
+          } else {
+            await sessionManager!.disposeConnectionRuntimes(slug)
+          }
+        }),
+      )
+      for (const slug of MANAGED_LLM_CONNECTION_SLUGS) {
+        void getModelRefreshService().refreshAfterCredentialChange(slug).catch(error => {
+          mainLog.warn(`[client-auth] Managed model refresh failed for ${slug}:`, error)
+        })
+      }
+    }
     const authService = createClientAuthService(clientAuthConfig, {
       initialSession: initialClientAuthSession,
       sessionStore: clientAuthSessionStore,
       openExternal: (url) => shell.openExternal(url).then(() => undefined),
-      onAuthChange: async (change) => {
+      onAuthChange: (change) => {
         broadcastClientAuthState(change.state)
-        try {
-          if (!sessionManager) return
-          if (!change.session) {
-            await Promise.all(
-              MANAGED_LLM_CONNECTION_SLUGS.map(slug =>
-                sessionManager!.disposeConnectionRuntimes(slug)
-              ),
-            )
-          } else if (change.modelAccessTokenChanged) {
-            const managedModelAccess = change.session.modelAccessToken
-              ? { token: change.session.modelAccessToken }
-              : undefined
-            await Promise.all(
-              MANAGED_LLM_CONNECTION_SLUGS.map(async slug => {
-                if (managedModelAccess) {
-                  await sessionManager!.reloadConnectionCredentials(slug, managedModelAccess)
-                } else {
-                  await sessionManager!.disposeConnectionRuntimes(slug)
-                }
-              }),
-            )
-            // Model discovery is downstream of auth state. Do not make an auth
-            // transition wait on its own credential resolver.
-            for (const slug of MANAGED_LLM_CONNECTION_SLUGS) {
-              void getModelRefreshService().refreshAfterCredentialChange(slug).catch(error => {
-                mainLog.warn(`[client-auth] Managed model refresh failed for ${slug}:`, error)
-              })
-            }
-          }
-        } catch (error) {
+        // Auth transitions must not wait on a runtime that may itself be
+        // resolving the credential which triggered this notification.
+        void propagateClientAuthRuntimeChange(change).catch(error => {
           mainLog.warn('[client-auth] Failed to propagate auth change to live runtimes:', error)
-        }
+        })
       },
     })
     clientAuthService = authService

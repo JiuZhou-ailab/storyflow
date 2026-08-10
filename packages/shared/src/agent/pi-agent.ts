@@ -179,7 +179,7 @@ export class PiAgent extends PiAgentToolHost {
       )
 
       // Build context parts using centralized PromptBuilder
-      const contextParts = this.promptBuilder.buildContextParts(
+      const turnProjection = this.promptBuilder.buildTurnContext(
         {
           plansFolderPath: getSessionPlansPath(this.config.workspace.rootPath, this._sessionId),
           userIteration: this.getCurrentUserIteration(),
@@ -202,11 +202,17 @@ export class PiAgent extends PiAgentToolHost {
         }
       }
 
-      // For Pi, context parts go into the system prompt (not the user message),
-      // but stay separate from the stable prefix so Skills can sit between them.
-      // Unlike Claude, other LLMs behind Pi don't know to ignore inline context
-      // blocks and will echo <session_state>, <sources>, etc. back in their response.
-      const dynamicSystemPrompt = contextParts.filter(Boolean).join('\n\n');
+      const requestContext = options?.oneTimeContext?.trim();
+      const turnPolicy = [
+        ...turnProjection.system,
+        options?.turnPolicy?.trim(),
+      ].filter(Boolean).join('\n\n');
+      const turnContext = [
+        ...turnProjection.data,
+        requestContext
+          ? `<request_context scope="turn">\n${requestContext}\n</request_context>`
+          : undefined,
+      ].filter(Boolean).join('\n\n');
 
       // User message: attachments + the actual message
       // (PiAgentHost.chat() already prepends the Skill command)
@@ -224,7 +230,8 @@ export class PiAgent extends PiAgentToolHost {
         id: turnId,
         message: userMessage,
         systemPrompt,
-        dynamicSystemPrompt,
+        turnPolicy,
+        turnContext,
         images: images.length > 0 ? images : undefined,
         rewindBoundary: options?.rewindBoundary,
       });

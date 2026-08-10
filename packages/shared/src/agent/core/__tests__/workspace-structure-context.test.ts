@@ -8,7 +8,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   buildWorkspaceStructureSnapshot,
-  renderWorkspaceStructureContext,
+  renderWorkspaceStructureProjection,
 } from '../workspace-structure-context'
 
 describe('workspace structure context', () => {
@@ -26,7 +26,7 @@ describe('workspace structure context', () => {
       maxDepth: 4,
       maxEntries: 20,
     })
-    const context = renderWorkspaceStructureContext(snapshot, {
+    const projection = renderWorkspaceStructureProjection(snapshot, {
       activeWorkspaceRoot: rootPath,
       workingDirectory: rootPath,
     })
@@ -37,16 +37,17 @@ describe('workspace structure context', () => {
     expect(snapshot.entries.map(entry => entry.relativePath)).toContain('正文/01-opening.md')
     expect(snapshot.entries.map(entry => entry.relativePath)).toContain('自由区/素材/片段.md')
     expect(snapshot.entries.map(entry => entry.relativePath)).not.toContain('node_modules/')
-    expect(context).toContain('<workspace_structure')
-    expect(context).toContain('active_workspace_root=')
-    expect(context).toContain('working_directory=')
-    expect(context).toContain('<tree>')
-    expect(context).toContain('创作要求.md')
-    expect(context).toContain('正文/')
-    expect(context).toContain('01-opening.md')
-    expect(context).toContain('Do not invent paths from display names')
-    expect(context).toContain('Durable project deliverables belong in workspace files')
-    expect(context).toContain('Use chat for questions, clarification, progress, and summaries')
-    expect(context).toContain('</workspace_structure>')
+    expect(projection.data).toContain('<workspace_structure')
+    expect(projection.data).toContain('active_workspace_root=')
+    expect(projection.data).toContain('working_directory=')
+    expect(projection.data).toContain('<tree>')
+    expect(projection.data).toContain('创作要求.md')
+    expect(projection.data).toContain('正文/')
+    expect(projection.data).toContain('01-opening.md')
+    expect(projection.data).toContain('</workspace_structure>')
+    expect(projection.data).not.toContain('Do not invent paths from display names')
+    expect(projection.policy).toContain('Do not invent paths from display names')
+    expect(projection.policy).toContain('Durable project deliverables belong in workspace files')
+    expect(projection.policy).toContain('Use chat for questions, clarification, progress, and summaries')
   })
 })

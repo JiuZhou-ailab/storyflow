@@ -206,7 +206,6 @@ export function SessionViewer({
                     onExpandedChange={(expanded) => handleExpandedChange(assistantUiKey, expanded)}
                     onOpenFile={platformActions.onOpenFile}
                     onOpenUrl={platformActions.onOpenUrl}
-                    onPopOut={platformActions.onOpenMarkdownPreview}
                     onOpenDetails={() => handleOpenTurnDetails(turn.turnId)}
                     onOpenActivityDetails={handleOpenActivityDetails}
                     expandedActivityGroups={expandedActivityGroups}

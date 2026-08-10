@@ -60,6 +60,7 @@ import type {
 } from '../sources/types.ts';
 import { getSourceCredentialManager } from '../sources/credential-manager.ts';
 import { createStoryflowManagedTokenGetter } from '../sources/managed-access.ts';
+import { getTrustedManagedSourcePolicy } from '../sources/managed-source-policy.ts';
 import {
   inferGoogleServiceFromUrl,
   inferSlackServiceFromUrl,
@@ -312,8 +313,11 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
       if (source.type !== 'api' || source.api?.authType !== 'managed' || !source.api.baseUrl) {
         throw new Error('Source does not use Storyflow managed API access');
       }
+      const loaded = loadSourceImpl(workspacePath, source.slug);
+      if (!loaded) throw new Error(`Source not found: ${source.slug}`);
+      const policy = getTrustedManagedSourcePolicy(loaded);
       return createStoryflowManagedTokenGetter({
-        expectedGatewayBaseUrl: source.api.baseUrl,
+        expectedGatewayBaseUrl: policy.gatewayBaseUrl,
       })();
     },
 

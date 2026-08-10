@@ -1,16 +1,22 @@
 // input: SessionManager product messages, queue state, and rewind phase requests
-// output: Regression coverage for rewind CAS and non-destructive manual rejection
+// output: Regression coverage for rewind CAS, runtime serialization, and safe rejection
 // pos: Guards the product-side half of the Pi-owned rewind transaction
 
-import { expect, it } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { afterEach, expect, it, jest } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
   ConversationRewindRequest,
   ConversationRewindResult,
 } from '@craft-agent/shared/agent/backend/types'
-import { SessionManager, createManagedSession } from './SessionManager.ts'
+import { SessionManager, createManagedSession, setSessionRuntimeHooks } from './SessionManager.ts'
+
+afterEach(() => {
+  setSessionRuntimeHooks({
+    ensureManagedModelAccessToken: async () => ({ token: 'managed-token', refreshed: false }),
+  })
+})
 
 function createHarness() {
   const rootPath = mkdtempSync(join(tmpdir(), 'rewind-transaction-'))
@@ -75,6 +81,146 @@ it('manual rewind refuses active work without clearing the queue', async () => {
       .rejects.toThrow('Cannot rewind while this conversation is processing or has queued messages')
     expect(managed.messageQueue.map(entry => entry.messageId)).toEqual(['queued-1'])
     expect(managed.messages.map(message => message.id)).toEqual(['user-1', 'assistant-1', 'user-2'])
+  } finally {
+    rmSync(rootPath, { recursive: true, force: true })
+  }
+})
+
+it('rewinds through the existing idle Pi agent without resolving a new model runtime', async () => {
+  const { rootPath, manager, managed } = createHarness()
+  try {
+    const rewindUserMessage = jest.fn().mockResolvedValue(undefined)
+    managed.agent = {
+      isProcessing: () => false,
+      rewindUserMessage,
+    } as never
+
+    const piSessionsPath = join(rootPath, '.craft-agent', 'sessions', managed.id, '.pi-sessions')
+    mkdirSync(piSessionsPath, { recursive: true })
+    writeFileSync(join(piSessionsPath, 'session.jsonl'), '{}\n')
+
+    const getOrCreateAgentLocked = jest.fn(() => {
+      throw new Error('rewind must not resolve or restart the model runtime')
+    })
+    ;(manager as unknown as { getOrCreateAgentLocked: typeof getOrCreateAgentLocked }).getOrCreateAgentLocked = getOrCreateAgentLocked
+
+    await expect(manager.rewindUserMessage(managed.id, 'user-2'))
+      .resolves.toEqual({ draftText: 'second' })
+    expect(rewindUserMessage).toHaveBeenCalledWith('user-2')
+    expect(getOrCreateAgentLocked).not.toHaveBeenCalled()
+  } finally {
+    rmSync(rootPath, { recursive: true, force: true })
+  }
+})
+
+it('holds runtime disposal until Pi rewind settles', async () => {
+  const { rootPath, manager, managed } = createHarness()
+  try {
+    let markStarted!: () => void
+    let finishRewind!: () => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const rewindGate = new Promise<void>(resolve => { finishRewind = resolve })
+    const dispose = jest.fn()
+    managed.llmConnection = 'test-connection'
+    managed.agent = {
+      isProcessing: () => false,
+      rewindUserMessage: async () => {
+        markStarted()
+        await rewindGate
+      },
+      dispose,
+    } as never
+
+    const piSessionsPath = join(rootPath, '.craft-agent', 'sessions', managed.id, '.pi-sessions')
+    mkdirSync(piSessionsPath, { recursive: true })
+    writeFileSync(join(piSessionsPath, 'session.jsonl'), '{}\n')
+
+    const rewind = manager.rewindUserMessage(managed.id, 'user-2')
+    await started
+    const disposal = manager.disposeConnectionRuntimes('test-connection')
+    await Promise.resolve()
+    expect(dispose).not.toHaveBeenCalled()
+
+    finishRewind()
+    await expect(rewind).resolves.toEqual({ draftText: 'second' })
+    await disposal
+    expect(dispose).toHaveBeenCalledTimes(1)
+  } finally {
+    rmSync(rootPath, { recursive: true, force: true })
+  }
+})
+
+it('rejects rewind during credential revocation and resolves fresh access afterward', async () => {
+  const { rootPath, manager, managed } = createHarness()
+  try {
+    let markDisposeStarted!: () => void
+    let finishDispose!: () => void
+    const disposeStarted = new Promise<void>(resolve => { markDisposeStarted = resolve })
+    const disposeGate = new Promise<void>(resolve => { finishDispose = resolve })
+    managed.llmConnection = 'storyflow-managed'
+    managed.agent = {
+      isProcessing: () => false,
+      disposeForRestart: async () => {
+        markDisposeStarted()
+        await disposeGate
+      },
+    } as never
+
+    const rewindUserMessage = jest.fn().mockResolvedValue(undefined)
+    const replacementAgent = { isProcessing: () => false, rewindUserMessage }
+    const getOrCreateAgentLocked = jest.fn(async (session: unknown) => {
+      const modelAccess = await (manager as any).ensureManagedCredentialForSessionLocked(session)
+      expect(modelAccess).toEqual({ token: 'fresh-managed-token' })
+      return replacementAgent
+    })
+    ;(manager as any).getOrCreateAgentLocked = getOrCreateAgentLocked
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => ({ token: 'fresh-managed-token', refreshed: false }),
+    })
+
+    const piSessionsPath = join(rootPath, '.craft-agent', 'sessions', managed.id, '.pi-sessions')
+    mkdirSync(piSessionsPath, { recursive: true })
+    writeFileSync(join(piSessionsPath, 'session.jsonl'), '{}\n')
+
+    const disposal = manager.disposeConnectionRuntimes('storyflow-managed')
+    await disposeStarted
+    await expect(manager.rewindUserMessage(managed.id, 'user-2'))
+      .rejects.toThrow('closing')
+    finishDispose()
+
+    await disposal
+    await expect(manager.rewindUserMessage(managed.id, 'user-2'))
+      .resolves.toEqual({ draftText: 'second' })
+    expect(getOrCreateAgentLocked).toHaveBeenCalledTimes(1)
+    expect(rewindUserMessage).toHaveBeenCalledWith('user-2')
+  } finally {
+    rmSync(rootPath, { recursive: true, force: true })
+  }
+})
+
+it('clears a prepared product rewind when the Pi RPC fails', async () => {
+  const { rootPath, manager, managed } = createHarness()
+  try {
+    managed.agent = {
+      isProcessing: () => false,
+      rewindUserMessage: async () => {
+        managed.pendingConversationRewind = {
+          token: 'prepared-token',
+          revision: 'prepared-revision',
+          expiresAt: Date.now() + 30_000,
+          boundary: { retainThroughMessageId: 'assistant-1' },
+        }
+        throw new Error('Pi subprocess exited')
+      },
+    } as never
+
+    const piSessionsPath = join(rootPath, '.craft-agent', 'sessions', managed.id, '.pi-sessions')
+    mkdirSync(piSessionsPath, { recursive: true })
+    writeFileSync(join(piSessionsPath, 'session.jsonl'), '{}\n')
+
+    await expect(manager.rewindUserMessage(managed.id, 'user-2'))
+      .rejects.toThrow('Pi subprocess exited')
+    expect(managed.pendingConversationRewind).toBeUndefined()
   } finally {
     rmSync(rootPath, { recursive: true, force: true })
   }

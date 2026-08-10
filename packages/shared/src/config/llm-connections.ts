@@ -437,18 +437,6 @@ export function authTypeToCredentialStorageType(authType: LlmAuthType): LlmCrede
 }
 
 /**
- * @deprecated Use authTypeToCredentialStorageType instead.
- * Kept for backwards compatibility during migration.
- */
-export function authTypeToCredentialType(authType: LlmAuthType): 'api_key' | 'oauth_token' | null {
-  const storageType = authTypeToCredentialStorageType(authType);
-  if (storageType === 'api_key' || storageType === 'oauth_token') {
-    return storageType;
-  }
-  return null;
-}
-
-/**
  * Check if an auth type requires a custom endpoint URL.
  * @param authType - LLM auth type
  * @returns true if endpoint URL field should be shown in UI

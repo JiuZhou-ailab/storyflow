@@ -1,5 +1,5 @@
-// input: Temporary Pi projects, native resource roots, bundled runtime environment, legacy resources, and filesystem symlinks
-// output: Assertions for Pi-native discovery plus Storyflow compatibility resources
+// input: Temporary Pi projects, bounded instruction roots, runtime environment, legacy resources, and symlinks
+// output: Assertions for scoped Pi discovery plus Storyflow compatibility resources
 // pos: Integration contract proving Pi remains the runtime resource authority
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
@@ -171,6 +171,55 @@ describe('createProjectResourceLoader', () => {
     } finally {
       session.dispose();
     }
+  });
+
+  it('stops ancestor instruction discovery at the nearest Git root', async () => {
+    const home = createRoot();
+    const projectRoot = join(home, 'project');
+    const cwd = join(projectRoot, 'packages', 'app');
+    const agentDir = join(home, '.pi', 'agent');
+    mkdirSync(join(projectRoot, '.git'), { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(home, 'AGENTS.md'), 'UNRELATED HOME INSTRUCTIONS');
+    writeFileSync(join(agentDir, 'AGENTS.md'), 'EXPLICIT GLOBAL INSTRUCTIONS');
+    writeFileSync(join(projectRoot, 'AGENTS.md'), 'PROJECT ROOT INSTRUCTIONS');
+    writeFileSync(join(cwd, 'AGENTS.md'), 'NESTED PACKAGE INSTRUCTIONS');
+
+    const { resourceLoader } = await createProjectResourceLoader({
+      cwd,
+      globalRoot: createRoot(),
+      agentDir,
+    });
+    const instructions = resourceLoader.getAgentsFiles().agentsFiles;
+
+    expect(instructions.map(file => file.content)).toEqual([
+      'EXPLICIT GLOBAL INSTRUCTIONS',
+      'PROJECT ROOT INSTRUCTIONS',
+      'NESTED PACKAGE INSTRUCTIONS',
+    ]);
+    expect(instructions.some(file => file.path === join(home, 'AGENTS.md'))).toBe(false);
+  });
+
+  it('uses an explicit project boundary outside Git repositories', async () => {
+    const home = createRoot();
+    const projectRoot = join(home, 'manuscript');
+    const cwd = join(projectRoot, 'chapters');
+    const agentDir = join(home, '.pi', 'agent');
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(home, 'AGENTS.md'), 'UNRELATED HOME INSTRUCTIONS');
+    writeFileSync(join(projectRoot, 'AGENTS.md'), 'MANUSCRIPT INSTRUCTIONS');
+
+    const { resourceLoader } = await createProjectResourceLoader({
+      cwd,
+      contextRoot: projectRoot,
+      globalRoot: createRoot(),
+      agentDir,
+    });
+
+    expect(resourceLoader.getAgentsFiles().agentsFiles.map(file => file.content))
+      .toEqual(['MANUSCRIPT INSTRUCTIONS']);
   });
 
   it('does not execute legacy Storyflow Extensions', async () => {

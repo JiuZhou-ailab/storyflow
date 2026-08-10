@@ -19,10 +19,10 @@ import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { SessionMenu } from '@/components/app-shell/SessionMenu'
 import { SessionInfoPopover } from '@/components/app-shell/SessionInfoPopover'
 import { RenameDialog } from '@/components/ui/rename-dialog'
-import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { usePendingPermission, usePendingCredential, usePendingUserQuestion, useSessionBatchActions, useSessionChatResources, useSessionDraftActions, useSessionInteractionActions, useSessionPanelChrome, useSessionReadActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { rendererPerf } from '@/lib/perf'
+import { resolveFileLinkTarget } from '@/lib/platform'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
@@ -117,8 +117,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const session = useSessionData(sessionId)
   const activeWorkspaceId = runtimeWorkspace?.id ?? null
   const chatWorkspace = runtimeWorkspace
-  const canChangeWorkingDirectory = activeWorkspaceId !== null
-    && activeWorkspaceId !== FREE_CONVERSATION_WORKSPACE_ID
   const llmConnections = useAtomValue(llmConnectionsAtom)
   const workspaceDefaultLlmConnection = useAtomValue(workspaceDefaultLlmConnectionAtom)
   const refreshLlmConnections = useSetAtom(refreshLlmConnectionsAtom)
@@ -131,6 +129,14 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   // Check if session exists in metadata (for loading state detection)
   const sessionMeta = useAtomValue(sessionMetaAtomFamily(sessionId))
+  const conversationStarted = Math.max(
+    session?.messageCount ?? 0,
+    sessionMeta?.messageCount ?? 0,
+    session?.messages?.length ?? 0,
+  ) > 0 || !!session?.lastFinalMessageId || !!sessionMeta?.lastFinalMessageId
+  const canChangeWorkingDirectory = activeWorkspaceId !== null
+    && activeWorkspaceId !== FREE_CONVERSATION_WORKSPACE_ID
+    && !conversationStarted
 
   // Fallback: ensure messages are loaded when session is viewed
   const ensureMessagesLoaded = useSetAtom(ensureSessionMessagesLoadedAtom)
@@ -357,49 +363,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   }, [session])
 
   const handleOpenFile = React.useCallback(
-    async (path: string) => {
-      // Resolve bare relative paths against session working directory,
-      // or workspace root as a fallback when workingDirectory is not set.
-      const resolved = (() => {
-        if (path.startsWith('/') || path.startsWith('~/')) return path
-
-        const baseDir = workingDirectory || chatWorkspace?.rootPath
-        if (!baseDir) return path
-
-        const cleanedBase = baseDir.replace(/\/+$/, '')
-        const cleanedPath = path.replace(/^\.\//, '')
-        return `${cleanedBase}/${cleanedPath}`
-      })()
-
-      // Smart fallback for missing files in AI output:
-      // if the exact path doesn't exist, search nearby for same basename
-      // (e.g. markdown/linkify.test.ts -> markdown/__tests__/linkify.test.ts).
-      if (resolved.startsWith('/')) {
-        const lastSlash = resolved.lastIndexOf('/')
-        if (lastSlash > 0 && lastSlash < resolved.length - 1) {
-          const parentDir = resolved.slice(0, lastSlash)
-          const fileName = resolved.slice(lastSlash + 1)
-          try {
-            const matches = await window.electronAPI.searchFiles(parentDir, fileName)
-            const files = matches.filter((m) => m.type === 'file' && m.name === fileName)
-            const exact = files.find((m) => m.path === resolved)
-            if (exact) {
-              onOpenFile(exact.path)
-              return
-            }
-
-            if (files.length === 1) {
-              onOpenFile(files[0].path)
-              toast.info(t('chat.openedClosestMatch', { path: files[0].relativePath }))
-              return
-            }
-          } catch {
-            // Search fallback is best-effort; proceed with original resolved path.
-          }
-        }
-      }
-
-      onOpenFile(resolved)
+    (path: string) => {
+      onOpenFile(resolveFileLinkTarget(path, workingDirectory || chatWorkspace?.rootPath))
     },
     [onOpenFile, workingDirectory, chatWorkspace?.rootPath]
   )
@@ -546,7 +511,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       return (
         <>
           <div className="relative h-full flex flex-col">
-            <PanelHeader className="absolute inset-x-0 top-0 border-b-0" titleAlign="start" title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+            <PanelHeader className="absolute inset-x-0 top-0 border-b-0 bg-gradient-to-b from-background via-background/95 to-transparent" titleAlign="start" title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
             <div className="flex-1 flex flex-col min-h-0">
               <ChatDisplay
                 ref={chatDisplayRef}
@@ -618,7 +583,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     // Session truly doesn't exist
     return (
       <div className="relative h-full flex flex-col">
-        <PanelHeader className="absolute inset-x-0 top-0 border-b-0" titleAlign="start" title={t('chat.session')} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} />
+        <PanelHeader className="absolute inset-x-0 top-0 border-b-0 bg-gradient-to-b from-background via-background/95 to-transparent" titleAlign="start" title={t('chat.session')} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
           <AlertCircle className="h-10 w-10" />
           <p className="text-sm">{t('chat.sessionNoLongerExists')}</p>
@@ -630,7 +595,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   return (
     <>
       <div className="relative h-full flex flex-col">
-        <PanelHeader className="absolute inset-x-0 top-0 border-b-0" titleAlign="start" title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+        <PanelHeader className="absolute inset-x-0 top-0 border-b-0 bg-gradient-to-b from-background via-background/95 to-transparent" titleAlign="start" title={displayTitle} titleMenu={titleMenu} leadingAction={headerLeadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
         <div className="flex-1 flex flex-col min-h-0">
           <ChatDisplay
             ref={chatDisplayRef}

@@ -1,15 +1,11 @@
-/**
- * Label CRUD Operations
- *
- * Create, Read, Update, Delete, Move, Reorder operations for the label tree.
- * All operations work on the nested JSON tree structure.
- * Delete cascade strips the label (and descendants) from all sessions.
- */
+// input: Workspace label trees, label creation input, and session label entries
+// output: Created, ensured, or deleted labels with session cleanup
+// pos: Backend mutation boundary for the label operations exposed by RPC and sessions
 
 import { loadLabelConfig, saveLabelConfig, isValidLabelId, isValidLabelIdFormat } from './storage.ts';
 import { findLabelById, collectAllIds, getDescendantIds, getLabelDisplayName } from './tree.ts';
 import { extractLabelId, parseLabelEntry, formatLabelEntry } from './values.ts';
-import type { LabelConfig, CreateLabelInput, UpdateLabelInput } from './types.ts';
+import type { LabelConfig, CreateLabelInput } from './types.ts';
 
 /**
  * Generate URL-safe slug from name
@@ -97,31 +93,6 @@ export function ensureLabelsExist(
   })
 }
 
-/**
- * Update an existing label (name, color, valueType).
- * Cannot change the ID or hierarchy position.
- * @throws Error if label not found
- */
-export function updateLabel(
-  workspaceRootPath: string,
-  labelId: string,
-  updates: UpdateLabelInput
-): LabelConfig {
-  const config = loadLabelConfig(workspaceRootPath);
-  const label = findLabelById(config.labels, labelId);
-
-  if (!label) {
-    throw new Error(`Label '${labelId}' not found`);
-  }
-
-  if (updates.name !== undefined) label.name = updates.name;
-  if (updates.color !== undefined) label.color = updates.color;
-  // valueType: set to new value, or delete to revert to boolean label
-  if (updates.valueType !== undefined) label.valueType = updates.valueType || undefined;
-
-  saveLabelConfig(workspaceRootPath, config);
-  return label;
-}
 
 /**
  * Delete a label and all its descendants.
@@ -153,93 +124,6 @@ export function deleteLabel(
   }
 
   return { stripped };
-}
-
-/**
- * Reorder labels within a parent's children (or root level).
- * Provide the full ordered list of sibling IDs at that level.
- * @param parentId - null for root level, or the parent label's ID
- * @param orderedIds - New order of child IDs at that level
- */
-export function reorderLabels(
-  workspaceRootPath: string,
-  parentId: string | null,
-  orderedIds: string[]
-): void {
-  const config = loadLabelConfig(workspaceRootPath);
-
-  // Get the target array (root labels or a parent's children)
-  let siblings: LabelConfig[];
-  if (parentId) {
-    const parent = findLabelById(config.labels, parentId);
-    if (!parent) throw new Error(`Parent label '${parentId}' not found`);
-    if (!parent.children) throw new Error(`Parent label '${parentId}' has no children`);
-    siblings = parent.children;
-  } else {
-    siblings = config.labels;
-  }
-
-  // Validate that orderedIds match the current siblings
-  const siblingIds = new Set(siblings.map(l => l.id));
-  for (const id of orderedIds) {
-    if (!siblingIds.has(id)) {
-      throw new Error(`Invalid label ID for reorder: '${id}'`);
-    }
-  }
-
-  // Build a map for quick lookup, then reorder the array in place
-  const map = new Map(siblings.map(l => [l.id, l]));
-  const reordered = orderedIds.map(id => map.get(id)!);
-
-  // Replace the array contents (preserving the same reference for root)
-  if (parentId) {
-    const parent = findLabelById(config.labels, parentId)!;
-    parent.children = reordered;
-  } else {
-    config.labels.length = 0;
-    config.labels.push(...reordered);
-  }
-
-  saveLabelConfig(workspaceRootPath, config);
-}
-
-/**
- * Move a label to a different parent (or to root level).
- * The label keeps its ID and children intact.
- * @param newParentId - null to move to root, or target parent's ID
- */
-export function moveLabel(
-  workspaceRootPath: string,
-  labelId: string,
-  newParentId: string | null
-): void {
-  const config = loadLabelConfig(workspaceRootPath);
-
-  // Prevent moving a label into its own descendant (would create a cycle)
-  if (newParentId) {
-    const descendants = getDescendantIds(config.labels, labelId);
-    if (descendants.includes(newParentId)) {
-      throw new Error(`Cannot move label '${labelId}' into its own descendant '${newParentId}'`);
-    }
-  }
-
-  // Remove from current location (preserving the node reference)
-  const node = removeNodeFromTree(config.labels, labelId);
-  if (!node) {
-    throw new Error(`Label '${labelId}' not found`);
-  }
-
-  // Insert into new location
-  if (newParentId) {
-    const newParent = findLabelById(config.labels, newParentId);
-    if (!newParent) throw new Error(`Target parent '${newParentId}' not found`);
-    if (!newParent.children) newParent.children = [];
-    newParent.children.push(node);
-  } else {
-    config.labels.push(node);
-  }
-
-  saveLabelConfig(workspaceRootPath, config);
 }
 
 // ============================================================

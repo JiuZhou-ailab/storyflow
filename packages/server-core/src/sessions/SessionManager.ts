@@ -15,7 +15,6 @@ import type { UserQuestionRequest, UserQuestionResponse } from '@craft-agent/ses
 import {
   resolveSessionConnection,
   resolveBackendContext,
-  resolveRequiredBackendContext,
   resolvePiAgentConfig,
   cleanupSourceRuntimeArtifacts,
   type BackendHostRuntimeContext,
@@ -80,7 +79,7 @@ import {
   type LegacyAgentRuntime,
   pickSessionFields,
 } from '@craft-agent/shared/sessions'
-import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter, createStoryflowManagedTokenGetter } from '@craft-agent/shared/sources'
+import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter, createStoryflowManagedTokenGetter, getTrustedManagedSourcePolicy } from '@craft-agent/shared/sources'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { resolveAuthEnvVars } from '@craft-agent/shared/config'
 import { getLastApiError } from '@craft-agent/shared/provider-diagnostics'
@@ -276,8 +275,9 @@ async function buildServersFromSources(
   const getTokenForSource = (source: LoadedSource) => {
     const provider = source.config.provider
     if (source.config.api?.authType === 'managed') {
+      const policy = getTrustedManagedSourcePolicy(source)
       return createStoryflowManagedTokenGetter({
-        expectedGatewayBaseUrl: source.config.api.baseUrl,
+        expectedGatewayBaseUrl: policy.gatewayBaseUrl,
       })
     }
     // Provider-specific OAuth (Google, Slack, Microsoft) or generic OAuth (authType: 'oauth')
@@ -476,15 +476,12 @@ export class SessionManager implements ISessionManager {
   private initGate = new InitGate()
   // O(1) index: taskId → sessionId for background task output lookup (avoids O(n) session scan)
   private taskOutputIndex: Map<string, string> = new Map()
-  /**
-   * Per-session in-flight runtime-refresh promise. Ensures `updateRuntimeConfig`
-   * (or a dispose) cannot overlap with another refresh OR with a send-path
-   * `getOrCreateAgent` on the same session. Without this serialization, a
-   * `SAVE`-triggered refresh and a `sendMessage`-triggered refresh can both
-   * see `agent.isProcessing()=false`, both fire `updateRuntimeConfig`, and the
-   * subprocess can race the resulting `chat` against the still-pending update.
-   */
-  private agentRefreshLocks: Map<string, Promise<void>> = new Map()
+  /** Serializes runtime acquisition and exclusive control-plane mutations per session. */
+  private agentRuntimeLocks: Map<string, Promise<void>> = new Map()
+  /** Active compatible operations sharing one stable Pi subprocess. */
+  private agentRuntimeLeaseCounts: Map<string, number> = new Map()
+  /** Exclusive mutations wait here until every active operation releases the subprocess. */
+  private agentRuntimeLeaseWaiters: Map<string, Set<() => void>> = new Map()
   /** Monotonic clock to ensure strictly increasing message timestamps */
   private lastTimestamp = 0
 
@@ -997,32 +994,34 @@ export class SessionManager implements ISessionManager {
    * If agent is null (session hasn't sent any messages), skip - fresh build happens on next message.
    */
   private async reloadSessionSources(managed: ManagedSession): Promise<void> {
-    if (!managed.agent) return  // No agent = nothing to update (fresh build on next message)
+    await this.withAgentRuntimeLock(managed, async () => {
+      const agent = managed.agent
+      if (!agent) return  // No agent = nothing to update (fresh build on next message)
 
-    const workspaceRootPath = managed.workspace.rootPath
-    const projectRoot = getResourceProjectRoot(managed.workspace)
-    sessionLog.info(`Reloading sources for session ${managed.id}`)
+      const workspaceRootPath = managed.workspace.rootPath
+      const projectRoot = getResourceProjectRoot(managed.workspace)
+      sessionLog.info(`Reloading sources for session ${managed.id}`)
 
-    // Reload all sources from disk (craft-agents-docs is always available as MCP server)
-    const allSources = loadAllSources(projectRoot)
-    managed.agent.setAllSources(allSources)
+      // Reload all sources from disk (craft-agents-docs is always available as MCP server)
+      const allSources = loadAllSources(projectRoot)
+      agent.setAllSources(allSources)
 
-    // Rebuild MCP and API servers for session's enabled sources
-    const enabledSlugs = managed.enabledSourceSlugs || []
-    const enabledSources = allSources.filter(s =>
-      enabledSlugs.includes(s.config.slug) && isSourceUsable(s)
-    )
-    // Pass session path so large API responses can be saved to session folder
-    const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
-    const { mcpServers, apiServers } = await buildServersFromSources(enabledSources, sessionPath, managed.tokenRefreshManager, managed.agent?.getSummarizeCallback())
-    const intendedSlugs = enabledSources.map(s => s.config.slug)
+      // Rebuild MCP and API servers for session's enabled sources
+      const enabledSlugs = managed.enabledSourceSlugs || []
+      const enabledSources = allSources.filter(s =>
+        enabledSlugs.includes(s.config.slug) && isSourceUsable(s)
+      )
+      // Pass session path so large API responses can be saved to session folder
+      const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
+      const { mcpServers, apiServers } = await buildServersFromSources(enabledSources, sessionPath, managed.tokenRefreshManager, agent.getSummarizeCallback())
+      const intendedSlugs = enabledSources.map(s => s.config.slug)
 
-    // Update source runtime config/credentials for backends that need it
-    await applyBridgeUpdates(managed.agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source reload')
+      // Update source runtime config/credentials for backends that need it
+      await applyBridgeUpdates(agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source reload')
+      await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
 
-    await managed.agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
-
-    sessionLog.info(`Sources reloaded for session ${managed.id}: ${Object.keys(mcpServers).length} MCP, ${Object.keys(apiServers).length} API`)
+      sessionLog.info(`Sources reloaded for session ${managed.id}: ${Object.keys(mcpServers).length} MCP, ${Object.keys(apiServers).length} API`)
+    })
   }
 
   /**
@@ -1230,6 +1229,7 @@ export class SessionManager implements ISessionManager {
    * stays sync — no microtask race window between the load and the enqueue.
    */
   private persistSession(managed: ManagedSession): void {
+    if (this.sessions.get(managed.id) !== managed) return
     if (!managed.messagesLoaded) {
       this.hydrateMessagesForColdPersist(managed)
     }
@@ -1270,7 +1270,9 @@ export class SessionManager implements ISessionManager {
             messageId: msg.id,
             attachments: undefined,
             storedAttachments: msg.attachments,
-            options: undefined,
+            options: msg.queuedWorkspaceFreshnessContext
+              ? { workspaceFreshnessContext: msg.queuedWorkspaceFreshnessContext }
+              : undefined,
           })
         }
         if (!managed.isProcessing && managed.messageQueue.length > 0) {
@@ -1508,7 +1510,7 @@ export class SessionManager implements ISessionManager {
     this.persistSession(managed)
 
     // Update source runtime config/credentials for backends that need it
-    if (result.success && result.sourceSlug && managed.agent) {
+    if (result.success && result.sourceSlug) {
       const workspaceRootPath = managed.workspace.rootPath
       const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
       const enabledSlugs = managed.enabledSourceSlugs || []
@@ -1519,7 +1521,10 @@ export class SessionManager implements ISessionManager {
       const { mcpServers } = await buildServersFromSources(
         enabledSources, sessionPath, managed.tokenRefreshManager
       )
-      await applyBridgeUpdates(managed.agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source auth')
+      await this.withAgentRuntimeLock(managed, async () => {
+        if (!managed.agent) return
+        await applyBridgeUpdates(managed.agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source auth')
+      })
     }
 
     // Send the result as a new message to resume conversation
@@ -1931,7 +1936,9 @@ export class SessionManager implements ISessionManager {
             messageId: msg.id,
             attachments: undefined,  // Attachments already stored on disk
             storedAttachments: msg.attachments,
-            options: undefined,
+            options: msg.queuedWorkspaceFreshnessContext
+              ? { workspaceFreshnessContext: msg.queuedWorkspaceFreshnessContext }
+              : undefined,
           })
         }
         // Process queue when session becomes active (will be triggered by first message or interaction)
@@ -2275,6 +2282,7 @@ export class SessionManager implements ISessionManager {
     // conversation immediately (needed for scroll-to-bottom on panel open)
     if (isBranch) {
       await this.ensureMessagesLoaded(managed)
+      this.sessions.set(storedSession.id, managed)
 
       const requiresBranchPreflight = managed.branchContextStrategy === 'sdk-fork'
       if (requiresBranchPreflight) {
@@ -2282,8 +2290,10 @@ export class SessionManager implements ISessionManager {
         // A branch is only valid if backend context can be established now,
         // not deferred to the first user message.
         try {
-          await this.getOrCreateAgent(managed)
-          await managed.agent!.ensureBranchReady()
+          await this.withAgentRuntimeLock(managed, async () => {
+            const agent = await this.getOrCreateAgentLocked(managed)
+            await agent.ensureBranchReady()
+          })
         } catch (error) {
           sessionLog.warn('Branch creation failed during backend preflight handshake', {
             workspaceId,
@@ -2373,7 +2383,23 @@ export class SessionManager implements ISessionManager {
     const hasPiTranscript = hasPersistedPiTranscript(sessionPath)
 
     if (hasPiTranscript) {
-      await (await this.getOrCreateAgent(managed)).rewindUserMessage(target.id)
+      // Rewind is a model-free Pi tree operation. Reuse the loaded session even
+      // when a newly selected provider will require a restart on the next send.
+      await this.withAgentRuntimeLock(managed, async () => {
+        if (managed.isProcessing || managed.messageQueue.length > 0) {
+          throw new Error('Cannot rewind while this conversation is processing or has queued messages')
+        }
+        let agent = managed.agent
+        if (!agent) {
+          agent = await this.getOrCreateAgentLocked(managed)
+        }
+        try {
+          await agent.rewindUserMessage(target.id)
+        } catch (error) {
+          managed.pendingConversationRewind = undefined
+          throw error
+        }
+      })
     } else if (hasPriorUserMessage) {
       // Mid-history without a provider session file would desync UI transcript from LLM context.
       throw new Error(
@@ -2542,6 +2568,119 @@ export class SessionManager implements ISessionManager {
     unregisterSessionScopedToolCallbacks(sessionId)
   }
 
+  private assertAgentRuntimeOpen(managed: ManagedSession, expectedEpoch?: number): void {
+    if (this.sessions.get(managed.id) !== managed || managed.runtimeState) {
+      throw new Error(`Session ${managed.id} is closing`)
+    }
+    if (expectedEpoch !== undefined && (managed.runtimeEpoch ?? 0) !== expectedEpoch) {
+      throw new Error(`Session ${managed.id} runtime was invalidated`)
+    }
+  }
+
+  private async withAgentRuntimeMutex<T>(
+    managed: ManagedSession,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.agentRuntimeLocks.get(managed.id) ?? Promise.resolve()
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const slot = previous.catch(() => undefined).then(() => gate)
+    this.agentRuntimeLocks.set(managed.id, slot)
+    await previous.catch(() => undefined)
+    try {
+      return await work()
+    } finally {
+      release()
+      if (this.agentRuntimeLocks.get(managed.id) === slot) {
+        this.agentRuntimeLocks.delete(managed.id)
+      }
+    }
+  }
+
+  private waitForAgentRuntimeLeases(sessionId: string): Promise<void> {
+    if ((this.agentRuntimeLeaseCounts.get(sessionId) ?? 0) === 0) return Promise.resolve()
+    return new Promise(resolve => {
+      const waiters = this.agentRuntimeLeaseWaiters.get(sessionId) ?? new Set<() => void>()
+      waiters.add(resolve)
+      this.agentRuntimeLeaseWaiters.set(sessionId, waiters)
+    })
+  }
+
+  private retainAgentRuntimeLease(sessionId: string): void {
+    this.agentRuntimeLeaseCounts.set(sessionId, (this.agentRuntimeLeaseCounts.get(sessionId) ?? 0) + 1)
+  }
+
+  private releaseAgentRuntimeLease(sessionId: string): void {
+    const remaining = (this.agentRuntimeLeaseCounts.get(sessionId) ?? 1) - 1
+    if (remaining > 0) {
+      this.agentRuntimeLeaseCounts.set(sessionId, remaining)
+      return
+    }
+    this.agentRuntimeLeaseCounts.delete(sessionId)
+    const waiters = this.agentRuntimeLeaseWaiters.get(sessionId)
+    this.agentRuntimeLeaseWaiters.delete(sessionId)
+    for (const resolve of waiters ?? []) resolve()
+  }
+
+  /** Keep short pre-runtime session work ahead of deletion and invalidation. */
+  private beginSessionOperationLease(managed: ManagedSession): () => void {
+    this.assertAgentRuntimeOpen(managed)
+    this.retainAgentRuntimeLease(managed.id)
+    let retained = true
+    return () => {
+      if (!retained) return
+      retained = false
+      this.releaseAgentRuntimeLease(managed.id)
+    }
+  }
+
+  private async withAgentRuntimeLock<T>(
+    managed: ManagedSession,
+    work: () => Promise<T>,
+    allowClosing = false,
+  ): Promise<T> {
+    if (!allowClosing) this.assertAgentRuntimeOpen(managed)
+    return this.withAgentRuntimeMutex(managed, async () => {
+      if (!allowClosing) this.assertAgentRuntimeOpen(managed)
+      await this.waitForAgentRuntimeLeases(managed.id)
+      if (!allowClosing) this.assertAgentRuntimeOpen(managed)
+      return work()
+    })
+  }
+
+  /**
+   * Retain one stable Pi subprocess for a compatible operation. Chat and
+   * ephemeral llm_query calls may coexist; refresh, rewind, Source mutation,
+   * credential changes, and disposal wait for every retained operation.
+   */
+  private async withAgentRuntimeLease<T>(
+    managed: ManagedSession,
+    work: (agent: AgentInstance) => Promise<T>,
+  ): Promise<T> {
+    this.assertAgentRuntimeOpen(managed)
+    const expectedEpoch = managed.runtimeEpoch ?? 0
+    const agent = await this.withAgentRuntimeMutex(managed, async () => {
+      this.assertAgentRuntimeOpen(managed, expectedEpoch)
+      let agent = managed.agent
+      if (
+        !agent
+        || managed.credentialRestartRequired
+        || (this.agentRuntimeLeaseCounts.get(managed.id) ?? 0) === 0
+      ) {
+        await this.waitForAgentRuntimeLeases(managed.id)
+        this.assertAgentRuntimeOpen(managed, expectedEpoch)
+        agent = await this.getOrCreateAgentLocked(managed)
+      }
+      this.retainAgentRuntimeLease(managed.id)
+      return agent
+    })
+    try {
+      return await work(agent)
+    } finally {
+      this.releaseAgentRuntimeLease(managed.id)
+    }
+  }
+
   /**
    * Refresh an existing agent's runtime config in place when the session's
    * resolved connection signature has drifted from what the agent was created
@@ -2551,7 +2690,7 @@ export class SessionManager implements ISessionManager {
    * calling `getOrCreateAgent`, which would make every send-path refresh dead
    * code).
    *
-   * Concurrency: per-session serialization via `agentRefreshLocks`. A second
+   * Concurrency: per-session serialization via `agentRuntimeLocks`. A second
    * caller (e.g. `sendMessage` arriving mid-`SAVE`-refresh) awaits the
    * in-flight refresh, then re-evaluates from the post-refresh state — so the
    * subsequent `agent.chat()` is sent only after the subprocess has applied
@@ -2566,14 +2705,10 @@ export class SessionManager implements ISessionManager {
    *     can't apply the update.
    */
   private async tryRefreshAgentRuntime(managed: ManagedSession, reason: string): Promise<void> {
-    // Serialize against any in-flight refresh on this session. The waiter
-    // doesn't propagate the prior call's errors — those are logged at the
-    // origin call site.
-    const inflight = this.agentRefreshLocks.get(managed.id)
-    if (inflight) {
-      await inflight.catch(() => undefined)
-    }
+    await this.withAgentRuntimeLock(managed, () => this.tryRefreshAgentRuntimeLocked(managed, reason))
+  }
 
+  private async tryRefreshAgentRuntimeLocked(managed: ManagedSession, reason: string): Promise<void> {
     if (!managed.agent) return
 
     const workspaceConfig = loadWorkspaceConfig(managed.workspace.rootPath)
@@ -2609,7 +2744,7 @@ export class SessionManager implements ISessionManager {
       return
     }
 
-    const work = this.runAgentRuntimeRefresh(
+    await this.runAgentRuntimeRefresh(
       managed,
       backendContext,
       runtimeSignature,
@@ -2617,21 +2752,6 @@ export class SessionManager implements ISessionManager {
       restartRequired,
       reason,
     )
-    // Track the work so concurrent callers serialize. Swallow errors on the
-    // tracked promise — the awaiter shouldn't get someone else's exception;
-    // errors are logged inside `runAgentRuntimeRefresh`.
-    const tracked = work.then(() => undefined, () => undefined)
-    this.agentRefreshLocks.set(managed.id, tracked)
-    try {
-      await work
-    } finally {
-      // Concurrent callers awaited `tracked` before reaching this point and
-      // each registered their own work serially, so the slot is always ours
-      // to clear when our own work resolves.
-      if (this.agentRefreshLocks.get(managed.id) === tracked) {
-        this.agentRefreshLocks.delete(managed.id)
-      }
-    }
   }
 
   private async runAgentRuntimeRefresh(
@@ -2724,30 +2844,66 @@ export class SessionManager implements ISessionManager {
     managedModelAccess?: ManagedModelAccess,
   ): Promise<void> {
     for (const managed of this.sessions.values()) {
-      if (managed.llmConnection !== connectionSlug || !managed.agent) continue
+      if (managed.llmConnection !== connectionSlug) continue
       try {
-        const reloaded = await managed.agent.reloadCredentials?.(managedModelAccess) ?? false
-        if (!reloaded) {
-          if (managed.agent.isProcessing()) managed.credentialRestartRequired = true
-          else await this.disposeManagedAgentRuntime(managed, 'credential reload')
-        }
+        await this.withAgentRuntimeLock(managed, async () => {
+          if (!managed.agent) return
+          const reloaded = await managed.agent.reloadCredentials?.(managedModelAccess) ?? false
+          if (!reloaded) {
+            if (managed.agent.isProcessing()) managed.credentialRestartRequired = true
+            else await this.disposeManagedAgentRuntime(managed, 'credential reload')
+          }
+        })
       } catch (error) {
         sessionLog.warn(`reloadConnectionCredentials failed for ${managed.id}: ${error instanceof Error ? error.message : error}`)
-        if (managed.agent?.isProcessing()) managed.credentialRestartRequired = true
-        else await this.disposeManagedAgentRuntime(managed, 'failed credential reload')
+        await this.withAgentRuntimeLock(managed, async () => {
+          if (managed.agent?.isProcessing()) managed.credentialRestartRequired = true
+          else await this.disposeManagedAgentRuntime(managed, 'failed credential reload')
+        })
       }
     }
   }
 
   /** Revoke all live runtimes that still hold credentials for this connection. */
   async disposeConnectionRuntimes(connectionSlug: string): Promise<void> {
-    for (const managed of this.sessions.values()) {
-      if (managed.llmConnection !== connectionSlug || !managed.agent) continue
-      await this.disposeManagedAgentRuntime(managed, 'connection sign-out')
+    const targets = [...this.sessions.values()]
+      .filter(managed => managed.llmConnection === connectionSlug && managed.runtimeState !== 'deleting')
+      .map(managed => {
+        const invalidationEpoch = (managed.runtimeEpoch ?? 0) + 1
+        managed.runtimeEpoch = invalidationEpoch
+        managed.runtimeState = 'invalidating'
+        if (managed.agent && (managed.isProcessing || managed.agent.isProcessing())) {
+          managed.agent.forceAbort?.(AbortReason.UserStop)
+        }
+        return { managed, invalidationEpoch }
+      })
+
+    await Promise.all(targets.map(({ managed }) => this.withAgentRuntimeLock(
+      managed,
+      () => this.disposeManagedAgentRuntime(managed, 'connection sign-out'),
+      true,
+    )))
+
+    for (const { managed, invalidationEpoch } of targets) {
+      if (
+        this.sessions.get(managed.id) === managed
+        && managed.runtimeEpoch === invalidationEpoch
+        && managed.runtimeState === 'invalidating'
+      ) {
+        managed.runtimeState = undefined
+      }
     }
   }
 
-  private async ensureManagedCredentialForSession(
+  private async ensureManagedCredentialForSessionLocked(
+    managed: ManagedSession,
+    forceRefresh = false,
+  ): Promise<ManagedModelAccess | undefined> {
+    return this.resolveManagedModelAccess(managed, forceRefresh)
+  }
+
+  /** Resolve managed access without returning or mutating a live runtime. */
+  private async resolveManagedModelAccess(
     managed: ManagedSession,
     forceRefresh = false,
   ): Promise<ManagedModelAccess | undefined> {
@@ -2756,15 +2912,36 @@ export class SessionManager implements ISessionManager {
 
     const modelAccess = await sessionRuntimeHooks.ensureManagedModelAccessToken(forceRefresh)
     const managedModelAccess = { token: modelAccess.token }
-    if (modelAccess.refreshed) {
-      await this.reloadConnectionCredentials(connectionSlug, managedModelAccess)
+    if (!modelAccess.refreshed) return managedModelAccess
+
+    // Every affected runtime rebuilds before its next operation. Mutating only
+    // flags here avoids cross-session lock ordering during token resolution.
+    for (const other of this.sessions.values()) {
+      if (
+        other.agent
+        && resolveManagedConnectionSlug(other) === connectionSlug
+      ) {
+        other.credentialRestartRequired = true
+      }
     }
     return managedModelAccess
   }
 
   private async refreshManagedCredentialForNextTurn(managed: ManagedSession): Promise<void> {
     try {
-      await this.ensureManagedCredentialForSession(managed, true)
+      await this.withAgentRuntimeLock(managed, async () => {
+        const managedModelAccess = await this.ensureManagedCredentialForSessionLocked(managed, true)
+        if (!managedModelAccess || !managed.agent) return
+
+        const reloaded = await managed.agent.reloadCredentials?.(managedModelAccess) ?? false
+        if (reloaded) {
+          managed.credentialRestartRequired = false
+          return
+        }
+        if (!managed.agent.isProcessing()) {
+          await this.disposeManagedAgentRuntime(managed, 'managed credential refresh')
+        }
+      })
     } catch (error) {
       sessionLog.warn(`[managed-access] Credential refresh failed for ${managed.id}: ${error instanceof Error ? error.message : error}`)
     }
@@ -2780,9 +2957,7 @@ export class SessionManager implements ISessionManager {
    * 3. global defaultLlmConnection
    * 4. fallback: no connection configured
    */
-  private async getOrCreateAgent(managed: ManagedSession): Promise<AgentInstance> {
-    const managedModelAccess = await this.ensureManagedCredentialForSession(managed)
-
+  private async getOrCreateAgentLocked(managed: ManagedSession): Promise<AgentInstance> {
     if (managed.credentialRestartRequired && managed.agent && !managed.agent.isProcessing()) {
       await this.disposeManagedAgentRuntime(managed, 'deferred credential reload')
     }
@@ -2790,7 +2965,7 @@ export class SessionManager implements ISessionManager {
     // Refresh runtime config in-place when the connection has drifted since
     // the agent was created. May null out `managed.agent` if the in-place
     // refresh fails, in which case the create branch below rebuilds it.
-    await this.tryRefreshAgentRuntime(managed, 'send-path refresh')
+    await this.tryRefreshAgentRuntimeLocked(managed, 'send-path refresh')
 
     const workspaceConfig = loadWorkspaceConfig(managed.workspace.rootPath)
     const backendContext = resolveBackendContext({
@@ -2810,6 +2985,7 @@ export class SessionManager implements ISessionManager {
     const restartSignature = buildRestartRequiredSignature(sigInput)
 
     if (!managed.agent) {
+      const managedModelAccess = await this.ensureManagedCredentialForSessionLocked(managed)
       const end = perf.start('agent.create', { sessionId: managed.id })
 
       // The agent spawns subprocesses that resolve tools from PATH, so this is
@@ -3027,9 +3203,15 @@ export class SessionManager implements ISessionManager {
           onSdkSessionIdCleared,
           onBranchForkInvalidated,
           onConversationRewind: request => this.handleConversationRewind(managed, request),
-          onCredentialRotated: () => this.reloadConnectionCredentials(
-            managed.llmConnection || connection?.slug || 'pi',
-          ),
+          onCredentialRotated: async () => {
+            // Pi already owns the rotated credential for this turn. Queue the
+            // cross-session reload after this runtime lease is released.
+            void this.reloadConnectionCredentials(
+              managed.llmConnection || connection?.slug || 'pi',
+            ).catch(error => {
+              sessionLog.warn(`Failed to propagate rotated credential: ${error instanceof Error ? error.message : error}`)
+            })
+          },
           getRecoveryMessages,
           seedFreshSessionFromRecovery,
           getBranchFallbackMessages,
@@ -4313,63 +4495,55 @@ export class SessionManager implements ISessionManager {
       throw new Error(`Session not found: ${sessionId}`)
     }
 
-    const workspaceRootPath = managed.workspace.rootPath
-    const projectRoot = getResourceProjectRoot(managed.workspace)
-    sessionLog.info(`Setting sources for session ${sessionId}:`, sourceSlugs)
+    await this.withAgentRuntimeLock(managed, async () => {
+      const workspaceRootPath = managed.workspace.rootPath
+      const projectRoot = getResourceProjectRoot(managed.workspace)
+      sessionLog.info(`Setting sources for session ${sessionId}:`, sourceSlugs)
 
-    // Clean up credential cache for sources being disabled (security)
-    // This removes decrypted tokens from disk when sources are no longer active
-    const previousSlugs = new Set(managed.enabledSourceSlugs || [])
-    const newSlugs = new Set(sourceSlugs)
-    const disabledSlugs = [...previousSlugs].filter(prevSlug => !newSlugs.has(prevSlug))
-    if (disabledSlugs.length > 0) {
-      try {
-        await cleanupSourceRuntimeArtifacts(workspaceRootPath, disabledSlugs)
-      } catch (err) {
-        sessionLog.warn(`Failed to clean up source runtime artifacts: ${err}`)
-      }
-    }
-
-    // Store the selection
-    managed.enabledSourceSlugs = sourceSlugs
-
-    // If agent exists, build and apply servers immediately
-    if (managed.agent) {
-      const sources = getSourcesBySlugs(projectRoot, sourceSlugs)
-      // Pass session path so large API responses can be saved to session folder
-      const sessionPath = getSessionStoragePath(workspaceRootPath, sessionId)
-      const { mcpServers, apiServers, errors } = await buildServersFromSources(sources, sessionPath, managed.tokenRefreshManager, managed.agent.getSummarizeCallback())
-      if (errors.length > 0) {
-        sessionLog.warn(`Source build errors:`, errors)
+      // Clean up credential cache for sources being disabled (security)
+      const previousSlugs = new Set(managed.enabledSourceSlugs || [])
+      const newSlugs = new Set(sourceSlugs)
+      const disabledSlugs = [...previousSlugs].filter(prevSlug => !newSlugs.has(prevSlug))
+      if (disabledSlugs.length > 0) {
+        try {
+          await cleanupSourceRuntimeArtifacts(workspaceRootPath, disabledSlugs)
+        } catch (err) {
+          sessionLog.warn(`Failed to clean up source runtime artifacts: ${err}`)
+        }
       }
 
-      // Set all sources for context (agent sees full list with descriptions, including built-ins)
-      const allSources = loadAllSources(projectRoot)
-      managed.agent.setAllSources(allSources)
+      managed.enabledSourceSlugs = sourceSlugs
 
-      // Set active source servers (tools are only available from these)
-      const intendedSlugs = sources.filter(isSourceUsable).map(s => s.config.slug)
+      const agent = managed.agent
+      if (agent) {
+        const sources = getSourcesBySlugs(projectRoot, sourceSlugs)
+        const sessionPath = getSessionStoragePath(workspaceRootPath, sessionId)
+        const { mcpServers, apiServers, errors } = await buildServersFromSources(
+          sources,
+          sessionPath,
+          managed.tokenRefreshManager,
+          agent.getSummarizeCallback(),
+        )
+        if (errors.length > 0) sessionLog.warn('Source build errors:', errors)
 
-      // Update source runtime config/credentials for backends that need it
-      const usableSources = sources.filter(isSourceUsable)
-      await applyBridgeUpdates(managed.agent, sessionPath, usableSources, mcpServers, managed.id, workspaceRootPath, 'source config change')
+        const allSources = loadAllSources(projectRoot)
+        agent.setAllSources(allSources)
+        const usableSources = sources.filter(isSourceUsable)
+        const intendedSlugs = usableSources.map(source => source.config.slug)
+        await applyBridgeUpdates(agent, sessionPath, usableSources, mcpServers, managed.id, workspaceRootPath, 'source config change')
+        await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
 
-      await managed.agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
+        sessionLog.info(`Applied ${Object.keys(mcpServers).length} MCP + ${Object.keys(apiServers).length} API sources to active agent (${allSources.length} total)`)
+      }
 
-      sessionLog.info(`Applied ${Object.keys(mcpServers).length} MCP + ${Object.keys(apiServers).length} API sources to active agent (${allSources.length} total)`)
-    }
-
-    // Persist the session with updated sources
-    this.persistSession(managed)
-
-    // Notify renderer of the source change
-    this.sendEvent({
-      type: 'sources_changed',
-      sessionId,
-      enabledSourceSlugs: sourceSlugs,
-    }, managed.workspace.id)
-
-    sessionLog.info(`Session ${sessionId} sources updated: ${sourceSlugs.length} sources`)
+      this.persistSession(managed)
+      this.sendEvent({
+        type: 'sources_changed',
+        sessionId,
+        enabledSourceSlugs: sourceSlugs,
+      }, managed.workspace.id)
+      sessionLog.info(`Session ${sessionId} sources updated: ${sourceSlugs.length} sources`)
+    })
   }
 
   /**
@@ -4522,15 +4696,6 @@ export class SessionManager implements ISessionManager {
       return { success: false, error: 'Session not found' }
     }
 
-    let managedModelAccess: ManagedModelAccess | undefined
-    try {
-      managedModelAccess = await this.ensureManagedCredentialForSession(managed)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Default AI access is unavailable'
-      sessionLog.warn(`refreshTitle: Managed model access unavailable: ${message}`)
-      return { success: false, error: message }
-    }
-
     // Ensure messages are loaded from disk (lazy loading support)
     await this.ensureMessagesLoaded(managed)
 
@@ -4554,51 +4719,6 @@ export class SessionManager implements ISessionManager {
 
     const assistantResponse = lastAssistantMsg?.content ?? ''
 
-    const titleOptions = { language: getCurrentLanguageName() }
-
-    // Use existing agent or create temporary one
-    let agent: AgentInstance | null = managed.agent
-    let isTemporary = false
-
-    if (!agent && managed.llmConnection) {
-      try {
-        const connection = getLlmConnection(managed.llmConnection)
-        const resolvedMiniModel = connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined
-
-        agent = new PiAgent(resolvePiAgentConfig({
-          context: resolveRequiredBackendContext(managed.llmConnection),
-          hostRuntime: buildBackendHostRuntimeContext(),
-          coreConfig: {
-            workspace: managed.workspace,
-            miniModel: resolvedMiniModel,
-            managedModelAccess,
-            session: {
-              id: `title-${managed.id}`,
-              workspaceRootPath: managed.workspace.rootPath,
-              llmConnection: managed.llmConnection,
-              createdAt: Date.now(),
-              lastUsedAt: Date.now(),
-            },
-            isHeadless: true,
-          },
-        }))
-        await agent.postInit()
-        isTemporary = true
-        sessionLog.info(`refreshTitle: Created temporary agent for session ${sessionId}`)
-      } catch (error) {
-        sessionLog.error(`refreshTitle: Failed to create temporary agent:`, error)
-        return { success: false, error: 'Failed to create agent for title generation' }
-      }
-    }
-
-    if (!agent) {
-      sessionLog.warn(`refreshTitle: No agent and no connection for session ${sessionId}`)
-      return { success: false, error: 'No agent available' }
-    }
-
-    sessionLog.info(`refreshTitle: Calling agent.regenerateTitle...`)
-
-
     // Notify renderer that title regeneration has started (for shimmer effect)
     managed.isAsyncOperationOngoing = true
     this.sendEvent({ type: 'async_operation', sessionId, isOngoing: true }, managed.workspace.id)
@@ -4606,43 +4726,48 @@ export class SessionManager implements ISessionManager {
     this.sendEvent({ type: 'title_regenerating', sessionId, isRegenerating: true }, managed.workspace.id)
 
     try {
-      const title = await agent.regenerateTitle(userMessages, assistantResponse, titleOptions)
+      sessionLog.info(`refreshTitle: Calling agent.regenerateTitle...`)
+      const title = await this.withAgentRuntimeLease(
+        managed,
+        async (agent) => {
+          const title = await agent.regenerateTitle(userMessages, assistantResponse, { language: getCurrentLanguageName() })
+          if (title) {
+            managed.name = title
+            this.persistSession(managed)
+            this.sendEvent({ type: 'title_generated', sessionId, title }, managed.workspace.id)
+          } else {
+            this.sendEvent({ type: 'title_regenerating', sessionId, isRegenerating: false }, managed.workspace.id)
+          }
+          return title
+        },
+      )
       sessionLog.info(`refreshTitle: regenerateTitle returned: ${title ? `"${title}"` : 'null'}`)
       if (title) {
-        managed.name = title
-        this.persistSession(managed)
-        // title_generated will also clear isRegeneratingTitle via the event handler
-        this.sendEvent({ type: 'title_generated', sessionId, title }, managed.workspace.id)
         sessionLog.info(`Refreshed title for session ${sessionId}: "${title}"`)
         return { success: true, title }
       }
-      // Failed to generate - clear regenerating state
-      this.sendEvent({ type: 'title_regenerating', sessionId, isRegenerating: false }, managed.workspace.id)
       return { success: false, error: 'Failed to generate title' }
     } catch (error) {
       // Error occurred - clear regenerating state
-      this.sendEvent({ type: 'title_regenerating', sessionId, isRegenerating: false }, managed.workspace.id)
+      if (this.sessions.get(sessionId) === managed && managed.runtimeState !== 'deleting') {
+        this.sendEvent({ type: 'title_regenerating', sessionId, isRegenerating: false }, managed.workspace.id)
+      }
       const message = error instanceof Error ? error.message : 'Unknown error'
       sessionLog.error(`Failed to refresh title for session ${sessionId}:`, error)
       return { success: false, error: message }
     } finally {
-      // Clean up temporary agent
-      if (isTemporary && agent) {
-        agent.destroy()
-      }
       // Signal async operation end
       managed.isAsyncOperationOngoing = false
-      this.sendEvent({ type: 'async_operation', sessionId, isOngoing: false }, managed.workspace.id)
+      if (this.sessions.get(sessionId) === managed && managed.runtimeState !== 'deleting') {
+        this.sendEvent({ type: 'async_operation', sessionId, isOngoing: false }, managed.workspace.id)
+      }
     }
   }
 
   /**
    * Update the working directory for a session.
-   *
-   * If no messages have been sent yet (no SDK interaction), also updates sdkCwd
-   * so the SDK will use the new path for transcript storage. This prevents the
-   * confusing "bash shell runs from a different directory" warning when the user
-   * changes the working directory before their first message.
+   * Pi binds cwd when AgentSession is created, so changing it after the
+   * conversation starts would split tool execution from rendered file links.
    */
   updateWorkingDirectory(sessionId: string, path: string): void {
     const managed = this.sessions.get(sessionId)
@@ -4653,6 +4778,17 @@ export class SessionManager implements ISessionManager {
           type: 'working_directory_error',
           sessionId,
           error: 'Free Conversations use a private session directory',
+        }, managed.workspace.id)
+        return
+      }
+
+      const runCwdBound = managed.messages.length > 0 || !!managed.sdkSessionId || !!managed.agent
+      if (runCwdBound) {
+        sessionLog.warn(`Session ${sessionId}: rejected working directory change after Pi cwd was bound`)
+        this.sendEvent({
+          type: 'working_directory_error',
+          sessionId,
+          error: 'This conversation has already started. Create a new conversation to use a different working directory.',
         }, managed.workspace.id)
         return
       }
@@ -4669,32 +4805,13 @@ export class SessionManager implements ISessionManager {
       }
 
       managed.workingDirectory = path
+      // Read-compatible legacy field. Pi persistence is isolated by the explicit
+      // PiSessionManager path; new runtime behavior uses workingDirectory as cwd.
+      managed.sdkCwd = path
 
       // Invalidate filesystem caches that depend on working directory
       invalidateContextFileCache(path)
       invalidateSkillsCache()
-
-      // Check if we can also update sdkCwd (safe if no SDK interaction yet)
-      // Conditions: no messages sent AND no agent created yet (no SDK session)
-      const shouldUpdateSdkCwd =
-        managed.messages.length === 0 &&
-        !managed.sdkSessionId &&
-        !managed.agent
-
-      if (shouldUpdateSdkCwd) {
-        managed.sdkCwd = path
-        sessionLog.info(`Session ${sessionId}: sdkCwd updated to ${path} (no prior interaction)`)
-      }
-
-      // Also update the agent's session config if agent exists
-      if (managed.agent) {
-        managed.agent.updateWorkingDirectory(path)
-        // If agent exists but conditions still allow sdkCwd update (edge case),
-        // update the agent's sdkCwd as well
-        if (shouldUpdateSdkCwd) {
-          managed.agent.updateSdkCwd(path)
-        }
-      }
 
       this.persistSession(managed)
       // Notify renderer of the working directory change
@@ -4950,6 +5067,12 @@ export class SessionManager implements ISessionManager {
       sessionLog.warn(`Cannot delete session: ${sessionId} not found`)
       return
     }
+    if (managed.runtimeState === 'deleting') return
+
+    // Tombstone synchronously so queued title/query work cannot recreate or
+    // persist this session while deletion waits for the active runtime lease.
+    managed.runtimeState = 'deleting'
+    managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
 
     // Get workspace slug before deleting
     const workspaceRootPath = managed.workspace.rootPath
@@ -5002,10 +5125,17 @@ export class SessionManager implements ISessionManager {
       this.browserPaneManager.destroyForSession(sessionId)
     }
 
-    // Dispose agent to clean up ConfigWatchers, event listeners, MCP connections
-    if (managed.agent) {
-      managed.agent.dispose()
-    }
+    // Dispose only after any model-free runtime transaction (for example rewind) settles.
+    await this.withAgentRuntimeLock(
+      managed,
+      () => this.disposeManagedAgentRuntime(managed, 'session deletion'),
+      true,
+    )
+
+    // A send that linearized before the tombstone may have queued a final
+    // debounced snapshot while deletion waited for its operation lease.
+    sessionPersistenceQueue.cancel(sessionId)
+    await sessionPersistenceQueue.flush(sessionId)
 
     this.sessions.delete(sessionId)
 
@@ -5032,9 +5162,8 @@ export class SessionManager implements ISessionManager {
       throw new Error(`Session ${sessionId} not found`)
     }
 
-    const agent = await this.getOrCreateAgent(managed)
     try {
-      return await agent.queryLlm(request)
+      return await this.withAgentRuntimeLease(managed, agent => agent.queryLlm(request))
     } catch (error) {
       const connectionSlug = resolveManagedConnectionSlug(managed)
       const errorText = error instanceof Error ? error.message : String(error)
@@ -5094,7 +5223,7 @@ export class SessionManager implements ISessionManager {
       attachmentCount: attachments?.length ?? 0,
       storedAttachmentCount: storedAttachments?.length ?? 0,
       hiddenUserMessage: options?.hideUserMessage === true,
-      hasOneTimeContext: !!options?.oneTimeContext?.trim(),
+      hasOneTimeContext: !!(options?.oneTimeContext?.trim() || options?.workspaceFreshnessContext?.trim()),
       existingMessage: !!existingMessageId,
     })
     let acceptSpanEnded = false
@@ -5106,6 +5235,9 @@ export class SessionManager implements ISessionManager {
       acceptSpanEnded = true
       onAck?.(messageId)
     }
+
+    const releaseSessionOperation = this.beginSessionOperationLease(managed)
+    try {
 
     // Clear any pending plan execution state when a new user message is sent.
     // This acts as a safety valve - if the user moves on, we don't want to
@@ -5124,15 +5256,6 @@ export class SessionManager implements ISessionManager {
     }
 
     const hideUserMessage = options?.hideUserMessage === true
-    const modelMessage = options?.oneTimeContext?.trim()
-      ? [
-          message,
-          '',
-          '<system-reminder>Additional one-time context follows. It is for this request only and is not durable conversation history.</system-reminder>',
-          '',
-          options.oneTimeContext.trim(),
-        ].join('\n')
-      : message
 
     // If currently processing, an ordinary send is only queued. The active
     // turn continues to natural completion; explicit interruption is reserved
@@ -5154,6 +5277,7 @@ export class SessionManager implements ISessionManager {
         attachments: storedAttachments,
         badges: options?.badges,
         isQueued: true,
+        queuedWorkspaceFreshnessContext: options?.workspaceFreshnessContext,
       }
 
       if (!hideUserMessage && userMessage) {
@@ -5184,6 +5308,7 @@ export class SessionManager implements ISessionManager {
     // Skip if existingMessageId is provided (message was already created when queued)
     let userMessage: Message | undefined
     let initialTitle: string | undefined
+    let titleMessageToGenerate: string | undefined
     if (existingMessageId) {
       // Find existing message (already added when queued)
       userMessage = managed.messages.find(m => m.id === existingMessageId)!
@@ -5253,7 +5378,7 @@ export class SessionManager implements ISessionManager {
           title: initialTitle,
         }, managed.workspace.id)
 
-        if (!isLowSignal(message)) void this.generateTitle(managed, message)
+        if (!isLowSignal(message)) titleMessageToGenerate = message
       }
     } else {
       ackAccepted(generateMessageId(), 'hidden')
@@ -5377,7 +5502,7 @@ export class SessionManager implements ISessionManager {
     const enabledSlugs = managed.enabledSourceSlugs ?? []
     const hasSources = enabledSlugs.length > 0
 
-    // Load enabled sources up-front so we can refresh tokens BEFORE getOrCreateAgent
+    // Load enabled sources up-front so we can refresh tokens BEFORE the runtime lease
     // runs its internal cold-session build. Otherwise that build sees stale tokens
     // and emits AUTH_REQUIRED, causing a brief "needs_auth" UI flicker before the
     // post-build refresh restores state (#710).
@@ -5395,10 +5520,12 @@ export class SessionManager implements ISessionManager {
       }
     }
 
-    // Get or create the agent (lazy loading). Its internal cold-session build at
+    releaseSessionOperation()
+
+    // Claim the agent for the full source-setup and chat lifecycle. Its cold-session build at
     // ~L2956 now sees fresh tokens (or correctly-needs_auth failed sources, since
     // ensureFreshToken mirrors the disk write to source.config in-memory).
-    const agent = await this.getOrCreateAgent(managed)
+    await this.withAgentRuntimeLease(managed, async agent => {
     sendSpan.mark('agent.facade.ready')
 
     // Always set all sources for context (even if none are enabled), including built-ins
@@ -5442,14 +5569,13 @@ export class SessionManager implements ISessionManager {
         sessionLog.info('Attachments:', attachments.length)
       }
 
-      // Inject interruption context so the LLM knows the previous turn was cut short.
-      // Uses <system-reminder> tags so the LLM treats it as transient system guidance
-      // rather than part of the user's message content. The original message is stored
-      // in session JSONL (line ~3952); this only affects the SDK's in-process context.
-      let effectiveMessage = modelMessage
+      const transientPolicies: string[] = []
       if (managed.wasInterrupted) {
-        effectiveMessage = `${modelMessage}\n\n<system-reminder>The previous assistant response was interrupted by the user and may be incomplete. Do not repeat or continue the interrupted response unless asked. Focus on the new message above.</system-reminder>`
+        transientPolicies.push('The previous assistant response was interrupted by the user and may be incomplete. Do not repeat or continue the interrupted response unless asked. Focus on the new request.')
         managed.wasInterrupted = false
+      }
+      if (options?.workspaceFreshnessContext?.trim()) {
+        transientPolicies.push('Files listed in <workspace-brief> changed outside this conversation. Before editing any listed file, read its latest content first.')
       }
 
       const messageBackendContext = resolveBackendContext({
@@ -5491,8 +5617,12 @@ export class SessionManager implements ISessionManager {
           : ([...managed.messages].reverse().find(entry => entry.role !== 'status')?.id ?? null),
         ...(userMessage ? { draftText: message } : {}),
       }
-      const chatIterator = agent.chat(effectiveMessage, modelInputAttachments.attachments, {
-        ...options,
+      const chatIterator = agent.chat(message, modelInputAttachments.attachments, {
+        oneTimeContext: [options?.oneTimeContext, options?.workspaceFreshnessContext]
+          .map(context => context?.trim())
+          .filter(Boolean)
+          .join('\n\n') || undefined,
+        turnPolicy: transientPolicies.join('\n\n') || undefined,
         userIteration,
         rewindBoundary,
       })
@@ -5638,6 +5768,7 @@ export class SessionManager implements ISessionManager {
       } else {
         sessionLog.info('Chat loop exited unexpectedly')
       }
+    })
     } catch (error) {
       // Check if this is an abort error (expected when interrupted)
       const isAbortError = error instanceof Error && (
@@ -5691,6 +5822,15 @@ export class SessionManager implements ISessionManager {
         sendSpan.end()
         await this.onProcessingStopped(sessionId, 'interrupted')
       }
+    }
+
+    // Title inference shares the same runtime lease, so start it only after
+    // the interactive turn releases ownership of the Pi runtime.
+    if (titleMessageToGenerate && !managed.runtimeState) {
+      void this.generateTitle(managed, titleMessageToGenerate)
+    }
+    } finally {
+      releaseSessionOperation()
     }
   }
 
@@ -5975,6 +6115,7 @@ export class SessionManager implements ISessionManager {
       if (existingMessage) {
         // Replay starts a new turn after the response that just completed.
         existingMessage.isQueued = false
+        delete existingMessage.queuedWorkspaceFreshnessContext
         existingMessage.timestamp = this.monotonic()
         managed.messages.splice(existingIndex, 1)
         managed.messages.push(existingMessage)
@@ -6395,75 +6536,23 @@ export class SessionManager implements ISessionManager {
   private async generateTitle(managed: ManagedSession, userMessage: string): Promise<void> {
     sessionLog.info(`[generateTitle] Starting for session ${managed.id}`)
 
-    let managedModelAccess: ManagedModelAccess | undefined
     try {
-      managedModelAccess = await this.ensureManagedCredentialForSession(managed)
-    } catch (error) {
-      sessionLog.warn(`[generateTitle] Managed model access unavailable: ${error instanceof Error ? error.message : error}`)
-      return
-    }
+      const title = await this.withAgentRuntimeLease(
+        managed,
+        async (agent) => {
+          const title = await agent.generateTitle(userMessage, { language: getCurrentLanguageName() })
+          if (!title) return title
 
-    // Use existing agent or create temporary one
-    let agent: AgentInstance | null = managed.agent
-    let isTemporary = false
-
-    // Wait briefly for agent to be created (it's created concurrently)
-    if (!agent) {
-      let attempts = 0
-      while (!managed.agent && attempts < 10) {
-        await new Promise(resolve => setTimeout(resolve, 100))
-        attempts++
-      }
-      agent = managed.agent
-    }
-
-    // If still no agent, create a temporary one using the session's connection
-    if (!agent && managed.llmConnection) {
-      try {
-        const connection = getLlmConnection(managed.llmConnection)
-
-        agent = new PiAgent(resolvePiAgentConfig({
-          context: resolveRequiredBackendContext(managed.llmConnection),
-          hostRuntime: buildBackendHostRuntimeContext(),
-          coreConfig: {
-            workspace: managed.workspace,
-            miniModel: connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined,
-            managedModelAccess,
-            session: {
-              id: `title-${managed.id}`,
-              workspaceRootPath: managed.workspace.rootPath,
-              llmConnection: managed.llmConnection,
-              createdAt: Date.now(),
-              lastUsedAt: Date.now(),
-            },
-            isHeadless: true,
-          },
-        }))
-        await agent.postInit()
-        isTemporary = true
-        sessionLog.info(`[generateTitle] Created temporary agent for session ${managed.id}`)
-      } catch (error) {
-        sessionLog.error(`[generateTitle] Failed to create temporary agent:`, error)
-        return
-      }
-    }
-
-    if (!agent) {
-      sessionLog.warn(`[generateTitle] No agent and no connection for session ${managed.id}`)
-      return
-    }
-
-    try {
-      const title = await agent.generateTitle(userMessage, { language: getCurrentLanguageName() })
+          managed.name = title
+          this.persistSession(managed)
+          // Keep persistence inside the lease so deletion cannot pass its
+          // writer boundary and then be followed by a stale title write.
+          await this.flushSession(managed.id)
+          this.sendEvent({ type: 'title_generated', sessionId: managed.id, title }, managed.workspace.id)
+          return title
+        },
+      )
       if (title) {
-        managed.name = title
-        this.persistSession(managed)
-        // Flush immediately to ensure disk is up-to-date before notifying renderer.
-        // This prevents race condition where lazy loading reads stale disk data
-        // (the persistence queue has a 500ms debounce).
-        await this.flushSession(managed.id)
-        // Now safe to notify renderer - disk is authoritative
-        this.sendEvent({ type: 'title_generated', sessionId: managed.id, title }, managed.workspace.id)
         sessionLog.info(`Generated title for session ${managed.id}: "${title}"`)
       } else {
         sessionLog.warn(`Title generation returned null for session ${managed.id}`)
@@ -6473,7 +6562,11 @@ export class SessionManager implements ISessionManager {
 
       // Surface quota/auth errors to the user — these indicate the main chat call will also fail
       const errorMsg = error instanceof Error ? error.message : String(error)
-      if (errorMsg.includes('quota') || errorMsg.includes('429') || errorMsg.includes('401') || errorMsg.includes('insufficient')) {
+      if (
+        this.sessions.get(managed.id) === managed
+        && managed.runtimeState !== 'deleting'
+        && (errorMsg.includes('quota') || errorMsg.includes('429') || errorMsg.includes('401') || errorMsg.includes('insufficient'))
+      ) {
         this.sendEvent({
           type: 'typed_error',
           sessionId: managed.id,
@@ -6485,11 +6578,6 @@ export class SessionManager implements ISessionManager {
             canRetry: true,
           }
         }, managed.workspace.id)
-      }
-    } finally {
-      // Clean up temporary agent
-      if (isTemporary && agent) {
-        agent.destroy()
       }
     }
   }
@@ -7269,7 +7357,7 @@ export class SessionManager implements ISessionManager {
       }))
 
     if (messages.length === 0) return null
-    const managedModelAccess = await this.ensureManagedCredentialForSession(managed)
+    const managedModelAccess = await this.resolveManagedModelAccess(managed)
 
     const workspaceRootPath = managed.workspace.rootPath
     const wsConfig = loadWorkspaceConfig(workspaceRootPath)

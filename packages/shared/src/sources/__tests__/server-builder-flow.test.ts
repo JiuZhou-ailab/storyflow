@@ -38,6 +38,32 @@ function createMockSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSo
   };
 }
 
+function createTrustedManagedSource(): LoadedSource {
+  return {
+    ...createMockSource(),
+    origin: 'craft-global',
+    config: {
+      id: 'builtin-storyflow-catalog',
+      slug: 'storyflow-catalog',
+      name: 'Storyflow Catalog',
+      provider: 'storyflow',
+      type: 'api',
+      enabled: true,
+      api: {
+        baseUrl: 'https://storyflow-model.zjding.com',
+        authType: 'managed',
+        testEndpoint: { method: 'GET', path: '/v2/catalog/sources' },
+        operations: [
+          { name: 'list_sources', description: 'List sources.', method: 'GET', path: '/v2/catalog/sources' },
+          { name: 'list_ranking_snapshots', description: 'List snapshots.', method: 'GET', path: '/v2/ranking-snapshots' },
+          { name: 'search_rankings', description: 'Search rankings.', method: 'GET', path: '/v2/rankings' },
+          { name: 'get_conversion_manifest', description: 'Get manifest.', method: 'GET', path: '/v2/series/{source}/{sourceId}/manifest' },
+        ],
+      },
+    },
+  };
+}
+
 describe('SourceServerBuilder.buildApiConfig', () => {
   const builder = new SourceServerBuilder();
 
@@ -153,23 +179,29 @@ describe('SourceServerBuilder.buildApiConfig', () => {
 
 describe('SourceServerBuilder managed auth boundary', () => {
   const builder = new SourceServerBuilder();
-  const source = createMockSource({
+  const untrustedSource = createMockSource({
     provider: 'storyflow',
     api: {
       baseUrl: 'https://storyflow-model.zjding.com',
       authType: 'managed',
     },
   });
+  const trustedSource = createTrustedManagedSource();
 
-  test('does not build a managed Source without a host token getter', async () => {
-    expect(await builder.buildApiServer(source, null)).toBeNull();
+  test('rejects managed authentication from a workspace Source', async () => {
+    await expect(builder.buildApiServer(untrustedSource, null, async () => 'managed-token'))
+      .rejects.toThrow('not available');
   });
 
-  test('builds a managed Source without a per-Source credential', async () => {
-    const server = await builder.buildApiServer(source, null, async () => 'managed-token');
+  test('does not build the trusted managed Source without a host token getter', async () => {
+    expect(await builder.buildApiServer(trustedSource, null)).toBeNull();
+  });
+
+  test('builds only the trusted managed Source without a per-Source credential', async () => {
+    const server = await builder.buildApiServer(trustedSource, null, async () => 'managed-token');
 
     expect(server?.type).toBe('sdk');
-    expect(server?.name).toBe('api_test-source');
+    expect(server?.name).toBe('api_storyflow-catalog');
   });
 });
 

@@ -43,7 +43,9 @@ describe('PromptBuilder project context', () => {
     writeFileSync(join(rootPath, 'node_modules', 'ignored-package', 'index.js'), 'ignored')
 
     const builder = createBuilder(rootPath)
-    const context = builder.buildContextParts({ userIteration: 7 }).join('\n\n')
+    const projection = builder.buildTurnContext({ userIteration: 7 })
+    const context = projection.data.join('\n\n')
+    const policy = projection.system.join('\n\n')
 
     expect(context).toContain('<workspace_structure')
     expect(context).toContain(`active_workspace_root="${rootPath}"`)
@@ -53,33 +55,51 @@ describe('PromptBuilder project context', () => {
     expect(context).toContain('正文/')
     expect(context).toContain('01-opening.md')
     expect(context).not.toContain('node_modules')
-    expect(context).toContain('Do not invent paths from display names')
+    expect(context).not.toContain('Do not invent paths from display names')
+    expect(policy).toContain('Do not invent paths from display names')
   })
 
-  it('orders per-turn context from least to most volatile', () => {
+  it('separates host policy from turn data', () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-prompt-order-'))
     writeFileSync(join(rootPath, 'AGENTS.md'), 'project instructions')
     const builder = createBuilder(rootPath)
-    const context = builder.buildContextParts(
+    const context = builder.buildTurnContext(
       { userIteration: 7 },
-      '<sources>active source</sources>',
-    ).join('\n\n')
-    const markers = [
+      {
+        policy: '<source_policy>read guide first</source_policy>',
+        data: '<sources>active source</sources>',
+      },
+    )
+    const data = context.data.join('\n\n')
+    const dataMarkers = [
       '<workspace_root>',
-      '<workspace_capabilities>',
       '<working_directory>',
       '<project_context_files',
       '<workspace_structure',
       '<sources>',
+      '<session_paths>',
+    ]
+    const system = context.system.join('\n\n')
+    const systemMarkers = [
+      '<workspace_capabilities>',
+      '<workspace_structure_policy>',
+      '<source_policy>',
       '<session_state>',
       "**USER'S DATE AND TIME:",
       '<language_policy_reminder>',
     ]
 
-    for (let index = 1; index < markers.length; index++) {
-      expect(context.indexOf(markers[index - 1]!)).toBeLessThan(
-        context.indexOf(markers[index]!),
+    for (let index = 1; index < dataMarkers.length; index++) {
+      expect(data.indexOf(dataMarkers[index - 1]!)).toBeLessThan(
+        data.indexOf(dataMarkers[index]!),
       )
     }
+    for (let index = 1; index < systemMarkers.length; index++) {
+      expect(system.indexOf(systemMarkers[index - 1]!)).toBeLessThan(
+        system.indexOf(systemMarkers[index]!),
+      )
+    }
+    expect(system).not.toContain(rootPath)
+    expect(data).not.toContain('<language_policy_reminder>')
   })
 })

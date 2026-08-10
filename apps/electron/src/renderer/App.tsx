@@ -1473,7 +1473,7 @@ function AppContent() {
     window.electronAPI.sessionCommand(sessionId, { type: 'rename', name })
   }, [updateSessionById])
 
-  const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], externalBadges?: ContentBadge[], sendOptions?: Pick<SendMessageOptions, 'oneTimeContext' | 'hideUserMessage'> & { forceQueuedUserMessage?: boolean }) => {
+  const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], externalBadges?: ContentBadge[], sendOptions?: Pick<SendMessageOptions, 'oneTimeContext' | 'workspaceFreshnessContext' | 'hideUserMessage'> & { forceQueuedUserMessage?: boolean }) => {
     try {
       const session = store.get(sessionAtomFamily(sessionId))
       const connectionSlug = resolveEffectiveConnectionSlug(
@@ -1486,7 +1486,7 @@ function AppContent() {
         if (auth && !auth.user) {
           navigate(routes.view.settings('app'))
           toast.info('请先登录以使用 Storyflow 托管模型')
-          return
+          return false
         }
       }
 
@@ -1642,8 +1642,10 @@ function AppContent() {
         badges: badges.length > 0 ? badges : undefined,
         optimisticMessageId,
         oneTimeContext: sendOptions?.oneTimeContext,
+        workspaceFreshnessContext: sendOptions?.workspaceFreshnessContext,
         hideUserMessage,
       })
+      return true
     } catch (error) {
       console.error('Failed to send message:', error)
       updateSessionById(sessionId, (s) => ({
@@ -1658,6 +1660,7 @@ function AppContent() {
           }
         ]
       }))
+      return false
     }
   }, [
     updateSessionById,

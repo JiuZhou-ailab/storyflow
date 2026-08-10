@@ -137,20 +137,6 @@ export function clearSourceIconCaches(): void {
   }
 }
 
-/**
- * Clear skill icon caches only.
- * @deprecated Will be removed once rich-text-input.tsx is migrated to useEntityIcon.
- */
-export function clearSkillIconCaches(): void {
-  skillIconCache.clear()
-  for (const key of colorableCache) {
-    if (key.startsWith('skill:')) colorableCache.delete(key)
-  }
-  for (const key of rawSvgCache.keys()) {
-    if (key.startsWith('skill:')) rawSvgCache.delete(key)
-  }
-}
-
 // ============================================================================
 // Source Icon Loading
 // ============================================================================

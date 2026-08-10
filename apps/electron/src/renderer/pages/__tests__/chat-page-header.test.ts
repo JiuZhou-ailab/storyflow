@@ -44,12 +44,11 @@ describe('chat page header actions', () => {
     expect(panelHeaderSource).not.toContain('onClick={() => setDropdownOpen(true)}')
   })
 
-  it('overlays chat chrome without pushing the transcript below the titlebar', () => {
+  it('floats chat chrome without exposing the transcript beneath it', () => {
     const chatPageSource = readFileSync(new URL('../ChatPage.tsx', import.meta.url), 'utf-8')
 
     expect(chatPageSource.match(/className="relative h-full flex flex-col"/g)).toHaveLength(3)
-    expect(chatPageSource.match(/className="absolute inset-x-0 top-0 border-b-0"/g)).toHaveLength(3)
-    expect(chatPageSource).not.toContain('<PanelHeader className="border-b-0"')
+    expect(chatPageSource.match(/className="absolute inset-x-0 top-0 border-b-0 bg-gradient-to-b from-background via-background\/95 to-transparent"/g)).toHaveLength(3)
   })
 
   it('uses per-session loaded state instead of subscribing to the whole loaded set', () => {
@@ -219,7 +218,7 @@ describe('chat page header actions', () => {
     const appShellDestructure = appShellDestructureFrom(chatPageSource)
 
     expect(chatPageSource).toContain('useSessionPanelChrome')
-    expect(chatPageSource.match(/<PanelHeader className="absolute inset-x-0 top-0 border-b-0"/g)).toHaveLength(3)
+    expect(chatPageSource.match(/<PanelHeader className="absolute inset-x-0 top-0 border-b-0 bg-gradient-to-b from-background via-background\/95 to-transparent"/g)).toHaveLength(3)
     expect(chatPageSource).not.toContain('useAppShellContext')
     expect(appShellDestructure).not.toContain('rightSidebarButton')
     expect(appShellDestructure).not.toContain('leadingAction')

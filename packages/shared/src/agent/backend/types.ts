@@ -348,6 +348,10 @@ export interface ChatOptions {
   userIteration?: number;
   /** Override thinking level for this message only */
   thinkingOverride?: ThinkingLevel;
+  /** Runtime context for this turn only. Backends must not persist it in conversation history. */
+  oneTimeContext?: string;
+  /** Host-owned policy for this turn only. Backends must apply it as system context. */
+  turnPolicy?: string;
   /** Product transcript boundary paired with the Pi user entry for safe tree rewind. */
   rewindBoundary?: {
     visibleUserMessageId?: string;
@@ -396,11 +400,6 @@ export interface BackendConfig extends CoreBackendConfig {
    * Determines how credentials are retrieved and passed to the backend.
    */
   authType?: LlmAuthType;
-
-  /**
-   * @deprecated Use authType instead. Kept for backwards compatibility.
-   */
-  legacyAuthType?: 'api_key' | 'oauth_token';
 
   /** MCP token override (for testing) */
   mcpToken?: string;

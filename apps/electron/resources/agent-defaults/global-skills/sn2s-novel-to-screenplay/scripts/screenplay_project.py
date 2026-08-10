@@ -178,6 +178,9 @@ def _resolve_language(value: str | None) -> str:
 
 
 def _layout_for_project(project: dict[str, Any]) -> dict[str, str]:
+    if project.get("version") == 2:
+        return dict(LANGUAGE_LAYOUTS[_resolve_language(str(project.get("language", "zh-Hans")))])
+
     raw_layout = project.get("layout")
     if isinstance(raw_layout, dict):
         return {str(key): str(value) for key, value in raw_layout.items()}
@@ -190,6 +193,19 @@ def _layout_for_project(project: dict[str, Any]) -> dict[str, str]:
     legacy["continuity_file"] = str(project.get("continuity_path", legacy["continuity_file"]))
     legacy["full_screenplay"] = str(project.get("full_screenplay", legacy["full_screenplay"]))
     return legacy
+
+
+def _project_path(project_dir: Path, value: Any, label: str) -> Path:
+    if not isinstance(value, str) or not value.strip():
+        raise ProjectError(f"项目状态中的 {label} 路径无效")
+    relative = Path(value)
+    if relative.is_absolute():
+        raise ProjectError(f"项目状态中的 {label} 必须是相对路径")
+    root = project_dir.resolve()
+    resolved = (root / relative).resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ProjectError(f"项目状态中的 {label} 越过项目目录：{value}")
+    return resolved
 
 
 def _metadata_template(language: str) -> str:
@@ -555,6 +571,22 @@ def _load_project(project_dir: Path) -> dict[str, Any]:
         raise ProjectError(f"项目状态不是有效 JSON：{path}") from exc
     if not isinstance(data, dict) or not isinstance(data.get("episodes"), list):
         raise ProjectError(f"项目状态结构无效：{path}")
+    layout = _layout_for_project(data)
+    for key in (
+        "source_file",
+        "metadata_file",
+        "continuity_file",
+        "full_screenplay",
+        "episodes_dir",
+        "scripts_dir",
+        "versions_dir",
+    ):
+        _project_path(project_dir, layout.get(key), f"layout.{key}")
+    for index, episode in enumerate(data["episodes"], start=1):
+        if not isinstance(episode, dict):
+            raise ProjectError(f"项目状态中的第 {index} 个分集结构无效")
+        _project_path(project_dir, episode.get("source_path"), f"episodes[{index}].source_path")
+        _project_path(project_dir, episode.get("script_path"), f"episodes[{index}].script_path")
     return data
 
 
@@ -777,7 +809,7 @@ def validate_text(
 def validate_episode(project_dir: Path, episode_index: int) -> dict[str, Any]:
     project = _load_project(project_dir)
     entry = _episode(project, episode_index)
-    script_path = project_dir / entry["script_path"]
+    script_path = _project_path(project_dir, entry["script_path"], "script_path")
     if not script_path.is_file():
         raise ProjectError(f"找不到第 {episode_index} 集剧本：{script_path}")
     result = validate_text(
@@ -795,11 +827,15 @@ def validate_episode(project_dir: Path, episode_index: int) -> dict[str, Any]:
 def checkpoint(project_dir: Path, episode_index: int) -> dict[str, Any]:
     project = _load_project(project_dir)
     entry = _episode(project, episode_index)
-    script_path = project_dir / entry["script_path"]
+    script_path = _project_path(project_dir, entry["script_path"], "script_path")
     if not script_path.is_file():
         raise ProjectError(f"找不到第 {episode_index} 集剧本：{script_path}")
     layout = _layout_for_project(project)
-    version_dir = project_dir / layout["versions_dir"] / f"{episode_index:03d}"
+    version_dir = _project_path(
+        project_dir,
+        f"{layout['versions_dir']}/{episode_index:03d}",
+        "versions_dir",
+    )
     version_dir.mkdir(parents=True, exist_ok=True)
     version_path = version_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.md"
     shutil.copy2(script_path, version_path)
@@ -812,12 +848,16 @@ def restore(project_dir: Path, episode_index: int, version: Path, *, yes: bool) 
     project = _load_project(project_dir)
     entry = _episode(project, episode_index)
     layout = _layout_for_project(project)
-    version_root = (project_dir / layout["versions_dir"] / f"{episode_index:03d}").resolve()
+    version_root = _project_path(
+        project_dir,
+        f"{layout['versions_dir']}/{episode_index:03d}",
+        "versions_dir",
+    )
     version_path = version.expanduser().resolve()
     if not version_path.is_file() or version_root not in version_path.parents:
         raise ProjectError(f"版本文件必须位于：{version_root}")
     current_checkpoint = checkpoint(project_dir, episode_index)
-    script_path = project_dir / entry["script_path"]
+    script_path = _project_path(project_dir, entry["script_path"], "script_path")
     shutil.copy2(version_path, script_path)
     result = validate_episode(project_dir, episode_index)
     return {
@@ -833,7 +873,7 @@ def merge(project_dir: Path, output: Path | None = None) -> dict[str, Any]:
     scripts: list[str] = []
     failures: list[dict[str, Any]] = []
     for entry in project["episodes"]:
-        script_path = project_dir / entry["script_path"]
+        script_path = _project_path(project_dir, entry["script_path"], "script_path")
         if not script_path.is_file():
             failures.append({"episode": entry["index"], "errors": ["剧本文件不存在"]})
             continue
@@ -852,7 +892,11 @@ def merge(project_dir: Path, output: Path | None = None) -> dict[str, Any]:
     if failures:
         raise ProjectError(f"存在未通过格式校验的分集：{json.dumps(failures, ensure_ascii=False)}")
 
-    output_path = output or project_dir / str(project["full_screenplay"])
+    output_path = output or _project_path(
+        project_dir,
+        _layout_for_project(project)["full_screenplay"],
+        "full_screenplay",
+    )
     if output_path.exists():
         raise ProjectError(f"拒绝覆盖已有合并文件：{output_path}")
     _atomic_text(output_path, "\n\n---\n\n".join(scripts) + "\n")

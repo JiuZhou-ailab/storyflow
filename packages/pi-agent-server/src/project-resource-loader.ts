@@ -1,8 +1,9 @@
-// input: Pi cwd, canonical Pi agent directory, bundled Bun runtime, and legacy Storyflow Skills
-// output: Pi-native resources plus legacy Skill compatibility and Storyflow inline Extensions
+// input: Pi cwd, project context boundary, canonical agent directory, bundled runtime, and legacy Skills
+// output: Bounded Pi-native instructions plus legacy Skill compatibility and Storyflow inline Extensions
 // pos: Thin product policy adapter over Pi's ResourceLoader and package ecosystem
 
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import {
   DefaultPackageManager,
@@ -22,6 +23,7 @@ const DISABLED_PI_PACKAGE_SOURCES = [
 
 export interface ProjectResourceLoaderOptions {
   cwd: string;
+  contextRoot?: string;
   globalRoot?: string;
   agentDir: string;
   extensionFactories?: InlineExtension[];
@@ -31,6 +33,61 @@ export interface ProjectResourceLoaderOptions {
 export interface ProjectResourceLoaderResult {
   resourceLoader: ResourceLoader;
   settingsManager: SettingsManager;
+}
+
+type AgentsFilesOverride = NonNullable<
+  ConstructorParameters<typeof DefaultResourceLoader>[0]['agentsFilesOverride']
+>;
+
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+function isWithinPath(root: string, candidate: string): boolean {
+  const pathFromRoot = relative(root, candidate);
+  return pathFromRoot === '' || (
+    pathFromRoot !== '..'
+    && !pathFromRoot.startsWith(`..${sep}`)
+    && !isAbsolute(pathFromRoot)
+  );
+}
+
+function resolveContextRoot(cwd: string, explicitRoot?: string): string {
+  const canonicalCwd = canonicalPath(cwd);
+  if (explicitRoot) {
+    const canonicalExplicitRoot = canonicalPath(explicitRoot);
+    if (isWithinPath(canonicalExplicitRoot, canonicalCwd)) {
+      return canonicalExplicitRoot;
+    }
+  }
+
+  let candidate = canonicalCwd;
+  while (true) {
+    if (existsSync(join(candidate, '.git'))) return candidate;
+    const parent = dirname(candidate);
+    if (parent === candidate) return canonicalCwd;
+    candidate = parent;
+  }
+}
+
+/** Keep explicit user-global instructions and project instructions, never arbitrary filesystem ancestors. */
+export function createBoundedAgentsFilesOverride(options: {
+  cwd: string;
+  agentDir: string;
+  contextRoot?: string;
+}): AgentsFilesOverride {
+  const agentDir = canonicalPath(options.agentDir);
+  const contextRoot = resolveContextRoot(options.cwd, options.contextRoot);
+  return base => ({
+    agentsFiles: base.agentsFiles.filter(file => {
+      const path = canonicalPath(file.path);
+      return isWithinPath(agentDir, path) || isWithinPath(contextRoot, path);
+    }),
+  });
 }
 
 async function seedDefaultPiPackages(
@@ -117,6 +174,7 @@ export async function createProjectResourceLoader(
       additionalSkillPaths: skillPaths,
       extensionFactories: options.extensionFactories,
       skillsOverride: () => skillLoader.getSkills(),
+      agentsFilesOverride: createBoundedAgentsFilesOverride(options),
       systemPromptOverride: options.systemPromptOverride,
     },
     settingsManager,

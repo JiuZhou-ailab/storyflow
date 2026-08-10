@@ -120,6 +120,8 @@ export interface ManagedSession {
   backendRuntimeSignature?: string;
   backendRestartSignature?: string;
   credentialRestartRequired?: boolean;
+  runtimeEpoch?: number;
+  runtimeState?: 'invalidating' | 'deleting';
   wasInterrupted?: boolean;
 }
 

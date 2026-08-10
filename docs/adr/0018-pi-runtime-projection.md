@@ -2,7 +2,7 @@
 
 状态：Accepted
 日期：2026-08-04
-修订：2026-08-08
+修订：2026-08-11
 
 ## 背景
 
@@ -25,11 +25,16 @@ Agent runtime。产品必须投影 Pi 的公共契约，而不是镜像 Pi 的�
   与 `DefaultResourceLoader` 是用户资源、package 和 Extension 的唯一运行时事实源。
 - Pi 的 System Prompt builder 是最终提示装配权威。Storyflow 只通过
   `DefaultResourceLoader.systemPromptOverride` 提供不可缺失的产品基础契约；用户全局指令、
-  项目 `AGENTS.md` / `CLAUDE.md`、Skills、日期与工作目录仍由 Pi 原生装配。Storyflow 的
-  `before_agent_start` Extension 只在该稳定前缀后追加每轮动态产品状态，不得手工复制或
-  替换 Pi 已装配的资源。
+  项目 `AGENTS.md` / `CLAUDE.md`、Skills、日期与工作目录仍由 Pi 原生装配。Storyflow 只用
+  Pi 的 `before_agent_start` hook 把每轮 Host 策略投影为临时 system prompt，并用 `context`
+  hook 把路径、Source 与文件事实作为非持久数据投影到当前用户消息；不得把策略降级为用户文本、
+  污染会话历史，或手工复制 Pi 已装配的资源。
 - Storyflow Session 的持久化目录继续由显式 `PiSessionManager` 隔离；不得再借用
   `agentDir` 表达会话隔离。
+- 每个 Storyflow Session 只持有一个 Pi runtime。主 chat 与 Pi 原生的临时 `llm_query`
+  可共享稳定的运行时 lease；创建、配置刷新、Source 更新、rewind 与销毁使用独占边界，
+  并等待所有兼容操作释放 lease。删除和凭据撤销先失效旧代，排队中的后台操作不得重建
+  或持久化已关闭的 Session；异步操作不得把裸 `AgentInstance` 带出对应边界。
 - Storyflow 只保留 Product Host 能力：OS/Electron 生命周期、Workspace 与项目身份、
   内容与协作数据、产品导航、Host 工具权限、远端传输，以及模型凭据和 endpoint 注册。
 - 两者只通过无策略的 typed Boundary Protocol 连接：Storyflow 向 Pi 提供不可变上下文、

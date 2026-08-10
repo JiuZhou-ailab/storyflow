@@ -245,6 +245,50 @@ describe('runPreToolUseChecks', () => {
     });
   });
 
+  it('passes host-owned declarative API semantics into the permission-mode gate', () => {
+    const apiOperation = { method: 'DELETE', path: '/v1/jobs/42' };
+
+    runPreToolUseChecks(createInput({
+      toolName: 'mcp__jobs__list_jobs',
+      input: {},
+      apiOperation,
+      activeSourceSlugs: ['jobs'],
+      allSourceSlugs: ['jobs'],
+    }));
+
+    expect(mockShouldAllowToolInMode).toHaveBeenCalledWith(
+      'mcp__jobs__list_jobs',
+      {},
+      'safe',
+      expect.objectContaining({ apiOperation }),
+    );
+  });
+
+  it('prompts for declarative API mutations by real method instead of tool name', () => {
+    const manager = createMockPermissionManager();
+    const context = { workspaceRootPath: '/test/workspace', activeSourceSlugs: ['jobs'] };
+
+    expect(shouldPromptInAskMode(
+      'mcp__jobs__list_jobs',
+      {},
+      manager,
+      context,
+      undefined,
+      { method: 'DELETE', path: '/v1/jobs/42' },
+    )).toMatchObject({
+      promptType: 'api_mutation',
+      command: 'DELETE /v1/jobs/42',
+    });
+    expect(shouldPromptInAskMode(
+      'mcp__jobs__delete_job',
+      {},
+      manager,
+      context,
+      undefined,
+      { method: 'GET', path: '/v1/jobs/42' },
+    )).toBeNull();
+  });
+
   // ============================================================
   // Step 1: Permission mode check
   // ============================================================

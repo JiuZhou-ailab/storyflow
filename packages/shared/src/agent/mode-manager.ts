@@ -23,6 +23,7 @@ import { dirname, isAbsolute, relative, resolve } from 'path';
 import { getSessionSafeAllowedToolNames } from '@craft-agent/session-tools-core';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
 import { isBrowserToolNameOrAlias } from './browser-tool-names.ts';
+import { canonicalizeApiPath } from '../sources/api-path.ts';
 import type { PermissionsContext, MergedPermissionsConfig } from './permissions-config.ts';
 import {
   validateBashCommand,
@@ -1738,8 +1739,9 @@ function isApiCallAllowedWithConfig(method: string, path: string | undefined, co
 
   // Check fine-grained endpoint rules (if path is available)
   if (path && config.allowedApiEndpoints) {
+    const canonicalPath = canonicalizeApiPath(path);
     for (const rule of config.allowedApiEndpoints) {
-      if (rule.method === upperMethod && rule.pathPattern.test(path)) {
+      if (rule.method === upperMethod && rule.pathPattern.test(canonicalPath)) {
         return true;
       }
     }
@@ -1818,6 +1820,7 @@ export function shouldAllowToolInMode(
     plansFolderPath?: string;
     dataFolderPath?: string;
     permissionsContext?: PermissionsContext;
+    apiOperation?: { method: string; path: string };
   }
 ): ToolCheckResult {
   // Get config: merged custom if context provided, otherwise defaults
@@ -1842,6 +1845,19 @@ export function shouldAllowToolInMode(
   }
 
   // Safe mode: check against read-only allowlist
+
+  // Declarative API tools are named by Source config, so their host-owned
+  // HTTP semantics must win over every name-based allowlist below.
+  if (options?.apiOperation) {
+    const { method, path } = options.apiOperation;
+    if (isApiCallAllowedWithConfig(method, path, config)) {
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      reason: `API ${method} ${path} is blocked in ${config.displayName}. Switch to Ask or Allow All mode (${config.shortcutHint}) to make changes.`
+    };
+  }
 
   // Always-allowed tools (read-only by nature)
   if (ALWAYS_ALLOWED_TOOLS.has(toolName)) {
@@ -2037,7 +2053,7 @@ export function shouldAllowToolInMode(
       };
     }
 
-    // Handle API tools exposed via MCP (mcp__<source>__api_<name>)
+    // Handle flexible API tools exposed via MCP (mcp__<source>__api_<name>)
     // These need endpoint-level permission checks, not just MCP read-only patterns
     if (toolName.includes('__api_')) {
       const input = toolInput as Record<string, unknown> | null;

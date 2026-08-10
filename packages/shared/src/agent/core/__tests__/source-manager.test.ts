@@ -184,10 +184,10 @@ describe('SourceManager', () => {
 
       const formatted = sourceManager.formatSourceState();
 
-      expect(formatted).toContain('<sources>');
-      expect(formatted).toContain('</sources>');
-      expect(formatted).toContain('Active: github');
-      expect(formatted).toContain('slack (inactive)');
+      expect(formatted.data).toContain('<sources>');
+      expect(formatted.data).toContain('</sources>');
+      expect(formatted.data).toContain('Active: github');
+      expect(formatted.data).toContain('slack (inactive)');
     });
 
     it('should show "Active: none" when no sources are active', () => {
@@ -195,7 +195,7 @@ describe('SourceManager', () => {
 
       const formatted = sourceManager.formatSourceState();
 
-      expect(formatted).toContain('Active: none');
+      expect(formatted.data).toContain('Active: none');
     });
 
     it('should include taglines for new sources', () => {
@@ -204,8 +204,8 @@ describe('SourceManager', () => {
       const formatted = sourceManager.formatSourceState();
 
       // First call should include taglines for unseen sources
-      expect(formatted).toContain('github');
-      expect(formatted).toContain('GitHub integration');
+      expect(formatted.data).toContain('github');
+      expect(formatted.data).toContain('GitHub integration');
     });
 
     it('should mark sources with failed builds', () => {
@@ -214,7 +214,20 @@ describe('SourceManager', () => {
 
       const formatted = sourceManager.formatSourceState();
 
-      expect(formatted).toContain('github (no tools)');
+      expect(formatted.data).toContain('github (no tools)');
+    });
+
+    it('keeps guide enforcement out of Source-authored data', () => {
+      const source = createMockSource('guided')
+      source.guide = { raw: '# Guide' } as never
+      sourceManager.setAllSources([source])
+      sourceManager.updateActiveState(['guided'], [], ['guided'])
+
+      const formatted = sourceManager.formatSourceState()
+
+      expect(formatted.policy).toContain('Before using any Source tool')
+      expect(formatted.data).toContain('Guide: /test/sources/guided/guide.md')
+      expect(formatted.data).not.toContain('Tool calls are blocked')
     });
   });
 

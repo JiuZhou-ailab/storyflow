@@ -18,8 +18,10 @@ describe('client auth IPC propagation', () => {
 
     expect(source).toContain('CLIENT_AUTH_IPC_CHANNELS.STATE_CHANGED')
     expect(source).toContain('BrowserWindow.getAllWindows()')
-    expect(source).toContain('onAuthChange: async (change)')
+    expect(source).toContain('onAuthChange: (change)')
     expect(source).toContain('broadcastClientAuthState(change.state)')
+    expect(source).toContain('void propagateClientAuthRuntimeChange(change)')
+    expect(source).not.toContain('onAuthChange: async (change)')
   })
 
   it('wires ephemeral managed model access into runtimes and model discovery', () => {

@@ -233,6 +233,8 @@ export interface SendMessageOptions {
   optimisticMessageId?: string
   /** Runtime-only context appended to the model request without persisting in chat history. */
   oneTimeContext?: string
+  /** Host-produced workspace freshness data; the server owns the matching read-before-edit policy. */
+  workspaceFreshnessContext?: string
   /** Send to the model without creating or persisting a visible user-message bubble. */
   hideUserMessage?: boolean
 }

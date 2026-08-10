@@ -1,5 +1,5 @@
-// input: Pi subprocess protocol messages and host credential fixtures
-// output: Error, credential, rewind, and runtime-update regression assertions
+// input: Pi subprocess protocol messages, prompt context, and host credential fixtures
+// output: Prompt-envelope, error, credential, rewind, and runtime-update assertions
 // pos: Host-side PiAgent protocol boundary test
 
 import { describe, expect, it } from 'bun:test'
@@ -36,6 +36,46 @@ function captureSuccessfulCredentialUpdate(agent: PiAgent, sent: unknown[]): voi
 }
 
 describe('PiAgent subprocess error handling', () => {
+  it('keeps transient context separate from the durable prompt message', async () => {
+    const agent = new PiAgent(createConfig())
+    ;(agent as any).ensureSubprocess = async () => {}
+    let resolvePrompt!: (message: Record<string, unknown>) => void
+    const promptSent = new Promise<Record<string, unknown>>(resolve => {
+      resolvePrompt = resolve
+    })
+    ;(agent as any).send = (message: Record<string, unknown>) => {
+      if (message.type === 'prompt') resolvePrompt(message)
+    }
+
+    const iterator = agent.chat('hello', undefined, {
+      oneTimeContext: 'NOVEL WORKSPACE BRIEF',
+    })
+    const pending = iterator.next()
+    const prompt = await promptSent
+
+    expect(prompt.message).toBe('hello')
+    expect(prompt.systemPrompt).not.toContain('NOVEL WORKSPACE BRIEF')
+    expect(prompt.turnPolicy).toContain('<workspace_capabilities>')
+    expect(prompt.turnPolicy).toContain('<session_state>')
+    expect(prompt.turnPolicy).toContain("**USER'S DATE AND TIME:")
+    expect(prompt.turnPolicy).toContain('<language_policy_reminder>')
+    expect(prompt.turnPolicy).not.toContain('<workspace_root>')
+    expect(prompt.turnContext).toContain('<workspace_root>')
+    expect(prompt.turnContext).toContain(
+      '<request_context scope="turn">\nNOVEL WORKSPACE BRIEF\n</request_context>',
+    )
+    expect(prompt.turnContext).not.toContain('<language_policy_reminder>')
+    expect(prompt).not.toHaveProperty('dynamicSystemPrompt')
+
+    ;(agent as any).handleLine(JSON.stringify({
+      type: 'prompt_result',
+      id: prompt.id,
+      status: 'completed_without_agent',
+    }))
+    await pending
+    agent.destroy()
+  })
+
   it('preserves the legacy rewind error code', async () => {
     const agent = new PiAgent(createConfig())
     ;(agent as any).requestEnsureSessionReady = async () => 'pi-session-test'

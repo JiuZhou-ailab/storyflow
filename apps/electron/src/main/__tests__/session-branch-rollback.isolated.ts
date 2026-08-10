@@ -214,6 +214,7 @@ mock.module('@craft-agent/shared/sources', () => ({
   },
   createTokenGetter: () => async () => null,
   createStoryflowManagedTokenGetter: () => async () => 'managed-test-token',
+  getTrustedManagedSourcePolicy: () => ({ gatewayBaseUrl: 'https://storyflow-model.zjding.com' }),
   // Targeted stubs: prevent SyntaxError in tests that import these from the barrel
   loadSource: () => null,
   API_OAUTH_PROVIDERS: [],
@@ -235,6 +236,7 @@ mock.module('@craft-agent/shared/automations', () => ({
 
 mock.module('@craft-agent/shared/sessions', () => ({
   listSessions: () => [],
+  listSessionsAsync: async () => [],
   loadSession: (_root: string, id: string) => storedById.get(id) ?? null,
   saveSession: async (session: any) => {
     persistSessionShape(session)
@@ -267,22 +269,26 @@ mock.module('@craft-agent/shared/sessions', () => ({
   canUpdateSdkCwd: () => false,
   setPendingPlanExecution: async () => {},
   markCompactionComplete: async () => {},
+  markPendingPlanExecutionDispatched: async () => {},
   clearPendingPlanExecution: async () => {},
   getPendingPlanExecution: async () => null,
   getSessionAttachmentsPath: () => '/tmp/attachments',
   getSessionPath: (_root: string, id: string) => `${workspaceRootPath}/sessions/${id}`,
   getSessionFilePath: (_root: string, id: string) => `${workspaceRootPath}/sessions/${id}/session.jsonl`,
+  generateSessionId: () => 'generated-session',
   ensureSessionDir: (_root: string, id: string) => {
     const path = `${workspaceRootPath}/sessions/${id}`
     mkdirSync(path, { recursive: true })
     return path
   },
   validateBundle: () => true,
+  serializeSession: () => null,
   writeSessionJsonl: (_path: string, session: any) => {
     persistSessionShape(session)
   },
   getOrCreateLatestSession: async () => null,
   sessionPersistenceQueue: { flush: async () => {} },
+  getHeaderMetadataSignature: () => '',
   pickSessionFields: (s: any) => {
     // Must match SESSION_PERSISTENT_FIELDS to prevent contamination of persistence tests
     const fields = [
@@ -335,7 +341,7 @@ describe('session branch rollback on preflight failure', () => {
     let poolStopCalled = false
 
     ;(manager as any).ensureMessagesLoaded = async (_managed: any) => {}
-    ;(manager as any).getOrCreateAgent = async (managed: any) => {
+    ;(manager as any).getOrCreateAgentLocked = async (managed: any) => {
       managed.poolServer = { stop: () => { poolStopCalled = true } }
       managed.agent = {
         supportsBranching: true,
@@ -383,11 +389,11 @@ describe('session branch rollback on preflight failure', () => {
 
   it('runs backend preflight for pi branches and rolls back on failure', async () => {
     const manager = new SessionManager()
-    let getOrCreateAgentCalled = false
+    let getOrCreateAgentLockedCalled = false
 
     ;(manager as any).ensureMessagesLoaded = async (_managed: any) => {}
-    ;(manager as any).getOrCreateAgent = async (managed: any) => {
-      getOrCreateAgentCalled = true
+    ;(manager as any).getOrCreateAgentLocked = async (managed: any) => {
+      getOrCreateAgentLockedCalled = true
       managed.poolServer = { stop: () => {} }
       managed.agent = {
         supportsBranching: true,
@@ -406,7 +412,7 @@ describe('session branch rollback on preflight failure', () => {
       } as any)
     ).rejects.toThrow('Could not create branch: pi preflight boom')
 
-    expect(getOrCreateAgentCalled).toBe(true)
+    expect(getOrCreateAgentLockedCalled).toBe(true)
     expect(deletedIds).toEqual(['child-1'])
     expect(storedById.has('child-1')).toBe(false)
   })
@@ -414,7 +420,7 @@ describe('session branch rollback on preflight failure', () => {
   it('does not persist runtime ownership for a pending Pi branch', async () => {
     const manager = new SessionManager()
     ;(manager as any).ensureMessagesLoaded = async (_managed: any) => {}
-    ;(manager as any).getOrCreateAgent = async (managed: any) => {
+    ;(manager as any).getOrCreateAgentLocked = async (managed: any) => {
       managed.agent = {
         supportsBranching: true,
         ensureBranchReady: async () => {},

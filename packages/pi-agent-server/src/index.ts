@@ -394,7 +394,7 @@ async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>):
 
     const session = await ensureSession();
 
-    systemPromptOverride?.set(msg.systemPrompt, msg.dynamicSystemPrompt);
+    systemPromptOverride?.set(msg.systemPrompt, msg.turnPolicy, msg.turnContext);
 
     // Keep Pi's ResourceLoader and ExtensionRunner on the same generation.
     // Reloading the loader alone leaves slash commands bound to stale resources.

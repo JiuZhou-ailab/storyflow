@@ -203,17 +203,6 @@ export abstract class PiAgentTransport extends PiAgentHost {
   // RPC request counter for unique IDs
   protected rpcIdCounter: number = 0;
 
-  // OAuth token refresh (ChatGPT Plus)
-  /**
-   * @deprecated Use onBackendAuthRequired (inherited from PiAgentHost) instead.
-   * Kept as a getter/setter alias for backward compatibility.
-   */
-  get onChatGptAuthRequired(): ((reason: string) => void) | null {
-    return this.onBackendAuthRequired;
-  }
-  set onChatGptAuthRequired(cb: ((reason: string) => void) | null) {
-    this.onBackendAuthRequired = cb;
-  }
   protected needsFreshSessionRecoverySeed: boolean;
 
   // ============================================================

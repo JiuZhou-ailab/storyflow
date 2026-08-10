@@ -108,4 +108,43 @@ describe('createManagedSession', () => {
     expect(managed.workingDirectory).toBe(privateWorkingDirectory)
     expect(managed.sdkCwd).toBe(privateWorkingDirectory)
   })
+
+  it('keeps the Pi run cwd immutable after the conversation has started', () => {
+    const sessionManager = new SessionManager()
+    const initialWorkingDirectory = '/tmp/test-workspace'
+    const managed = createManagedSession({
+      id: 'session_started',
+      workingDirectory: initialWorkingDirectory,
+      sdkCwd: initialWorkingDirectory,
+    }, workspace as any)
+    managed.messages.push({
+      id: 'message_1',
+      role: 'user',
+      content: 'Create ./result.md',
+      timestamp: Date.now(),
+    })
+    ;(sessionManager as unknown as { sessions: Map<string, unknown> })
+      .sessions.set(managed.id, managed)
+
+    sessionManager.updateWorkingDirectory(managed.id, '/tmp')
+
+    expect(managed.workingDirectory).toBe(initialWorkingDirectory)
+    expect(managed.sdkCwd).toBe(initialWorkingDirectory)
+  })
+
+  it('allows an empty project conversation to choose its Pi run cwd', () => {
+    const sessionManager = new SessionManager()
+    const managed = createManagedSession({
+      id: 'session_empty',
+      workingDirectory: '/tmp/test-workspace',
+      sdkCwd: '/tmp/test-workspace',
+    }, workspace as any)
+    ;(sessionManager as unknown as { sessions: Map<string, unknown> })
+      .sessions.set(managed.id, managed)
+
+    sessionManager.updateWorkingDirectory(managed.id, '/tmp')
+
+    expect(managed.workingDirectory).toBe('/tmp')
+    expect(managed.sdkCwd).toBe('/tmp')
+  })
 })

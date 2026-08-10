@@ -1,3 +1,7 @@
+// input: MCP/API server configs, proxy tool calls, and session output boundaries.
+// output: One lifecycle owner for source clients, proxy tools, and normalized results.
+// pos: Shared main-process connection pool between Product Host and external Sources.
+
 /**
  * Centralized MCP Client Pool
  *
@@ -25,6 +29,8 @@ import {
   detectExtensionFromMagic,
   sanitizeFilename,
 } from '../utils/binary-detection.ts';
+import { materializeApiOperationRequest } from '../sources/api-path.ts';
+import type { ApiOperationPermission } from '../sources/types.ts';
 
 /**
  * Configuration for an in-process API source server.
@@ -33,6 +39,7 @@ import {
 export interface ApiServerConfig {
   type: 'sdk';
   instance: McpServer;
+  toolPermissions?: Record<string, ApiOperationPermission>;
 }
 
 /**
@@ -111,6 +118,9 @@ export class McpClientPool {
   /** Proxy tool name → { slug, originalName } (e.g., "mcp__linear__createIssue" → { slug: "linear", originalName: "createIssue" }) */
   private proxyTools = new Map<string, { slug: string; originalName: string }>();
 
+  /** Host-owned HTTP semantics for declarative in-process API tools. */
+  private proxyToolPermissions = new Map<string, ApiOperationPermission>();
+
   /** Optional debug logger */
   private debugFn: ((msg: string) => void) | undefined;
 
@@ -184,9 +194,12 @@ export class McpClientPool {
   /**
    * Connect to an in-process MCP server (API source) via in-memory transport.
    */
-  async connectInProcess(slug: string, mcpServer: McpServer): Promise<void> {
+  async connectInProcess(slug: string, config: ApiServerConfig): Promise<void> {
     if (this.clients.has(slug)) return;
-    await this.registerClient(slug, new ApiSourcePoolClient(mcpServer));
+    await this.registerClient(slug, new ApiSourcePoolClient(config.instance));
+    for (const [toolName, permission] of Object.entries(config.toolPermissions ?? {})) {
+      this.proxyToolPermissions.set(`mcp__${slug}__${toolName}`, permission);
+    }
   }
 
   /**
@@ -201,7 +214,10 @@ export class McpClientPool {
 
     // Remove proxy tool entries for this slug
     for (const [proxyName, info] of this.proxyTools) {
-      if (info.slug === slug) this.proxyTools.delete(proxyName);
+      if (info.slug === slug) {
+        this.proxyTools.delete(proxyName);
+        this.proxyToolPermissions.delete(proxyName);
+      }
     }
     this.toolCache.delete(slug);
     this.activeConfigs.delete(slug);
@@ -217,6 +233,7 @@ export class McpClientPool {
     this.clients.clear();
     this.toolCache.clear();
     this.proxyTools.clear();
+    this.proxyToolPermissions.clear();
     this.activeConfigs.clear();
     this.debug('Disconnected all MCP clients');
   }
@@ -249,10 +266,10 @@ export class McpClientPool {
     }
 
     // Extract McpServer instances from API configs
-    const apiSlugs = new Map<string, McpServer>();
+    const apiSlugs = new Map<string, ApiServerConfig>();
     for (const [slug, config] of Object.entries(apiServers)) {
       if (config?.type === 'sdk' && config.instance) {
-        apiSlugs.set(slug, config.instance);
+        apiSlugs.set(slug, config);
       }
     }
 
@@ -292,10 +309,10 @@ export class McpClientPool {
     }
 
     // Connect new API sources
-    for (const [slug, server] of apiSlugs) {
+    for (const [slug, config] of apiSlugs) {
       if (!currentSlugs.has(slug)) {
         try {
-          await this.connectInProcess(slug, server);
+          await this.connectInProcess(slug, config);
         } catch (err) {
           this.debug(`Failed to connect API source ${slug}: ${err instanceof Error ? err.message : String(err)}`);
           failures.push(slug);
@@ -455,5 +472,27 @@ export class McpClientPool {
    */
   isProxyTool(toolName: string): boolean {
     return this.proxyTools.has(toolName);
+  }
+
+  /** Return immutable HTTP semantics for a declarative API tool call. */
+  getProxyToolPermission(
+    toolName: string,
+    input: Record<string, unknown>,
+  ): { method: string; path: string } | undefined {
+    const permission = this.proxyToolPermissions.get(toolName);
+    if (!permission) return undefined;
+    let path: string;
+    try {
+      path = materializeApiOperationRequest(
+        permission.path,
+        permission.parameters,
+        input,
+      ).path;
+    } catch {
+      // Missing path input must never turn the unresolved template into an
+      // allowlist candidate. The MCP schema will reject the call itself.
+      path = '/.storyflow/invalid-api-operation';
+    }
+    return { method: permission.method, path };
   }
 }

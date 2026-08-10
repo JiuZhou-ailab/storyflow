@@ -235,10 +235,10 @@ export function renderWorkspaceStructureTree(snapshot: WorkspaceStructureSnapsho
   return lines.join('\n');
 }
 
-export function renderWorkspaceStructureContext(
+export function renderWorkspaceStructureProjection(
   snapshot: WorkspaceStructureSnapshot,
   options: WorkspaceStructureContextOptions = {},
-): string {
+): { policy: string; data: string } {
   const attrs = [
     `root="${escapeXmlAttribute(snapshot.rootPath)}"`,
     `maxDepth="${snapshot.maxDepth}"`,
@@ -253,9 +253,8 @@ export function renderWorkspaceStructureContext(
     attrs.push(`working_directory="${escapeXmlAttribute(options.workingDirectory)}"`);
   }
 
-  const lines = [
-    `<workspace_structure ${attrs.join(' ')}>`,
-    '<rules>',
+  const policy = [
+    '<workspace_structure_policy>',
     '- Treat this block as the current workspace/filesystem anchor for this turn.',
     '- Do not invent paths from display names; before writing, target a listed path or search/read the workspace.',
     '- This tree is bounded and path-only; read files before relying on contents.',
@@ -263,12 +262,16 @@ export function renderWorkspaceStructureContext(
     '- Durable project deliverables belong in workspace files: drafts, revisions, outlines, plans, notes, state updates, and other project content should be written or updated in the workspace first.',
     '- Use chat for questions, clarification, progress, and summaries. After writing, summarize changed paths instead of duplicating the full durable artifact in chat.',
     '- If the current permission mode blocks writes or the target file cannot be determined safely, say that explicitly and use the allowed planning/clarification path.',
-    '</rules>',
+    '</workspace_structure_policy>',
+  ].join('\n');
+
+  const data = [
+    `<workspace_structure ${attrs.join(' ')}>`,
     '<tree>',
     renderWorkspaceStructureTree(snapshot),
     '</tree>',
     '</workspace_structure>',
   ];
 
-  return lines.join('\n');
+  return { policy, data: data.join('\n') };
 }

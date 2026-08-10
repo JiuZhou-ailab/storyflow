@@ -6,13 +6,14 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { ApiConfig, ApiOperationParameter, ApiSourceOperation } from './types.ts';
+import type { ApiConfig, ApiOperationParameter, ApiOperationPermission, ApiSourceOperation } from './types.ts';
 import { debug } from '../utils/debug.ts';
 import { guardLargeResult } from '../utils/large-response.ts';
 import { MAX_DOWNLOAD_SIZE, formatBytes } from '../utils/binary-detection.ts';
 import type { ApiCredential, BasicAuthCredential } from './credential-manager.ts';
 import { isMultiHeaderCredential } from './credential-manager.ts';
 import { buildAuthorizationHeader } from './api-auth.ts';
+import { canonicalizeApiPath, materializeApiOperationRequest } from './api-path.ts';
 export { buildAuthorizationHeader } from './api-auth.ts';
 
 // Re-export for convenience
@@ -125,7 +126,7 @@ function buildUrl(
 ): string {
   // Normalize: remove trailing slash from baseUrl and ensure path starts with /
   const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const normalizedPath = canonicalizeApiPath(path);
   let url = `${normalizedBase}${normalizedPath}`;
 
   // Handle query param auth (only for string credentials)
@@ -365,22 +366,11 @@ function operationRequest(
   operation: ApiSourceOperation,
   args: Record<string, unknown>,
 ): { path: string; method: ApiSourceOperation['method']; params?: Record<string, unknown> } {
-  let path = operation.path;
-  const params = { ...args };
-  for (const match of operation.path.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)) {
-    const name = match[1]!;
-    const value = params[name];
-    if (value === undefined || value === null || value === '') {
-      throw new Error(`Missing path parameter: ${name}`);
-    }
-    path = path.replaceAll(`{${name}}`, encodeURIComponent(String(value)));
-    delete params[name];
-  }
-  for (const parameter of operation.parameters ?? []) {
-    if (params[parameter.name] === undefined && parameter.default !== undefined) {
-      params[parameter.name] = parameter.default;
-    }
-  }
+  const { path, params } = materializeApiOperationRequest(
+    operation.path,
+    operation.parameters,
+    args,
+  );
   return {
     path,
     method: operation.method,
@@ -432,14 +422,25 @@ export function createApiServer(
   credential: ApiCredentialSource,
   sessionPath?: string,
   summarize?: SummarizeCallback
-): { type: 'sdk'; name: string; instance: McpServer } {
+): {
+  type: 'sdk';
+  name: string;
+  instance: McpServer;
+  toolPermissions: Record<string, ApiOperationPermission>;
+} {
   debug(`[api-tools] Creating server for ${config.name}${sessionPath ? ` (session: ${sessionPath})` : ''}`);
 
   const name = `api_${config.name}`;
   const instance = new McpServer({ name, version: '1.0.0' });
+  const toolPermissions: Record<string, ApiOperationPermission> = {};
   if (config.operations?.length) {
     for (const operation of config.operations) {
       const tool = createApiOperationTool(config, operation, credential, sessionPath, summarize);
+      toolPermissions[tool.name] = {
+        method: operation.method,
+        path: operation.path,
+        ...(operation.parameters ? { parameters: operation.parameters } : {}),
+      };
       instance.registerTool(tool.name, {
         description: tool.description,
         inputSchema: tool.inputSchema,
@@ -457,5 +458,6 @@ export function createApiServer(
     type: 'sdk',
     name,
     instance,
+    toolPermissions,
   };
 }
