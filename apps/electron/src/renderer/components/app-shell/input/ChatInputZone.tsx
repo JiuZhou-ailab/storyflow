@@ -126,8 +126,6 @@ export function ChatInputZone({
               )}
             </div>
           ) : undefined}
-          permissionMode={permissionMode}
-          onPermissionModeChange={onPermissionModeChange}
           sessionId={sessionId}
           sessionLabels={sessionLabels}
           labels={labels}

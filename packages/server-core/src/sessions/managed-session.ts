@@ -1,5 +1,5 @@
 // input: Persisted session fields plus live Pi, source, queue, auth, and UI runtime state
-// output: The server-owned in-memory session aggregate used by SessionManager
+// output: The server-owned in-memory session aggregate, including the credential snapshot held by its Pi runtime
 // pos: Explicit session state model separated from lifecycle orchestration
 
 import type { PiAgent, AgentEvent, AuthRequest, PermissionMode } from '@craft-agent/shared/agent';
@@ -119,6 +119,7 @@ export interface ManagedSession {
   envOverrides?: Record<string, string>;
   backendRuntimeSignature?: string;
   backendRestartSignature?: string;
+  managedModelAccessToken?: string;
   credentialRestartRequired?: boolean;
   runtimeEpoch?: number;
   runtimeState?: 'invalidating' | 'deleting';

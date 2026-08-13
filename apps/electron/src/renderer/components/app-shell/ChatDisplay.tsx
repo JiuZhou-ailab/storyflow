@@ -76,7 +76,7 @@ import {
   type ChatOpeningCommand,
   type ChatOpeningPrompt,
 } from "./chat-opening"
-import { handleErrorMessageAction } from "./error-message-actions"
+import { getErrorMessageBody, handleErrorMessageAction } from "./error-message-actions"
 import { PromptTableOfContents, type PromptTocItem } from "./PromptTableOfContents"
 import { sanitizePreview } from "@/utils/session"
 
@@ -2369,6 +2369,7 @@ interface MessageBubbleProps {
 function ErrorMessage({ message, onOpenUrl, sessionId, onRetry }: { message: Message; onOpenUrl?: (url: string) => void; sessionId?: string; onRetry?: () => void }) {
   const { t } = useTranslation()
   const hasDetails = (message.errorDetails && message.errorDetails.length > 0) || message.errorOriginal
+  const body = getErrorMessageBody(message)
   const [detailsOpen, setDetailsOpen] = React.useState(false)
   const actions = message.errorActions?.filter(a => {
     if (a.action === 'open_url') return !!a.url && !!onOpenUrl
@@ -2388,7 +2389,7 @@ function ErrorMessage({ message, onOpenUrl, sessionId, onRetry }: { message: Mes
         <div className="text-xs text-destructive/50 mb-0.5 font-semibold">
           {message.errorTitle || t('common.error')}
         </div>
-        <p className="text-sm text-destructive">{message.content}</p>
+        <p className="text-sm text-destructive">{body}</p>
 
         {/* Action buttons */}
         {actions && actions.length > 0 && (

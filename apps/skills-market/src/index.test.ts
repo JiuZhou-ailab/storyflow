@@ -9,6 +9,10 @@ import { CURATED_SKILLS } from './catalog.ts'
 const env: Env = {}
 
 describe('Skills Market worker', () => {
+  test('does not expose ignored local Skill roots as public sources', () => {
+    expect(CURATED_SKILLS.every(skill => !skill.sourceUrl?.includes('.agents/skills'))).toBeTrue()
+  })
+
   test('lists only installable Skills by default and keeps source-only discovery explicit', async () => {
     expect(CURATED_SKILLS.filter(skill => skill.package).every(skill => skill.package?.objectKey)).toBeTrue()
     const response = await handleRequest(new Request('https://market.test/api/skills'), env)

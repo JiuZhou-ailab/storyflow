@@ -128,16 +128,17 @@ back to the broker. The Feishu app secret and user allow policy belong on the
 broker side only. After verifying either Feishu or a Neon Organization identity, the broker
 returns two independent capabilities and can mint a third one on demand:
 
-- an `appSessionToken` bounded to 30 days from the original authentication,
+- an `appSessionToken` bounded to 90 days from the original authentication,
   signed only with the client-session key, which may request rotated replacement
   tokens without extending that absolute lifetime;
-- a 15-minute `modelAccessToken`, signed with the model-access key, which may
+- a 24-hour `modelAccessToken`, signed with the model-access key, which may
   call the model gateway but cannot mint another token.
 - a five-minute Market publish token, requested only when the user publishes,
   signed with the Market key and scoped only to `skills:publish`.
 
-The broker requires a new login during the final 15 minutes of the app session,
-so a model capability can never outlive the parent authentication.
+The broker requires a new login when the app session cannot cover another
+12-hour operation plus clock skew, so a model capability can never outlive the
+parent authentication.
 
 The RPC/Web UI secret, client-session secret, model-access secret, and Market
 secret must be independently generated and must never share a

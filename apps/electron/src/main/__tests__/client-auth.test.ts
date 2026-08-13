@@ -645,11 +645,9 @@ describe('client auth', () => {
 
   it('silently refreshes a stale model token and persists rotated broker tokens', async () => {
     const now = Date.UTC(2026, 6, 27)
-    const refreshedModelToken = modelToken(now + 15 * 60 * 1000)
+    const refreshedModelToken = modelToken(now + 24 * 60 * 60 * 1000)
     const savedSessions: unknown[] = []
     const changes: unknown[] = []
-    const scheduledDelays: number[] = []
-    let cancelCount = 0
     let refreshCount = 0
     const broker: ClientAuthBrokerClient = {
       ...unusedBrokerMethods,
@@ -658,7 +656,6 @@ describe('client auth', () => {
         expect(input).toEqual({
           brokerUrl: 'https://auth.storyflow.example.com',
           appSessionToken: 'old-app-session',
-          providerToken: 'fresh-provider-token',
         })
         return {
           appSessionToken: 'rotated-app-session',
@@ -678,18 +675,11 @@ describe('client auth', () => {
         getClientConfig: () => ({ enabled: true }),
         authenticateWithEmailPassword: async () => { throw new Error('not used') },
         verifyToken: async () => { throw new Error('not used') },
-        getSessionToken: async (input) => {
-          expect(input).toEqual({
-            sessionCookie: 'neon-session-cookie',
-            origin: undefined,
-          })
-          return 'fresh-provider-token'
-        },
+        getSessionToken: async () => { throw new Error('identity provider must not run during capability renewal') },
       }),
       initialSession: {
         user: { provider: 'neon', userId: 'user-1' },
         appSessionToken: 'old-app-session',
-        neonSessionCookie: 'neon-session-cookie',
         modelAccessToken: modelToken(now + 60_000),
       },
       now: () => now,
@@ -698,10 +688,7 @@ describe('client auth', () => {
         clear: async () => {},
       },
       onAuthChange: async (change) => { changes.push(change) },
-      scheduleTimeout: (_callback, delayMs) => { scheduledDelays.push(delayMs); return delayMs },
-      cancelTimeout: () => { cancelCount += 1 },
     })
-    expect(scheduledDelays).toEqual([0])
     const [result, duplicate] = await Promise.all([
       service.ensureModelAccessToken(),
       service.ensureModelAccessToken(),
@@ -713,12 +700,9 @@ describe('client auth', () => {
       user: { provider: 'neon', userId: 'user-1' },
       appSessionToken: 'rotated-app-session',
       modelAccessToken: refreshedModelToken,
-      neonSessionCookie: 'neon-session-cookie',
     }])
     expect(changes).toHaveLength(1)
-    expect(scheduledDelays.at(-1)).toBe(13 * 60 * 1000)
     service.dispose()
-    expect(cancelCount).toBe(2)
   })
 
   it('issues a Skills Market token without persisting the capability', async () => {
@@ -754,8 +738,8 @@ describe('client auth', () => {
 
   it('does not let a fresh non-force preflight swallow a forced gateway retry', async () => {
     const now = Date.UTC(2026, 6, 27)
-    const freshToken = modelToken(now + 15 * 60 * 1000)
-    const rotatedToken = modelToken(now + 30 * 60 * 1000)
+    const freshToken = modelToken(now + 24 * 60 * 60 * 1000)
+    const rotatedToken = modelToken(now + 24 * 60 * 60 * 1000 + 1_000)
     let refreshCount = 0
     const broker: ClientAuthBrokerClient = {
       ...unusedBrokerMethods,

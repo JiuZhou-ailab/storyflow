@@ -138,12 +138,12 @@ describe('chat page header actions', () => {
     expect(appShellDestructure).not.toContain('workspaces')
   })
 
-  it('keeps the project directory and execution mode on one row above the input', () => {
+  it('keeps the project directory above the input and out of the desktop toolbar', () => {
     const chatInputZoneSource = readFileSync(new URL('../../components/app-shell/input/ChatInputZone.tsx', import.meta.url), 'utf-8')
     const freeFormInputSource = readFileSync(new URL('../../components/app-shell/input/FreeFormInput.tsx', import.meta.url), 'utf-8')
     const appShellContextSource = readFileSync(new URL('../../context/AppShellContext.tsx', import.meta.url), 'utf-8')
     const desktopToolbar = freeFormInputSource.slice(
-      freeFormInputSource.indexOf('{/* Desktop: attachment and source controls */}'),
+      freeFormInputSource.indexOf('{/* Desktop: attachment, source, and permission controls */}'),
       freeFormInputSource.indexOf('{/* Spacer */}'),
     )
 

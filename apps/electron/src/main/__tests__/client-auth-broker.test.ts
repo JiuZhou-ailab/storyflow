@@ -114,11 +114,11 @@ describe('DefaultClientAuthBrokerClient', () => {
     expect(result.modelAccessToken).toBe('model-access-token')
   })
 
-  it('presents a fresh Neon provider token when refreshing capabilities', async () => {
+  it('refreshes capabilities from the Storyflow identity session alone', async () => {
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       expect(input.toString()).toBe('https://auth.storyflow.example.com/api/client-auth/token')
       expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer app-session-token')
-      expect(JSON.parse(String(init?.body))).toEqual({ providerToken: 'provider-token' })
+      expect(init?.body).toBeUndefined()
       return Response.json({
         appSessionToken: 'app-session-token',
         modelAccessToken: 'model-access-token',
@@ -128,7 +128,6 @@ describe('DefaultClientAuthBrokerClient', () => {
     await new DefaultClientAuthBrokerClient().refreshModelAccessToken({
       brokerUrl: 'https://auth.storyflow.example.com',
       appSessionToken: 'app-session-token',
-      providerToken: 'provider-token',
     })
   })
 

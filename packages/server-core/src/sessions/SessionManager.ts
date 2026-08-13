@@ -2564,6 +2564,7 @@ export class SessionManager implements ISessionManager {
     managed.agentReadyResolve = undefined
     managed.backendRuntimeSignature = undefined
     managed.backendRestartSignature = undefined
+    managed.managedModelAccessToken = undefined
     managed.credentialRestartRequired = false
     unregisterSessionScopedToolCallbacks(sessionId)
   }
@@ -2852,6 +2853,8 @@ export class SessionManager implements ISessionManager {
           if (!reloaded) {
             if (managed.agent.isProcessing()) managed.credentialRestartRequired = true
             else await this.disposeManagedAgentRuntime(managed, 'credential reload')
+          } else if (managedModelAccess) {
+            managed.managedModelAccessToken = managedModelAccess.token
           }
         })
       } catch (error) {
@@ -2911,37 +2914,13 @@ export class SessionManager implements ISessionManager {
     if (!isManagedDefaultGatewayConnection(connectionSlug)) return undefined
 
     const modelAccess = await sessionRuntimeHooks.ensureManagedModelAccessToken(forceRefresh)
-    const managedModelAccess = { token: modelAccess.token }
-    if (!modelAccess.refreshed) return managedModelAccess
-
-    // Every affected runtime rebuilds before its next operation. Mutating only
-    // flags here avoids cross-session lock ordering during token resolution.
-    for (const other of this.sessions.values()) {
-      if (
-        other.agent
-        && resolveManagedConnectionSlug(other) === connectionSlug
-      ) {
-        other.credentialRestartRequired = true
-      }
-    }
-    return managedModelAccess
+    return { token: modelAccess.token }
   }
 
+  /** Renew a rejected capability without mutating the runtime that reported it. */
   private async refreshManagedCredentialForNextTurn(managed: ManagedSession): Promise<void> {
     try {
-      await this.withAgentRuntimeLock(managed, async () => {
-        const managedModelAccess = await this.ensureManagedCredentialForSessionLocked(managed, true)
-        if (!managedModelAccess || !managed.agent) return
-
-        const reloaded = await managed.agent.reloadCredentials?.(managedModelAccess) ?? false
-        if (reloaded) {
-          managed.credentialRestartRequired = false
-          return
-        }
-        if (!managed.agent.isProcessing()) {
-          await this.disposeManagedAgentRuntime(managed, 'managed credential refresh')
-        }
-      })
+      await this.ensureManagedCredentialForSessionLocked(managed, true)
     } catch (error) {
       sessionLog.warn(`[managed-access] Credential refresh failed for ${managed.id}: ${error instanceof Error ? error.message : error}`)
     }
@@ -2983,9 +2962,27 @@ export class SessionManager implements ISessionManager {
     }
     const runtimeSignature = buildBackendRuntimeSignature(sigInput)
     const restartSignature = buildRestartRequiredSignature(sigInput)
+    const managedModelAccess = await this.ensureManagedCredentialForSessionLocked(managed)
+
+    if (
+      managed.agent
+      && managedModelAccess
+      && managed.managedModelAccessToken !== managedModelAccess.token
+    ) {
+      let reloaded = false
+      try {
+        reloaded = await managed.agent.reloadCredentials?.(managedModelAccess) ?? false
+      } catch (error) {
+        sessionLog.warn(`[managed-access] Credential preflight failed for ${managed.id}: ${error instanceof Error ? error.message : error}`)
+      }
+      if (reloaded) {
+        managed.managedModelAccessToken = managedModelAccess.token
+      } else {
+        await this.disposeManagedAgentRuntime(managed, 'managed credential preflight')
+      }
+    }
 
     if (!managed.agent) {
-      const managedModelAccess = await this.ensureManagedCredentialForSessionLocked(managed)
       const end = perf.start('agent.create', { sessionId: managed.id })
 
       // The agent spawns subprocesses that resolve tools from PATH, so this is
@@ -3301,6 +3298,7 @@ export class SessionManager implements ISessionManager {
 
       // Run post-init (auth injection) — each backend handles its own
       const postInitResult = await managed.agent.postInit()
+      managed.managedModelAccessToken = managedModelAccess?.token
       if (postInitResult.authWarning) {
         sessionLog.warn(`Auth warning for session ${managed.id}: ${postInitResult.authWarning}`)
         this.sendEvent({
@@ -4722,8 +4720,6 @@ export class SessionManager implements ISessionManager {
     // Notify renderer that title regeneration has started (for shimmer effect)
     managed.isAsyncOperationOngoing = true
     this.sendEvent({ type: 'async_operation', sessionId, isOngoing: true }, managed.workspace.id)
-    // Keep legacy event for backward compatibility
-    this.sendEvent({ type: 'title_regenerating', sessionId, isRegenerating: true }, managed.workspace.id)
 
     try {
       sessionLog.info(`refreshTitle: Calling agent.regenerateTitle...`)
@@ -4735,8 +4731,6 @@ export class SessionManager implements ISessionManager {
             managed.name = title
             this.persistSession(managed)
             this.sendEvent({ type: 'title_generated', sessionId, title }, managed.workspace.id)
-          } else {
-            this.sendEvent({ type: 'title_regenerating', sessionId, isRegenerating: false }, managed.workspace.id)
           }
           return title
         },
@@ -4748,10 +4742,6 @@ export class SessionManager implements ISessionManager {
       }
       return { success: false, error: 'Failed to generate title' }
     } catch (error) {
-      // Error occurred - clear regenerating state
-      if (this.sessions.get(sessionId) === managed && managed.runtimeState !== 'deleting') {
-        this.sendEvent({ type: 'title_regenerating', sessionId, isRegenerating: false }, managed.workspace.id)
-      }
       const message = error instanceof Error ? error.message : 'Unknown error'
       sessionLog.error(`Failed to refresh title for session ${sessionId}:`, error)
       return { success: false, error: message }
@@ -5710,9 +5700,7 @@ export class SessionManager implements ISessionManager {
               const errorMessage: Message = {
                 id: generateMessageId(),
                 role: 'error',
-                content: isImageError
-                  ? `Image Too Large: ${apiError.message}`
-                  : `Request Error: ${apiError.message}`,
+                content: apiError.message,
                 timestamp: this.monotonic(),
                 errorCode: isImageError ? 'image_too_large' : 'invalid_request',
                 errorTitle: isImageError ? 'Image Too Large' : 'Invalid Request',
@@ -7013,7 +7001,7 @@ export class SessionManager implements ISessionManager {
           id: generateMessageId(),
           role: 'error',
           // Combine title and message for content display (handles undefined gracefully)
-          content: [typedError.title, typedError.message].filter(Boolean).join(': ') || 'An error occurred',
+          content: typedError.message || typedError.title || 'An error occurred',
           timestamp: this.monotonic(),
           // Rich error fields for diagnostics and retry functionality
           errorCode: typedError.code,

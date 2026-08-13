@@ -121,26 +121,6 @@ export function parseMentions(
 }
 
 /**
- * Strip all mentions from text, replacing skill/source mentions with their slug.
- *
- * @param text - The message text with mentions
- * @returns Text with skill/source mentions replaced by their slug
- *
- * @deprecated Prefer resolveSkillMentions + resolveSourceMentions for richer output.
- */
-export function stripAllMentions(text: string): string {
-  return text
-    // Replace [source:slug] with just the slug
-    .replace(/\[source:([\w-]+)\]/g, '$1')
-    // Replace [skill:slug] or [skill:workspaceId:slug] with just the slug
-    .replace(new RegExp(`\\[skill:(?:${WS_ID_CHARS}+:)?([\\w-]+)\\]`, 'g'), '$1')
-    // Note: [file:...] and [folder:...] are NOT stripped — they are content
-    // that gets resolved to absolute paths by resolveFileMentions().
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-/**
  * Resolve skill mentions to semantic markers with display names.
  *
  * [skill:datadog-api]           → [Mentioned skill: Datadog API (slug: datadog-api)]

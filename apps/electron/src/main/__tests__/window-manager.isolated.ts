@@ -78,7 +78,6 @@ mock.module('../logger', () => {
     sessionLog: stubLog,
     handlerLog: stubLog,
     windowLog: stubLog,
-    agentLog: stubLog,
     searchLog: stubLog,
     isDebugMode: false,
     getLogFilePath: () => '/tmp/main.log',

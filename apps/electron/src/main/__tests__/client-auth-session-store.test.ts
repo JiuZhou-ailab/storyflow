@@ -1,5 +1,5 @@
 // input: Fake credential manager records for desktop client auth sessions
-// output: Regression coverage for renewable session persistence and legacy token cleanup
+// output: Regression coverage for bounded identity-session persistence and transient token cleanup
 // pos: Guards the identity-session boundary without depending on the real credential backend
 
 import { describe, expect, it } from 'bun:test'
@@ -16,7 +16,7 @@ function modelToken(exp: number): string {
 }
 
 describe('createClientAuthSessionStore', () => {
-  it('persists only the renewable client session and removes managed model-token projections', async () => {
+  it('persists only the identity session and removes managed model-token projections', async () => {
     const records = new Map<string, StoredCredential>()
     const keyFor = (id: unknown) => JSON.stringify(id)
     const store = createClientAuthSessionStore({
@@ -29,7 +29,7 @@ describe('createClientAuthSessionStore', () => {
       },
     })
 
-    const token = modelToken(Math.floor(Date.now() / 1000) + 3600)
+    const token = modelToken(Math.floor(Date.now() / 1000) + 24 * 60 * 60)
     for (const connectionSlug of [...MANAGED_LLM_CONNECTION_SLUGS, 'wangsu-default']) {
       records.set(keyFor({ type: 'llm_api_key', connectionSlug }), { value: 'legacy-model-token' })
     }
@@ -139,13 +139,11 @@ describe('createClientAuthSessionStore', () => {
     expect(await store.load()).toEqual({
       user: { provider: 'neon', userId: 'user-1' },
       appSessionToken: 'renewable-app-session',
-      neonSessionCookie: '__Secure-neon-auth.session_token=encrypted-by-store',
     })
     expect(records.get(keyFor({ type: 'client_auth_session' }))).toEqual({
       value: JSON.stringify({
         user: { provider: 'neon', userId: 'user-1' },
         appSessionToken: 'renewable-app-session',
-        neonSessionCookie: '__Secure-neon-auth.session_token=encrypted-by-store',
       }),
     })
     expect(records.has(keyFor({

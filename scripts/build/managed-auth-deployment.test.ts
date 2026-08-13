@@ -69,6 +69,7 @@ describe('managed auth deployment', () => {
     expect(workflow).toContain('client_session_token_invalid')
     expect(workflow).toContain('MODEL_CATALOG_RESPONSE_PATH')
     expect(workflow).toContain('MARKET_TOKEN_RESPONSE_PATH')
+    expect(workflow).toContain('payload.exp - now <= 12 * 60 * 60 + 5 * 60')
     expect(workflow).not.toContain('gemini-3.5-flash')
     expect(gatewayDeploy).toBeGreaterThan(0)
     expect(brokerDeploy).toBeGreaterThan(gatewayDeploy)

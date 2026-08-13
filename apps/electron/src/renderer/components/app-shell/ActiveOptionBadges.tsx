@@ -1,5 +1,5 @@
-// input: Leading session context, permission mode, labels, and label editing callbacks
-// output: One-row session context, compact label badges, and permission control
+// input: Leading session context, labels, and label editing callbacks
+// output: One-row session context and compact label badges
 // pos: Optional session metadata strip above the primary input
 
 import * as React from 'react'
@@ -12,16 +12,10 @@ import { resolveEntityColor } from '@craft-agent/shared/colors'
 import { useTheme } from '@/context/ThemeContext'
 import { useDynamicStack } from '@/hooks/useDynamicStack'
 import { MetadataBadge } from '@/components/ui/metadata-badge'
-import type { PermissionMode } from '@craft-agent/shared/agent/modes'
-import { DesktopPermissionModeSelector } from './input/DesktopPermissionModeSelector'
 
 export interface ActiveOptionBadgesProps {
   /** Session context rendered at the far left of the option row */
   leadingContent?: React.ReactNode
-  /** Current permission mode */
-  permissionMode?: PermissionMode
-  /** Callback when permission mode changes */
-  onPermissionModeChange?: (mode: PermissionMode) => void
   /** Session ID for scoping label popovers */
   sessionId?: string
   /** Label entries applied to this session (e.g., ["bug", "priority::3"]) */
@@ -47,8 +41,6 @@ interface ResolvedLabelEntry {
 
 export function ActiveOptionBadges({
   leadingContent,
-  permissionMode,
-  onPermissionModeChange,
   sessionId,
   sessionLabels = [],
   labels = [],
@@ -85,7 +77,7 @@ export function ActiveOptionBadges({
   // shows the same visible strip when stacked. No React re-renders needed.
   const stackRef = useDynamicStack({ gap: 8, minVisible: 20, reservedStart: 0 })
 
-  if (!leadingContent && !permissionMode && !hasLabels) return null
+  if (!leadingContent && !hasLabels) return null
 
   return (
     <div className={cn("mb-2 flex min-w-0 items-center gap-2 px-px pt-px pb-0.5", className)}>
@@ -128,14 +120,6 @@ export function ActiveOptionBadges({
           </div>
         )}
       </div>
-
-      {permissionMode && (
-        <DesktopPermissionModeSelector
-          permissionMode={permissionMode}
-          onPermissionModeChange={onPermissionModeChange}
-          sessionId={sessionId}
-        />
-      )}
     </div>
   )
 }

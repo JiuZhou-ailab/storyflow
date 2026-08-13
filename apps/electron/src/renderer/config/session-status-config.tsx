@@ -144,17 +144,6 @@ export function getStateColor(
 }
 
 /**
- * Get the label for a todo state
- */
-export function getStateLabel(
-  stateId: string,
-  states: SessionStatus[]
-): string {
-  const state = states.find(s => s.id === stateId)
-  return state?.label ?? stateId
-}
-
-/**
  * Get a complete state object by ID
  */
 export function getState(

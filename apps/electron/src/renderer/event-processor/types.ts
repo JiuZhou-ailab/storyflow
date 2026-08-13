@@ -224,7 +224,7 @@ export interface StatusEvent {
   type: 'status'
   sessionId: string
   message: string
-  statusType?: 'compacting'
+  statusType?: 'compacting' | 'retrying'
   /** Timestamp from main process for consistent ordering */
   timestamp?: number
 }
@@ -262,17 +262,6 @@ export interface TitleGeneratedEvent {
   sessionId: string
   title: string
   preview?: string  // First user message preview for sidebar fallback
-}
-
-/**
- * Title regenerating event - indicates title regeneration has started/finished
- * Used to show shimmer effect on title during regeneration
- * @deprecated Use AsyncOperationEvent instead
- */
-export interface TitleRegeneratingEvent {
-  type: 'title_regenerating'
-  sessionId: string
-  isRegenerating: boolean
 }
 
 /**
@@ -518,7 +507,6 @@ export type AgentEvent =
   | InfoEvent
   | InterruptedEvent
   | TitleGeneratedEvent
-  | TitleRegeneratingEvent
   | AsyncOperationEvent
   | WorkingDirectoryChangedEvent
   | WorkingDirectoryErrorEvent

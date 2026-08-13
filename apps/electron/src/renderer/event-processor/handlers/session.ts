@@ -31,7 +31,6 @@ import type {
   InfoEvent,
   InterruptedEvent,
   TitleGeneratedEvent,
-  TitleRegeneratingEvent,
   AsyncOperationEvent,
   WorkingDirectoryChangedEvent,
   PermissionModeChangedEvent,
@@ -200,9 +199,7 @@ export function handleTypedError(
   const errorMessage: Message = {
     id: generateMessageId(),
     role: 'error',
-    content: event.error.title
-      ? `${event.error.title}: ${event.error.message}`
-      : event.error.message,
+    content: event.error.message,
     timestamp: event.timestamp ?? Date.now(),
     errorCode: event.error.code,
     errorTitle: event.error.title,
@@ -241,6 +238,22 @@ export function handleStatus(
   event: StatusEvent
 ): ProcessResult {
   const { session, streaming } = state
+
+  if (event.statusType === 'retrying') {
+    return {
+      state: {
+        session: {
+          ...session,
+          currentStatus: {
+            message: event.message,
+            statusType: event.statusType,
+          },
+        },
+        streaming,
+      },
+      effects: [],
+    }
+  }
 
   const statusMessage: Message = {
     id: generateMessageId(),
@@ -407,7 +420,7 @@ export function handleTitleGenerated(
   event: TitleGeneratedEvent
 ): ProcessResult {
   const { session, streaming } = state
-  if (session.name === event.title && session.isRegeneratingTitle === false) {
+  if (session.name === event.title) {
     return { state, effects: [] }
   }
 
@@ -416,33 +429,6 @@ export function handleTitleGenerated(
       session: {
         ...session,
         name: event.title,
-        // Clear regenerating state - title generation completed
-        isRegeneratingTitle: false,
-      },
-      streaming,
-    },
-    effects: [],
-  }
-}
-
-/**
- * Handle title_regenerating - set regenerating state for shimmer effect
- * @deprecated Use handleAsyncOperation instead
- */
-export function handleTitleRegenerating(
-  state: SessionState,
-  event: TitleRegeneratingEvent
-): ProcessResult {
-  const { session, streaming } = state
-  if (session.isRegeneratingTitle === event.isRegenerating) {
-    return { state, effects: [] }
-  }
-
-  return {
-    state: {
-      session: {
-        ...session,
-        isRegeneratingTitle: event.isRegenerating,
       },
       streaming,
     },

@@ -195,7 +195,7 @@ jobs:
               .setAudience("storyflow-client-auth")
               .setSubject("release-canary")
               .setIssuedAt(now)
-              .setExpirationTime(now + 300)
+              .setExpirationTime(now + 90 * 24 * 60 * 60)
               .sign(new TextEncoder().encode(process.env.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET)));
           ')"
 
@@ -206,8 +206,12 @@ jobs:
             https://storyflow-auth.zjding.com/api/client-auth/token)"
           test "$status" = 200
           MODEL_ACCESS_TOKEN="$(TOKEN_RESPONSE_PATH="$RUNNER_TEMP/token-response.json" bun --eval '
+            import { decodeJwt } from "jose";
             const body = await Bun.file(process.env.TOKEN_RESPONSE_PATH).json();
             if (typeof body.modelAccessToken !== "string") process.exit(1);
+            const payload = decodeJwt(body.modelAccessToken);
+            const now = Math.floor(Date.now() / 1000);
+            if (typeof payload.exp !== "number" || payload.exp - now <= 12 * 60 * 60 + 5 * 60) process.exit(1);
             console.log(body.modelAccessToken);
           ')"
 

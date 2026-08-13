@@ -74,6 +74,7 @@ describe('error handler fast path', () => {
     expect(next.state.session.messages).toHaveLength(2)
     expect(next.state.session.messages[0]).toBe(messages[0])
     expect(next.state.session.messages[1]?.role).toBe('error')
-    expect(next.state.session.messages[1]?.content).toBe('Failed: boom')
+    expect(next.state.session.messages[1]?.content).toBe('boom')
+    expect(next.state.session.messages[1]?.errorTitle).toBe('Failed')
   })
 })

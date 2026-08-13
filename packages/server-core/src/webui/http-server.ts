@@ -34,7 +34,7 @@ import {
 import { generateCallbackPage } from '@craft-agent/shared/auth'
 import type { PlatformServices } from '../runtime/platform'
 import { FeishuLoginService, type FeishuAuthConfig } from './feishu-auth'
-import { NeonAuthService, reauthorizeNeonClientSession, type NeonAuthConfig, type NeonAuthIdentity } from './neon-auth'
+import { NeonAuthService, type NeonAuthConfig, type NeonAuthIdentity } from './neon-auth'
 
 // ---------------------------------------------------------------------------
 // MIME types for static file serving
@@ -672,23 +672,21 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
           code: 'client_session_token_invalid',
         }, { status: 401 })
       }
-      const authorizedSession = await reauthorizeNeonClientSession(req, neonAuth, clientSession)
-      if (authorizedSession instanceof Response) return authorizedSession
       return Response.json({
         ok: true,
         appSessionToken: await createClientSessionToken(
           options.clientSessionTokenKeyRing.current,
-          authorizedSession.subject,
-          authorizedSession.modelTier,
-          authorizedSession.authenticatedAtSeconds,
-          authorizedSession.organizationId,
-          authorizedSession.userName,
+          clientSession.subject,
+          clientSession.modelTier,
+          clientSession.authenticatedAtSeconds,
+          clientSession.organizationId,
+          clientSession.userName,
         ),
         modelAccessToken: await createModelAccessToken(
           options.modelAccessTokenKey,
-          authorizedSession.subject,
-          authorizedSession.modelTier,
-          authorizedSession.authenticatedAtSeconds,
+          clientSession.subject,
+          clientSession.modelTier,
+          clientSession.authenticatedAtSeconds,
         ),
       })
     }
@@ -711,16 +709,14 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
           code: 'client_session_token_invalid',
         }, { status: 401 })
       }
-      const authorizedSession = await reauthorizeNeonClientSession(req, neonAuth, clientSession)
-      if (authorizedSession instanceof Response) return authorizedSession
       return Response.json({
         ok: true,
         marketPublishToken: await createSkillsMarketPublishToken(
           options.skillsMarketTokenKey,
-          authorizedSession.subject,
-          authorizedSession.authenticatedAtSeconds,
-          authorizedSession.organizationId,
-          authorizedSession.userName,
+          clientSession.subject,
+          clientSession.authenticatedAtSeconds,
+          clientSession.organizationId,
+          clientSession.userName,
         ),
         expiresInSeconds: SKILLS_MARKET_TOKEN_TTL_SECONDS,
       })

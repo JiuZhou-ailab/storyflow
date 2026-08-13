@@ -22,8 +22,6 @@ import { SourceStatusIndicator, deriveConnectionStatus } from './source-status-i
 // Types
 // ============================================================================
 
-export type SourceType = 'mcp' | 'api' | 'gmail' | 'local'
-
 interface SourceAvatarProps {
   /** LoadedSource object */
   source: LoadedSource
@@ -47,13 +45,6 @@ const SOURCE_FALLBACKS: Record<string, IconComponent> = {
   api: Globe,
   gmail: Mail,
   local: HardDrive,
-}
-
-/**
- * Get the fallback icon for a source type
- */
-export function getSourceFallbackIcon(type: SourceType): IconComponent {
-  return SOURCE_FALLBACKS[type] ?? Plug
 }
 
 // ============================================================================

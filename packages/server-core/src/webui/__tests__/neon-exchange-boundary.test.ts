@@ -136,7 +136,7 @@ describe('Neon exchange boundary', () => {
         CLIENT_KEY,
         'neon:user-1',
         'standard',
-        now - 2_592_000 + 600,
+        now - 90 * 24 * 60 * 60 + 12 * 60 * 60,
       )
       const rejected = await handler.fetch(new Request('http://localhost/api/client-auth/token', {
         method: 'POST',
@@ -148,15 +148,11 @@ describe('Neon exchange boundary', () => {
         CLIENT_KEY,
         'neon:user-1',
         'standard',
-        now - 2_592_000 + 1_800,
+        now - 90 * 24 * 60 * 60 + 12 * 60 * 60 + 10 * 60,
       )
       const refreshed = await handler.fetch(new Request('http://localhost/api/client-auth/token', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${renewable}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ providerToken: 'valid-neon-token' }),
+        headers: { Authorization: `Bearer ${renewable}` },
       }))
       expect(refreshed.status).toBe(200)
       const body = await refreshed.json() as Record<string, string>

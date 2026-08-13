@@ -22,8 +22,8 @@ import {
   handleSessionUnflagged,
   handleSessionUnshared,
   handleSourcesChanged,
+  handleStatus,
   handleTitleGenerated,
-  handleTitleRegenerating,
   handleUsageUpdate,
   handleWorkingDirectoryChanged,
 } from './session'
@@ -43,12 +43,12 @@ import type {
   SessionSharedEvent,
   SessionStatusChangedEvent,
   SessionState,
+  StatusEvent,
   SessionUnarchivedEvent,
   SessionUnflaggedEvent,
   SessionUnsharedEvent,
   SourcesChangedEvent,
   TitleGeneratedEvent,
-  TitleRegeneratingEvent,
   UsageUpdateEvent,
   WorkingDirectoryChangedEvent,
 } from '../types'
@@ -159,19 +159,8 @@ describe('session event no-op guards', () => {
     expect(handleNameChanged(state, event).state).toBe(state)
   })
 
-  it('keeps the original state for duplicate title regeneration status', () => {
-    const state = makeState({ isRegeneratingTitle: true })
-    const event: TitleRegeneratingEvent = {
-      type: 'title_regenerating',
-      sessionId: 'session-1',
-      isRegenerating: true,
-    }
-
-    expect(handleTitleRegenerating(state, event).state).toBe(state)
-  })
-
-  it('keeps the original state for duplicate generated title when not regenerating', () => {
-    const state = makeState({ name: 'Draft title', isRegeneratingTitle: false })
+  it('keeps the original state for a duplicate generated title', () => {
+    const state = makeState({ name: 'Draft title' })
     const event: TitleGeneratedEvent = {
       type: 'title_generated',
       sessionId: 'session-1',
@@ -364,5 +353,32 @@ describe('session event no-op guards', () => {
     }
 
     expect(handleInfo(state, event).state).toBe(state)
+  })
+
+  it('keeps retry status ephemeral and overwrites the current status', () => {
+    const state = makeState({
+      messages: [{ id: 'msg-1', role: 'user', content: 'hello' }],
+      currentStatus: undefined,
+    })
+    const firstEvent = {
+      type: 'status',
+      sessionId: 'session-1',
+      message: 'Retrying (attempt 1/3)...',
+      statusType: 'retrying',
+    } satisfies StatusEvent
+    const secondEvent = {
+      ...firstEvent,
+      message: 'Retrying (attempt 2/3)...',
+    }
+
+    const first = handleStatus(state, firstEvent)
+    const second = handleStatus(first.state, secondEvent)
+
+    expect(first.state.session.messages).toBe(state.session.messages)
+    expect(second.state.session.messages).toBe(state.session.messages)
+    expect(second.state.session.currentStatus).toEqual({
+      message: 'Retrying (attempt 2/3)...',
+      statusType: 'retrying',
+    })
   })
 })

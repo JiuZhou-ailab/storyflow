@@ -80,21 +80,6 @@ export function setKeepAwakeSetting(enabled: boolean): void {
 }
 
 /**
- * Get the current keep awake setting value.
- */
-export function getKeepAwakeSetting(): boolean {
-  return settingEnabled
-}
-
-/**
- * Check if power blocker is currently active.
- * Useful for debugging.
- */
-export function isPowerBlockerActive(): boolean {
-  return powerBlockerId !== null && powerSaveBlocker.isStarted(powerBlockerId)
-}
-
-/**
  * Clean up power blocker on app quit.
  * Note: Electron automatically releases blockers on quit, but this is explicit.
  */

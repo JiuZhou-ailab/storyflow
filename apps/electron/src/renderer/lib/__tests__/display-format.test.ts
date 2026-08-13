@@ -1,21 +1,9 @@
-// input: display-format helpers
-// output: Contract tests for path shortening and relative timestamps
+// input: display-format timestamp helper
+// output: Contract tests for relative timestamps
 // pos: Guards shared project-list display utilities
 
 import { describe, expect, it } from 'bun:test'
-import { formatRelativeTimestamp, shortenDisplayPath } from '../display-format'
-
-describe('shortenDisplayPath', () => {
-  it('keeps short paths intact', () => {
-    expect(shortenDisplayPath('/a/b', 2)).toBe('/a/b')
-    expect(shortenDisplayPath('a/b', 2)).toBe('a/b')
-  })
-
-  it('ellipsis long tails', () => {
-    expect(shortenDisplayPath('/Users/me/novels/dawn/chapters', 2)).toBe('…/dawn/chapters')
-    expect(shortenDisplayPath('/Users/me/novels/dawn', 3)).toBe('…/me/novels/dawn')
-  })
-})
+import { formatRelativeTimestamp } from '../display-format'
 
 describe('formatRelativeTimestamp', () => {
   it('returns empty label for missing values', () => {

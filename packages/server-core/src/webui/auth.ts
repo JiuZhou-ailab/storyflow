@@ -9,8 +9,9 @@ import { decodeProtectedHeader, SignJWT, jwtVerify } from 'jose'
 // ---------------------------------------------------------------------------
 
 const JWT_EXPIRY_SECONDS = 86_400 // 24 hours
-const CLIENT_SESSION_TOKEN_TTL_SECONDS = 2_592_000
-const MODEL_ACCESS_TOKEN_TTL_SECONDS = 900
+const CLIENT_SESSION_TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60
+const MODEL_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60
+const MODEL_ACCESS_TOKEN_MIN_REMAINING_SECONDS = 12 * 60 * 60 + 5 * 60
 export const SKILLS_MARKET_TOKEN_TTL_SECONDS = 300
 const MODEL_ACCESS_TOKEN_ISSUER = 'storyflow-auth-broker'
 const MODEL_ACCESS_TOKEN_AUDIENCE = 'storyflow-model-gateway'
@@ -92,7 +93,7 @@ export async function createClientSessionToken(
 export async function verifyClientSessionToken(
   token: string,
   keys: JwtKeyRing,
-  minimumRemainingSeconds = MODEL_ACCESS_TOKEN_TTL_SECONDS,
+  minimumRemainingSeconds = MODEL_ACCESS_TOKEN_MIN_REMAINING_SECONDS,
 ): Promise<{
   subject: string
   modelTier: 'standard' | 'pro'

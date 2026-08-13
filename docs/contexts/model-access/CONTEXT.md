@@ -44,9 +44,9 @@ _Avoid_: SDK retry budget, duplicate user message
 
 - Feishu's tenant allowlist and Neon's Organization membership are independent admission boundaries.
 - A Neon Invitation may establish Organization Membership after the invited email is verified.
-- A Neon Identity Session may issue Managed Model Access only while a fresh JWT proves Organization Membership; it is not copied into Provider Credentials.
-- Managed Model Access authorizes only trusted Storyflow-managed connections and remains transient.
+- Feishu or Neon proves identity when Storyflow creates the Identity Session; routine capability renewal trusts that bounded Storyflow session rather than repeating provider login.
+- Managed Model Access authorizes only trusted Storyflow-managed connections and remains transient. The host accepts or renews it before an Agent operation and never rotates it inside the operation.
 - Provider Credentials remain independent so user-configured providers continue to work without an Identity Session.
 - Connection readiness is evaluated at the connection boundary, separately from Credential Store Health.
 - Pi owns retry classification, backoff, and the single replay budget; provider SDK retries are disabled.
-- Managed Model Access refresh may replay once after an authentication failure, but it is not a transport retry.
+- Managed Model Access refresh never replays a user turn. A rejected capability is renewed for the next explicit operation.

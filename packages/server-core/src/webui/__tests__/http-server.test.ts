@@ -810,7 +810,7 @@ describe('startWebuiHttpServer', () => {
     const modelAccess = await verifyModelAccessToken(body.modelAccessToken)
     expect(modelAccess.sub).toBe('feishu:ou_desktop')
     expect(modelAccess.model_tier).toBe('pro')
-    expect((modelAccess.exp as number) - (modelAccess.iat as number)).toBe(900)
+    expect((modelAccess.exp as number) - (modelAccess.iat as number)).toBe(24 * 60 * 60)
     expect(exchangeCalls).toEqual([{
       code: 'desktop-code',
       redirectUri: 'http://localhost:6477/callback',
@@ -910,7 +910,7 @@ describe('startWebuiHttpServer', () => {
     })
   })
 
-  it('renews a Neon client session only with a fresh organization token', async () => {
+  it('renews Neon capabilities from the bounded Storyflow identity session', async () => {
     const { baseUrl } = await createServer({
       neonAuth: createNeonAuthConfig({ organizationId: 'org_storyflow' }),
     })
@@ -922,11 +922,7 @@ describe('startWebuiHttpServer', () => {
 
     const refreshed = await fetch(`${baseUrl}/api/client-auth/token`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${loginBody.appSessionToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ providerToken: 'valid-neon-token' }),
+      headers: { Authorization: `Bearer ${loginBody.appSessionToken}` },
     })
 
     expect(refreshed.status).toBe(200)
@@ -945,66 +941,7 @@ describe('startWebuiHttpServer', () => {
     expect(appSession.exp).toBe(loginSession.exp)
     const modelAccess = await verifyModelAccessToken(refreshedBody.modelAccessToken)
     expect(modelAccess.sub).toBe('neon:neon_user_123')
-  })
-
-  it('rejects Neon client-session renewal without a fresh provider token', async () => {
-    const { baseUrl } = await createServer({
-      neonAuth: createNeonAuthConfig({ organizationId: 'org_storyflow' }),
-    })
-    const login = await fetch(`${baseUrl}/api/client-auth/neon/exchange`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer valid-neon-token' },
-    })
-    const loginBody = await login.json() as Record<string, unknown>
-
-    const refreshed = await fetch(`${baseUrl}/api/client-auth/token`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${loginBody.appSessionToken}` },
-    })
-
-    expect(refreshed.status).toBe(401)
-    expect(await refreshed.json()).toEqual({
-      error: 'Neon Auth session is required',
-      code: 'neon_session_required',
-    })
-  })
-
-  it('rejects Neon client-session renewal after organization membership is removed', async () => {
-    let isMember = true
-    const { baseUrl } = await createServer({
-      neonAuth: createNeonAuthConfig({
-        organizationId: 'org_storyflow',
-        tokenVerifier: async token => token === 'valid-neon-token'
-          ? {
-              sub: 'neon_user_123',
-              email: 'neon.user@example.com',
-              emailVerified: true,
-              ...(isMember ? { o: { id: 'org_storyflow', role: 'member' } } : {}),
-            }
-          : null,
-      }),
-    })
-    const login = await fetch(`${baseUrl}/api/client-auth/neon/exchange`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer valid-neon-token' },
-    })
-    const loginBody = await login.json() as Record<string, unknown>
-    isMember = false
-
-    const refreshed = await fetch(`${baseUrl}/api/client-auth/token`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${loginBody.appSessionToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ providerToken: 'valid-neon-token' }),
-    })
-
-    expect(refreshed.status).toBe(403)
-    expect(await refreshed.json()).toEqual({
-      error: 'Invitation required',
-      code: 'invitation_required',
-    })
+    expect((modelAccess.exp as number) - (modelAccess.iat as number)).toBe(24 * 60 * 60)
   })
 
   it('issues an isolated five-minute Skills Market publish capability', async () => {
@@ -1019,11 +956,7 @@ describe('startWebuiHttpServer', () => {
 
     const issued = await fetch(`${baseUrl}/api/client-auth/skills-market/token`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${loginBody.appSessionToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ providerToken: 'valid-neon-token' }),
+      headers: { Authorization: `Bearer ${loginBody.appSessionToken}` },
     })
 
     expect(issued.status).toBe(200)
@@ -1051,7 +984,7 @@ describe('startWebuiHttpServer', () => {
     const expiredByPolicy = await new SignJWT({
       scope: 'model:issue',
       model_tier: 'standard',
-      auth_time: now - 31 * 24 * 60 * 60,
+      auth_time: now - 91 * 24 * 60 * 60,
     })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
       .setIssuer('storyflow-auth-broker')

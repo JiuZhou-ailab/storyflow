@@ -253,13 +253,6 @@ export function setDockIconWithBadge(dataUrl: string): void {
 }
 
 /**
- * Clear the app dock badge
- */
-export function clearBadgeCount(): void {
-  updateBadgeCount(0)
-}
-
-/**
  * Check if any window is currently focused
  */
 export function isAnyWindowFocused(): boolean {

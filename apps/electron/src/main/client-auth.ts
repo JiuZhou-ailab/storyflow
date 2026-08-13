@@ -26,7 +26,7 @@ import {
 } from './client-auth-broker'
 
 export {
-  CLIENT_MODEL_ACCESS_TOKEN_REFRESH_SKEW_MS,
+  CLIENT_MODEL_ACCESS_TOKEN_MIN_REMAINING_MS,
   getClientModelAccessTokenExpiryMs,
   isClientModelAccessTokenFresh,
 } from './client-auth-token-lifecycle'
@@ -82,7 +82,6 @@ export interface ClientAuthSession {
   user: ClientAuthUser
   appSessionToken?: string
   modelAccessToken?: string
-  neonSessionCookie?: string
 }
 
 export type ClientAuthSignUpResult =
@@ -104,7 +103,6 @@ export interface ClientAuthNeonBrokerExchangeInput {
 export interface ClientAuthBrokerTokenRefreshInput {
   brokerUrl: string
   appSessionToken: string
-  providerToken?: string
 }
 
 export interface ClientAuthBrokerExchangeResult {
@@ -149,7 +147,6 @@ export type ClientAuthNeonService = Pick<
 export interface ClientAuthChange {
   session: ClientAuthSession | null
   state: ClientAuthState
-  modelAccessTokenChanged: boolean
 }
 
 export interface ClientAuthServiceDeps {
@@ -160,10 +157,8 @@ export interface ClientAuthServiceDeps {
   initialSession?: ClientAuthSession | null
   sessionStore?: ClientAuthSessionStore
   now?: () => number
-  /** Runs after a durable auth transition so main can reload or revoke live model runtimes. */
+  /** Runs after a durable auth transition so main can project account state or revoke runtimes. */
   onAuthChange?: (change: ClientAuthChange) => void | Promise<void>
-  scheduleTimeout?: (callback: () => void, delayMs: number) => unknown
-  cancelTimeout?: (handle: unknown) => void
 }
 
 export interface ClientAuthModelAccessTokenResult { token: string, refreshed: boolean }
@@ -332,11 +327,7 @@ export function createClientAuthService(
   } | null = null
   let service: ClientAuthService
   const tokenLifecycle = new ClientAuthTokenLifecycle<ClientAuthModelAccessTokenResult>({
-    canRefresh: () => Boolean(currentSession?.appSessionToken && authBrokerClient),
-    onScheduledRefresh: () => service.ensureModelAccessToken({ force: true }),
     now: deps.now,
-    scheduleTimeout: deps.scheduleTimeout,
-    cancelTimeout: deps.cancelTimeout,
   })
 
   function getState(): ClientAuthState {
@@ -356,20 +347,17 @@ export function createClientAuthService(
     const generation = tokenLifecycle.beginTransition()
     await tokenLifecycle.runExclusive(async () => {
       tokenLifecycle.assertCurrent(generation)
-      const modelAccessTokenChanged = currentSession?.modelAccessToken !== session.modelAccessToken
       await deps.sessionStore?.save(session)
       tokenLifecycle.assertCurrent(generation)
       currentSession = session
-      await notifyAuthChange(modelAccessTokenChanged)
+      await notifyAuthChange()
     })
-    tokenLifecycle.schedule(session.modelAccessToken)
   }
 
-  async function notifyAuthChange(modelAccessTokenChanged: boolean): Promise<void> {
+  async function notifyAuthChange(): Promise<void> {
     await deps.onAuthChange?.({
       session: currentSession,
       state: getState(),
-      modelAccessTokenChanged,
     })
   }
 
@@ -379,19 +367,17 @@ export function createClientAuthService(
   ): Promise<void> {
     if (!tokenLifecycle.isCurrent(generation) || currentSession !== session) return
     const invalidationGeneration = tokenLifecycle.beginTransition()
-    tokenLifecycle.cancelScheduled()
     await tokenLifecycle.runExclusive(async () => {
       if (!tokenLifecycle.isCurrent(invalidationGeneration)) return
       await deps.sessionStore?.clear()
       if (!tokenLifecycle.isCurrent(invalidationGeneration)) return
       currentSession = null
-      await notifyAuthChange(true)
+      await notifyAuthChange()
     })
   }
 
   async function saveNeonSession(
     providerToken: string,
-    sessionCookie: string | undefined,
     verifiedUser: ClientAuthUser,
   ): Promise<ClientAuthUser> {
     if (!authBrokerUrl || !authBrokerClient) throw new Error('Client auth broker is not configured')
@@ -407,7 +393,6 @@ export function createClientAuthService(
       user,
       appSessionToken,
       modelAccessToken,
-      ...(sessionCookie ? { neonSessionCookie: sessionCookie } : {}),
     })
     return user
   }
@@ -449,16 +434,12 @@ export function createClientAuthService(
         }
         let refreshed: ClientAuthBrokerTokenRefreshResult
         try {
-          const providerToken = session.user.provider === 'neon'
-            ? await getNeonProviderToken(requireNeonSessionCookie(session))
-            : undefined
           refreshed = await authBrokerClient.refreshModelAccessToken({
             brokerUrl: authBrokerUrl,
             appSessionToken,
-            ...(providerToken ? { providerToken } : {}),
           })
         } catch (error) {
-          if (isRejectedAppSession(error) || isRejectedNeonSession(error)) {
+          if (isRejectedAppSession(error)) {
             await clearRejectedSession(session, generation)
           }
           throw error
@@ -467,7 +448,6 @@ export function createClientAuthService(
           user: session.user,
           appSessionToken: requireAppSessionToken(refreshed),
           modelAccessToken: requireModelAccessToken(refreshed),
-          ...(session.neonSessionCookie ? { neonSessionCookie: session.neonSessionCookie } : {}),
         }
         await tokenLifecycle.runExclusive(async () => {
           tokenLifecycle.assertCurrent(generation)
@@ -475,9 +455,8 @@ export function createClientAuthService(
           await deps.sessionStore?.save(nextSession)
           tokenLifecycle.assertCurrent(generation)
           currentSession = nextSession
-          await notifyAuthChange(true)
+          await notifyAuthChange()
         })
-        tokenLifecycle.schedule(nextSession.modelAccessToken)
         return { token: nextSession.modelAccessToken, refreshed: true }
       })
     },
@@ -490,20 +469,16 @@ export function createClientAuthService(
       }
       const generation = tokenLifecycle.generation
       try {
-        const providerToken = session.user.provider === 'neon'
-          ? await getNeonProviderToken(requireNeonSessionCookie(session))
-          : undefined
         const result = await authBrokerClient.issueSkillsMarketToken({
           brokerUrl: authBrokerUrl,
           appSessionToken,
-          ...(providerToken ? { providerToken } : {}),
         })
         if (!tokenLifecycle.isCurrent(generation) || currentSession !== session) {
           throw new Error('Client auth session changed')
         }
         return result.marketPublishToken
       } catch (error) {
-        if (isRejectedAppSession(error) || isRejectedNeonSession(error)) {
+        if (isRejectedAppSession(error)) {
           await clearRejectedSession(session, generation)
         }
         throw error
@@ -539,7 +514,7 @@ export function createClientAuthService(
         ? await getNeonProviderToken(authResult.sessionCookie)
         : authResult.token
       const user = toClientAuthUser(await neonAuth.verifyToken(providerToken))
-      return saveNeonSession(providerToken, authResult.sessionCookie, user)
+      return saveNeonSession(providerToken, user)
     },
 
     async signUp(input: ClientAuthSignUpInput): Promise<ClientAuthSignUpResult> {
@@ -580,7 +555,7 @@ export function createClientAuthService(
       if (user.emailVerified !== true) {
         return { status: 'verification-required', user }
       }
-      const authenticatedUser = await saveNeonSession(providerToken, authResult.sessionCookie, user)
+      const authenticatedUser = await saveNeonSession(providerToken, user)
       return { status: 'authenticated', user: authenticatedUser }
     },
 
@@ -699,7 +674,6 @@ export function createClientAuthService(
 
     async signOut(): Promise<void> {
       const generation = tokenLifecycle.beginTransition()
-      tokenLifecycle.cancelScheduled()
       if (activeFeishuLogin) {
         activeFeishuLogin.reject(new Error('Feishu login was cancelled'))
         await activeFeishuLogin.close()
@@ -710,7 +684,7 @@ export function createClientAuthService(
         await deps.sessionStore?.clear()
         if (!tokenLifecycle.isCurrent(generation)) return
         currentSession = null
-        await notifyAuthChange(true)
+        await notifyAuthChange()
       })
     },
 
@@ -719,7 +693,6 @@ export function createClientAuthService(
     },
   }
 
-  tokenLifecycle.schedule(currentSession?.modelAccessToken)
   return service
 }
 
@@ -753,17 +726,6 @@ function toClientAuthUser(identity: NeonAuthIdentity): ClientAuthUser {
     ...(identity.name ? { name: identity.name } : {}),
     ...(identity.organizationId ? { organizationId: identity.organizationId } : {}),
   }
-}
-
-function requireNeonSessionCookie(session: ClientAuthSession): string {
-  const cookie = readEnv(session.neonSessionCookie)
-  if (!cookie) throw new Error('Neon Auth session is required')
-  return cookie
-}
-
-function isRejectedNeonSession(error: unknown): boolean {
-  return error instanceof Error
-    && error.message === 'Neon Auth session is required'
 }
 
 function toClientAuthUserFromEmailPasswordUser(user: {

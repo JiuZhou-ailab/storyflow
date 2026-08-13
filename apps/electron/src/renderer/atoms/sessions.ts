@@ -56,8 +56,6 @@ export interface SessionMeta {
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
   /** Whether an async operation is ongoing (sharing, updating share, revoking, title regeneration) */
   isAsyncOperationOngoing?: boolean
-  /** @deprecated Use isAsyncOperationOngoing instead */
-  isRegeneratingTitle?: boolean
   /** Model override for this session */
   model?: string
   /** LLM connection slug for this session */
@@ -106,7 +104,7 @@ export function extractSessionMeta(session: Session): SessionMeta {
   const {
     messages: _msgs, sessionFolderPath: _sf, supportsBranching: _sb,
     workspaceName: _wn, thinkingLevel: _tl, currentStatus: _cs,
-    isAsyncOperationOngoing, isRegeneratingTitle,
+    isAsyncOperationOngoing,
     messageCount, lastFinalMessageId: sessionLastFinal,
     ...sessionFields
   } = session
@@ -115,8 +113,7 @@ export function extractSessionMeta(session: Session): SessionMeta {
     ...sessionFields,
     lastFinalMessageId: sessionLastFinal ?? findLastFinalMessageId(messages),
     messageCount: messageCount ?? messages.length ?? 0,
-    isAsyncOperationOngoing: isAsyncOperationOngoing ?? isRegeneratingTitle,
-    isRegeneratingTitle,
+    isAsyncOperationOngoing,
   } as SessionMeta
 }
 
@@ -170,12 +167,6 @@ export const sessionMessagesLoadedAtomFamily = atomFamily(
  * Module-level map since it tracks in-flight promises, not React state.
  */
 const sessionLoadingPromises = new Map<string, Promise<Session | null>>()
-
-/**
- * Currently active session ID - the session displayed in the main content area
- * This replaces the tab-based session selection
- */
-export const activeSessionIdAtom = atom<string | null>(null)
 
 // NOTE: sessionsAtom REMOVED to fix memory leak
 // The sessions array with messages was being retained by Jotai's internal state.
@@ -299,27 +290,6 @@ export const replaceLoadedSessionAtom = atom(
       const newLoadedSessions = new Set(loadedSessions)
       newLoadedSessions.add(session.id)
       set(loadedSessionsAtom, newLoadedSessions)
-    }
-  }
-)
-
-/**
- * Action atom: append message to session (for streaming)
- * Optimized to only update the specific session
- * Note: Does NOT update lastMessageAt - caller must handle timestamp updates
- * to avoid session list jumping on intermediate/tool messages
- */
-export const appendMessageAtom = atom(
-  null,
-  (get, set, sessionId: string, message: Message) => {
-    const sessionAtom = sessionAtomFamily(sessionId)
-    const session = get(sessionAtom)
-    if (session) {
-      set(sessionAtom, {
-        ...session,
-        messages: [...session.messages, message],
-        // Don't update lastMessageAt here - only user messages and final responses should update it
-      })
     }
   }
 )

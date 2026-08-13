@@ -1,18 +1,13 @@
-// input: Model-token JWTs, auth transition callbacks, and injectable clock/timers
-// output: Freshness policy plus single-flight, generation-fenced token refresh scheduling
+// input: Model-token JWTs, auth transitions, and an injectable clock
+// output: Operation-safety freshness policy plus single-flight, generation-fenced refresh state
 // pos: Main-process lifecycle coordinator beneath client-auth flows and persistence
 
 import { Buffer } from 'node:buffer'
 
-export const CLIENT_MODEL_ACCESS_TOKEN_REFRESH_SKEW_MS = 2 * 60 * 1000
-const DEFAULT_MODEL_TOKEN_REFRESH_RETRY_MS = 30_000
+export const CLIENT_MODEL_ACCESS_TOKEN_MIN_REMAINING_MS = (12 * 60 * 60 + 5 * 60) * 1000
 
-export interface ClientAuthTokenLifecycleDeps<T> {
-  canRefresh: () => boolean
-  onScheduledRefresh: () => Promise<T>
+export interface ClientAuthTokenLifecycleDeps {
   now?: () => number
-  scheduleTimeout?: (callback: () => void, delayMs: number) => unknown
-  cancelTimeout?: (handle: unknown) => void
 }
 
 export function getClientModelAccessTokenExpiryMs(token: string): number | null {
@@ -33,7 +28,7 @@ export function isClientModelAccessTokenFresh(
   nowMs: number = Date.now(),
 ): boolean {
   const expiresAt = getClientModelAccessTokenExpiryMs(token)
-  return expiresAt !== null && expiresAt - nowMs > CLIENT_MODEL_ACCESS_TOKEN_REFRESH_SKEW_MS
+  return expiresAt !== null && expiresAt - nowMs > CLIENT_MODEL_ACCESS_TOKEN_MIN_REMAINING_MS
 }
 
 /**
@@ -44,20 +39,9 @@ export class ClientAuthTokenLifecycle<T> {
   private generationValue = 0
   private persistenceTail: Promise<unknown> = Promise.resolve()
   private inFlight: Promise<T> | null = null
-  private refreshTimer: unknown
   private disposedValue = false
-  private readonly scheduleTimeout: (callback: () => void, delayMs: number) => unknown
-  private readonly cancelTimeout: (handle: unknown) => void
 
-  constructor(private readonly deps: ClientAuthTokenLifecycleDeps<T>) {
-    this.scheduleTimeout = deps.scheduleTimeout ?? ((callback, delayMs) => {
-      const timer = setTimeout(callback, delayMs)
-      timer.unref?.()
-      return timer
-    })
-    this.cancelTimeout = deps.cancelTimeout
-      ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>))
-  }
+  constructor(private readonly deps: ClientAuthTokenLifecycleDeps) {}
 
   get generation(): number {
     return this.generationValue
@@ -105,29 +89,9 @@ export class ClientAuthTokenLifecycle<T> {
     })
   }
 
-  schedule(modelAccessToken?: string, retryDelayMs?: number): void {
-    this.cancelScheduled()
-    if (this.disposedValue || !this.deps.canRefresh()) return
-    const expiresAt = modelAccessToken ? getClientModelAccessTokenExpiryMs(modelAccessToken) : null
-    const delayMs = retryDelayMs
-      ?? Math.max(0, (expiresAt ?? this.nowMs) - this.nowMs - CLIENT_MODEL_ACCESS_TOKEN_REFRESH_SKEW_MS)
-    this.refreshTimer = this.scheduleTimeout(() => {
-      this.refreshTimer = undefined
-      void this.deps.onScheduledRefresh()
-        .catch(() => this.schedule(undefined, DEFAULT_MODEL_TOKEN_REFRESH_RETRY_MS))
-    }, delayMs)
-  }
-
-  cancelScheduled(): void {
-    if (this.refreshTimer === undefined) return
-    this.cancelTimeout(this.refreshTimer)
-    this.refreshTimer = undefined
-  }
-
   dispose(): void {
     if (this.disposedValue) return
     this.disposedValue = true
     this.beginTransition()
-    this.cancelScheduled()
   }
 }

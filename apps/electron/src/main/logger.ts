@@ -89,7 +89,6 @@ export const mainLog = log.scope('main')
 export const sessionLog = log.scope('session')
 export const handlerLog = log.scope('handler')
 export const windowLog = log.scope('window')
-export const agentLog = log.scope('agent')
 export const searchLog = log.scope('search')
 
 /**

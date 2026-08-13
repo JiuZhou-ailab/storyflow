@@ -56,7 +56,7 @@ type PiEvent = PiAgentEvent | AgentSessionEvent | { type: 'entry_appended' };
  * - compaction_start → status
  * - compaction_end → info/error + current context estimate
  * - auto_retry_start → status
- * - auto_retry_end → status
+ * - auto_retry_end → ignored (message_end owns final failure projection)
  * - queue_update / entry_appended → ignored (no current UI consumer)
  */
 export class PiEventAdapter extends BaseEventAdapter {
@@ -511,17 +511,15 @@ export class PiEventAdapter extends BaseEventAdapter {
         yield {
           type: 'status',
           message: `Retrying (attempt ${retryEvent.attempt}/${retryEvent.maxAttempts})...`,
+          statusType: 'retrying',
         };
         break;
       }
 
-      case 'auto_retry_end': {
-        const retryEndEvent = event as Extract<AgentSessionEvent, { type: 'auto_retry_end' }>;
-        if (!retryEndEvent.success && retryEndEvent.finalError) {
-          yield { type: 'error', message: `Retry failed: ${retryEndEvent.finalError}` };
-        }
+      case 'auto_retry_end':
+        // Pi already emits the exhausted attempt as message_end. Projecting
+        // finalError here would create a second visible failure for one turn.
         break;
-      }
 
       case 'queue_update':
         // Queue contents are currently reflected by existing session/message state.

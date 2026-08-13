@@ -1,5 +1,26 @@
 import { describe, expect, it, mock } from 'bun:test'
-import { handleErrorMessageAction, type ErrorMessageAction } from '../error-message-actions'
+import {
+  getErrorMessageBody,
+  handleErrorMessageAction,
+  type ErrorMessageAction,
+} from '../error-message-actions'
+
+describe('getErrorMessageBody', () => {
+  it('strips one exact legacy title prefix', () => {
+    expect(getErrorMessageBody({
+      content: 'Default AI Access Interrupted: Default AI Access Interrupted: Try again',
+      errorTitle: 'Default AI Access Interrupted',
+    })).toBe('Default AI Access Interrupted: Try again')
+  })
+
+  it('preserves content that does not start with the exact title prefix', () => {
+    expect(getErrorMessageBody({
+      content: 'Default AI Access Interrupted:Try again',
+      errorTitle: 'Default AI Access Interrupted',
+    })).toBe('Default AI Access Interrupted:Try again')
+    expect(getErrorMessageBody({ content: 'Try again' })).toBe('Try again')
+  })
+})
 
 describe('handleErrorMessageAction', () => {
   it('routes retry through the session-scoped focus handler', () => {

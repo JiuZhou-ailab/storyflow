@@ -12,8 +12,8 @@ import type { LoadedSkill, LoadedSource } from '../../shared/types'
 import { getSourceIconSync, getSkillIconSync } from './icon-cache'
 
 // Import and re-export parsing functions from shared (pure string operations, no renderer deps)
-import { parseMentions, stripAllMentions, resolveSkillMentions, resolveSourceMentions, type ParsedMentions } from '@craft-agent/shared/mentions'
-export { parseMentions, stripAllMentions, resolveSkillMentions, resolveSourceMentions, type ParsedMentions }
+import { parseMentions, resolveSkillMentions, resolveSourceMentions, type ParsedMentions } from '@craft-agent/shared/mentions'
+export { parseMentions, resolveSkillMentions, resolveSourceMentions, type ParsedMentions }
 
 // ============================================================================
 // Constants
@@ -110,41 +110,6 @@ export function findMentionMatches(
 
   // Sort by position
   return matches.sort((a, b) => a.startIndex - b.startIndex)
-}
-
-/**
- * Remove a specific mention from text
- *
- * @param text - The message text
- * @param type - Type of mention to remove
- * @param id - ID of the mention (slug or path)
- * @returns Text with the mention removed
- */
-export function removeMention(text: string, type: MentionItemType, id: string): string {
-  let pattern: RegExp
-
-  switch (type) {
-    case 'source':
-      pattern = new RegExp(`\\[source:${escapeRegExp(id)}\\]`, 'g')
-      break
-    case 'file':
-      pattern = new RegExp(`\\[file:${escapeRegExp(id)}\\]`, 'g')
-      break
-    case 'folder':
-      pattern = new RegExp(`\\[folder:${escapeRegExp(id)}\\]`, 'g')
-      break
-    case 'skill':
-    default:
-      // Match both [skill:slug] and [skill:workspaceId:slug]
-      // Workspace IDs can contain spaces, hyphens, underscores, and dots
-      pattern = new RegExp(`\\[skill:(?:${WS_ID_CHARS}+:)?${escapeRegExp(id)}\\]`, 'g')
-      break
-  }
-
-  return text
-    .replace(pattern, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 }
 
 /**

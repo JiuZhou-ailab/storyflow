@@ -1,5 +1,5 @@
 // input: Electron main/preload/renderer client-auth source files
-// output: Regression coverage for cross-window client-auth state propagation
+// output: Regression coverage for cross-window auth state, sign-out revocation, and operation-scoped managed access
 // pos: Static IPC contract guard for managed-account auth without a desktop gate
 
 import { describe, expect, it } from 'bun:test'
@@ -20,7 +20,7 @@ describe('client auth IPC propagation', () => {
     expect(source).toContain('BrowserWindow.getAllWindows()')
     expect(source).toContain('onAuthChange: (change)')
     expect(source).toContain('broadcastClientAuthState(change.state)')
-    expect(source).toContain('void propagateClientAuthRuntimeChange(change)')
+    expect(source).toContain('void revokeManagedModelRuntimes()')
     expect(source).not.toContain('onAuthChange: async (change)')
   })
 
@@ -30,8 +30,8 @@ describe('client auth IPC propagation', () => {
     expect(source).toContain('ensureManagedModelAccessToken: async (forceRefresh)')
     expect(source).toContain('authService.ensureModelAccessToken')
     expect(source).toContain('MANAGED_LLM_CONNECTION_SLUGS.map')
-    expect(source).toContain('reloadConnectionCredentials(slug, managedModelAccess)')
     expect(source).toContain('disposeConnectionRuntimes(slug)')
+    expect(source).not.toContain('reloadConnectionCredentials(slug, managedModelAccess)')
     expect(source).toContain('isManagedLlmConnectionSlug(connection.slug)')
     expect(source).toContain('return { apiKey: result.token }')
     expect(source).toContain('resolveModelRefreshCredentials(connection, getCredentialManager())')

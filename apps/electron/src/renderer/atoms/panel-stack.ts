@@ -1,11 +1,11 @@
 // input: View routes and panel mutation requests from renderer navigation
-// output: Single-lane content panels that explicitly exclude utility overlays
+// output: Ordered content panels that explicitly exclude utility overlays
 // pos: Canonical renderer panel-state boundary
 
 /**
  * Panel Stack State
  *
- * Single-lane panel model for side-by-side content panels.
+ * Ordered panel model for side-by-side content panels.
  */
 
 import { atom } from 'jotai'
@@ -17,34 +17,10 @@ function generatePanelId(): string {
   return `panel-${++nextPanelId}-${Date.now()}`
 }
 
-export type PanelType = 'session' | 'source' | 'skills' | 'other'
-export type PanelLaneId = 'main'
-export type OpenIntent = 'implicit' | 'explicit'
-
-export interface PanelLanePolicy {
-  id: PanelLaneId
-  order: number
-  allowedTypes: PanelType[]
-  locked: boolean
-  singleton: boolean
-}
-
-export const PANEL_LANE_POLICIES: Record<PanelLaneId, PanelLanePolicy> = {
-  main: {
-    id: 'main',
-    order: 0,
-    allowedTypes: ['session', 'source', 'skills', 'other'],
-    locked: false,
-    singleton: false,
-  },
-}
-
 export interface PanelStackEntry {
   id: string
   route: ViewRoute
   proportion: number
-  panelType: PanelType
-  laneId: PanelLaneId
 }
 
 export const panelStackAtom = atom<PanelStackEntry[]>([])
@@ -66,36 +42,11 @@ export const focusedPanelRouteAtom = atom((get) => {
   return stack[idx]?.route ?? null
 })
 
-export function getPanelTypeFromRoute(route: ViewRoute): PanelType {
-  const navState = parseRouteToNavigationState(route)
-  if (!navState) return 'other'
-
-  switch (navState.navigator) {
-    case 'sessions':
-      return 'session'
-    case 'sources':
-      return 'source'
-    case 'settings':
-      throw new Error('Settings routes belong to the overlay, not the panel stack')
-    case 'skills':
-      return 'skills'
-    default:
-      return 'other'
-  }
-}
-
-export function getDefaultLaneForType(_type: PanelType): PanelLaneId {
-  return 'main'
-}
-
 function createEntry(route: ViewRoute, proportion: number, id?: string): PanelStackEntry {
-  const panelType = getPanelTypeFromRoute(route)
   return {
     id: id ?? generatePanelId(),
     route,
     proportion,
-    panelType,
-    laneId: 'main',
   }
 }
 
@@ -143,8 +94,6 @@ export const pushPanelAtom = atom(
   (get, set, { route, afterIndex }: {
     route: ViewRoute
     afterIndex?: number
-    targetLaneId?: PanelLaneId
-    intent?: OpenIntent
   }) => {
     if (parseRouteToNavigationState(route)?.navigator === 'settings') {
       throw new Error('Settings routes belong to the overlay, not the panel stack')
@@ -234,8 +183,6 @@ export const reconcilePanelStackAtom = atom(
       normalized.every((p, i) =>
         p.id === current[i].id &&
         p.route === current[i].route &&
-        p.laneId === current[i].laneId &&
-        p.panelType === current[i].panelType &&
         Math.abs(p.proportion - current[i].proportion) < 0.001
       )
     ) {

@@ -30,12 +30,14 @@ describe('managed default gateway auth error normalization', () => {
     })
   })
 
-  it('offers a safe retry without exposing hidden model credentials', () => {
+  it('offers a safe retry without claiming an unobserved refresh outcome', () => {
     const normalized = normalizeManagedDefaultGatewayAuthError(baseInvalidApiKeyError, 'storyflow-managed')
 
     expect(normalized.code).toBe('invalid_api_key')
     expect(normalized.title).toBe('Default AI Access Interrupted')
-    expect(normalized.message.toLowerCase()).not.toContain('api key')
+    expect(normalized.message).toBe(
+      'Default AI access was interrupted. Retry this message; if sign-in appears, sign in again.',
+    )
     expect(normalized.actions.some(action => action.action === 'reauth')).toBe(false)
     expect(normalized.actions).toEqual([
       {
@@ -77,7 +79,7 @@ describe('managed default gateway auth error normalization', () => {
     expect(reloadCredentials).toHaveBeenCalledWith({ token: 'managed-model-token' })
   })
 
-  it('refreshes managed access for the next user turn without replaying the failed turn', async () => {
+  it('renews managed access for the next operation without mutating the failed runtime', async () => {
     const sm = new SessionManager()
     const managed = createManagedSession({
       id: 'managed-retry',
@@ -113,13 +115,16 @@ describe('managed default gateway auth error normalization', () => {
     await new Promise(resolve => setTimeout(resolve, 10))
 
     expect(ensureManagedModelAccessToken).toHaveBeenCalledWith(true)
-    expect(reloadCredentials).toHaveBeenCalledWith({ token: 'managed-token' })
+    expect(reloadCredentials).not.toHaveBeenCalled()
     expect(disposeForRestart).not.toHaveBeenCalled()
     expect(sendMessage).not.toHaveBeenCalled()
     expect(managed.messages.at(-1)?.role).toBe('error')
+    expect(managed.messages.at(-1)?.content).toBe(
+      'Default AI access was interrupted. Retry this message; if sign-in appears, sign in again.',
+    )
   })
 
-  it('may recycle an idle runtime for rotated access without replaying the failed turn', async () => {
+  it('does not recycle an idle runtime until the next operation preflight', async () => {
     const sm = new SessionManager()
     const managed = createManagedSession({
       id: 'managed-no-replay',
@@ -150,6 +155,39 @@ describe('managed default gateway auth error normalization', () => {
 
     expect(sendMessage).not.toHaveBeenCalled()
     expect(ensureManagedModelAccessToken).toHaveBeenCalledWith(true)
-    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(dispose).not.toHaveBeenCalled()
+  })
+
+  it('injects a renewed capability before reusing an idle runtime', async () => {
+    const sm = new SessionManager()
+    const managed = createManagedSession({
+      id: 'managed-operation-preflight',
+      llmConnection: 'storyflow-managed',
+    }, {
+      id: 'ws-test',
+      name: 'Test',
+      rootPath: '/tmp/managed-operation-preflight',
+      createdAt: Date.now(),
+    } as never, { messagesLoaded: true }) as any
+    const reloadCredentials = jest.fn().mockResolvedValue(true)
+    const agent = {
+      reloadCredentials,
+      isProcessing: () => false,
+    }
+    managed.agent = agent
+    managed.managedModelAccessToken = 'old-managed-token'
+    ;(sm as any).sessions.set(managed.id, managed)
+    ;(sm as any).tryRefreshAgentRuntimeLocked = async () => {}
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => ({
+        token: 'renewed-managed-token',
+        refreshed: false,
+      }),
+    })
+
+    await expect((sm as any).getOrCreateAgentLocked(managed)).resolves.toBe(agent)
+
+    expect(reloadCredentials).toHaveBeenCalledWith({ token: 'renewed-managed-token' })
+    expect(managed.managedModelAccessToken).toBe('renewed-managed-token')
   })
 })

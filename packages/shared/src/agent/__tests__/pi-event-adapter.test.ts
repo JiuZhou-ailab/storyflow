@@ -1,5 +1,5 @@
 // input: Mock Pi lifecycle events, tool payloads, and session state
-// output: Regression coverage for Craft event projection, including tool failure semantics
+// output: Regression coverage for Craft event projection, including tool failure and retry ownership semantics
 // pos: Contract tests for the Pi-to-Craft UI event boundary
 
 /**
@@ -1201,21 +1201,31 @@ describe('PiEventAdapter', () => {
       expect(events[0]).toMatchObject({
         type: 'status',
         message: 'Retrying (attempt 2/3)...',
+        statusType: 'retrying',
       });
     });
 
-    it('should emit error for failed auto_retry_end', () => {
-      const events = collect(adapter.adaptEvent({
+    it('should leave final failure projection to message_end when auto_retry_end fails', () => {
+      const finalEvents = collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'error',
+          errorMessage: '401 Unauthorized',
+        },
+      } as any));
+      const retryEndEvents = collect(adapter.adaptEvent({
         type: 'auto_retry_end',
         success: false,
         finalError: 'Max retries exceeded',
       } as any));
 
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        type: 'error',
-        message: 'Retry failed: Max retries exceeded',
+      expect(finalEvents).toHaveLength(1);
+      expect(finalEvents[0]).toMatchObject({
+        type: 'typed_error',
+        error: { code: 'invalid_api_key' },
       });
+      expect(retryEndEvents).toEqual([]);
     });
 
     it('should emit nothing for successful auto_retry_end', () => {

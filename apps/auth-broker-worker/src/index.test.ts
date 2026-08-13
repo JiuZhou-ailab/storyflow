@@ -128,7 +128,7 @@ describe('auth broker worker', () => {
     })
   })
 
-  it('exchanges Feishu OAuth codes for a renewable session and short-lived pro model access', async () => {
+  it('exchanges Feishu OAuth codes for a durable session and bounded pro model access', async () => {
     const fetchCalls: Array<{ url: string, init?: RequestInit }> = []
     const res = await handleRequest(
       new Request('https://auth.example.com/api/client-auth/feishu/exchange', {
@@ -181,14 +181,14 @@ describe('auth broker worker', () => {
     expect(sessionPayload.model_tier).toBe('pro')
     expect(sessionPayload.user_name).toBe('Desktop User')
     expect(sessionPayload.organization_id).toBe('storyflow')
-    expect((sessionPayload.exp as number) - (sessionPayload.iat as number)).toBe(2_592_000)
+    expect((sessionPayload.exp as number) - (sessionPayload.iat as number)).toBe(90 * 24 * 60 * 60)
 
     const payload = await verifyModelAccessToken(body.modelAccessToken)
     expect(payload.sub).toBe('feishu:ou_desktop')
     expect(payload.scopes).toEqual(['model:chat', 'model:video', 'catalog:read'])
     expect(payload.model_tier).toBe('pro')
     expect(payload.user_name).toBe('Desktop User')
-    expect((payload.exp as number) - (payload.iat as number)).toBe(900)
+    expect((payload.exp as number) - (payload.iat as number)).toBe(24 * 60 * 60)
 
     const tokenCall = fetchCalls[0]
     expect(tokenCall?.init?.method).toBe('POST')
@@ -345,7 +345,7 @@ describe('auth broker worker', () => {
       .setAudience('storyflow-client-auth')
       .setSubject('feishu:legacy-user')
       .setIssuedAt(now)
-      .setExpirationTime(authenticatedAt + 2_592_000)
+      .setExpirationTime(authenticatedAt + 90 * 24 * 60 * 60)
       .sign(new TextEncoder().encode(PREVIOUS_CLIENT_SESSION_SECRET))
 
     const res = await handleRequest(
@@ -370,8 +370,8 @@ describe('auth broker worker', () => {
     expect(sessionPayload.model_tier).toBe('standard')
     expect(sessionPayload.user_name).toBe('Desktop User')
     expect(sessionPayload.auth_time).toBe(authenticatedAt)
-    expect(sessionPayload.exp).toBe(authenticatedAt + 2_592_000)
-    expect((sessionPayload.exp as number) - (sessionPayload.iat as number)).toBeLessThan(2_592_000)
+    expect(sessionPayload.exp).toBe(authenticatedAt + 90 * 24 * 60 * 60)
+    expect((sessionPayload.exp as number) - (sessionPayload.iat as number)).toBeLessThan(90 * 24 * 60 * 60)
 
     const modelPayload = await verifyModelAccessToken(body.modelAccessToken)
     expect(modelPayload.sub).toBe('feishu:legacy-user')
@@ -380,7 +380,7 @@ describe('auth broker worker', () => {
     expect(modelPayload.exp as number).toBeLessThanOrEqual(sessionPayload.exp as number)
   })
 
-  it('requires a fresh Neon provider session when renewing capabilities', async () => {
+  it('renews Neon capabilities from the bounded Storyflow identity session', async () => {
     const now = Math.floor(Date.now() / 1000)
     const appSessionToken = await new SignJWT({
       scope: 'model:issue',
@@ -392,7 +392,7 @@ describe('auth broker worker', () => {
       .setAudience('storyflow-client-auth')
       .setSubject('neon:neon_user_123')
       .setIssuedAt(now)
-      .setExpirationTime(now + 2_592_000)
+      .setExpirationTime(now + 90 * 24 * 60 * 60)
       .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
 
     const res = await handleRequest(
@@ -403,47 +403,10 @@ describe('auth broker worker', () => {
       makeEnv(),
     )
 
-    expect(res.status).toBe(401)
-    expect(await res.json()).toEqual({
-      error: 'Neon Auth session is required',
-      code: 'neon_session_required',
-    })
-  })
-
-  it('renews capabilities for a verified Neon email without organization membership', async () => {
-    const now = Math.floor(Date.now() / 1000)
-    const appSessionToken = await new SignJWT({
-      scope: 'model:issue',
-      model_tier: 'standard',
-      auth_time: now,
-    })
-      .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
-      .setIssuer('storyflow-auth-broker')
-      .setAudience('storyflow-client-auth')
-      .setSubject('neon:neon_user_123')
-      .setIssuedAt(now)
-      .setExpirationTime(now + 2_592_000)
-      .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
-    const { publicJwk, token: providerToken } = await createNeonProviderToken({
-      email: 'member@example.com',
-      emailVerified: true,
-    })
-
-    const res = await handleRequest(
-      new Request('https://auth.example.com/api/client-auth/token', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${appSessionToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ providerToken }),
-      }),
-      makeEnv(),
-      async () => Response.json({ keys: [publicJwk] }),
-    )
-
     expect(res.status).toBe(200)
     const body = await res.json() as Record<string, unknown>
+    const modelPayload = await verifyModelAccessToken(body.modelAccessToken)
+    expect((modelPayload.exp as number) - (modelPayload.iat as number)).toBe(24 * 60 * 60)
     expect((await verifyClientSessionToken(body.appSessionToken)).organization_id).toBeUndefined()
   })
 
@@ -477,7 +440,7 @@ describe('auth broker worker', () => {
       .setAudience('storyflow-client-auth')
       .setSubject('feishu:author-1')
       .setIssuedAt(now)
-      .setExpirationTime(now + 2_592_000)
+      .setExpirationTime(now + 90 * 24 * 60 * 60)
       .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
 
     const res = await handleRequest(
@@ -500,12 +463,12 @@ describe('auth broker worker', () => {
     expect((payload.exp as number) - (payload.iat as number)).toBe(300)
   })
 
-  it('does not extend a client session beyond 30 days from authentication', async () => {
+  it('does not extend a client session beyond 90 days from authentication', async () => {
     const now = Math.floor(Date.now() / 1000)
     const appSessionToken = await new SignJWT({
       scope: 'model:issue',
       model_tier: 'standard',
-      auth_time: now - 31 * 24 * 60 * 60,
+      auth_time: now - 91 * 24 * 60 * 60,
     })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
       .setIssuer('storyflow-auth-broker')
@@ -530,9 +493,9 @@ describe('auth broker worker', () => {
     })
   })
 
-  it('requires enough parent-session lifetime for a full model capability', async () => {
+  it('requires enough parent-session lifetime for another model operation', async () => {
     const now = Math.floor(Date.now() / 1000)
-    const authenticatedAt = now - 2_592_000 + 600
+    const authenticatedAt = now - 90 * 24 * 60 * 60 + 12 * 60 * 60
     const appSessionToken = await new SignJWT({
       scope: 'model:issue',
       model_tier: 'standard',
@@ -543,7 +506,7 @@ describe('auth broker worker', () => {
       .setAudience('storyflow-client-auth')
       .setSubject('feishu:expiring-user')
       .setIssuedAt(now)
-      .setExpirationTime(authenticatedAt + 2_592_000)
+      .setExpirationTime(authenticatedAt + 90 * 24 * 60 * 60)
       .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
 
     const res = await handleRequest(

@@ -109,37 +109,6 @@ export function hasUnreadMessages(session: Session): boolean {
   return lastFinalId !== session.lastReadMessageId
 }
 
-/**
- * Count the number of unread final assistant messages
- * Returns the count of final assistant messages after lastReadMessageId
- */
-export function countUnreadMessages(session: Session): number {
-  // Helper to check if message is a final response (assistant or plan)
-  const isFinalResponse = (msg: Message) =>
-    (msg.role === 'assistant' || msg.role === 'plan') && !msg.isIntermediate
-
-  if (!session.lastReadMessageId) {
-    // Never read - count all final messages
-    return session.messages.filter(isFinalResponse).length
-  }
-
-  // Find the index of the last read message
-  const lastReadIndex = session.messages.findIndex(msg => msg.id === session.lastReadMessageId)
-  if (lastReadIndex === -1) {
-    // Last read message not found - count all final messages
-    return session.messages.filter(isFinalResponse).length
-  }
-
-  // Count final messages after the last read index
-  let count = 0
-  for (let i = lastReadIndex + 1; i < session.messages.length; i++) {
-    if (isFinalResponse(session.messages[i])) {
-      count++
-    }
-  }
-  return count
-}
-
 // ---------------------------------------------------------------------------
 // SessionMeta helpers (lightweight, no full Session needed)
 // ---------------------------------------------------------------------------
@@ -150,10 +119,6 @@ export function getSessionStatus(session: SessionMeta): SessionStatusId {
 
 export function hasUnreadMeta(session: SessionMeta): boolean {
   return session.hasUnread === true
-}
-
-export function hasMessagesMeta(session: SessionMeta): boolean {
-  return session.lastFinalMessageId !== undefined
 }
 
 /** Empty sessions are composer drafts until their first user message is durable. */

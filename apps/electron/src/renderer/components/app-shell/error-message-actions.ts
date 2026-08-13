@@ -4,6 +4,15 @@ import type { Message } from '../../../shared/types'
 
 export type ErrorMessageAction = NonNullable<Message['errorActions']>[number]
 
+export function getErrorMessageBody(
+  message: Pick<Message, 'content' | 'errorTitle'>,
+): string {
+  const prefix = message.errorTitle ? `${message.errorTitle}: ` : ''
+  return prefix && message.content.startsWith(prefix)
+    ? message.content.slice(prefix.length)
+    : message.content
+}
+
 export interface HandleErrorMessageActionOptions {
   sessionId?: string
   onOpenUrl?: (url: string) => void

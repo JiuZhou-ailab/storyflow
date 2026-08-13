@@ -357,7 +357,7 @@ describe('typed_error → error Message field parity', () => {
     // Main process (sessions.ts typed_error handler)
     const mainMsg: Partial<Message> = {
       role: 'error',
-      content: `${event.error.title}: ${event.error.message}`,
+      content: event.error.message,
       errorCode: event.error.code,
       errorTitle: event.error.title,
       errorDetails: event.error.details,
@@ -368,7 +368,7 @@ describe('typed_error → error Message field parity', () => {
     // Renderer (handleTypedError)
     const rendererMsg: Partial<Message> = {
       role: 'error',
-      content: `${event.error.title}: ${event.error.message}`,
+      content: event.error.message,
       errorCode: event.error.code,
       errorTitle: event.error.title,
       errorDetails: event.error.details,

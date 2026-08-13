@@ -95,8 +95,6 @@ export interface Session {
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
   lastFinalMessageId?: string
   isAsyncOperationOngoing?: boolean
-  /** @deprecated Use isAsyncOperationOngoing instead */
-  isRegeneratingTitle?: boolean
   currentStatus?: {
     message: string
     statusType?: string
@@ -188,10 +186,9 @@ export type SessionEvent =
       hasUnread?: boolean
     }
   | { type: 'interrupted'; sessionId: string; message?: Message; queuedMessages?: string[]; reason?: 'queued_handoff' }
-  | { type: 'status'; sessionId: string; message: string; statusType?: 'compacting' }
+  | { type: 'status'; sessionId: string; message: string; statusType?: 'compacting' | 'retrying' }
   | { type: 'info'; sessionId: string; message: string; statusType?: 'compaction_complete'; level?: 'info' | 'warning' | 'error' | 'success'; timestamp?: number }
   | { type: 'title_generated'; sessionId: string; title: string }
-  | { type: 'title_regenerating'; sessionId: string; isRegenerating: boolean }
   | { type: 'async_operation'; sessionId: string; isOngoing: boolean }
   | { type: 'working_directory_changed'; sessionId: string; workingDirectory: string }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }

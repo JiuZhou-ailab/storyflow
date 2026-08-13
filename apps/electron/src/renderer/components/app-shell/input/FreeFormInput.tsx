@@ -1,4 +1,4 @@
-// input: Session draft text, attachments, model/source controls, and processing state
+// input: Session draft text, attachments, model/source/permission controls, and processing state
 // output: Free-form chat composer that submits messages and manages chat input affordances
 // pos: Main app-shell message composer above the session transcript
 
@@ -95,6 +95,7 @@ import {
   addRecentWorkingDir,
 } from './working-directory-history'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
+import { DesktopPermissionModeSelector } from './DesktopPermissionModeSelector'
 import { WorkingDirectoryBadge } from './WorkingDirectoryBadge'
 import { resolveContextUsage } from './context-usage'
 import {
@@ -2147,7 +2148,7 @@ export function FreeFormInput({
           </>
           )}
 
-          {/* Desktop: attachment and source controls */}
+          {/* Desktop: attachment, source, and permission controls */}
           {!compactMode && (
           <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           {/* 1. Attach Files Badge */}
@@ -2226,6 +2227,14 @@ export function FreeFormInput({
                 }}
               />
             </div>
+          )}
+
+          {onPermissionModeChange && (
+            <DesktopPermissionModeSelector
+              permissionMode={permissionMode}
+              onPermissionModeChange={onPermissionModeChange}
+              sessionId={sessionId}
+            />
           )}
 
           </div>

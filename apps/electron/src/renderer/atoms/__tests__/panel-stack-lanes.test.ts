@@ -1,5 +1,5 @@
 // input: Content-panel routes plus invalid settings-overlay routes
-// output: Regression coverage for single-lane ordering and overlay exclusion
+// output: Regression coverage for panel ordering and overlay exclusion
 // pos: Executable contract for the renderer panel-state boundary
 
 import { describe, it, expect } from 'bun:test'
@@ -18,7 +18,7 @@ function getStack(store: ReturnType<typeof createStore>): PanelStackEntry[] {
   return store.get(panelStackAtom)
 }
 
-describe('panel stack single-lane behavior', () => {
+describe('panel stack behavior', () => {
   it('keeps insertion order for new panels', () => {
     const store = createStore()
 
@@ -31,7 +31,6 @@ describe('panel stack single-lane behavior', () => {
     expect(stack[0].route).toBe('allSessions/session/s1')
     expect(stack[1].route).toBe('sources/source/github')
     expect(stack[2].route).toBe('skills/skill/story-ideator')
-    expect(stack.every((p) => p.laneId === 'main')).toBe(true)
   })
 
   it('implicit navigation updates focused panel route', () => {

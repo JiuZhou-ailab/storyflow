@@ -392,50 +392,6 @@ export class NeonAuthService {
   }
 }
 
-export async function reauthorizeNeonClientSession<
-  T extends { subject: string, organizationId?: string },
->(
-  req: Request,
-  neonAuth: NeonAuthService | null,
-  clientSession: T,
-): Promise<T | Response> {
-  if (!clientSession.subject.startsWith('neon:')) return clientSession
-  if (!neonAuth?.isConfigured()) {
-    return Response.json({ error: 'Neon Auth is not configured' }, { status: 503 })
-  }
-
-  const body = await req.json().catch(() => null) as Record<string, unknown> | null
-  const providerToken = readString(body?.providerToken)
-  if (!providerToken) {
-    return Response.json({
-      error: 'Neon Auth session is required',
-      code: 'neon_session_required',
-    }, { status: 401 })
-  }
-
-  try {
-    const identity = await neonAuth.verifyToken(providerToken)
-    if (identity.subject !== clientSession.subject) {
-      return Response.json({
-        error: 'Invalid client session token',
-        code: 'client_session_token_invalid',
-      }, { status: 401 })
-    }
-    return { ...clientSession, organizationId: identity.organizationId }
-  } catch (err) {
-    if (err instanceof Error && err.message === 'Invitation required') {
-      return Response.json({
-        error: 'Invitation required',
-        code: 'invitation_required',
-      }, { status: 403 })
-    }
-    return Response.json({
-      error: 'Neon Auth session is required',
-      code: 'neon_session_required',
-    }, { status: 401 })
-  }
-}
-
 function normalizeNeonAuthConfig(config: NeonAuthConfig | undefined): NormalizedNeonAuthConfig | null {
   const baseUrl = normalizeUrlString(config?.baseUrl)
   if (!baseUrl) return null

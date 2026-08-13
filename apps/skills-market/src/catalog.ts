@@ -136,7 +136,7 @@ export const CURATED_SKILLS: readonly CuratedSkill[] = [
     }),
   storyflow(2, 'video-to-screenplay', '视频转剧本',
     '使用 Storyflow 登录态与 Gemini 视频理解，把连续短剧批量转换为标准分集剧本。',
-    ['视频', '短剧', '已鉴权'], '.agents/skills/video-to-screenplay',
+    ['视频', '短剧', '已鉴权'], null,
     'Storyflow 项目精品', {
       namespace: 'storyflow', sourceSlug: 'video-to-screenplay', version: '1.0.0', publishedAt: 1786017600000,
       archiveSha256: 'cb0aad4d34ad8e2c168bab876521415a62a1d5f0e4bd32dd1583a0293f6e5d04',
@@ -154,7 +154,7 @@ export const CURATED_SKILLS: readonly CuratedSkill[] = [
     }),
   storyflow(4, 'hot-video-script-ideation', '热点视频灵感',
     '把热点素材拆成可复用结构，并生成原创短视频故事引擎与大纲。',
-    ['视频', '灵感'], '.agents/skills/hot-video-script-ideation',
+    ['视频', '灵感'], null,
     'Storyflow 项目精品', {
       namespace: 'storyflow', sourceSlug: 'hot-video-script-ideation', version: '1.0.0', publishedAt: 1786017600000,
       archiveSha256: '74316ea2e07bbf2a8c67ab6872b704b020b0c368ddea76b6fe64f4f13b9be358',

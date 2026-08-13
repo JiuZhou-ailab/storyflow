@@ -9,7 +9,7 @@ import { join } from 'path'
 import { resolveBackendContext } from '@craft-agent/shared/agent/backend'
 import { getEnable1MContext, getExtendedPromptCache } from '@craft-agent/shared/config'
 import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
-import { SessionManager, createManagedSession } from './SessionManager.ts'
+import { SessionManager, createManagedSession, setSessionRuntimeHooks } from './SessionManager.ts'
 import { buildRestartRequiredSignature } from './runtime-config.ts'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 
@@ -75,6 +75,7 @@ function injectSession(
     backendRuntimeSignature?: string
     backendRestartSignature?: string
     credentialRestartRequired?: boolean
+    managedModelAccessToken?: string
     isProcessing: boolean
     llmConnection?: string
     runtimeState?: 'invalidating' | 'deleting'
@@ -105,6 +106,7 @@ function injectSession(
   }
   managed.isProcessing = opts.isProcessing ?? false
   managed.llmConnection = llmConnection
+  managed.managedModelAccessToken = 'managed-test-token'
   ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(id, managed)
   return managed
 }
@@ -116,6 +118,12 @@ describe('refreshConnectionRuntime', () => {
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-refresh-'))
     sm = new SessionManager()
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => ({
+        token: 'managed-test-token',
+        refreshed: false,
+      }),
+    })
   })
 
   afterEach(() => {

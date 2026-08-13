@@ -3,7 +3,7 @@
 // pos: Renderer mention-contract test
 
 import { describe, it, expect } from 'bun:test'
-import { parseMentions, findMentionMatches, removeMention, stripAllMentions, resolveSkillMentions, resolveSourceMentions, extractBadges } from '../mentions'
+import { parseMentions, findMentionMatches, resolveSkillMentions, resolveSourceMentions, extractBadges } from '../mentions'
 
 // ============================================================================
 // parseMentions - Skill Pattern Tests
@@ -130,73 +130,6 @@ describe('findMentionMatches - skill pattern with workspace IDs', () => {
     const text = 'Please use [skill:My Workspace:commit] for this'
     const matches = findMentionMatches(text, availableSkills, [])
     expect(matches[0]?.startIndex).toBe(11)
-  })
-})
-
-// ============================================================================
-// removeMention - Skill Pattern Tests
-// ============================================================================
-
-describe('removeMention - skill pattern with workspace IDs', () => {
-  it('removes skill with workspace ID containing space', () => {
-    const result = removeMention('[skill:My Workspace:commit] please', 'skill', 'commit')
-    expect(result).toBe('please')
-  })
-
-  it('removes skill with workspace ID containing hyphen', () => {
-    const result = removeMention('[skill:my-workspace:commit] please', 'skill', 'commit')
-    expect(result).toBe('please')
-  })
-
-  it('removes skill with workspace ID containing underscore', () => {
-    const result = removeMention('[skill:my_workspace:commit] please', 'skill', 'commit')
-    expect(result).toBe('please')
-  })
-
-  it('removes skill with workspace ID containing dot', () => {
-    const result = removeMention('[skill:my.workspace:commit] please', 'skill', 'commit')
-    expect(result).toBe('please')
-  })
-
-  it('removes simple skill mention', () => {
-    const result = removeMention('[skill:commit] please', 'skill', 'commit')
-    expect(result).toBe('please')
-  })
-})
-
-// ============================================================================
-// stripAllMentions - Replaces mentions with slugs
-// ============================================================================
-
-describe('stripAllMentions - replaces skill mentions with slugs', () => {
-  it('replaces skill with workspace ID containing space', () => {
-    const result = stripAllMentions('[skill:My Workspace:commit] do this')
-    expect(result).toBe('commit do this')
-  })
-
-  it('replaces skill with workspace ID containing hyphen', () => {
-    const result = stripAllMentions('[skill:my-workspace:commit] do this')
-    expect(result).toBe('commit do this')
-  })
-
-  it('replaces skill with workspace ID containing underscore', () => {
-    const result = stripAllMentions('[skill:my_workspace:commit] do this')
-    expect(result).toBe('commit do this')
-  })
-
-  it('replaces skill with workspace ID containing dot', () => {
-    const result = stripAllMentions('[skill:my.workspace:commit] do this')
-    expect(result).toBe('commit do this')
-  })
-
-  it('replaces multiple skills with different workspace ID formats', () => {
-    const result = stripAllMentions('[skill:My Workspace:commit] and [skill:my-workspace:review]')
-    expect(result).toBe('commit and review')
-  })
-
-  it('replaces source mentions with slug', () => {
-    const result = stripAllMentions('[source:github] check this')
-    expect(result).toBe('github check this')
   })
 })
 

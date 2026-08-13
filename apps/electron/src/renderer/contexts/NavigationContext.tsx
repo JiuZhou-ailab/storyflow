@@ -708,7 +708,7 @@ export function NavigationProvider({
   // =========================================================================
 
   const handleActionNavigation = useCallback(
-    async (parsed: ParsedRoute, options?: { newPanel?: boolean; targetLaneId?: 'main' }) => {
+    async (parsed: ParsedRoute, options?: { newPanel?: boolean }) => {
       if (!workspaceId) return
 
       switch (parsed.name) {
@@ -756,11 +756,9 @@ export function NavigationProvider({
             { kind: 'allSessions' }
 
           if (options?.newPanel) {
-            // Open the new session in a new panel using lane-aware routing (pushPanel auto-focuses it)
+            // Open the new session in a new panel (pushPanel auto-focuses it)
             pushPanel({
               route: routes.view.allSessions(session.id) as ViewRoute,
-              targetLaneId: options.targetLaneId,
-              intent: 'explicit',
             })
           } else {
             // Navigate the focused panel to the new session
@@ -978,17 +976,10 @@ export function NavigationProvider({
         setSettingsOverlay(null)
       }
 
-      // For view routes with newPanel: push a panel using lane-aware routing.
-      //
-      // Important distinction:
-      // - explicit opens (intent='explicit') can target a specific lane
-      // - implicit navigation (updateFocusedPanelRouteAtom path) applies lock/fallback
-      // This mirrors VS Code-style "locked group" behavior.
+      // For view routes with newPanel, append a panel and focus it.
       if (options?.newPanel) {
         pushPanel({
           route: route as ViewRoute,
-          targetLaneId: options.targetLaneId,
-          intent: 'explicit',
         })
         return
       }
@@ -1257,10 +1248,10 @@ export function NavigationProvider({
 
   useEffect(() => {
     const handleNavigateEvent = (event: Event) => {
-      const customEvent = event as CustomEvent<{ route: Route; newPanel?: boolean; targetLaneId?: 'main' }>
+      const customEvent = event as CustomEvent<{ route: Route; newPanel?: boolean }>
       if (customEvent.detail?.route) {
-        const { route: r, newPanel, targetLaneId } = customEvent.detail
-        navigate(r, newPanel ? { newPanel, targetLaneId } : undefined)
+        const { route: r, newPanel } = customEvent.detail
+        navigate(r, newPanel ? { newPanel } : undefined)
       }
     }
 

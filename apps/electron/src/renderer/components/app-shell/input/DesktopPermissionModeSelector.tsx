@@ -1,6 +1,6 @@
 // input: Current permission mode and its session-scoped update callback
-// output: Desktop popover for switching the chat execution mode
-// pos: Desktop permission control above the free-form input
+// output: Desktop toolbar popover for switching the chat execution mode
+// pos: Permission control beside the source selector in the free-form input toolbar
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
@@ -44,6 +44,7 @@ export function DesktopPermissionModeSelector({
 }: DesktopPermissionModeSelectorProps) {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
+  const shortName = t(`mode.${permissionMode}`)
 
   const handleSelect = React.useCallback((commandId: SlashCommandId) => {
     if (commandId === 'safe' || commandId === 'ask' || commandId === 'allow-all') {
@@ -73,15 +74,16 @@ export function DesktopPermissionModeSelector({
         <button
           type="button"
           data-tutorial="permission-mode-dropdown"
+          aria-label={t('mode.permissionAria', { mode: shortName })}
           className={cn(
-            'h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px] flex items-center gap-1.5 shadow-tinted outline-none select-none shrink-0',
+            'input-toolbar-btn flex h-7 shrink-0 select-none items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-[12px] font-medium shadow-tinted outline-none transition-colors hover:bg-foreground/[0.07] active:bg-foreground/10 focus-visible:ring-1 focus-visible:ring-ring',
             currentStyle[permissionMode].className,
           )}
           style={{ '--shadow-color': currentStyle[permissionMode].shadowVar } as React.CSSProperties}
         >
           <PermissionModeIcon mode={permissionMode} className="h-3.5 w-3.5" />
-          <span>{t(`mode.${permissionMode}`)}</span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+          <span>{shortName}</span>
+          <ChevronDown className="h-3 w-3 opacity-60" />
         </button>
       </PopoverTrigger>
       <PopoverContent

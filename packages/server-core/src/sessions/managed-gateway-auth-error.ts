@@ -26,7 +26,7 @@ export function normalizeManagedDefaultGatewayAuthError(
     ...error,
     code: 'invalid_api_key',
     title: 'Default AI Access Interrupted',
-    message: 'Default AI access could not be refreshed automatically. Retry this message; if sign-in appears, sign in again.',
+    message: 'Default AI access was interrupted. Retry this message; if sign-in appears, sign in again.',
     actions: [
       {
         key: 'r',

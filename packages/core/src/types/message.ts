@@ -587,7 +587,7 @@ export type AgentEventUsage = TurnUsage;
  * turnId: Correlation ID from the API's message.id, groups all events in an assistant turn
  */
 export type AgentEvent =
-  | { type: 'status'; message: string; statusType?: 'compacting' }
+  | { type: 'status'; message: string; statusType?: 'compacting' | 'retrying' }
   | { type: 'info'; message: string; statusType?: 'compaction_complete'; level?: 'info' | 'warning' | 'error' }
   | { type: 'text_delta'; text: string; turnId?: string; parentToolUseId?: string }
   | { type: 'text_complete'; text: string; isIntermediate?: boolean; turnId?: string; parentToolUseId?: string; sdkTurnAnchor?: string }

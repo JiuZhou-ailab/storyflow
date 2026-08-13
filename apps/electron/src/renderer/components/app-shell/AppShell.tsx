@@ -4270,7 +4270,7 @@ function AppShellContent({
     // Delegate to NavigationContext which handles session creation
     navigate(
       routes.action.newSession(),
-      newPanel ? { newPanel: true, targetLaneId: 'main' } : undefined
+      newPanel ? { newPanel: true } : undefined
     )
 
     // Focus the chat input after navigation completes
@@ -5598,7 +5598,6 @@ function AppShellContent({
         open={showWhatsNewAnnouncement}
         copy={whatsNewAnnouncementCopy}
         accentColor={whatsNewManifest?.accentColor}
-        accentTextColor={whatsNewManifest?.accentTextColor}
         onOpenChange={handleWhatsNewAnnouncementOpenChange}
         onShowDetails={handleWhatsNewAnnouncementDetailsClick}
       />

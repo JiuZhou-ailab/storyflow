@@ -3,7 +3,6 @@
 // pos: Lightweight renderer surface between startup policy and full release notes overlay
 
 import * as React from 'react'
-import { Megaphone } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -20,7 +19,6 @@ interface WhatsNewAnnouncementDialogProps {
   open: boolean
   copy: WhatsNewAnnouncementCopy | null
   accentColor?: string
-  accentTextColor?: string
   onOpenChange: (open: boolean) => void
   onShowDetails: () => void
 }
@@ -29,7 +27,6 @@ export function WhatsNewAnnouncementDialog({
   open,
   copy,
   accentColor,
-  accentTextColor,
   onOpenChange,
   onShowDetails,
 }: WhatsNewAnnouncementDialogProps) {
@@ -37,42 +34,37 @@ export function WhatsNewAnnouncementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
-        <DialogHeader className="gap-3">
-          <div
-            className="flex h-10 w-10 items-center justify-center rounded-[8px]"
-            style={{
-              backgroundColor: accentColor ?? '#2563eb',
-              color: accentTextColor ?? '#ffffff',
-            }}
-          >
-            <Megaphone className="h-[18px] w-[18px]" />
-          </div>
-          <div className="space-y-2">
-            <p className="text-[12px] font-medium text-muted-foreground">
-              {copy.versionLabel}
-            </p>
-            <DialogTitle className="text-[18px] leading-6">{copy.title}</DialogTitle>
-            <DialogDescription className="text-[14px] leading-6">
-              {copy.summary}
-            </DialogDescription>
-          </div>
+      <DialogContent size="md" className="max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden p-0">
+        <DialogHeader className="gap-0 px-6 pt-6 pr-12 text-left">
+          <p className="mb-2 text-[11px] font-medium text-muted-foreground">
+            {copy.versionLabel}
+          </p>
+          <DialogTitle className="text-[20px] leading-7 tracking-[-0.01em]">
+            {copy.title}
+          </DialogTitle>
+          <DialogDescription className="mt-2 max-w-[44ch] text-[13px] leading-5 text-foreground/65">
+            {copy.summary}
+          </DialogDescription>
         </DialogHeader>
+
         {copy.guideItems.length > 0 && (
-          <ul className="space-y-2 rounded-[8px] border border-border/60 bg-muted/30 px-3 py-3 text-[13px] leading-5 text-foreground">
-            {copy.guideItems.map((item) => (
-              <li key={item} className="flex gap-2">
-                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-55" />
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="min-h-0 overflow-y-auto px-6 pt-5">
+            <ul
+              className="space-y-2.5 border-l-2 pl-4 text-[13px] leading-5 text-foreground/85"
+              style={{ borderLeftColor: accentColor ?? 'var(--accent)' }}
+            >
+              {copy.guideItems.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
         )}
-        <DialogFooter>
-          <Button variant="outline" onClick={onShowDetails}>
+
+        <DialogFooter className="mt-5 border-t border-border/60 px-6 py-4">
+          <Button type="button" variant="ghost" onClick={onShowDetails}>
             {copy.secondaryActionLabel}
           </Button>
-          <Button onClick={() => onOpenChange(false)}>
+          <Button type="button" onClick={() => onOpenChange(false)}>
             {copy.primaryActionLabel}
           </Button>
         </DialogFooter>

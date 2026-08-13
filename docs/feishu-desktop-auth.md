@@ -6,11 +6,11 @@ as separate trust boundaries:
 ```text
 desktop login
   -> auth broker verifies Feishu or Neon identity
-  -> auth broker returns an appSessionToken (absolute 30 days from login)
-     plus a short-lived modelAccessToken (15 minutes)
-  -> desktop keeps the login session and projects modelAccessToken
-     into the hidden protocol-native managed connections
-  -> desktop refreshes both tokens before model access expires
+  -> auth broker returns an appSessionToken (absolute 90 days from login)
+     plus a modelAccessToken (24 hours)
+  -> before each Agent operation, desktop accepts a capability with at least
+     just over 12 hours remaining or refreshes it once through the auth broker
+  -> desktop injects the accepted capability before the Pi runtime lease starts
   -> model gateway validates modelAccessToken
   -> model gateway injects the server-only NewAPI key
   -> NewAPI
@@ -21,13 +21,17 @@ admission boundaries. Feishu users receive `pro`; admitted Neon email users
 receive `standard`.
 
 Every successful refresh may rotate `appSessionToken` and its signing key, but
-preserves the original `auth_time` and absolute 30-day expiry.
-During the final 15 minutes the broker requires a new login instead of issuing
-a model token that would outlive its parent session.
+preserves the original `auth_time` and absolute 90-day expiry.
+During the final 12 hours plus clock-skew margin the broker requires a new login instead of issuing
+a model capability that cannot cover one operation safely.
 `appSessionToken` has only `model:issue` scope and is accepted only by the auth
 broker; `modelAccessToken` has only `model:chat` scope and is accepted only by
 the model gateway. Both use `iss=storyflow-auth-broker`; their audiences are
 `storyflow-client-auth` and `storyflow-model-gateway`, respectively.
+
+There is no background refresh timer. Sleep, wake, and long idle periods are
+handled by the next operation preflight. A running operation keeps its accepted
+credential snapshot and is never interrupted by credential rotation.
 
 The desktop app must never contain the Feishu app secret, either JWT signing
 secret, or the NewAPI key. The client-session and model-access secrets are
@@ -43,7 +47,7 @@ The desktop Feishu flow is:
 4. The desktop sends the code and verifier to the broker.
 5. The broker exchanges the code with its server-only Feishu secret.
 6. The broker checks the company tenant allowlist and returns the user plus
-   renewable and short-lived tokens.
+   a bounded Storyflow identity session and model capability.
 
 Add this redirect URL to the Feishu Open Platform application:
 
@@ -66,9 +70,9 @@ identity before issuing standard Storyflow capabilities. Organization membership
 is optional metadata rather than a prerequisite for email login.
 
 When email registration is enabled, any address accepted by Neon Auth can sign
-up and use the email OTP to prove ownership. Electron keeps the Better Auth
-session cookie in the existing encrypted credential store so every renewal can
-obtain a fresh JWT and recheck the identity.
+up and use the email OTP to prove ownership. Electron uses the Better Auth
+session only to establish the bounded Storyflow Identity Session; it does not
+persist or consult the provider session during routine model access.
 
 Email sign-in and registration are independent switches:
 
@@ -115,9 +119,10 @@ Stable authentication failures are machine-readable:
 - gateway upstream service authentication: `502` with
   `code=upstream_auth_failed`.
 
-The first means the renewable login session is missing, expired, or invalid and
-requires login. The second means the desktop should refresh once through the
-broker; it is not evidence that the selected model name is invalid.
+The first means the bounded login session is missing, expired, or invalid and
+requires login. The second means the desktop should renew once through the
+broker for the next explicit operation; it is not evidence that the selected
+model name is invalid.
 
 The MVP deliberately uses one NewAPI key and one upstream for both roles. Add
 per-tier model allowlists only when Standard and Pro actually diverge; add
@@ -136,7 +141,7 @@ gateway intersects explicitly approved dynamic families such as
 `gemini-3.6-*` with the live NewAPI inventory, so unavailable or invented model
 IDs never appear in the desktop picker.
 
-All connections reuse the same short-lived model capability, while the gateway
+All connections reuse the same bounded model capability, while the gateway
 replaces its protocol-native auth header with the server-only `NEWAPI_API_KEY`.
 
 ## Local Development
@@ -160,8 +165,8 @@ STORYFLOW_GATEWAY_JWT_CURRENT_SECRET=replace-with-a-separate-model-secret
 `bun run electron:dev` starts the local broker automatically when the broker URL
 is localhost and no broker is healthy. `CRAFT_SERVER_TOKEN` authenticates RPC
 and Web UI sessions only. `STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET` signs
-renewable desktop sessions, and `STORYFLOW_GATEWAY_JWT_CURRENT_SECRET` signs
-short-lived model access. All three values must differ. The legacy
+bounded desktop sessions, and `STORYFLOW_GATEWAY_JWT_CURRENT_SECRET` signs
+model capabilities. All three values must differ. The legacy
 unkeyed secret names are rejected.
 
 ## Production Deployment
@@ -222,13 +227,13 @@ For the cutover from the retired single model token:
 
 For later model-key rotation, deploy the gateway first with the new key as
 `CURRENT_*` and the old keyed value as `PREVIOUS_*`, then switch the broker to
-the new current key. Remove the gateway previous key after 15 minutes plus
+the new current key. Remove the gateway previous key after 24 hours plus
 clock skew.
 
 For client-session rotation, deploy the broker with the new key as `CURRENT_*`
 and the old value as `PREVIOUS_*`. Successful refreshes roll sessions to the
 new key without extending their original expiry. Keep the previous key for at
-most 30 days unless forcing inactive clients to sign in again is acceptable.
+most 90 days unless forcing inactive clients to sign in again is acceptable.
 
 Managed default access is intentionally unavailable in standalone, thin-client,
 and shared-server modes. Those runtimes do not have a per-client credential

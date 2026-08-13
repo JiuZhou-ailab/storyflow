@@ -1,16 +1,6 @@
-// input: Absolute paths and epoch timestamps
-// output: Short path tails and Chinese relative-time labels
+// input: Epoch timestamps
+// output: Chinese relative-time labels
 // pos: Tiny display helpers shared by project manager and workspace create forms
-
-/** Keep the last N path segments, ellipsis prefix when longer. */
-export function shortenDisplayPath(path: string, keepLast = 2): string {
-  const normalized = path.replace(/\\/g, '/')
-  const parts = normalized.split('/').filter(Boolean)
-  if (parts.length <= keepLast) {
-    return normalized.startsWith('/') ? `/${parts.join('/')}` : parts.join('/')
-  }
-  return `…/${parts.slice(-keepLast).join('/')}`
-}
 
 /** Relative activity label for list rows (zh). */
 export function formatRelativeTimestamp(at: number | undefined, empty = '未打开过'): string {

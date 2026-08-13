@@ -7,7 +7,7 @@
  * "find the root cause in [Mentioned skill: Datadog API (slug: datadog-api)]").
  */
 import { describe, it, expect } from 'bun:test'
-import { resolveSkillMentions, resolveSourceMentions, stripAllMentions } from '../index.ts'
+import { resolveSkillMentions, resolveSourceMentions } from '../index.ts'
 
 // ============================================================================
 // resolveSkillMentions
@@ -125,36 +125,5 @@ describe('resolveSourceMentions', () => {
   it('leaves skill and file mentions untouched', () => {
     expect(resolveSourceMentions('[skill:commit] [file:index.ts]'))
       .toBe('[skill:commit] [file:index.ts]')
-  })
-})
-
-// ============================================================================
-// stripAllMentions — now replaces with slug instead of empty string
-// ============================================================================
-
-describe('stripAllMentions - slug replacement', () => {
-  it('replaces skill mention with slug', () => {
-    expect(stripAllMentions('[skill:commit] do this'))
-      .toBe('commit do this')
-  })
-
-  it('replaces skill with workspace ID with slug', () => {
-    expect(stripAllMentions('[skill:My Workspace:commit] do this'))
-      .toBe('commit do this')
-  })
-
-  it('replaces source mention with slug', () => {
-    expect(stripAllMentions('[source:github] check this'))
-      .toBe('github check this')
-  })
-
-  it('replaces multiple mentions with slugs', () => {
-    expect(stripAllMentions('[skill:commit] and [source:github]'))
-      .toBe('commit and github')
-  })
-
-  it('preserves sentence structure', () => {
-    expect(stripAllMentions('find bug in [skill:datadog-api]'))
-      .toBe('find bug in datadog-api')
   })
 })

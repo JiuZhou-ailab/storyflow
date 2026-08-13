@@ -1,5 +1,5 @@
 // input: Desktop client-auth exchange requests and Feishu/Neon identity provider responses
-// output: Public auth config, verified desktop identity with company scope, renewable client session, and scoped short-lived capability JWTs
+// output: Public auth config, verified desktop identity with company scope, durable client sessions, and operation-safe capability JWTs
 // pos: HTTPS auth broker for packaged desktop login without shipping server secrets
 import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify, SignJWT, type JWTPayload } from 'jose'
 
@@ -66,8 +66,9 @@ const DEFAULT_CLIENT_SESSION_AUDIENCE = 'storyflow-client-auth'
 const DEFAULT_SKILLS_MARKET_AUDIENCE = 'storyflow-skills-market'
 const STORYFLOW_ORGANIZATION_ID = 'storyflow'
 const DEFAULT_CURRENT_KEY_ID = 'current'
-const CLIENT_SESSION_TOKEN_TTL_SECONDS = 2_592_000
-const MODEL_ACCESS_TOKEN_TTL_SECONDS = 900
+const CLIENT_SESSION_TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60
+const MODEL_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60
+const MODEL_ACCESS_TOKEN_MIN_REMAINING_SECONDS = 12 * 60 * 60 + 5 * 60
 const SKILLS_MARKET_TOKEN_TTL_SECONDS = 300
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
@@ -127,11 +128,11 @@ export async function handleRequest(
   }
 
   if (url.pathname === '/api/client-auth/token' && request.method === 'POST') {
-    return refreshClientAuthToken(request, env, fetchImpl)
+    return refreshClientAuthToken(request, env)
   }
 
   if (url.pathname === '/api/client-auth/skills-market/token' && request.method === 'POST') {
-    return issueSkillsMarketToken(request, env, fetchImpl)
+    return issueSkillsMarketToken(request, env)
   }
 
   return Response.json({ error: 'Not found' }, { status: 404 })
@@ -269,11 +270,10 @@ async function exchangeNeonToken(
 async function refreshClientAuthToken(
   request: Request,
   env: Env,
-  fetchImpl: FetchLike,
 ): Promise<Response> {
   const tokenConfigError = getTokenIssuanceConfigError(env)
   if (tokenConfigError) return Response.json({ error: tokenConfigError }, { status: 503 })
-  const authorization = await reauthorizeClientSession(request, env, fetchImpl)
+  const authorization = await authorizeClientSession(request, env)
   if (authorization instanceof Response) return authorization
   const { session } = authorization
   return Response.json({
@@ -292,14 +292,12 @@ async function refreshClientAuthToken(
 async function issueSkillsMarketToken(
   request: Request,
   env: Env,
-  fetchImpl: FetchLike,
 ): Promise<Response> {
   const configError = getSkillsMarketTokenConfigError(env)
   if (configError) return Response.json({ error: configError }, { status: 503 })
-  const authorization = await reauthorizeClientSession(
+  const authorization = await authorizeClientSession(
     request,
     env,
-    fetchImpl,
     SKILLS_MARKET_TOKEN_TTL_SECONDS,
   )
   if (authorization instanceof Response) return authorization
@@ -317,11 +315,10 @@ async function issueSkillsMarketToken(
   })
 }
 
-async function reauthorizeClientSession(
+async function authorizeClientSession(
   request: Request,
   env: Env,
-  fetchImpl: FetchLike,
-  minimumRemainingSeconds = MODEL_ACCESS_TOKEN_TTL_SECONDS,
+  minimumRemainingSeconds = MODEL_ACCESS_TOKEN_MIN_REMAINING_SECONDS,
 ): Promise<{ session: Awaited<ReturnType<typeof verifyClientSessionToken>> } | Response> {
   const token = readBearerToken(request.headers.get('authorization'))
   if (!token) return invalidClientSessionResponse()
@@ -332,31 +329,13 @@ async function reauthorizeClientSession(
   } catch {
     return invalidClientSessionResponse()
   }
-  if (!session.subject.startsWith('neon:')) return { session }
-
-  const providerToken = readString((await readJsonObject(request)).providerToken)
-  if (!providerToken) return neonSessionRequiredResponse()
-  const neonConfigError = getNeonAuthConfigError(env)
-  if (neonConfigError) return Response.json({ error: neonConfigError }, { status: 503 })
-
-  try {
-    const identity = await verifyNeonProviderToken(providerToken, env, fetchImpl)
-    if (identity.subject !== session.subject) return invalidClientSessionResponse()
-    return {
-      session: {
-        ...session,
-        organizationId: undefined,
-      },
-    }
-  } catch {
-    return neonSessionRequiredResponse()
-  }
+  return { session }
 }
 
 async function verifyClientSessionToken(
   token: string,
   env: Env,
-  minimumRemainingSeconds = MODEL_ACCESS_TOKEN_TTL_SECONDS,
+  minimumRemainingSeconds = MODEL_ACCESS_TOKEN_MIN_REMAINING_SECONDS,
 ): Promise<{
   subject: string
   modelTier: 'standard' | 'pro'
@@ -417,16 +396,6 @@ function invalidClientSessionResponse(): Response {
     {
       error: 'Invalid client session token',
       code: 'client_session_token_invalid',
-    },
-    { status: 401 },
-  )
-}
-
-function neonSessionRequiredResponse(): Response {
-  return Response.json(
-    {
-      error: 'Neon Auth session is required',
-      code: 'neon_session_required',
     },
     { status: 401 },
   )

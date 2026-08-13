@@ -1,5 +1,5 @@
-// input: Encrypted credential manager entries and renewable client-auth sessions
-// output: Durable identity sessions plus exact cleanup of legacy managed-token projections
+// input: Encrypted credential manager entries and bounded Storyflow identity sessions
+// output: Minimal durable identity sessions plus cleanup of transient or legacy credentials
 // pos: Main-process persistence boundary; model capability tokens remain process-local
 
 import { getCredentialManager, type CredentialManager } from '@craft-agent/shared/credentials'
@@ -50,9 +50,10 @@ export function createClientAuthSessionStore(
       }
 
       const renewableSession = withoutModelAccessToken(session)
-      if (session.modelAccessToken) {
+      const serializedSession = JSON.stringify(renewableSession)
+      if (credential?.value !== serializedSession) {
         await credentialManager.set(CLIENT_AUTH_SESSION_ID, {
-          value: JSON.stringify(renewableSession),
+          value: serializedSession,
         })
       }
       await clearManagedModelCredentials(credentialManager)
@@ -123,15 +124,10 @@ function parseClientAuthSession(value: string): ClientAuthSession | null {
   const modelAccessToken = typeof record.modelAccessToken === 'string' && record.modelAccessToken.trim()
     ? record.modelAccessToken.trim()
     : undefined
-  const neonSessionCookie = typeof record.neonSessionCookie === 'string' && record.neonSessionCookie.trim()
-    ? record.neonSessionCookie.trim()
-    : undefined
-
   return {
     user,
     ...(appSessionToken ? { appSessionToken } : {}),
     ...(modelAccessToken ? { modelAccessToken } : {}),
-    ...(neonSessionCookie ? { neonSessionCookie } : {}),
   }
 }
 
@@ -139,7 +135,6 @@ function withoutModelAccessToken(session: ClientAuthSession): ClientAuthSession 
   return {
     user: session.user,
     ...(session.appSessionToken ? { appSessionToken: session.appSessionToken } : {}),
-    ...(session.neonSessionCookie ? { neonSessionCookie: session.neonSessionCookie } : {}),
   }
 }
 
