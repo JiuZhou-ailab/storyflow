@@ -731,6 +731,50 @@ describe('model gateway worker', () => {
     }
   })
 
+  it('normalizes an upstream HTML error without reading successful response streams', async () => {
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      const token = await signTestJwt(CURRENT_MODEL_SECRET)
+      const response = await handleRequest(
+        new Request('https://model.storyflow.example.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ model: 'deepseek-v4-flash', messages: [] }),
+        }),
+        makeEnv(),
+        async () => new Response(
+          '<html><head><title>400 Bad Request</title></head><body><center>alb</center></body></html>',
+          {
+            status: 400,
+            headers: {
+              'content-type': 'text/html',
+              'cf-ray': 'upstream-alb-ray',
+            },
+          },
+        ),
+      )
+
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({
+        error: {
+          message: 'Upstream gateway returned an unexpected HTML response',
+          type: 'upstream_error',
+          code: 'upstream_html_response',
+        },
+      })
+      expect(errorSpy).toHaveBeenCalledTimes(1)
+      expect(errorSpy.mock.calls[0]?.[0]).toMatchObject({
+        stage: 'upstream',
+        upstream_status: 400,
+        upstream_ray: 'upstream-alb-ray',
+        error: 'html_response_body',
+      })
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
   it('logs upstream failures with correlation fields but without request content or credentials', async () => {
     const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
 

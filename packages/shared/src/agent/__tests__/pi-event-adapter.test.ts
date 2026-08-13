@@ -642,7 +642,7 @@ describe('PiEventAdapter', () => {
       });
     });
 
-    it('should emit typed_error for raw HTML proxy pages', () => {
+    it('should emit typed_error for raw upstream HTML pages', () => {
       const events = collect(adapter.adaptEvent({
         type: 'message_end',
         message: {
@@ -654,7 +654,7 @@ describe('PiEventAdapter', () => {
 
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('typed_error');
-      expect((events[0] as any).error.code).toBe('proxy_error');
+      expect((events[0] as any).error.code).toBe('service_error');
       expect((events[0] as any).error.message.toLowerCase()).not.toContain('<html');
     });
 

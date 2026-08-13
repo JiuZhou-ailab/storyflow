@@ -174,7 +174,7 @@ describe('PiAgent subprocess error handling', () => {
     agent.destroy()
   })
 
-  it('maps raw HTML subprocess errors to typed proxy_error events', () => {
+  it('maps raw upstream HTML subprocess errors to typed service_error events', () => {
     const agent = new PiAgent(createConfig())
 
     const enqueued: any[] = []
@@ -189,7 +189,7 @@ describe('PiAgent subprocess error handling', () => {
 
     expect(enqueued).toHaveLength(1)
     expect(enqueued[0].type).toBe('typed_error')
-    expect(enqueued[0].error.code).toBe('proxy_error')
+    expect(enqueued[0].error.code).toBe('service_error')
     expect(enqueued[0].error.message.toLowerCase()).not.toContain('<html')
 
     agent.destroy()

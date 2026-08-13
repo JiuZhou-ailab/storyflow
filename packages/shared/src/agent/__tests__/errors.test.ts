@@ -14,23 +14,26 @@ describe('parseError', () => {
     expect(parsed.message).toBe(message)
   })
 
-  it('maps raw Cloudflare HTML error page to proxy_error with sanitized message', () => {
+  it('does not misclassify an upstream ALB HTML error as a local proxy failure', () => {
     const rawHtml = `<html>
 <head><title>400 Bad Request</title></head>
 <body>
 <center><h1>400 Bad Request</h1></center>
-<hr><center>cloudflare</center>
+<hr><center>alb</center>
 </body>
 </html>`
 
     const parsed = parseError(new Error(rawHtml))
 
-    expect(parsed.code).toBe('proxy_error')
-    expect(parsed.message).toContain('unexpected HTML error page')
-    expect(parsed.message).toContain('HTTP 400')
-    expect(parsed.message.toLowerCase()).toContain('proxy settings')
+    expect(parsed.code).toBe('service_error')
+    expect(parsed.message.toLowerCase()).not.toContain('proxy settings')
     expect(parsed.message.toLowerCase()).not.toContain('<html')
     expect(parsed.originalError).toBe(rawHtml)
+  })
+
+  it('classifies Cloudflare-specific upstream failures as service errors', () => {
+    expect(parseError(new Error('520 error code: 520')).code).toBe('service_error')
+    expect(parseError(new Error('524 error code: 524')).code).toBe('service_error')
   })
 
   it('does not remap regular 401 auth errors as proxy_error', () => {

@@ -289,20 +289,6 @@ function extractErrorMessages(error: unknown): string {
 }
 
 const HTML_DOC_HINTS = ['<html', '<!doctype html', '<head', '<body', '<title', '<h1'] as const;
-const HTML_PROXY_HINTS = [
-  'cloudflare',
-  'cf-ray',
-  'captcha',
-  'security check',
-  'access denied',
-  'attention required',
-  'web application firewall',
-  'waf',
-  'proxy authentication required',
-  'sucuri',
-  'imperva',
-  'akamai',
-] as const;
 const HTML_STATUS_PATTERN = /\b(400|401|403|407|408|409|429|500|502|503|504)\b/;
 
 function looksLikeHtmlPayload(textLower: string): boolean {
@@ -318,33 +304,10 @@ function looksLikeHtmlPayload(textLower: string): boolean {
   return hintCount >= 3;
 }
 
-function hasHtmlErrorPageSignals(textLower: string): boolean {
-  const hasKnownHttpTitle =
-    textLower.includes('bad request') ||
-    textLower.includes('unauthorized') ||
-    textLower.includes('forbidden') ||
-    textLower.includes('service unavailable') ||
-    textLower.includes('bad gateway') ||
-    textLower.includes('gateway timeout') ||
-    textLower.includes('proxy authentication required');
-
-  return HTML_STATUS_PATTERN.test(textLower) && hasKnownHttpTitle;
-}
-
-function isLikelyProxyInterception(textLower: string): boolean {
-  if (textLower.includes('unexpected html error page') || textLower.includes('network proxy')) {
-    return true;
-  }
-
-  if (!looksLikeHtmlPayload(textLower)) {
-    return false;
-  }
-
-  if (HTML_PROXY_HINTS.some((hint) => textLower.includes(hint))) {
-    return true;
-  }
-
-  return hasHtmlErrorPageSignals(textLower);
+function isExplicitProxyInterception(textLower: string): boolean {
+  return textLower.includes('network proxy')
+    || textLower.includes('proxy authentication required')
+    || (looksLikeHtmlPayload(textLower) && /\b407\b/.test(textLower));
 }
 
 function buildProxyErrorMessage(errorMessage: string, fullErrorText: string): string {
@@ -420,11 +383,13 @@ export function parseError(
     (lowerMessage.includes('tool') && lowerMessage.includes('not') && lowerMessage.includes('support'))
   ) {
     code = 'model_no_tool_support';
-  // HTML-intercepted responses (proxy/firewall/captive portal).
-  // Must be checked BEFORE status codes: a 502 Cloudflare page or 401 proxy login
-  // page would otherwise be misclassified as service_error or invalid_api_key.
-  } else if (isLikelyProxyInterception(lowerMessage)) {
+  // Explicit proxy evidence must win before generic status-code classification.
+  } else if (isExplicitProxyInterception(lowerMessage)) {
     code = 'proxy_error';
+  // HTML alone cannot identify where interception happened. Managed gateways,
+  // load balancers, and providers can all return HTML error pages.
+  } else if (looksLikeHtmlPayload(lowerMessage) || lowerMessage.includes('upstream_html_response')) {
+    code = 'service_error';
   // Check for specific HTTP status codes or patterns
   } else if (lowerMessage.includes('402') || lowerMessage.includes('payment required')) {
     code = 'billing_error';
@@ -449,7 +414,7 @@ export function parseError(
     code = 'rate_limited';
   } else if (isAnthropicMessageStopStreamError(lowerMessage)) {
     code = 'provider_error';
-  } else if (lowerMessage.includes('500') || lowerMessage.includes('502') || lowerMessage.includes('503') || lowerMessage.includes('504') || lowerMessage.includes('internal server error') || lowerMessage.includes('service unavailable') || lowerMessage.includes('overloaded')) {
+  } else if (lowerMessage.includes('500') || lowerMessage.includes('502') || lowerMessage.includes('503') || lowerMessage.includes('504') || lowerMessage.includes('520') || lowerMessage.includes('524') || lowerMessage.includes('internal server error') || lowerMessage.includes('service unavailable') || lowerMessage.includes('overloaded')) {
     code = 'service_error';
   } else if (lowerMessage.includes('network') || lowerMessage.includes('econnrefused') || lowerMessage.includes('enotfound') || lowerMessage.includes('fetch failed') || lowerMessage.includes('connection')) {
     code = 'network_error';

@@ -224,6 +224,52 @@ export async function handleRequest(
 
   try {
     const upstreamResponse = await fetchImpl(upstreamRequest)
+    if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
+      logGatewayRequest(startedAt, {
+        stage: 'upstream',
+        ...modelLogContext,
+        upstream_status: upstreamResponse.status,
+        upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
+      })
+      return Response.json(
+        {
+          error: 'Model provider authentication failed',
+          code: 'upstream_auth_failed',
+        },
+        { status: 502 },
+      )
+    }
+
+    const upstreamContentType = upstreamResponse.headers.get('content-type')?.toLowerCase() ?? ''
+    if (
+      upstreamResponse.status >= 400
+      && (upstreamContentType.includes('text/html') || upstreamContentType.includes('application/xhtml+xml'))
+    ) {
+      logGatewayRequest(startedAt, {
+        stage: 'upstream',
+        ...modelLogContext,
+        upstream_status: upstreamResponse.status,
+        upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
+        error: 'html_response_body',
+      })
+      return Response.json(
+        {
+          error: {
+            message: 'Upstream gateway returned an unexpected HTML response',
+            type: 'upstream_error',
+            code: 'upstream_html_response',
+          },
+        },
+        {
+          status: upstreamResponse.status === 524
+            ? 504
+            : upstreamResponse.status >= 500
+              ? 502
+              : upstreamResponse.status,
+        },
+      )
+    }
+
     if (upstreamResponse.status === 400 && !(await upstreamResponse.clone().text()).trim()) {
       logGatewayRequest(startedAt, {
         stage: 'upstream',
@@ -239,21 +285,6 @@ export async function handleRequest(
             type: 'upstream_error',
             code: 'upstream_empty_response',
           },
-        },
-        { status: 502 },
-      )
-    }
-    if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
-      logGatewayRequest(startedAt, {
-        stage: 'upstream',
-        ...modelLogContext,
-        upstream_status: upstreamResponse.status,
-        upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
-      })
-      return Response.json(
-        {
-          error: 'Model provider authentication failed',
-          code: 'upstream_auth_failed',
         },
         { status: 502 },
       )
