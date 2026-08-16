@@ -22,6 +22,7 @@ import {
   normalizeBrokerClientAuthUser,
   requireAppSessionToken,
   requireModelAccessToken,
+  requireToolAccessToken,
   resolveFeishuBrokerAuthConfig,
 } from './client-auth-broker'
 
@@ -113,6 +114,7 @@ export interface ClientAuthBrokerExchangeResult {
 
 export interface ClientAuthBrokerTokenRefreshResult { appSessionToken: string, modelAccessToken: string }
 export interface ClientAuthBrokerMarketTokenResult { marketPublishToken: string, expiresInSeconds: number }
+export interface ClientAuthBrokerToolTokenResult { toolAccessToken: string }
 
 export interface ClientAuthBrokerClient {
   getFeishuAuthConfig?(input: { brokerUrl: string }): Promise<ClientFeishuBrokerPublicConfig | null>
@@ -120,6 +122,7 @@ export interface ClientAuthBrokerClient {
   exchangeFeishuCode(input: ClientAuthBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
   refreshModelAccessToken(input: ClientAuthBrokerTokenRefreshInput): Promise<ClientAuthBrokerTokenRefreshResult>
   issueSkillsMarketToken?(input: ClientAuthBrokerTokenRefreshInput): Promise<ClientAuthBrokerMarketTokenResult>
+  issueToolAccessToken?(input: ClientAuthBrokerTokenRefreshInput): Promise<ClientAuthBrokerToolTokenResult>
 }
 
 export interface ClientAuthState {
@@ -162,11 +165,14 @@ export interface ClientAuthServiceDeps {
 }
 
 export interface ClientAuthModelAccessTokenResult { token: string, refreshed: boolean }
+export interface ClientAuthToolAccessTokenResult { token: string, refreshed: boolean }
 
 export interface ClientAuthService {
   getState(): ClientAuthState
   /** Returns a fresh managed-model token, rotating both broker tokens when needed or forced. */
   ensureModelAccessToken(options?: { force?: boolean }): Promise<ClientAuthModelAccessTokenResult>
+  /** Returns a fresh tool-gateway capability in process memory only. */
+  ensureToolAccessToken(options?: { force?: boolean }): Promise<ClientAuthToolAccessTokenResult>
   /** Returns an ephemeral Market capability for authenticated reads and publication. The token is never persisted. */
   issueSkillsMarketAccessToken(): Promise<string>
   signIn(input: ClientAuthSignInInput): Promise<ClientAuthUser>
@@ -321,6 +327,8 @@ export function createClientAuthService(
     && readEnv(deps.initialSession.appSessionToken)
     ? deps.initialSession
     : null
+  let currentToolAccessToken: string | undefined
+  let pendingToolAccessToken: Promise<ClientAuthToolAccessTokenResult> | null = null
   let activeFeishuLogin: {
     close: () => void | Promise<void>
     reject: (error: Error) => void
@@ -349,6 +357,8 @@ export function createClientAuthService(
       tokenLifecycle.assertCurrent(generation)
       await deps.sessionStore?.save(session)
       tokenLifecycle.assertCurrent(generation)
+      currentToolAccessToken = undefined
+      pendingToolAccessToken = null
       currentSession = session
       await notifyAuthChange()
     })
@@ -371,6 +381,8 @@ export function createClientAuthService(
       if (!tokenLifecycle.isCurrent(invalidationGeneration)) return
       await deps.sessionStore?.clear()
       if (!tokenLifecycle.isCurrent(invalidationGeneration)) return
+      currentToolAccessToken = undefined
+      pendingToolAccessToken = null
       currentSession = null
       await notifyAuthChange()
     })
@@ -458,6 +470,52 @@ export function createClientAuthService(
           await notifyAuthChange()
         })
         return { token: nextSession.modelAccessToken, refreshed: true }
+      })
+    },
+
+    ensureToolAccessToken(options = {}): Promise<ClientAuthToolAccessTokenResult> {
+      const session = currentSession
+      if (!session) return Promise.reject(new Error('Client authentication is required'))
+      if (!options.force) {
+        if (pendingToolAccessToken) return pendingToolAccessToken
+        if (
+          currentToolAccessToken
+          && isClientModelAccessTokenFresh(currentToolAccessToken, tokenLifecycle.nowMs)
+        ) {
+          return Promise.resolve({ token: currentToolAccessToken, refreshed: false })
+        }
+      }
+      const appSessionToken = readEnv(session.appSessionToken)
+      if (!authBrokerUrl || !authBrokerClient?.issueToolAccessToken || !appSessionToken) {
+        return Promise.reject(new Error('Managed tool access is not configured'))
+      }
+
+      const generation = tokenLifecycle.generation
+      const pending = (async (): Promise<ClientAuthToolAccessTokenResult> => {
+        try {
+          const result = await authBrokerClient.issueToolAccessToken!({
+            brokerUrl: authBrokerUrl,
+            appSessionToken,
+          })
+          if (!tokenLifecycle.isCurrent(generation) || currentSession !== session) {
+            throw new Error('Client auth session changed')
+          }
+          const token = requireToolAccessToken(result)
+          if (!isClientModelAccessTokenFresh(token, tokenLifecycle.nowMs)) {
+            throw new Error('Auth broker returned a tool access token with insufficient lifetime')
+          }
+          currentToolAccessToken = token
+          return { token, refreshed: true }
+        } catch (error) {
+          if (isRejectedAppSession(error)) {
+            await clearRejectedSession(session, generation)
+          }
+          throw error
+        }
+      })()
+      pendingToolAccessToken = pending
+      return pending.finally(() => {
+        if (pendingToolAccessToken === pending) pendingToolAccessToken = null
       })
     },
 
@@ -683,12 +741,16 @@ export function createClientAuthService(
         if (!tokenLifecycle.isCurrent(generation)) return
         await deps.sessionStore?.clear()
         if (!tokenLifecycle.isCurrent(generation)) return
+        currentToolAccessToken = undefined
+        pendingToolAccessToken = null
         currentSession = null
         await notifyAuthChange()
       })
     },
 
     dispose(): void {
+      currentToolAccessToken = undefined
+      pendingToolAccessToken = null
       tokenLifecycle.dispose()
     },
   }

@@ -121,12 +121,15 @@ STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID=model-access-2026-07
 STORYFLOW_GATEWAY_JWT_CURRENT_SECRET=...
 STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID=skills-market-2026-08
 STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET=...
+STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_KEY_ID=tool-access-2026-08
+STORYFLOW_TOOL_GATEWAY_JWT_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----...
 ```
 
 The desktop app asks the broker for public Feishu config and sends OAuth codes
 back to the broker. The Feishu app secret and user allow policy belong on the
 broker side only. After verifying either Feishu or a Neon Organization identity, the broker
-returns two independent capabilities and can mint a third one on demand:
+returns the identity session and model capability, then mints narrower
+capabilities on demand:
 
 - an `appSessionToken` bounded to 90 days from the original authentication,
   signed only with the client-session key, which may request rotated replacement
@@ -135,13 +138,16 @@ returns two independent capabilities and can mint a third one on demand:
   call the model gateway but cannot mint another token.
 - a five-minute Market publish token, requested only when the user publishes,
   signed with the Market key and scoped only to `skills:publish`.
+- a 24-hour tool token, kept only in Electron memory, signed with the Tool
+  Gateway key and scoped to the operation-specific `web:search` and
+  `web:scrape` capabilities.
 
 The broker requires a new login when the app session cannot cover another
 12-hour operation plus clock skew, so a model capability can never outlive the
 parent authentication.
 
-The RPC/Web UI secret, client-session secret, model-access secret, and Market
-secret must be independently generated and must never share a
+The RPC/Web UI secret, client-session secret, model-access secret, Market
+secret, and Tool Gateway secret must be independently generated and never share a
 value. `STORYFLOW_CLIENT_SESSION_JWT_PREVIOUS_*` is used only while rotating
 existing app sessions. Every runtime requires the explicit `CURRENT_*`
 variables; retired unkeyed secret aliases are rejected.
@@ -175,11 +181,36 @@ model-access signing key; they must not match the broker's client-session key.
 During rotation, the gateway accepts both current and previous keyed model
 tokens. Tokens without `kid` are rejected.
 
-`NEWAPI_API_KEY` and JWT secrets are Cloudflare
+`NEWAPI_API_KEY` and symmetric JWT secrets are Cloudflare
 Worker secrets; key IDs and `NEWAPI_UPSTREAM_BASE_URL` are non-secret Worker
-variables. None belong in Electron build environment variables. The two
-current JWT secrets are mirrored in GitHub Actions only as Worker deployment
-inputs; `NEWAPI_API_KEY` remains Cloudflare-only.
+variables. None belong in Electron build environment variables. Capability
+signing secrets used by the existing model and Market deployment are mirrored
+in GitHub Actions only as Worker deployment inputs. Tool capability signing is
+asymmetric, so its private key stays Cloudflare-only. `NEWAPI_API_KEY` remains Cloudflare-only.
+
+## Tool Gateway Worker
+
+The Tool Gateway is the only Storyflow component that receives provider tool
+credentials. Its first operations are `POST /v1/search` (AnySearch) and
+`POST /v1/scrape` (Firecrawl):
+
+```dotenv
+STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_KEY_ID=tool-access-2026-08
+STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_PUBLIC_KEY=-----BEGIN PUBLIC KEY-----...
+STORYFLOW_TOOL_GATEWAY_JWT_PREVIOUS_KEY_ID=
+STORYFLOW_TOOL_GATEWAY_JWT_PREVIOUS_PUBLIC_KEY=
+ANYSEARCH_API_KEY=...
+ANYSEARCH_UPSTREAM_URL=https://api.anysearch.com/mcp
+FIRECRAWL_API_KEY=...
+FIRECRAWL_UPSTREAM_URL=https://api.firecrawl.dev/v2/scrape
+```
+
+The Tool Gateway verifies ES256 tokens with the public half of the Auth Broker
+signing key. `ANYSEARCH_API_KEY`, `FIRECRAWL_API_KEY`, and the Auth Broker
+private key are Cloudflare Worker Secrets only: do not copy them to GitHub,
+Electron, Skills, MCP configuration, or CLI environment. The Worker applies
+the native `SEARCH_RATE_LIMITER` and `SCRAPE_RATE_LIMITER` bindings per JWT
+subject before consuming provider quota.
 
 ## Electron Runtime Internals
 
@@ -196,10 +227,15 @@ CRAFT_SCRIPTS=...
 CRAFT_COMMANDS_ENTRY=...
 CRAFT_CLI_ENTRY=...
 CRAFT_AGENT_VERSION=...
+STORYFLOW_MODEL_ACCESS_BROKER_URL=http://127.0.0.1:...
+STORYFLOW_MODEL_ACCESS_BROKER_TOKEN=process-random-capability
+STORYFLOW_TOOL_BROKER_URL=http://127.0.0.1:...
+STORYFLOW_TOOL_BROKER_TOKEN=process-random-capability
 ```
 
 Do not put these in release vars or `.env` unless debugging a specific runtime
-resolver path.
+resolver path. The loopback broker values are generated per desktop process;
+they contain no provider credential or cloud tool JWT.
 
 ## Installed-Client Recovery
 

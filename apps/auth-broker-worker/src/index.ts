@@ -1,7 +1,7 @@
 // input: Desktop client-auth exchange requests and Feishu/Neon identity provider responses
 // output: Public auth config, verified desktop identity with company scope, durable client sessions, and operation-safe capability JWTs
 // pos: HTTPS auth broker for packaged desktop login without shipping server secrets
-import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify, SignJWT, type JWTPayload } from 'jose'
+import { createRemoteJWKSet, customFetch, decodeProtectedHeader, importPKCS8, jwtVerify, SignJWT, type JWTPayload } from 'jose'
 
 export interface Env {
   CRAFT_WEBUI_FEISHU_APP_ID?: string
@@ -28,6 +28,10 @@ export interface Env {
   STORYFLOW_GATEWAY_JWT_ISSUER?: string
   STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID?: string
   STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET?: string
+  STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_KEY_ID?: string
+  STORYFLOW_TOOL_GATEWAY_JWT_PRIVATE_KEY?: string
+  STORYFLOW_TOOL_GATEWAY_JWT_AUDIENCE?: string
+  STORYFLOW_TOOL_GATEWAY_JWT_ISSUER?: string
 }
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -64,12 +68,14 @@ const DEFAULT_GATEWAY_AUDIENCE = 'storyflow-model-gateway'
 const DEFAULT_GATEWAY_ISSUER = 'storyflow-auth-broker'
 const DEFAULT_CLIENT_SESSION_AUDIENCE = 'storyflow-client-auth'
 const DEFAULT_SKILLS_MARKET_AUDIENCE = 'storyflow-skills-market'
+const DEFAULT_TOOL_GATEWAY_AUDIENCE = 'storyflow-tool-gateway'
 const STORYFLOW_ORGANIZATION_ID = 'storyflow'
 const DEFAULT_CURRENT_KEY_ID = 'current'
 const CLIENT_SESSION_TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60
 const MODEL_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60
 const MODEL_ACCESS_TOKEN_MIN_REMAINING_SECONDS = 12 * 60 * 60 + 5 * 60
 const SKILLS_MARKET_TOKEN_TTL_SECONDS = 300
+const TOOL_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     return handleRequest(request, env, fetch)
@@ -94,7 +100,7 @@ export async function handleRequest(
         { status: 405, headers: { Allow: 'GET' } },
       )
     }
-    return getBrokerReadinessError(env)
+    return await getBrokerReadinessError(env)
       ? Response.json(
           { status: 'not_ready', code: 'configuration_invalid' },
           { status: 503 },
@@ -133,6 +139,10 @@ export async function handleRequest(
 
   if (url.pathname === '/api/client-auth/skills-market/token' && request.method === 'POST') {
     return issueSkillsMarketToken(request, env)
+  }
+
+  if (url.pathname === '/api/client-auth/tools/token' && request.method === 'POST') {
+    return issueToolAccessToken(request, env)
   }
 
   return Response.json({ error: 'Not found' }, { status: 404 })
@@ -315,6 +325,25 @@ async function issueSkillsMarketToken(
   })
 }
 
+async function issueToolAccessToken(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const configError = await getToolAccessTokenConfigError(env)
+  if (configError) return Response.json({ error: configError }, { status: 503 })
+  const authorization = await authorizeClientSession(request, env)
+  if (authorization instanceof Response) return authorization
+  const { session } = authorization
+  return Response.json({
+    ok: true,
+    toolAccessToken: await createToolAccessToken(
+      env,
+      session.subject,
+      session.authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS,
+    ),
+  })
+}
+
 async function authorizeClientSession(
   request: Request,
   env: Env,
@@ -361,7 +390,11 @@ async function verifyClientSessionToken(
   )
   const subject = readString(payload.sub)
   if (!subject) throw new Error('Client session subject is required')
-  if (payload.scope !== 'model:issue') throw new Error('Client session scope is invalid')
+  // ponytail: accept the published pre-0019 scope until all 90-day sessions
+  // minted before this migration have expired; new sessions use capability:issue.
+  if (payload.scope !== 'capability:issue' && payload.scope !== 'model:issue') {
+    throw new Error('Client session scope is invalid')
+  }
   if (payload.model_tier !== 'standard' && payload.model_tier !== 'pro') {
     throw new Error('Client session model tier is invalid')
   }
@@ -439,7 +472,7 @@ async function createClientSessionToken(
   if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
 
   return new SignJWT({
-    scope: 'model:issue',
+    scope: 'capability:issue',
     model_tier: modelTier,
     auth_time: authenticatedAtSeconds,
     ...(userName ? { user_name: userName } : {}),
@@ -482,6 +515,30 @@ async function createModelAccessToken(
     .setIssuedAt(nowSeconds)
     .setExpirationTime(expiresAtSeconds)
     .sign(new TextEncoder().encode(key.secret))
+}
+
+async function createToolAccessToken(
+  env: Env,
+  subject: string,
+  parentExpiresAtSeconds?: number,
+): Promise<string> {
+  const key = getCurrentToolAccessKey(env)
+  if (!key) throw new Error('Tool access token signing is not configured')
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const expiresAtSeconds = Math.min(
+    nowSeconds + TOOL_ACCESS_TOKEN_TTL_SECONDS,
+    parentExpiresAtSeconds ?? Number.POSITIVE_INFINITY,
+  )
+  if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
+
+  return new SignJWT({ scopes: ['web:search', 'web:scrape'] })
+    .setProtectedHeader({ alg: 'ES256', typ: 'JWT', kid: key.id })
+    .setIssuer(readString(env.STORYFLOW_TOOL_GATEWAY_JWT_ISSUER) ?? DEFAULT_GATEWAY_ISSUER)
+    .setAudience(readString(env.STORYFLOW_TOOL_GATEWAY_JWT_AUDIENCE) ?? DEFAULT_TOOL_GATEWAY_AUDIENCE)
+    .setSubject(subject)
+    .setIssuedAt(nowSeconds)
+    .setExpirationTime(expiresAtSeconds)
+    .sign(await importPKCS8(key.privateKey, 'ES256'))
 }
 
 async function createSkillsMarketPublishToken(
@@ -528,9 +585,11 @@ function getTokenIssuanceConfigError(env: Env): string | null {
   return null
 }
 
-function getBrokerReadinessError(env: Env): string | null {
+async function getBrokerReadinessError(env: Env): Promise<string | null> {
   const tokenError = getTokenIssuanceConfigError(env)
   if (tokenError) return tokenError
+  const toolTokenError = await getToolAccessTokenConfigError(env)
+  if (toolTokenError) return toolTokenError
   const marketTokenError = getSkillsMarketTokenConfigError(env)
   if (marketTokenError) return marketTokenError
   const hasFeishu = !!readString(env.CRAFT_WEBUI_FEISHU_APP_ID)
@@ -581,6 +640,26 @@ function getCurrentSkillsMarketKey(env: Env): { id: string, secret: string } | n
   return {
     id: readString(env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID) ?? DEFAULT_CURRENT_KEY_ID,
     secret,
+  }
+}
+
+function getCurrentToolAccessKey(env: Env): { id: string, privateKey: string } | null {
+  const privateKey = readString(env.STORYFLOW_TOOL_GATEWAY_JWT_PRIVATE_KEY)
+  if (!privateKey) return null
+  return {
+    id: readString(env.STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_KEY_ID) ?? DEFAULT_CURRENT_KEY_ID,
+    privateKey,
+  }
+}
+
+async function getToolAccessTokenConfigError(env: Env): Promise<string | null> {
+  const toolKey = getCurrentToolAccessKey(env)
+  if (!toolKey) return 'Tool access token signing is not configured'
+  try {
+    await importPKCS8(toolKey.privateKey, 'ES256')
+    return null
+  } catch {
+    return 'Tool access token signing key is invalid'
   }
 }
 

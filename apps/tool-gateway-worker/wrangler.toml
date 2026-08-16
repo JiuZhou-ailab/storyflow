@@ -1,0 +1,52 @@
+name = "storyflow-tools"
+main = "src/index.ts"
+compatibility_date = "2026-08-16"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+[placement]
+mode = "smart"
+
+routes = [
+  { pattern = "storyflow-tools.zjding.com", custom_domain = true },
+]
+
+[secrets]
+required = ["ANYSEARCH_API_KEY", "FIRECRAWL_API_KEY"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[vars]
+STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_KEY_ID = "tool-access-2026-08"
+STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEo1/2AdM3Ps5yC/jZrnchi4mjKzOi
+56lXbumb3y8je6fz9+6FcFrodnossdchTGyAUbEl3uABK1RhDKiiWIC0cQ==
+-----END PUBLIC KEY-----"""
+STORYFLOW_TOOL_GATEWAY_JWT_AUDIENCE = "storyflow-tool-gateway"
+STORYFLOW_TOOL_GATEWAY_JWT_ISSUER = "storyflow-auth-broker"
+ANYSEARCH_UPSTREAM_URL = "https://api.anysearch.com/mcp"
+FIRECRAWL_UPSTREAM_URL = "https://api.firecrawl.dev/v2/scrape"
+
+[[ratelimits]]
+name = "SEARCH_RATE_LIMITER"
+namespace_id = "19001"
+
+[ratelimits.simple]
+limit = 60
+period = 60
+
+[[ratelimits]]
+name = "SCRAPE_RATE_LIMITER"
+namespace_id = "19002"
+
+[ratelimits.simple]
+limit = 10
+period = 60

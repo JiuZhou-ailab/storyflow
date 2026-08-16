@@ -11,6 +11,14 @@ import {
 
 const originalFetch = globalThis.fetch
 
+function accessToken(exp: number): string {
+  return [
+    Buffer.from(JSON.stringify({ alg: 'HS256' })).toString('base64url'),
+    Buffer.from(JSON.stringify({ exp })).toString('base64url'),
+    'signature',
+  ].join('.')
+}
+
 afterEach(() => {
   globalThis.fetch = originalFetch
 })
@@ -160,6 +168,38 @@ describe('DefaultClientAuthBrokerClient', () => {
     })
 
     expect(result).toEqual({ marketPublishToken: 'market-publish-token', expiresInSeconds: 300 })
+  })
+
+  it('keeps managed tool capabilities process-local and refreshable', async () => {
+    const token = accessToken(Math.floor(Date.now() / 1000) + 24 * 60 * 60)
+    let requests = 0
+    let saves = 0
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      requests += 1
+      expect(input.toString()).toBe('https://auth.storyflow.example.com/api/client-auth/tools/token')
+      expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer app-session-token')
+      return Response.json({ ok: true, toolAccessToken: token })
+    }) as unknown as typeof fetch
+
+    const service = createClientAuthService({
+      required: true,
+      authBrokerUrl: 'https://auth.storyflow.example.com',
+    }, {
+      initialSession: {
+        user: { provider: 'neon', userId: 'user-1' },
+        appSessionToken: 'app-session-token',
+      },
+      sessionStore: {
+        save: async () => { saves += 1 },
+        clear: async () => {},
+      },
+    })
+
+    await expect(service.ensureToolAccessToken()).resolves.toEqual({ token, refreshed: true })
+    await expect(service.ensureToolAccessToken()).resolves.toEqual({ token, refreshed: false })
+    await expect(service.ensureToolAccessToken({ force: true })).resolves.toEqual({ token, refreshed: true })
+    expect(requests).toBe(2)
+    expect(saves).toBe(0)
   })
 
   it('clears only broker-rejected app sessions during refresh', async () => {

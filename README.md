@@ -23,11 +23,14 @@ Storyflow 是一个基于 Bun workspace 的 AI Agent 工作台项目，支持桌
 storyflow/
 ├── apps/
 │   ├── cli/                 # 无头服务端的命令行客户端
+│   ├── auth-broker-worker/  # 账户身份交换与短期能力令牌签发
 │   ├── catalog-api/         # 多来源短剧榜单、媒资覆盖度与有序 OSS 分集清单
 │   ├── electron/            # 主桌面应用：main、preload、renderer
 │   ├── feedback-worker/     # 用户反馈入口：截图上传和 GitHub issue 创建
 │   ├── marketing/           # Storyflow 官网和下载入口
+│   ├── model-gateway-worker/# 托管模型能力与上游模型凭证隔离
 │   ├── skills-market/       # Skills Market API、AI 审核和不可变包分发
+│   ├── tool-gateway-worker/ # 托管工具能力与上游工具凭证隔离
 │   ├── viewer/              # 共享会话记录查看器
 │   └── webui/               # 无头服务端的浏览器客户端
 ├── packages/

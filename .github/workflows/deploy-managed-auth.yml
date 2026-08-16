@@ -1,5 +1,5 @@
-# input: Optional deploy intent plus separate client-session/model-access/Market signing secrets
-# output: Optionally deployed managed services followed by read-only live capability canaries
+# input: Optional deploy intent plus client-session/model-access/Market signing secrets and Cloudflare deployment authority
+# output: Optionally deployed managed services followed by live model, Market, and tool capability canaries
 # pos: Shared managed-auth deployment and verification boundary; desktop releases call verify-only mode
 name: Deploy managed auth
 
@@ -84,6 +84,7 @@ jobs:
             apps/auth-broker-worker/src/index.test.ts \
             apps/model-gateway-worker/src/index.test.ts \
             apps/model-gateway-worker/src/managed-auth-flow.test.ts \
+            apps/tool-gateway-worker/src/index.test.ts \
             apps/skills-market/src/index.test.ts \
             apps/skills-market/src/security.test.ts
 
@@ -113,6 +114,27 @@ jobs:
             https://storyflow-model.zjding.com/v1/chat/completions)"
           test "$status" = 401
           grep -q '"code":"model_access_token_invalid"' "$RUNNER_TEMP/gateway-negative.json"
+
+      - name: Deploy tool gateway
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx wrangler@4.123.0 deploy --config apps/tool-gateway-worker/wrangler.toml
+
+      - name: Verify tool gateway
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+            https://storyflow-tools.zjding.com/ready >/dev/null
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/tool-gateway-negative.json" \
+            --write-out '%{http_code}' \
+            -H 'Authorization: Bearer invalid' \
+            -H 'Content-Type: application/json' \
+            -d '{"query":"release canary","count":1}' \
+            https://storyflow-tools.zjding.com/v1/search)"
+          test "$status" = 401
+          grep -q '"code":"tool_access_token_invalid"' "$RUNNER_TEMP/tool-gateway-negative.json"
 
       - name: Migrate and deploy Skills Market
         if: ${{ inputs.deploy }}
@@ -184,7 +206,7 @@ jobs:
             import { SignJWT } from "jose";
             const now = Math.floor(Date.now() / 1000);
             console.log(await new SignJWT({
-              scope: "model:issue",
+              scope: "capability:issue",
               model_tier: "standard",
               auth_time: now,
               user_name: "Release Canary",
@@ -223,6 +245,33 @@ jobs:
           MODEL_CATALOG_RESPONSE_PATH="$RUNNER_TEMP/model-catalog-response.json" bun --eval '
             const body = await Bun.file(process.env.MODEL_CATALOG_RESPONSE_PATH).json();
             if (!Array.isArray(body.data) || body.data.length === 0) process.exit(1);
+          '
+
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/tool-token-response.json" \
+            --write-out '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer $APP_SESSION_TOKEN" \
+            https://storyflow-auth.zjding.com/api/client-auth/tools/token)"
+          test "$status" = 200
+          TOOL_ACCESS_TOKEN="$(TOOL_TOKEN_RESPONSE_PATH="$RUNNER_TEMP/tool-token-response.json" bun --eval '
+            import { decodeJwt } from "jose";
+            const body = await Bun.file(process.env.TOOL_TOKEN_RESPONSE_PATH).json();
+            if (typeof body.toolAccessToken !== "string") process.exit(1);
+            const payload = decodeJwt(body.toolAccessToken);
+            if (!payload.scopes?.includes("web:search")) process.exit(1);
+            console.log(body.toolAccessToken);
+          ')"
+
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/tool-search-response.json" \
+            --write-out '%{http_code}' \
+            -H "Authorization: Bearer $TOOL_ACCESS_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"query":"Storyflow release canary","count":1}' \
+            https://storyflow-tools.zjding.com/v1/search)"
+          test "$status" = 200
+          TOOL_SEARCH_RESPONSE_PATH="$RUNNER_TEMP/tool-search-response.json" bun --eval '
+            const body = await Bun.file(process.env.TOOL_SEARCH_RESPONSE_PATH).json();
+            if (!Array.isArray(body.results) || body.results.length === 0) process.exit(1);
           '
 
           status="$(curl --silent --show-error --output "$RUNNER_TEMP/market-token-response.json" \

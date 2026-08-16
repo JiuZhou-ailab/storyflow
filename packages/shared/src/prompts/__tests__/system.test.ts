@@ -91,8 +91,8 @@ describe('system prompt guidance', () => {
     const prompt = getSystemPrompt(undefined, undefined, '/tmp/workspace', '/tmp/workspace')
 
     expect(prompt).toContain('Use the built-in `web_search` tool as the default')
-    expect(prompt).toContain('Do not run the AnySearch CLI for routine web searches')
-    expect(prompt).toContain('never through `script_sandbox`')
+    expect(prompt).toContain('Storyflow owns provider authentication and routing')
+    expect(prompt).toContain('never request or persist a provider API key')
     expect(prompt).toContain('user Skills from `~/.pi/agent/skills` and `~/.agents/skills`')
     expect(prompt).toContain('project Skills from `.pi/skills` and `.agents/skills`')
   })

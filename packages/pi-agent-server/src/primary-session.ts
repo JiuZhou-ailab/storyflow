@@ -21,6 +21,7 @@ import type { ConversationRewindBoundary } from '../../shared/src/agent/backend/
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createWebFetchTool } from './tools/web-fetch.ts';
+import { createWebScrapeTool } from './tools/web-scrape.ts';
 import { createCreateOnlyWriteToolDefinition } from './write-tool.ts';
 import { createProjectResourceLoader } from './project-resource-loader.ts';
 import { createExtensionUIContext } from './extension-ui.ts';
@@ -102,8 +103,8 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
     debug: debugLog,
   } = context;
   let activeSession: AgentSession | null = null;
-  // Search is an independent capability: use its own AnySearch credential when
-  // configured, otherwise the credential-free DuckDuckGo fallback.
+  // Search is an independent managed capability. The host's loopback broker
+  // owns account authorization; createSearchTool owns credential-free fallback.
   const searchProvider = {
     get name() {
       return resolveSearchProvider().name;
@@ -116,7 +117,7 @@ export async function createPrimaryPiSession(context: PrimaryPiSessionContext): 
   const webFetchTool = createWebFetchTool(() =>
     config ? getSessionPath(config.workspaceRootPath, config.sessionId) : null
   );
-  const webTools = [searchTool, webFetchTool];
+  const webTools = [searchTool, webFetchTool, createWebScrapeTool()];
 
   // Pi owns its built-in tool implementations. Storyflow registers only
   // product capabilities plus the create-only write safety contract.

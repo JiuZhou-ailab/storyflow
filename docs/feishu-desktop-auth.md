@@ -1,4 +1,4 @@
-# Desktop Auth and Model Access
+# Desktop Auth, Model Access, and Managed Tools
 
 Storyflow keeps identity login, product sessions, and upstream model credentials
 as separate trust boundaries:
@@ -14,6 +14,12 @@ desktop login
   -> model gateway validates modelAccessToken
   -> model gateway injects the server-only NewAPI key
   -> NewAPI
+
+web_search / web_scrape installed tool methods
+  -> random loopback capability reaches the Electron broker
+  -> Electron obtains and caches operation-specific 24-hour capabilities in memory
+  -> tool gateway validates web:search or web:scrape and injects the matching provider key
+  -> AnySearch or Firecrawl
 ```
 
 Feishu's tenant allowlist and Neon's native Organization membership are the two
@@ -24,18 +30,20 @@ Every successful refresh may rotate `appSessionToken` and its signing key, but
 preserves the original `auth_time` and absolute 90-day expiry.
 During the final 12 hours plus clock-skew margin the broker requires a new login instead of issuing
 a model capability that cannot cover one operation safely.
-`appSessionToken` has only `model:issue` scope and is accepted only by the auth
+`appSessionToken` has only `capability:issue` scope and is accepted only by the auth
 broker; `modelAccessToken` has only `model:chat` scope and is accepted only by
-the model gateway. Both use `iss=storyflow-auth-broker`; their audiences are
-`storyflow-client-auth` and `storyflow-model-gateway`, respectively.
+the model gateway. Tool access uses a separately signed token with
+operation-specific `web:search` and `web:scrape` scopes and the
+`storyflow-tool-gateway` audience. All use
+`iss=storyflow-auth-broker`.
 
 There is no background refresh timer. Sleep, wake, and long idle periods are
 handled by the next operation preflight. A running operation keeps its accepted
 credential snapshot and is never interrupted by credential rotation.
 
-The desktop app must never contain the Feishu app secret, either JWT signing
-secret, or the NewAPI key. The client-session and model-access secrets are
-separate trust boundaries and must be generated independently.
+The desktop app must never contain the Feishu app secret, any JWT signing
+secret, the NewAPI key, or the AnySearch key. Every signing key is a separate
+trust boundary and must be generated independently.
 
 ## Feishu OAuth
 
@@ -144,9 +152,27 @@ IDs never appear in the desktop picker.
 All connections reuse the same bounded model capability, while the gateway
 replaces its protocol-native auth header with the server-only `NEWAPI_API_KEY`.
 
+## Managed Tool Gateway
+
+The bundled `web_search` and `web_scrape` tools call the Electron-owned
+loopback broker. Child processes receive only a process-random local
+capability; the broker obtains the cloud tool token, refreshes once after a
+gateway `401`/`403`, and proxies the fixed `POST /v1/search` or
+`POST /v1/scrape` operation. The Tool Gateway validates the matching
+operation-specific capability, bounds the request and response, and injects
+its Cloudflare-only AnySearch or Firecrawl key.
+
+Provider APIs are adapters behind product operations, not a generic HTTP/MCP
+proxy. Tool Method Packages wired to these operations therefore carry no
+provider key and remain unchanged if the upstream provider changes. Managed
+search falls back to the credential-free DuckDuckGo provider when this path is
+unavailable. The existing AnySearch CLI's vertical, batch, and extract methods
+remain outside this first managed operation.
+
 ## Local Development
 
-The built-in local broker requires three independent trust boundaries:
+The built-in local auth broker covers the existing client-session and model
+flow:
 
 ```dotenv
 CRAFT_CLIENT_AUTH_REQUIRED=true
@@ -169,6 +195,10 @@ bounded desktop sessions, and `STORYFLOW_GATEWAY_JWT_CURRENT_SECRET` signs
 model capabilities. All three values must differ. The legacy
 unkeyed secret names are rejected.
 
+The local embedded broker does not emulate the managed Tool Gateway. Local
+development therefore uses the existing DuckDuckGo fallback unless it targets
+the deployed Auth Broker and Tool Gateway.
+
 ## Production Deployment
 
 Packaged Electron builds contain public bootstrap values only:
@@ -182,12 +212,14 @@ CRAFT_CLIENT_NEON_AUTH_BASE_URL=https://your-neon-auth.example.com/neondb/auth
 
 The desktop shell requires a signed-in Feishu or verified-email identity.
 
-Configure two independent keys:
+Configure four independent signing keys:
 
-| Key | Auth broker | Model gateway |
+| Key | Auth broker | Resource server |
 | --- | --- | --- |
 | Client session | `STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID`, `STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET` | never present |
-| Model access | `STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID`, `STORYFLOW_GATEWAY_JWT_CURRENT_SECRET` | same key ID and secret |
+| Model access | `STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID`, `STORYFLOW_GATEWAY_JWT_CURRENT_SECRET` | same values on Model Gateway |
+| Skills Market | `STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID`, `STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET` | same values on Skills Market |
+| Tool access | `STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_KEY_ID`, `STORYFLOW_TOOL_GATEWAY_JWT_PRIVATE_KEY` | matching key ID and `STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_PUBLIC_KEY` |
 
 Key IDs are non-secret Worker variables. Put only the secret values in
 Cloudflare secrets:
@@ -196,17 +228,29 @@ Cloudflare secrets:
 cd apps/auth-broker-worker
 bunx wrangler secret put STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET
 bunx wrangler secret put STORYFLOW_GATEWAY_JWT_CURRENT_SECRET
+bunx wrangler secret put STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET
+bunx wrangler secret put STORYFLOW_TOOL_GATEWAY_JWT_PRIVATE_KEY
 bunx wrangler deploy
 
 cd ../model-gateway-worker
 bunx wrangler secret put STORYFLOW_GATEWAY_JWT_CURRENT_SECRET
 bunx wrangler secret put NEWAPI_API_KEY
 bunx wrangler deploy
+
+cd ../tool-gateway-worker
+bunx wrangler secret put ANYSEARCH_API_KEY
+bunx wrangler secret put FIRECRAWL_API_KEY
+bunx wrangler deploy
 ```
 
 The model gateway upstream URL is a non-secret Worker variable in
 `apps/model-gateway-worker/wrangler.toml`. Rotate any upstream key that has ever
 been pasted into chat, logs, or source before deployment.
+
+`ANYSEARCH_API_KEY` and `FIRECRAWL_API_KEY` are maintained only as Tool Gateway
+Worker Secrets. Tool capabilities use ES256: the private key exists only on the
+Auth Broker and the matching public key is a non-secret Tool Gateway variable.
+Neither private nor provider key is mirrored into GitHub Actions.
 
 ### Migration and rotation
 
@@ -234,6 +278,11 @@ For client-session rotation, deploy the broker with the new key as `CURRENT_*`
 and the old value as `PREVIOUS_*`. Successful refreshes roll sessions to the
 new key without extending their original expiry. Keep the previous key for at
 most 90 days unless forcing inactive clients to sign in again is acceptable.
+
+For tool-capability rotation, deploy the Tool Gateway first with the new public
+key as `CURRENT_*` and the old public key as `PREVIOUS_*`, then replace the Auth
+Broker private key. Remove the previous public key after 24 hours plus clock
+skew.
 
 Managed default access is intentionally unavailable in standalone, thin-client,
 and shared-server modes. Those runtimes do not have a per-client credential

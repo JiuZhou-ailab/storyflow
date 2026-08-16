@@ -41,13 +41,14 @@ describe('default agent resources', () => {
   it('declares the authenticated product Skills and default research Sources', () => {
     expect(DEFAULT_GLOBAL_AGENT_SKILL_SLUGS).toEqual([
       'find-skills',
+      'firecrawl',
       'skill-creator',
-      'anysearch',
       'storyflow-tutorial',
       'sn2s-novel-to-screenplay',
     ]);
     expect(DEFAULT_AGENT_SOURCE_SLUGS).toEqual(['storyflow-catalog', 'wangwen-bigdata']);
     expect(isDefaultGlobalAgentSkillSlug('find-skills')).toBe(true);
+    expect(isDefaultGlobalAgentSkillSlug('firecrawl')).toBe(true);
     expect(isDefaultGlobalAgentSkillSlug('skill-creator')).toBe(true);
     expect(isDefaultGlobalAgentSkillSlug('custom-skill')).toBe(false);
   });
@@ -57,7 +58,7 @@ describe('default agent resources', () => {
     const agentRootDir = join(tempDir, '.craft-agent');
     const existingSource = join(agentRootDir, 'sources', 'demo-source', 'config.json');
 
-    writeFile(join(assetsDir, 'global-skills', 'anysearch', 'SKILL.md'), 'optional skill');
+    writeFile(join(assetsDir, 'global-skills', 'firecrawl', 'SKILL.md'), 'managed skill');
     writeFile(join(assetsDir, 'global-skills', 'skill-creator', 'SKILL.md'), 'product skill');
     writeFile(join(assetsDir, 'sources', 'demo-source', 'config.json'), '{"name":"Bundled"}\n');
     writeFile(join(assetsDir, 'sources', 'demo-source', 'guide.md'), '# Bundled Guide\n');
@@ -65,10 +66,10 @@ describe('default agent resources', () => {
 
     const result = seedDefaultAgentResources({ assetsDir, agentRootDir });
 
-    expect(result.skills.imported).toEqual(['skill-creator', 'anysearch']);
+    expect(result.skills.imported).toEqual(['firecrawl', 'skill-creator']);
     expect(result.sources.skipped).toEqual(['demo-source']);
     expect(readFileSync(join(agentRootDir, 'skills', 'skill-creator', 'SKILL.md'), 'utf-8')).toBe('product skill');
-    expect(readFileSync(join(agentRootDir, 'skills', 'anysearch', 'SKILL.md'), 'utf-8')).toBe('optional skill');
+    expect(readFileSync(join(agentRootDir, 'skills', 'firecrawl', 'SKILL.md'), 'utf-8')).toBe('managed skill');
     expect(readFileSync(existingSource, 'utf-8')).toBe('{"name":"User"}\n');
   });
 
@@ -114,8 +115,8 @@ describe('default agent resources', () => {
     expect(result?.skills.imported).toEqual([]);
     expect(result?.skills.failed).toEqual([
       'find-skills',
+      'firecrawl',
       'skill-creator',
-      'anysearch',
       'storyflow-tutorial',
       'sn2s-novel-to-screenplay',
     ]);
@@ -145,6 +146,16 @@ describe('default agent resources', () => {
     );
     expect(validateSkillDocumentForSlug(tutorial, 'storyflow-tutorial')).toBeNull();
     expect(tutorial).toContain('设置 → 偏好 → 系统指令');
+
+    const firecrawl = readFileSync(
+      join(assetsDir, 'global-skills', 'firecrawl', 'SKILL.md'),
+      'utf-8',
+    );
+    expect(validateSkillDocumentForSlug(firecrawl, 'firecrawl')).toBeNull();
+    expect(firecrawl).toContain('`web_scrape`');
+    expect(firecrawl).not.toContain('API_KEY');
+    expect(firecrawl).not.toContain('web_search');
+    expect(firecrawl).not.toContain('web_fetch');
 
     const wangwenConfig = readFileSync(join(assetsDir, 'sources', 'wangwen-bigdata', 'config.json'), 'utf-8');
     expect(wangwenConfig).toContain('"slug": "wangwen-bigdata"');

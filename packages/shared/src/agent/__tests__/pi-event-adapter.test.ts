@@ -1,5 +1,5 @@
 // input: Mock Pi lifecycle events, tool payloads, and session state
-// output: Regression coverage for Craft event projection, including tool failure and retry ownership semantics
+// output: Regression coverage for ordered assistant content, tool failure, and retry ownership projection
 // pos: Contract tests for the Pi-to-Craft UI event boundary
 
 /**
@@ -309,6 +309,40 @@ describe('PiEventAdapter', () => {
       } as any));
 
       expect(events1[0].turnId).toBe(events2[0].turnId);
+    });
+
+    it('should preserve thinking and answer as ordered streaming blocks', () => {
+      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
+
+      const events = [
+        ...collect(adapter.adaptEvent({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'thinking_start', contentIndex: 0 },
+        } as any)),
+        ...collect(adapter.adaptEvent({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'thinking_delta', contentIndex: 0, delta: 'Checking the evidence' },
+        } as any)),
+        ...collect(adapter.adaptEvent({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'thinking_end', contentIndex: 0, content: 'Checking the evidence' },
+        } as any)),
+        ...collect(adapter.adaptEvent({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'text_delta', contentIndex: 1, delta: 'Final answer' },
+        } as any)),
+        ...collect(adapter.adaptEvent({
+          type: 'message_end',
+          message: { role: 'assistant', stopReason: 'stop', content: [{ type: 'thinking', thinking: 'Checking the evidence' }, { type: 'text', text: 'Final answer' }] },
+        } as any)),
+      ];
+
+      expect(events).toEqual([
+        { type: 'text_delta', text: 'Checking the evidence', turnId: 'pi-turn-1__m0' },
+        { type: 'text_complete', text: 'Checking the evidence', isIntermediate: true, turnId: 'pi-turn-1__m0' },
+        { type: 'text_delta', text: 'Final answer', turnId: 'pi-turn-1__m1' },
+        { type: 'text_complete', text: 'Final answer', isIntermediate: false, turnId: 'pi-turn-1__m1', sdkTurnAnchor: undefined },
+      ]);
     });
 
     it('should emit text_complete for final assistant message_end', () => {

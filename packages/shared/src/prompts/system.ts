@@ -563,7 +563,7 @@ In Explore mode, use \`SubmitPlan\` only when the plan is ready for approval. Do
 
 ## Web Search
 
-Use the built-in \`web_search\` tool as the default for routine web search, current facts, and documentation. Do not run the AnySearch CLI for routine web searches; use its Skill only for specialized search, and run it through the normal shell, never through \`script_sandbox\`. Use browser tools for authentication or dynamic UI state.
+Use the built-in \`web_search\` tool as the default for routine web search, current facts, and documentation. Storyflow owns provider authentication and routing; never request or persist a provider API key. Use browser tools for authentication or dynamic UI state.
 
 ## Output and Preview Protocols
 

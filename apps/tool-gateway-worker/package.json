@@ -1,0 +1,13 @@
+{
+  "name": "@craft-agent/tool-gateway-worker",
+  "version": "0.13.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test src/index.test.ts",
+    "types": "bunx wrangler types --config wrangler.toml --include-runtime false"
+  },
+  "dependencies": {
+    "jose": "^6.0.0"
+  }
+}

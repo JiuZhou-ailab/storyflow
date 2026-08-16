@@ -2,7 +2,7 @@
 
 状态：Accepted
 日期：2026-08-04
-修订：2026-08-11
+修订：2026-08-16
 
 ## 背景
 
@@ -40,6 +40,9 @@ Agent runtime。产品必须投影 Pi 的公共契约，而不是镜像 Pi 的�
 - 两者只通过无策略的 typed Boundary Protocol 连接：Storyflow 向 Pi 提供不可变上下文、
   capability、凭据和显式用户命令；Pi 向 Storyflow 返回事实事件与相关结果。协议层不得把错误
   翻译成 retry/replay/abort/settlement，也不得制造 Pi 原生事件。
+- Storyflow 必须按原始顺序增量投影 Pi 的可渲染 Assistant Content Block：reasoning 使用既有的
+  intermediate assistant message，visible text 使用 response message。模型尚未完成的 tool arguments
+  不是产品事实；工具活动只从 Pi 的 execution lifecycle 投影，不由 Host 猜测或提前创建。
 - Pi `AuthStorage` 负责 OAuth 刷新与并发锁；Storyflow 只提供初始凭据，并把 Pi 返回的
   轮换凭据持久化到产品凭据存储，不实现第二套 Provider 刷新器。
 - Storyflow 托管模型 token 是 Product Host capability，不伪装成第二套 Agent 认证状态机。

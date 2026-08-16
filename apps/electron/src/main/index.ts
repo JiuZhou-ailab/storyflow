@@ -84,11 +84,14 @@ import {
 import { readClientAuthOverrides } from './client-auth-overrides'
 import { createClientAuthSessionStore } from './client-auth-session-store'
 import {
+  DEFAULT_TOOL_GATEWAY_BASE_URL,
   MODEL_ACCESS_BROKER_TOKEN_ENV,
   MODEL_ACCESS_BROKER_URL_ENV,
-  startManagedModelCliBroker,
-  type ManagedModelCliBroker,
-} from './managed-model-cli-broker'
+  TOOL_BROKER_TOKEN_ENV,
+  TOOL_BROKER_URL_ENV,
+  startManagedCapabilityBroker,
+  type ManagedCapabilityBroker,
+} from './managed-capability-broker'
 import { resolveElectronRuntimePaths } from './runtime-paths'
 import { getAppVersion } from '@craft-agent/shared/version'
 import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
@@ -186,7 +189,7 @@ const DEEPLINK_SCHEME = process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'
 let windowManager: WindowManager | null = null
 let sessionManager: SessionManager | null = null
 let clientAuthService: ClientAuthService | null = null
-let managedModelCliBroker: ManagedModelCliBroker | null = null
+let managedCapabilityBroker: ManagedCapabilityBroker | null = null
 let browserPaneManager: BrowserPaneManager | null = null
 let oauthFlowStore: OAuthFlowStore | null = null
 let moduleSink: EventSink | null = null
@@ -663,14 +666,16 @@ app.whenReady().then(async () => {
 
       if (!serverModeEnabled && !isClientOnly && managedModelAccessConfigured && managedConnection?.baseUrl) {
         try {
-          managedModelCliBroker = await startManagedModelCliBroker({
-            gatewayBaseUrl: managedConnection.baseUrl,
+          managedCapabilityBroker = await startManagedCapabilityBroker({
+            modelGatewayBaseUrl: managedConnection.baseUrl,
+            toolGatewayBaseUrl: process.env.STORYFLOW_TOOL_GATEWAY_URL ?? DEFAULT_TOOL_GATEWAY_BASE_URL,
             isAuthenticated: () => authService.getState().authenticated,
             ensureModelAccessToken: (options) => authService.ensureModelAccessToken(options),
+            ensureToolAccessToken: (options) => authService.ensureToolAccessToken(options),
           })
-          Object.assign(process.env, managedModelCliBroker.env)
+          Object.assign(process.env, managedCapabilityBroker.env)
         } catch (error) {
-          mainLog.warn('[managed-model-cli] Failed to start local credential broker:', error)
+          mainLog.warn('[managed-capability] Failed to start local capability broker:', error)
         }
       }
 
@@ -1225,12 +1230,14 @@ const quitCoordinator = createQuitCoordinator({
   prepare: async () => {
     // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
     windowManager?.setAppQuitting(true)
-    await managedModelCliBroker?.close().catch(error => {
-      mainLog.warn('[managed-model-cli] Failed to close local credential broker:', error)
+    await managedCapabilityBroker?.close().catch(error => {
+      mainLog.warn('[managed-capability] Failed to close local capability broker:', error)
     })
-    managedModelCliBroker = null
+    managedCapabilityBroker = null
     delete process.env[MODEL_ACCESS_BROKER_URL_ENV]
     delete process.env[MODEL_ACCESS_BROKER_TOKEN_ENV]
+    delete process.env[TOOL_BROKER_URL_ENV]
+    delete process.env[TOOL_BROKER_TOKEN_ENV]
     clientAuthService?.dispose()
     clientAuthService = null
 

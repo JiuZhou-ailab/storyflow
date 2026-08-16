@@ -2,7 +2,7 @@
 // output: Regression coverage for login exchanges, company identity, and renewable scoped capabilities
 // pos: Tests the deployed HTTPS auth broker used by packaged desktop client auth
 import { describe, expect, it } from 'bun:test'
-import { decodeProtectedHeader, exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose'
+import { decodeProtectedHeader, exportJWK, exportPKCS8, exportSPKI, generateKeyPair, importSPKI, jwtVerify, SignJWT } from 'jose'
 import { handleRequest } from './index'
 
 const CLIENT_SESSION_SECRET = 'client-session-secret'
@@ -11,8 +11,12 @@ const CLIENT_SESSION_KEY_ID = 'client-session-2026-07'
 const MODEL_ACCESS_KEY_ID = 'model-access-2026-07'
 const MARKET_SECRET = 'skills-market-secret'
 const MARKET_KEY_ID = 'skills-market-2026-08'
+const TOOL_ACCESS_KEY_ID = 'tool-access-2026-08'
 const PREVIOUS_CLIENT_SESSION_SECRET = 'previous-client-session-secret'
 const PREVIOUS_CLIENT_SESSION_KEY_ID = 'client-session-2026-06'
+const toolAccessKeyPair = await generateKeyPair('ES256', { extractable: true })
+const TOOL_ACCESS_PRIVATE_KEY = await exportPKCS8(toolAccessKeyPair.privateKey)
+const TOOL_ACCESS_PUBLIC_KEY = await exportSPKI(toolAccessKeyPair.publicKey)
 
 function makeEnv(overrides: Record<string, string | undefined> = {}) {
   return {
@@ -27,6 +31,8 @@ function makeEnv(overrides: Record<string, string | undefined> = {}) {
     STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: MODEL_ACCESS_SECRET,
     STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID: MARKET_KEY_ID,
     STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: MARKET_SECRET,
+    STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_KEY_ID: TOOL_ACCESS_KEY_ID,
+    STORYFLOW_TOOL_GATEWAY_JWT_PRIVATE_KEY: TOOL_ACCESS_PRIVATE_KEY,
     ...overrides,
   }
 }
@@ -76,6 +82,21 @@ async function verifyMarketPublishToken(token: unknown) {
   return payload
 }
 
+async function verifyToolAccessToken(token: unknown) {
+  expect(typeof token).toBe('string')
+  expect(decodeProtectedHeader(token as string).kid).toBe(TOOL_ACCESS_KEY_ID)
+  const { payload } = await jwtVerify(
+    token as string,
+    await importSPKI(TOOL_ACCESS_PUBLIC_KEY, 'ES256'),
+    {
+      algorithms: ['ES256'],
+      issuer: 'storyflow-auth-broker',
+      audience: 'storyflow-tool-gateway',
+    },
+  )
+  return payload
+}
+
 async function createNeonProviderToken(claims: Record<string, unknown>) {
   const { publicKey, privateKey } = await generateKeyPair('RS256')
   const publicJwk = await exportJWK(publicKey)
@@ -91,7 +112,7 @@ async function createNeonProviderToken(claims: Record<string, unknown>) {
 }
 
 describe('auth broker worker', () => {
-  it('reports readiness only for the explicit dual-token configuration', async () => {
+  it('reports readiness only for independently keyed capability configuration', async () => {
     const ready = await handleRequest(
       new Request('https://auth.example.com/ready'),
       makeEnv(),
@@ -177,7 +198,7 @@ describe('auth broker worker', () => {
     })
     const sessionPayload = await verifyClientSessionToken(body.appSessionToken)
     expect(sessionPayload.sub).toBe('feishu:ou_desktop')
-    expect(sessionPayload.scope).toBe('model:issue')
+    expect(sessionPayload.scope).toBe('capability:issue')
     expect(sessionPayload.model_tier).toBe('pro')
     expect(sessionPayload.user_name).toBe('Desktop User')
     expect(sessionPayload.organization_id).toBe('storyflow')
@@ -286,7 +307,7 @@ describe('auth broker worker', () => {
     })
     const sessionPayload = await verifyClientSessionToken(body.appSessionToken)
     expect(sessionPayload.sub).toBe('neon:neon_user_123')
-    expect(sessionPayload.scope).toBe('model:issue')
+    expect(sessionPayload.scope).toBe('capability:issue')
     expect(sessionPayload.model_tier).toBe('standard')
     expect(sessionPayload.organization_id).toBeUndefined()
 
@@ -366,7 +387,7 @@ describe('auth broker worker', () => {
 
     const sessionPayload = await verifyClientSessionToken(body.appSessionToken)
     expect(sessionPayload.sub).toBe('feishu:legacy-user')
-    expect(sessionPayload.scope).toBe('model:issue')
+    expect(sessionPayload.scope).toBe('capability:issue')
     expect(sessionPayload.model_tier).toBe('standard')
     expect(sessionPayload.user_name).toBe('Desktop User')
     expect(sessionPayload.auth_time).toBe(authenticatedAt)
@@ -461,6 +482,38 @@ describe('auth broker worker', () => {
     expect(payload.organization_id).toBe('storyflow')
     expect(payload).not.toHaveProperty('model_tier')
     expect((payload.exp as number) - (payload.iat as number)).toBe(300)
+  })
+
+  it('issues independently keyed managed web capabilities on demand', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const appSessionToken = await new SignJWT({
+      scope: 'capability:issue',
+      model_tier: 'standard',
+      auth_time: now,
+    })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT', kid: CLIENT_SESSION_KEY_ID })
+      .setIssuer('storyflow-auth-broker')
+      .setAudience('storyflow-client-auth')
+      .setSubject('neon:tool-user')
+      .setIssuedAt(now)
+      .setExpirationTime(now + 90 * 24 * 60 * 60)
+      .sign(new TextEncoder().encode(CLIENT_SESSION_SECRET))
+
+    const res = await handleRequest(
+      new Request('https://auth.example.com/api/client-auth/tools/token', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${appSessionToken}` },
+      }),
+      makeEnv(),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as Record<string, unknown>
+    const payload = await verifyToolAccessToken(body.toolAccessToken)
+    expect(payload.sub).toBe('neon:tool-user')
+    expect(payload.scopes).toEqual(['web:search', 'web:scrape'])
+    expect((payload.exp as number) - (payload.iat as number)).toBe(24 * 60 * 60)
+    expect(body).not.toHaveProperty('modelAccessToken')
   })
 
   it('does not extend a client session beyond 90 days from authentication', async () => {
@@ -566,5 +619,23 @@ describe('auth broker worker', () => {
 
     expect(missing.status).toBe(503)
     expect(reused.status).toBe(503)
+  })
+
+  it('fails readiness when the tool signing key is missing or invalid', async () => {
+    const missing = await handleRequest(
+      new Request('https://auth.example.com/ready'),
+      makeEnv({ STORYFLOW_TOOL_GATEWAY_JWT_PRIVATE_KEY: undefined }),
+    )
+    const invalid = await handleRequest(
+      new Request('https://auth.example.com/ready'),
+      makeEnv({ STORYFLOW_TOOL_GATEWAY_JWT_PRIVATE_KEY: MODEL_ACCESS_SECRET }),
+    )
+
+    expect(missing.status).toBe(503)
+    expect(invalid.status).toBe(503)
+    expect(await invalid.json()).toEqual({
+      status: 'not_ready',
+      code: 'configuration_invalid',
+    })
   })
 })

@@ -2,6 +2,10 @@ name = "storyflow-newapi"
 main = "src/index.ts"
 compatibility_date = "2026-05-28"
 workers_dev = false
+
+[placement]
+mode = "smart"
+
 routes = [
   { pattern = "storyflow-model.zjding.com", custom_domain = true },
 ]
@@ -17,7 +21,8 @@ persist = true
 invocation_logs = true
 
 [observability.traces]
-enabled = false
+enabled = true
+head_sampling_rate = 1
 
 [vars]
 STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID = "model-access-2026-07"

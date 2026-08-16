@@ -27,25 +27,25 @@ describe('Skills Market worker', () => {
       }>
     }
     expect(response.status).toBe(200)
-    expect(body.total).toBe(9)
+    expect(body.total).toBe(10)
     expect(body.skills.every(skill => skill.sha256)).toBeTrue()
     expect(body.skills.every(skill => skill.downloadCount === 0)).toBeTrue()
     expect(body.skills.every(skill => skill.featured)).toBeTrue()
-    expect(body.skills.map(skill => skill.recommendation?.order)).toEqual([1, 2, 3, 4, 6, 7, 8, 9, 10])
+    expect(body.skills.map(skill => skill.recommendation?.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     expect(body.skills.map(skill => skill.slug)).toEqual([
       'sn2s-novel-to-screenplay', 'video-to-screenplay', 'discover-hit-dramas',
-      'hot-video-script-ideation',
+      'hot-video-script-ideation', 'web-research',
       'tomato-novelist', 'fiction-crafter', 'novel-evaluator', 'novel-to-drama', 'novel-to-storyboard',
     ])
 
     const installable = await handleRequest(new Request('https://market.test/api/skills?distribution=installable'), env)
     const references = await handleRequest(new Request('https://market.test/api/skills?distribution=reference-only'), env)
-    expect((await installable.json() as { total: number }).total).toBe(9)
-    expect((await references.json() as { total: number }).total).toBe(6)
+    expect((await installable.json() as { total: number }).total).toBe(10)
+    expect((await references.json() as { total: number }).total).toBe(5)
   })
 
   test('serves traceable recommendation detail without fabricating a package', async () => {
-    const detail = await handleRequest(new Request('https://market.test/api/skills/anysearch'), env)
+    const detail = await handleRequest(new Request('https://market.test/api/skills/find-skills'), env)
     const metadata = await detail.json() as {
       sha256: string
       installUrl: string
@@ -54,8 +54,8 @@ describe('Skills Market worker', () => {
     }
     expect(metadata.sha256).toBe('')
     expect(metadata.installUrl).toBe('')
-    expect(metadata.skillMarkdown).toContain('https://github.com/JiuZhou-ailab/storyflow')
-    expect(metadata.recommendation.label).toContain('34.4K')
+    expect(metadata.skillMarkdown).toContain('https://www.skills.sh/vercel-labs/skills/find-skills')
+    expect(metadata.recommendation.label).toContain('2.8M')
 
     const storyflowBundleHead = await handleRequest(new Request(
       'https://market.test/api/skills/video-to-screenplay/versions/1.0.0/bundle',
@@ -64,7 +64,7 @@ describe('Skills Market worker', () => {
     expect(storyflowBundleHead.status).toBe(503)
 
     const bundle = await handleRequest(new Request(
-      'https://market.test/api/skills/anysearch/versions/1.0.0/bundle',
+      'https://market.test/api/skills/find-skills/versions/1.0.0/bundle',
     ), env)
     expect(bundle.status).toBe(404)
   })

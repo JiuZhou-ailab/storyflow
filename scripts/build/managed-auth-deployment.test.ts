@@ -55,6 +55,7 @@ describe('managed auth deployment', () => {
 
     const workflow = readFileSync(workflowPath, 'utf8')
     const gatewayDeploy = workflow.indexOf('Deploy model gateway')
+    const toolGatewayDeploy = workflow.indexOf('Deploy tool gateway')
     const brokerDeploy = workflow.indexOf('Deploy auth broker')
 
     expect(workflow).toContain('workflow_call:')
@@ -65,14 +66,21 @@ describe('managed auth deployment', () => {
     expect(workflow).toContain('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET')
     expect(workflow).toContain('STORYFLOW_GATEWAY_JWT_CURRENT_SECRET')
     expect(workflow).toContain('STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET')
+    expect(workflow).not.toContain('STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_SECRET')
+    expect(workflow).not.toContain('STORYFLOW_TOOL_GATEWAY_JWT_PRIVATE_KEY')
+    expect(workflow).not.toContain('ANYSEARCH_API_KEY')
     expect(workflow).toContain('model_access_token_invalid')
+    expect(workflow).toContain('tool_access_token_invalid')
     expect(workflow).toContain('client_session_token_invalid')
     expect(workflow).toContain('MODEL_CATALOG_RESPONSE_PATH')
     expect(workflow).toContain('MARKET_TOKEN_RESPONSE_PATH')
+    expect(workflow).toContain('TOOL_TOKEN_RESPONSE_PATH')
+    expect(workflow).toContain('TOOL_SEARCH_RESPONSE_PATH')
     expect(workflow).toContain('payload.exp - now <= 12 * 60 * 60 + 5 * 60')
     expect(workflow).not.toContain('gemini-3.5-flash')
     expect(gatewayDeploy).toBeGreaterThan(0)
-    expect(brokerDeploy).toBeGreaterThan(gatewayDeploy)
+    expect(toolGatewayDeploy).toBeGreaterThan(gatewayDeploy)
+    expect(brokerDeploy).toBeGreaterThan(toolGatewayDeploy)
     expect(workflow).not.toContain('wangsu')
   })
 
@@ -108,6 +116,10 @@ describe('managed auth deployment', () => {
       CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}',
       CLOUDFLARE_ACCOUNT_ID: '${{ vars.CLOUDFLARE_ACCOUNT_ID }}',
       STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}',
+    })
+    expect(findStep(deploy, 'Deploy tool gateway').env).toEqual({
+      CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}',
+      CLOUDFLARE_ACCOUNT_ID: '${{ vars.CLOUDFLARE_ACCOUNT_ID }}',
     })
     expect(findStep(deploy, 'Deploy auth broker').env).toEqual({
       CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}',
@@ -185,5 +197,10 @@ describe('managed auth deployment', () => {
     expect(deployWorkflow).not.toContain('github.event_name != \'workflow_call\' || inputs.deploy')
     expect(readRepoFile('apps/auth-broker-worker/wrangler.toml')).toContain('workers_dev = false')
     expect(readRepoFile('apps/model-gateway-worker/wrangler.toml')).toContain('workers_dev = false')
+    expect(readRepoFile('apps/tool-gateway-worker/wrangler.toml')).toContain('workers_dev = false')
+    expect(readRepoFile('apps/tool-gateway-worker/wrangler.toml')).toContain('name = "SEARCH_RATE_LIMITER"')
+    expect(readRepoFile('apps/tool-gateway-worker/wrangler.toml')).toContain('name = "SCRAPE_RATE_LIMITER"')
+    expect(readRepoFile('apps/tool-gateway-worker/wrangler.toml')).toContain('STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_PUBLIC_KEY')
+    expect(readRepoFile('apps/tool-gateway-worker/wrangler.toml')).toContain('required = ["ANYSEARCH_API_KEY", "FIRECRAWL_API_KEY"]')
   })
 })

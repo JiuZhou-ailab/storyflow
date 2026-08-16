@@ -15,7 +15,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `feedback.ts` - Feedback issue submission adapter.
 - `index.ts` - Main-process bootstrap.
 - `logger.ts` - Main-process logging setup.
-- `managed-model-cli-broker.ts` - Loopback bridge from Storyflow login to short-lived CLI model access.
+- `managed-capability-broker.ts` - Loopback bridge from Storyflow login to scoped model access plus exact search and scrape operations for child processes.
 - `menu.ts` - Application menu setup.
 - `network-proxy.ts` - Electron session proxy configuration using shared proxy rules.
 - `notifications.ts` - Native notification and badge handling.

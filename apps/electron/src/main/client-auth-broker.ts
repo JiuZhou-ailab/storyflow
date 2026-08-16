@@ -9,6 +9,7 @@ import type {
   ClientAuthBrokerTokenRefreshInput,
   ClientAuthBrokerTokenRefreshResult,
   ClientAuthBrokerMarketTokenResult,
+  ClientAuthBrokerToolTokenResult,
   ClientAuthNeonBrokerExchangeInput,
   ClientAuthUser,
   ClientFeishuBrokerAuthConfig,
@@ -20,6 +21,7 @@ const DEFAULT_FEISHU_BROKER_CONFIG_PATH = '/api/client-auth/feishu/config'
 const DEFAULT_FEISHU_BROKER_EXCHANGE_PATH = '/api/client-auth/feishu/exchange'
 const DEFAULT_CLIENT_AUTH_TOKEN_PATH = '/api/client-auth/token'
 const DEFAULT_SKILLS_MARKET_TOKEN_PATH = '/api/client-auth/skills-market/token'
+const DEFAULT_TOOL_ACCESS_TOKEN_PATH = '/api/client-auth/tools/token'
 const DEFAULT_AUTH_BROKER_REQUEST_TIMEOUT_MS = 15_000
 
 export function normalizeClientAuthBrokerUrl(value: string): string {
@@ -130,6 +132,24 @@ export class DefaultClientAuthBrokerClient implements ClientAuthBrokerClient {
       expiresInSeconds,
     }
   }
+
+  async issueToolAccessToken(
+    input: ClientAuthBrokerTokenRefreshInput,
+  ): Promise<ClientAuthBrokerToolTokenResult> {
+    const endpoint = buildBrokerEndpointUrl(input.brokerUrl, DEFAULT_TOOL_ACCESS_TOKEN_PATH)
+    const body = await requestBrokerJson(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${input.appSessionToken}`,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
+    }, 'Managed tool token request failed')
+
+    return {
+      toolAccessToken: requireStringValue(body.toolAccessToken, 'tool access token'),
+    }
+  }
 }
 
 export async function resolveFeishuBrokerAuthConfig(
@@ -168,6 +188,12 @@ export function requireAppSessionToken(result: { appSessionToken?: string }): st
 export function requireModelAccessToken(result: { modelAccessToken?: string }): string {
   const token = readStringValue(result.modelAccessToken)
   if (!token) throw new Error('Auth broker response did not include a model access token')
+  return token
+}
+
+export function requireToolAccessToken(result: { toolAccessToken?: string }): string {
+  const token = readStringValue(result.toolAccessToken)
+  if (!token) throw new Error('Auth broker response did not include a tool access token')
   return token
 }
 

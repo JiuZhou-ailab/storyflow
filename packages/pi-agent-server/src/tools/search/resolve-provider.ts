@@ -1,63 +1,64 @@
-// input: Optional AnySearch credential, independent of the selected model provider
-// output: The primary web search provider; createSearchTool owns DDG fallback
-// pos: Capability router for Storyflow's typed web_search tool
+// input: Host-projected loopback tool broker configuration
+// output: Storyflow's primary managed web-search provider; createSearchTool owns DDG fallback
+// pos: Provider-neutral client of the host-owned Managed Tool Operation
 
-import type { WebSearchProvider } from './types.ts';
+import type { WebSearchProvider, WebSearchResult } from './types.ts'
 
-const ANYSEARCH_ENDPOINT = 'https://api.anysearch.com/mcp';
+const TOOL_BROKER_URL_ENV = 'STORYFLOW_TOOL_BROKER_URL'
+const TOOL_BROKER_TOKEN_ENV = 'STORYFLOW_TOOL_BROKER_TOKEN'
 
-interface AnySearchResponse {
-  error?: { message?: string };
-  result?: {
-    content?: Array<{ type?: string; text?: string }>;
-  };
+interface ManagedSearchResponse {
+  results?: WebSearchResult[]
 }
 
-export class AnySearchProvider implements WebSearchProvider {
-  name = 'AnySearch';
+export class ManagedSearchProvider implements WebSearchProvider {
+  name = 'Storyflow'
 
-  async search(query: string, count: number) {
-    const apiKey = process.env.ANYSEARCH_API_KEY;
-    const response = await fetch(ANYSEARCH_ENDPOINT, {
+  async search(query: string, count: number): Promise<WebSearchResult[]> {
+    const brokerUrl = resolveLoopbackSearchUrl(process.env[TOOL_BROKER_URL_ENV])
+    const capability = process.env[TOOL_BROKER_TOKEN_ENV]?.trim()
+    if (!brokerUrl || !capability) {
+      throw new Error('Managed web search is unavailable')
+    }
+
+    const response = await fetch(brokerUrl, {
       method: 'POST',
       headers: {
+        Authorization: `Bearer ${capability}`,
         'Content-Type': 'application/json',
-        'X-Anysearch-Client': 'storyflow/web-search',
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'tools/call',
-        params: {
-          name: 'search',
-          arguments: { query, max_results: count },
-        },
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-
+      body: JSON.stringify({ query, count }),
+      signal: AbortSignal.timeout(40_000),
+    })
     if (!response.ok) {
-      throw new Error(`AnySearch failed (HTTP ${response.status})`);
+      throw new Error(`Managed web search failed (HTTP ${response.status})`)
     }
 
-    const data = await response.json() as AnySearchResponse;
-    if (data.error) {
-      throw new Error(data.error.message || 'AnySearch returned an unknown error');
+    const data = await response.json() as ManagedSearchResponse
+    if (!Array.isArray(data.results) || data.results.length === 0) {
+      throw new Error('Managed web search returned no results')
     }
-
-    const text = data.result?.content
-      ?.filter(item => item.type === 'text' && item.text)
-      .map(item => item.text)
-      .join('\n\n');
-    if (!text) {
-      throw new Error('AnySearch returned no text results');
-    }
-
-    return [{ title: 'AnySearch results', url: '', description: text }];
+    return data.results
   }
 }
 
 export function resolveSearchProvider(): WebSearchProvider {
-  return new AnySearchProvider();
+  return new ManagedSearchProvider()
+}
+
+function resolveLoopbackSearchUrl(raw: string | undefined): string | null {
+  if (!raw?.trim()) return null
+  const url = new URL(raw)
+  if (
+    url.protocol !== 'http:'
+    || url.hostname !== '127.0.0.1'
+    || url.username
+    || url.password
+  ) {
+    throw new Error('Managed tool broker must be a credential-free 127.0.0.1 HTTP URL')
+  }
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/search`
+  url.search = ''
+  url.hash = ''
+  return url.toString()
 }

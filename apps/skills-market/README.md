@@ -6,6 +6,7 @@ actions; this Worker never renders a web product or executes installed Skills.
 
 | Path | Role |
 | --- | --- |
+| `curated/` | First-party, provider-agnostic Skill sources packaged into immutable curated bundles. |
 | `src/catalog.ts` | Dated, source-linked recommendations from public popularity signals and Storyflow's real Skill inventory. |
 | `src/packages.ts` | Deterministic single-Skill ResourceBundle validation. |
 | `src/review.ts` | Synchronous Workers AI admission decision and output validation. |

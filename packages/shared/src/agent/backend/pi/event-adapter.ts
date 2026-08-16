@@ -48,7 +48,8 @@ type PiEvent = PiAgentEvent | AgentSessionEvent | { type: 'entry_appended' };
  * Maps Pi SDK facts to renderer-visible Product Host events.
  *
  * Event mapping:
- * - message_update (text_delta in assistantMessageEvent) → text_delta
+ * - message_update (thinking_delta/end) → intermediate text_delta/text_complete
+ * - message_update (text_delta) → text_delta
  * - message_end → text_complete
  * - tool_execution_start → tool_start
  * - tool_execution_end → tool_result
@@ -63,15 +64,12 @@ export class PiEventAdapter extends BaseEventAdapter {
   // Track tool names from execution_start for proper tool_result correlation
   private toolNames: Map<string, string> = new Map();
 
-  // Track whether streaming deltas have been received for the current message
-  private hasStreamedDeltas: boolean = false;
-
   // Track whether a final (non-intermediate) text_complete has been emitted this turn
   private hasEmittedFinalText: boolean = false;
 
-  // Sub-turnId isolation (same pattern as CopilotEventAdapter)
+  // Isolate each ordered assistant content block for renderer correlation.
   private subTurnCounter: number = 0;
-  private messageSubTurnId: string | null = null;
+  private contentBlockTurnId: string | null = null;
 
   // Model context window for usage_update events
   private contextWindow: number | undefined;
@@ -161,10 +159,9 @@ export class PiEventAdapter extends BaseEventAdapter {
 
   protected onTurnStart(): void {
     this.toolNames.clear();
-    this.hasStreamedDeltas = false;
     this.hasEmittedFinalText = false;
     this.subTurnCounter = 0;
-    this.messageSubTurnId = null;
+    this.contentBlockTurnId = null;
     this.turnUsage = undefined;
     this.pendingOverflowError = null;
     this.log.debug('Turn started', { turnIndex: this.turnIndex });
@@ -209,10 +206,9 @@ export class PiEventAdapter extends BaseEventAdapter {
         // Don't emit complete here. Pi owns the full run lifecycle and emits
         // agent_settled after retries, compaction and queued continuations drain.
         this.currentTurnId = null;
-        this.hasStreamedDeltas = false;
         this.hasEmittedFinalText = false;
         this.subTurnCounter = 0;
-        this.messageSubTurnId = null;
+        this.contentBlockTurnId = null;
         break;
 
       // ============================================================
@@ -226,15 +222,42 @@ export class PiEventAdapter extends BaseEventAdapter {
       case 'message_update': {
         // Pi SDK emits message_update only for assistant messages (streaming deltas)
         const amEvent: AssistantMessageEvent = event.assistantMessageEvent;
-        if (amEvent.type === 'text_delta' && amEvent.delta) {
-          this.hasStreamedDeltas = true;
-          if (!this.messageSubTurnId) {
-            this.messageSubTurnId = this.nextSubTurnId('m');
-          }
+
+        if (amEvent.type === 'thinking_start') {
+          this.contentBlockTurnId ??= this.nextSubTurnId('m');
+          break;
+        }
+
+        if (amEvent.type === 'thinking_delta' && amEvent.delta) {
+          this.contentBlockTurnId ??= this.nextSubTurnId('m');
           yield {
             type: 'text_delta',
             text: amEvent.delta,
-            turnId: this.messageSubTurnId,
+            turnId: this.contentBlockTurnId,
+          };
+          break;
+        }
+
+        if (amEvent.type === 'thinking_end') {
+          const turnId = this.contentBlockTurnId || this.nextSubTurnId('m');
+          this.contentBlockTurnId = null;
+          if (amEvent.content) {
+            yield {
+              type: 'text_complete',
+              text: amEvent.content,
+              isIntermediate: true,
+              turnId,
+            };
+          }
+          break;
+        }
+
+        if (amEvent.type === 'text_delta' && amEvent.delta) {
+          this.contentBlockTurnId ??= this.nextSubTurnId('m');
+          yield {
+            type: 'text_delta',
+            text: amEvent.delta,
+            turnId: this.contentBlockTurnId,
           };
         }
         break;
@@ -317,8 +340,8 @@ export class PiEventAdapter extends BaseEventAdapter {
         if (textContent && (isIntermediate || !this.hasEmittedFinalText)) {
           if (!isIntermediate) this.hasEmittedFinalText = true;
 
-          const mTurnId = this.messageSubTurnId || this.nextSubTurnId('m');
-          this.messageSubTurnId = null;
+          const mTurnId = this.contentBlockTurnId || this.nextSubTurnId('m');
+          this.contentBlockTurnId = null;
 
           yield {
             type: 'text_complete',
@@ -327,7 +350,6 @@ export class PiEventAdapter extends BaseEventAdapter {
             turnId: mTurnId,
             sdkTurnAnchor,
           };
-          this.hasStreamedDeltas = false;
         }
 
         break;
@@ -435,7 +457,7 @@ export class PiEventAdapter extends BaseEventAdapter {
 
         // After tool completion, the assistant may generate new text
         this.hasEmittedFinalText = false;
-        this.messageSubTurnId = null;
+        this.contentBlockTurnId = null;
 
         // Check if this was classified as a file read
         const readInfo = this.consumeReadCommand(toolCallId);

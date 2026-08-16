@@ -86,7 +86,9 @@ function storyflow(
       label,
       sourceName: 'Storyflow',
       sourceUrl: 'https://github.com/JiuZhou-ailab/storyflow',
-      snapshotAt: SNAPSHOT_AT,
+      snapshotAt: packageMetadata
+        ? new Date(packageMetadata.publishedAt).toISOString().slice(0, 10)
+        : SNAPSHOT_AT,
     },
   }
 }
@@ -161,10 +163,15 @@ export const CURATED_SKILLS: readonly CuratedSkill[] = [
       bundleSha256: '328ea266c70d8363fc0687136ffd64c849e8a578d06125ecdd66517e84c29af4',
       objectKey: 'curated/storyflow/hot-video-script-ideation/1.0.0/74316ea2e07bbf2a8c67ab6872b704b020b0c368ddea76b6fe64f4f13b9be358.zip',
     }),
-  storyflow(5, 'anysearch', 'AnySearch',
-    '实时网页、垂直领域、批量搜索与 URL 内容提取；Storyflow 已配置安全鉴权路径。',
-    ['搜索', '已鉴权'], 'apps/electron/resources/agent-defaults/global-skills/anysearch',
-    'Storyflow 内置 · skills.sh 34.4K installs'),
+  storyflow(5, 'web-research', '网页研究',
+    '使用 Storyflow 托管网页能力搜索最新信息并形成可追溯结论。',
+    ['搜索', '研究', '已鉴权'], 'apps/skills-market/curated/web-research',
+    'Storyflow 托管能力', {
+      namespace: 'storyflow', sourceSlug: 'web-research', version: '1.0.0', publishedAt: 1786838400000,
+      archiveSha256: '1251b5f87aecc6df23baa51603d5a6c382ee455a1a8f697ef7588149a2d4b27a',
+      bundleSha256: '6ba5f0267fe8ca22f841290dba8273a0d3474b7efaaf658526ee7c9b5e28da0f',
+      objectKey: 'curated/storyflow/web-research/1.0.0/1251b5f87aecc6df23baa51603d5a6c382ee455a1a8f697ef7588149a2d4b27a.zip',
+    }),
 
   skillHub(6, 'user_634bbcdc', 'g113593', {
     installSlug: 'tomato-novelist', namespace: 'user_634bbcdc', sourceSlug: 'g113593',

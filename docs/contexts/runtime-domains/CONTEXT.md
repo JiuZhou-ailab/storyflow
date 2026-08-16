@@ -48,6 +48,10 @@ _Avoid_: Free-conversation system, project Agent
 Storyflow's derived product representation of Pi's public runtime contracts, events, resources, commands, and state. It maps stable Pi behavior into desktop and cloud surfaces without copying Pi internals or controlling Pi lifecycle transitions.
 _Avoid_: Pi wrapper runtime, Pi UI clone, mirrored Agent state
 
+**Assistant Content Block**:
+An ordered, user-renderable segment emitted by the Agent Kernel. Reasoning and visible response remain distinct blocks and preserve incremental arrival; incomplete tool arguments are not content, and tool work enters product state only after the Agent Kernel starts execution.
+_Avoid_: Flattened final string, guessed tool activity
+
 **Boundary Protocol**:
 The policy-free typed command, result, event, and Host-capability channel between the Product Host and Agent Kernel. Storyflow may send immutable context, capability definitions, credentials, and explicit user commands; Pi returns runtime facts and correlated results. The channel must not translate Pi failures into retry, replay, abort, settlement, or fabricated Pi events.
 _Avoid_: Orchestration runtime, recovery controller, compatibility state machine
