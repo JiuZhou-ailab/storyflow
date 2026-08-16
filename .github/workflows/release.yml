@@ -63,6 +63,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Electron binary for main-process tests
+        run: node node_modules/electron/install.js
+
       - name: Run validation suite
         env:
           VALIDATION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.validation_mode || 'full' }}

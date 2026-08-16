@@ -33,5 +33,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Electron binary for main-process tests
+        run: node node_modules/electron/install.js
+
       - name: Run validation suite
         run: bun run validate:ci
