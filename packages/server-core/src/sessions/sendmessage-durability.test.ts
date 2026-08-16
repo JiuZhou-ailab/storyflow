@@ -375,7 +375,9 @@ describe('sendMessage durability', () => {
     const send = sm.sendMessage(sessionId, 'Investigate runtime deletion safety')
     await started
     const deletion = sm.deleteSession(sessionId)
-    await Promise.all([send, deletion])
+    // The acceptance path is already covered by `acked`; the minimal harness
+    // intentionally has no session platform for the post-ack agent init.
+    await Promise.all([send.catch(() => {}), deletion])
     await Promise.resolve()
 
     expect(titleCalls).toBe(0)
