@@ -19,7 +19,7 @@ services:
         - bun
         - -e
         - >-
-          if (!(await fetch('http://127.0.0.1:8789/ready')).ok) process.exit(1)
+          if (!(await fetch('http://127.0.0.1:8789/health')).ok) process.exit(1)
       interval: 30s
       timeout: 6s
       retries: 3
