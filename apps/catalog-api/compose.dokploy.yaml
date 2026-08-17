@@ -1,0 +1,26 @@
+# input: Dokploy-managed Catalog API URL plus origin and MCP bearer tokens
+# output: Authenticated read-only MCP service
+# pos: Public MCP relay; the Catalog API remains inside the database-reachable VPC
+
+services:
+  catalog-mcp:
+    build: ./mcp
+    restart: unless-stopped
+    environment:
+      CATALOG_API_URL: ${CATALOG_API_URL}
+      CATALOG_ORIGIN_TOKEN: ${CATALOG_ORIGIN_TOKEN}
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
+      PORT: 8789
+    expose:
+      - "8789"
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - >-
+          if (!(await fetch('http://127.0.0.1:8789/ready')).ok) process.exit(1)
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 10s
