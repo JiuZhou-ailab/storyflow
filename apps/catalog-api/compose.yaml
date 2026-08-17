@@ -1,20 +1,14 @@
-# input: Dokploy-managed database credentials plus origin and MCP bearer tokens
-# output: Private Catalog API and authenticated read-only MCP services
-# pos: Repeatable production deployment boundary for Storyflow catalog access
+# input: Deployment-only database, origin, and Cloudflare Tunnel secrets
+# output: VPC-local Catalog API exposed through an outbound QUIC tunnel
+# pos: Database-adjacent origin deployment for Storyflow catalog access
 
 services:
   catalog-api:
     build: .
     restart: unless-stopped
-    environment:
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-3306}
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      ORIGIN_TOKEN: ${ORIGIN_TOKEN}
-    expose:
-      - "8788"
+    env_file: .env
+    ports:
+      - "127.0.0.1:8788:8788"
     healthcheck:
       test:
         - CMD
@@ -29,29 +23,10 @@ services:
       retries: 3
       start_period: 10s
 
-  catalog-mcp:
-    build: ./mcp
+  tunnel:
+    image: cloudflare/cloudflared:2026.7.3
     restart: unless-stopped
-    environment:
-      CATALOG_API_URL: http://catalog-api:8788
-      CATALOG_ORIGIN_TOKEN: ${ORIGIN_TOKEN}
-      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
-      NO_PROXY: catalog-api,localhost,127.0.0.1
-      no_proxy: catalog-api,localhost,127.0.0.1
-      PORT: 8789
-    expose:
-      - "8789"
     depends_on:
       catalog-api:
         condition: service_healthy
-    healthcheck:
-      test:
-        - CMD
-        - bun
-        - -e
-        - >-
-          if (!(await fetch('http://127.0.0.1:8789/ready')).ok) process.exit(1)
-      interval: 30s
-      timeout: 6s
-      retries: 3
-      start_period: 10s
+    command: tunnel --no-autoupdate --protocol quic run --token ${CLOUDFLARE_TUNNEL_TOKEN}
