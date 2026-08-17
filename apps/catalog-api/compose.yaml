@@ -1,18 +1,57 @@
-# input: Deployment-only .env secrets and container images
-# output: Loopback catalog API plus outbound Cloudflare Tunnel
-# pos: Repeatable deployment definition for the 172.16.33.103 host
+# input: Dokploy-managed database credentials plus origin and MCP bearer tokens
+# output: Private Catalog API and authenticated read-only MCP services
+# pos: Repeatable production deployment boundary for Storyflow catalog access
 
 services:
   catalog-api:
     build: .
     restart: unless-stopped
-    env_file: .env
-    ports:
-      - "127.0.0.1:8788:8788"
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      ORIGIN_TOKEN: ${ORIGIN_TOKEN}
+    expose:
+      - "8788"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, urllib.request;
+          request = urllib.request.Request('http://127.0.0.1:8788/ready', headers={'X-Storyflow-Origin-Token': os.environ['ORIGIN_TOKEN']});
+          urllib.request.urlopen(request, timeout=5)
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 10s
 
-  tunnel:
-    image: cloudflare/cloudflared:2026.7.3
+  catalog-mcp:
+    build: ./mcp
     restart: unless-stopped
+    environment:
+      CATALOG_API_URL: http://catalog-api:8788
+      CATALOG_ORIGIN_TOKEN: ${ORIGIN_TOKEN}
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
+      NO_PROXY: catalog-api,localhost,127.0.0.1
+      no_proxy: catalog-api,localhost,127.0.0.1
+      PORT: 8789
+    expose:
+      - "8789"
     depends_on:
-      - catalog-api
-    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+      catalog-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - >-
+          if (!(await fetch('http://127.0.0.1:8789/ready')).ok) process.exit(1)
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 10s
