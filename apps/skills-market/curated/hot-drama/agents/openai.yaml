@@ -1,4 +1,0 @@
-interface:
-  display_name: "爆款短剧发现"
-  short_description: "Query trending drama rankings and episode links"
-  default_prompt: "Use $hot-drama to find the current top Hongguo drama and return its first ten episode URLs."

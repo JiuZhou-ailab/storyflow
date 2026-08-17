@@ -166,7 +166,9 @@ describe('default agent resources', () => {
     const catalogConfig = readFileSync(join(catalogDir, 'config.json'), 'utf-8');
     const catalogPermissions = readFileSync(join(catalogDir, 'permissions.json'), 'utf-8');
     expect(catalogConfig).toContain('"slug": "storyflow-catalog"');
-    expect(catalogConfig).toContain('"authType": "managed"');
+    expect(catalogConfig).toContain('"type": "mcp"');
+    expect(catalogConfig).toContain('"authType": "bearer"');
+    expect(catalogConfig).toContain('"url": "http://172.16.33.66:8789/mcp"');
     expect(catalogConfig).not.toContain('MODEL_ACCESS_BROKER_TOKEN');
     expect(validateSourceConfig(JSON.parse(catalogConfig)).valid).toBe(true);
     expect(validatePermissionsContent(catalogPermissions).valid).toBe(true);

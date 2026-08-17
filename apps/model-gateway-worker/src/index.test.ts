@@ -64,20 +64,15 @@ function makeEnv() {
     STORYFLOW_GATEWAY_JWT_AUDIENCE: 'storyflow-model-gateway',
     NEWAPI_API_KEY: 'server-only-newapi-key',
     NEWAPI_UPSTREAM_BASE_URL: 'https://jzapi.duanju.com',
-    CATALOG_ORIGIN_URL: 'https://storyflow-catalog-origin.example.com',
-    CATALOG_ORIGIN_TOKEN: 'server-only-catalog-origin-token',
   }
 }
 
 describe('model gateway worker', () => {
-  it('reports readiness only after NewAPI and Catalog answer their real probes', async () => {
+  it('reports readiness only after NewAPI answers its real probe', async () => {
     const readinessRequests: Request[] = []
     const fetchStub = async (request: Request) => {
       readinessRequests.push(request)
-      if (new URL(request.url).pathname === '/v1/models') {
-        return Response.json({ data: [{ id: 'gpt-5.5' }] })
-      }
-      return Response.json({ status: 'ready' })
+      return Response.json({ data: [{ id: 'gpt-5.5' }] })
     }
     const ready = await handleRequest(
       new Request('https://model.storyflow.example.com/ready'),
@@ -96,12 +91,8 @@ describe('model gateway worker', () => {
 
     expect(ready.status).toBe(200)
     expect(await ready.json()).toEqual({ status: 'ready' })
-    expect(readinessRequests.map(request => request.url)).toEqual([
-      'https://jzapi.duanju.com/v1/models',
-      'https://storyflow-catalog-origin.example.com/ready',
-    ])
+    expect(readinessRequests.map(request => request.url)).toEqual(['https://jzapi.duanju.com/v1/models'])
     expect(readinessRequests[0]?.headers.get('authorization')).toBe('Bearer server-only-newapi-key')
-    expect(readinessRequests[1]?.headers.get('x-storyflow-origin-token')).toBe('server-only-catalog-origin-token')
     expect(legacyOnly.status).toBe(503)
     expect(await legacyOnly.json()).toEqual({
       status: 'not_ready',
@@ -109,29 +100,17 @@ describe('model gateway worker', () => {
     })
   })
 
-  it('fails readiness when either dependency is unavailable or Catalog is unconfigured', async () => {
+  it('fails readiness when NewAPI is unavailable', async () => {
     const dependencyUnavailable = await handleRequest(
       new Request('https://model.storyflow.example.com/ready'),
       makeEnv(),
-      async (request) => new URL(request.url).pathname === '/v1/models'
-        ? Response.json({ data: [{ id: 'gpt-5.5' }] })
-        : Response.json({ status: 'not_ready' }, { status: 503 }),
-    )
-    const missingCatalogToken = await handleRequest(
-      new Request('https://model.storyflow.example.com/ready'),
-      { ...makeEnv(), CATALOG_ORIGIN_TOKEN: undefined },
-      async () => Response.json({ unexpected: true }),
+      async () => Response.json({ status: 'not_ready' }, { status: 503 }),
     )
 
     expect(dependencyUnavailable.status).toBe(503)
     expect(await dependencyUnavailable.json()).toEqual({
       status: 'not_ready',
       code: 'dependency_unavailable',
-    })
-    expect(missingCatalogToken.status).toBe(503)
-    expect(await missingCatalogToken.json()).toEqual({
-      status: 'not_ready',
-      code: 'configuration_invalid',
     })
   })
 
@@ -265,103 +244,6 @@ describe('model gateway worker', () => {
       code: 'model_access_token_invalid',
     })
     expect(upstreamCalls).toBe(0)
-  })
-
-  it('proxies catalog reads only with catalog scope and never forwards client credentials', async () => {
-    const allowedToken = await signTestJwt(CURRENT_MODEL_SECRET, {
-      scopes: ['model:chat', 'catalog:read'],
-    })
-    const deniedToken = await signTestJwt(CURRENT_MODEL_SECRET)
-    let upstreamCalls = 0
-
-    const allowed = await handleRequest(
-      new Request('https://model.storyflow.example.com/v1/series?q=%E7%8E%8B&limit=10', {
-        headers: {
-          Authorization: `Bearer ${allowedToken}`,
-          Cookie: 'must-not-forward=1',
-          'X-Storyflow-Origin-Token': 'client-controlled-token',
-        },
-      }),
-      makeEnv(),
-      async (request) => {
-        upstreamCalls += 1
-        expect(request.url).toBe(
-          'https://storyflow-catalog-origin.example.com/v1/series?q=%E7%8E%8B&limit=10',
-        )
-        expect(request.method).toBe('GET')
-        expect(request.headers.get('x-storyflow-origin-token')).toBe('server-only-catalog-origin-token')
-        expect(request.headers.get('authorization')).toBeNull()
-        expect(request.headers.get('cookie')).toBeNull()
-        return Response.json({ version: 1, total: 1, series: [] })
-      },
-    )
-    const denied = await handleRequest(
-      new Request('https://model.storyflow.example.com/v1/series/123/episodes', {
-        headers: { Authorization: `Bearer ${deniedToken}` },
-      }),
-      makeEnv(),
-      async () => {
-        upstreamCalls += 1
-        return Response.json({ unexpected: true })
-      },
-    )
-
-    expect(allowed.status).toBe(200)
-    expect(denied.status).toBe(403)
-    expect(await denied.json()).toEqual({ error: 'catalog:read scope is required' })
-    expect(upstreamCalls).toBe(1)
-  })
-
-  it('proxies daily ranking reads through the same catalog capability', async () => {
-    const token = await signTestJwt(CURRENT_MODEL_SECRET, {
-      scopes: ['catalog:read'],
-    })
-    const response = await handleRequest(
-      new Request('https://model.storyflow.example.com/v1/rankings/daily?limit=20', {
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-      makeEnv(),
-      async (request) => {
-        expect(request.url).toBe(
-          'https://storyflow-catalog-origin.example.com/v1/rankings/daily?limit=20',
-        )
-        expect(request.headers.get('x-storyflow-origin-token')).toBe('server-only-catalog-origin-token')
-        return Response.json({ version: 1, status: 'ok', series: [] })
-      },
-    )
-
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ version: 1, status: 'ok', series: [] })
-  })
-
-  it('proxies only the typed v2 catalog routes', async () => {
-    const token = await signTestJwt(CURRENT_MODEL_SECRET, {
-      scopes: ['catalog:read'],
-    })
-    const proxied: string[] = []
-    const fetchStub = async (request: Request) => {
-      proxied.push(request.url)
-      return Response.json({ version: 2, status: 'ok' })
-    }
-    const request = (path: string) => handleRequest(
-      new Request(`https://model.storyflow.example.com${path}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-      makeEnv(),
-      fetchStub,
-    )
-
-    expect((await request('/v2/catalog/sources')).status).toBe(200)
-    expect((await request('/v2/ranking-snapshots?source=dataeye')).status).toBe(200)
-    expect((await request('/v2/rankings?source=goodshort&limit=10')).status).toBe(200)
-    expect((await request('/v2/series/hongguo/123/manifest')).status).toBe(200)
-    expect((await request('/v2/series/goodshort/123/episodes')).status).toBe(404)
-    expect(proxied).toEqual([
-      'https://storyflow-catalog-origin.example.com/v2/catalog/sources',
-      'https://storyflow-catalog-origin.example.com/v2/ranking-snapshots?source=dataeye',
-      'https://storyflow-catalog-origin.example.com/v2/rankings?source=goodshort&limit=10',
-      'https://storyflow-catalog-origin.example.com/v2/series/hongguo/123/manifest',
-    ])
   })
 
   it('rejects expired, unscoped, and unknown-tier tokens', async () => {
@@ -631,11 +513,17 @@ describe('model gateway worker', () => {
       makeEnv(),
       fetchStub,
     )
+    const catalog = await handleRequest(
+      request('/v2/rankings', videoToken),
+      makeEnv(),
+      fetchStub,
+    )
 
     expect(unscoped.status).toBe(403)
     expect(unapproved.status).toBe(403)
     expect(await unapproved.json()).toMatchObject({ code: 'model_not_allowed' })
     expect(files.status).toBe(404)
+    expect(catalog.status).toBe(404)
     expect(upstreamCalls).toBe(0)
   })
 

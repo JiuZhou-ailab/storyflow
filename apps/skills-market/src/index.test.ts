@@ -3,26 +3,14 @@
 // pos: Local executable API contract for the Skills Market MVP
 
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
 import { handleRequest, type Env } from './index.ts'
 import { CURATED_SKILLS } from './catalog.ts'
 
 const env: Env = {}
-const hotDramaSkill = readFileSync(new URL('../curated/hot-drama/SKILL.md', import.meta.url), 'utf8')
-const hotDramaOpenAi = readFileSync(new URL('../curated/hot-drama/agents/openai.yaml', import.meta.url), 'utf8')
 
 describe('Skills Market worker', () => {
   test('does not expose ignored local Skill roots as public sources', () => {
     expect(CURATED_SKILLS.every(skill => !skill.sourceUrl?.includes('.agents/skills'))).toBeTrue()
-  })
-
-  test('keeps hot-drama on the built-in typed Source boundary', () => {
-    expect(hotDramaSkill).toContain('requiredSources:\n  - storyflow-catalog')
-    expect(hotDramaSkill).toContain('`list_sources`')
-    expect(hotDramaSkill).toContain('`list_ranking_snapshots`')
-    expect(hotDramaSkill).toContain('`search_rankings`')
-    expect(hotDramaSkill).toContain('`get_conversion_manifest`')
-    expect(`${hotDramaSkill}\n${hotDramaOpenAi}`).not.toMatch(/172\.16\.|bearer|type:\s*["']?mcp/i)
   })
 
   test('lists only installable Skills by default and keeps source-only discovery explicit', async () => {
@@ -39,20 +27,19 @@ describe('Skills Market worker', () => {
       }>
     }
     expect(response.status).toBe(200)
-    expect(body.total).toBe(10)
+    expect(body.total).toBe(9)
     expect(body.skills.every(skill => skill.sha256)).toBeTrue()
     expect(body.skills.every(skill => skill.downloadCount === 0)).toBeTrue()
     expect(body.skills.every(skill => skill.featured)).toBeTrue()
-    expect(body.skills.map(skill => skill.recommendation?.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    expect(body.skills.map(skill => skill.recommendation?.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(body.skills.map(skill => skill.slug)).toEqual([
-      'sn2s-novel-to-screenplay', 'video-to-screenplay', 'hot-drama',
-      'hot-video-script-ideation', 'web-research',
+      'sn2s-novel-to-screenplay', 'video-to-screenplay', 'hot-video-script-ideation', 'web-research',
       'tomato-novelist', 'fiction-crafter', 'novel-evaluator', 'novel-to-drama', 'novel-to-storyboard',
     ])
 
     const installable = await handleRequest(new Request('https://market.test/api/skills?distribution=installable'), env)
     const references = await handleRequest(new Request('https://market.test/api/skills?distribution=reference-only'), env)
-    expect((await installable.json() as { total: number }).total).toBe(10)
+    expect((await installable.json() as { total: number }).total).toBe(9)
     expect((await references.json() as { total: number }).total).toBe(5)
   })
 

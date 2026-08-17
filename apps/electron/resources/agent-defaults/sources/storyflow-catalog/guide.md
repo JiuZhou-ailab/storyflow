@@ -1,8 +1,8 @@
-# Storyflow Catalog
+# 爆款短剧数据
 
-Storyflow Catalog 是只读短剧调研数据源。它返回爬虫数据库已经观测到的榜单、剧目身份和媒资覆盖事实；不触发爬取、下载、转码或内容生成。
+爆款短剧数据是只读短剧调研数据源。它返回爬虫数据库已经观测到的榜单、剧目身份和媒资覆盖事实；不触发爬取、下载、转码或内容生成。
 
-认证由当前 Storyflow 登录态托管。不要索要或保存 Catalog API Key；提示登录失效时，请用户重新登录 Storyflow。
+使用前连接公司 VPN，并在数据源设置中保存共享 Bearer Token。Token 只进入 Storyflow 的加密凭据存储；不要写入项目、Skill 或聊天消息。
 
 ## 领域对象
 
@@ -15,7 +15,7 @@ Storyflow Catalog 是只读短剧调研数据源。它返回爬虫数据库已�
 
 ## 工具
 
-### `list_sources`
+### `catalog_sources`
 
 开始调研或不确定来源能力时先调用。读取每个来源的：
 
@@ -23,27 +23,27 @@ Storyflow Catalog 是只读短剧调研数据源。它返回爬虫数据库已�
 - `supportsHistory`；
 - `supportsManifest`。
 
-### `list_ranking_snapshots`
+### `ranking_snapshots`
 
 列出单一来源、单一榜单口径的可用快照。只有明确需要历史数据且 `supportsHistory=true` 时调用；否则使用 `latest`。
 
-### `search_rankings`
+### `rankings`
 
 查询来源内榜单：
 
 - `source=all` 只用于并列展示不同来源的最新结果；不能指定 `rankingKind`，不能把不同来源的指标混合、归一化或重新排名。
-- 研究一个平台时明确传入 `source`，必要时再传 `rankingKind`、`snapshot`、`q`。
-- `conversionReady=true` 只表示筛选当前可直接转剧本的媒资，不是热度条件。
+- 研究一个平台时明确传入 `source`，必要时再传 `rankingKind`、`snapshot`、`query`。
+- `conversionReady="true"` 只表示筛选当前可直接转剧本的媒资，不是热度条件。
 - 每次先用较小 `limit` 验证口径，再按需要扩大，最大 100。
 
-### `get_conversion_manifest`
+### `series_manifest`
 
 只在用户已经选定剧目并要进入视频转剧本时调用。使用结果中的 `series.key` 拆出 `source` 和 `sourceId`；不要根据标题猜 ID。
 
 ## 调研方法
 
 1. **明确问题**：先确认用户要研究的平台、榜单口径、时间范围和候选数量。缺失信息只在会改变结论时追问。
-2. **确认能力**：调用 `list_sources`，不要假设某来源有历史快照或完整视频。
+2. **确认能力**：调用 `catalog_sources`，不要假设某来源有历史快照或完整视频。
 3. **固定证据边界**：确定 Evidence Source、Ranking Kind 和 Snapshot 后再取榜单。
 4. **来源内解释**：只使用返回的 `rank` 和原始 `metrics`。不同来源的阅读、热度、消耗、素材量不可互相换算。
 5. **检查新鲜度**：报告 `periodStart`、`periodEnd` 和 `observedAt`。没有观测时间时明确说明，不把 `latest` 当作“今天”。
