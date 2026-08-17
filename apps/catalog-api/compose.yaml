@@ -29,4 +29,4 @@ services:
     depends_on:
       catalog-api:
         condition: service_healthy
-    command: tunnel --no-autoupdate --protocol quic run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN}
