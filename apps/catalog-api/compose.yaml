@@ -1,6 +1,6 @@
-# input: Deployment-only database, origin, and Cloudflare Tunnel secrets
-# output: VPC-local Catalog API exposed through an outbound QUIC tunnel
-# pos: Database-adjacent origin deployment for Storyflow catalog access
+# input: Deployment-only database, origin, MCP, and Cloudflare Tunnel secrets
+# output: VPC-local Catalog API and MCP plus the existing outbound tunnel
+# pos: Database-adjacent deployment for private MCP and existing origin consumers
 
 services:
   catalog-api:
@@ -18,6 +18,31 @@ services:
           import os, urllib.request;
           request = urllib.request.Request('http://127.0.0.1:8788/ready', headers={'X-Storyflow-Origin-Token': os.environ['ORIGIN_TOKEN']});
           urllib.request.urlopen(request, timeout=5)
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 10s
+
+  catalog-mcp:
+    build: ./mcp
+    restart: unless-stopped
+    depends_on:
+      catalog-api:
+        condition: service_healthy
+    environment:
+      CATALOG_API_URL: http://catalog-api:8788
+      CATALOG_ORIGIN_TOKEN: ${ORIGIN_TOKEN}
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
+      PORT: 8789
+    ports:
+      - "172.16.33.103:8789:8789"
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - >-
+          if (!(await fetch('http://127.0.0.1:8789/health')).ok) process.exit(1)
       interval: 30s
       timeout: 6s
       retries: 3

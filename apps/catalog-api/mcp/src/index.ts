@@ -1,6 +1,6 @@
 // input: Authenticated MCP requests and the private Storyflow Catalog HTTP API
 // output: Four fixed read-only Catalog tools over Streamable HTTP
-// pos: Public protocol adapter that never receives database credentials or SQL
+// pos: Authenticated protocol adapter that never receives database credentials or SQL
 
 import { timingSafeEqual } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
