@@ -95,6 +95,7 @@
     "marketing:preview": "vite preview --config apps/marketing/vite.config.ts",
     "skills-market:dev": "cd apps/skills-market && bun run dev:local",
     "skills-market:test": "cd apps/skills-market && bun run test",
+    "skills-market:verify": "bun run scripts/verify-skills-market.ts",
     "release:upload-r2": "bun run scripts/upload-r2-release-assets.ts",
     "release:whats-new": "bun run scripts/generate-whats-new.ts",
     "docs:dev": "cd apps/online-docs && npm install && npx mintlify dev",

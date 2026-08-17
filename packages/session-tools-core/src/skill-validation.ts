@@ -2,13 +2,14 @@
 // output: Worker-safe Agent Skills validation with no filesystem dependency
 // pos: Portable Skill document contract shared by runtimes and publication gates
 
-import matter from 'gray-matter';
+import { load as parseYaml } from 'js-yaml';
 import { z } from 'zod';
 import type { ValidationIssue, ValidationResult } from './types.ts';
 
 const SKILL_NAME_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_SKILL_NAME_LENGTH = 64;
 const MAX_SKILL_DESCRIPTION_LENGTH = 1024;
+const FRONTMATTER_PATTERN = /^(?:\uFEFF)?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
 function validResult(): ValidationResult {
   return { valid: true, errors: [], warnings: [] };
@@ -62,9 +63,9 @@ export function validateSkillContent(markdownContent: string, slug: string): Val
   let frontmatter: unknown;
   let body: string;
   try {
-    const parsed = matter(markdownContent);
-    frontmatter = parsed.data;
-    body = parsed.content;
+    const match = FRONTMATTER_PATTERN.exec(markdownContent);
+    frontmatter = match ? (parseYaml(match[1]!) ?? {}) : {};
+    body = match ? markdownContent.slice(match[0].length) : markdownContent;
   } catch (error) {
     return invalidResult(
       'frontmatter',

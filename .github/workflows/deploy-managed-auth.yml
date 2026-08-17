@@ -160,12 +160,7 @@ jobs:
             const body = await Bun.file(process.env.MARKET_HEALTH_PATH).json();
             if (body.status !== "ok" || !(body.catalog > 0)) process.exit(1);
           '
-          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
-            https://storyflow-skills.zjding.com/api/skills > "$RUNNER_TEMP/market-public-catalog.json"
-          MARKET_CATALOG_PATH="$RUNNER_TEMP/market-public-catalog.json" bun --eval '
-            const body = await Bun.file(process.env.MARKET_CATALOG_PATH).json();
-            if (!Array.isArray(body.skills) || body.skills.length === 0) process.exit(1);
-          '
+          bun run skills-market:verify
 
       - name: Deploy auth broker
         if: ${{ inputs.deploy }}
