@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "slug": "hot-drama",
+  "version": "1.0.0",
+  "displayName": "爆款短剧发现",
+  "summary": "查询热门短剧榜单、媒资状态与完整分集视频链接。",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Storyflow",
+    "url": "https://github.com/JiuZhou-ailab/storyflow"
+  },
+  "tags": ["Storyflow", "短剧", "榜单", "视频", "VPN"],
+  "contributes": {
+    "requiredSources": ["storyflow-catalog"]
+  }
+}

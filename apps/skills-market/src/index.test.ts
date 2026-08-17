@@ -33,7 +33,7 @@ describe('Skills Market worker', () => {
     expect(body.skills.every(skill => skill.featured)).toBeTrue()
     expect(body.skills.map(skill => skill.recommendation?.order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     expect(body.skills.map(skill => skill.slug)).toEqual([
-      'sn2s-novel-to-screenplay', 'video-to-screenplay', 'discover-hit-dramas',
+      'sn2s-novel-to-screenplay', 'video-to-screenplay', 'hot-drama',
       'hot-video-script-ideation', 'web-research',
       'tomato-novelist', 'fiction-crafter', 'novel-evaluator', 'novel-to-drama', 'novel-to-storyboard',
     ])

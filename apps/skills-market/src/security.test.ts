@@ -378,7 +378,7 @@ describe('download popularity', () => {
     }
 
     expect(body.skills.slice(0, 3).map(skill => skill.slug)).toEqual([
-      'sn2s-novel-to-screenplay', 'video-to-screenplay', 'discover-hit-dramas',
+      'sn2s-novel-to-screenplay', 'video-to-screenplay', 'hot-drama',
     ])
     expect(body.skills.find(skill => skill.slug === 'download-metric-skill')?.downloadCount).toBe(2)
     expect(d1.database.query('SELECT download_count FROM skill_metrics WHERE slug = ?')
