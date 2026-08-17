@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { createFetchHandler, type Settings } from './index'
+import { createFetchHandler, loadSettings, type Settings } from './index'
 
 const ORIGIN_TOKEN = 'origin-token-that-is-at-least-32-chars'
 const MCP_TOKEN = 'mcp-token-that-is-at-least-32-characters'
@@ -40,7 +40,7 @@ beforeAll(() => {
   const settings: Settings = {
     catalogApiUrl: new URL(`http://127.0.0.1:${catalogServer.port}`),
     catalogOriginToken: ORIGIN_TOKEN,
-    mcpBearerToken: MCP_TOKEN,
+    mcpAuth: { mode: 'bearer', token: MCP_TOKEN },
     host: '127.0.0.1',
     port: 8789,
   }
@@ -57,6 +57,34 @@ afterAll(() => {
 })
 
 describe('Catalog MCP', () => {
+  it('accepts private-network MCP requests without distributing a bearer credential', async () => {
+    const handler = createFetchHandler({
+      catalogApiUrl: new URL(`http://127.0.0.1:${catalogServer.port}`),
+      catalogOriginToken: ORIGIN_TOKEN,
+      mcpAuth: { mode: 'private-network' },
+      host: '127.0.0.1',
+      port: 8789,
+    })
+    const response = await handler(new Request('http://catalog.test/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{not-json',
+    }))
+
+    expect(response.status).toBe(400)
+  })
+
+  it('fails closed unless the deployment declares its authentication mode', () => {
+    const base = {
+      CATALOG_API_URL: 'http://catalog-api:8788',
+      CATALOG_ORIGIN_TOKEN: ORIGIN_TOKEN,
+    }
+
+    expect(() => loadSettings(base)).toThrow('MCP_AUTH_MODE is required')
+    expect(() => loadSettings({ ...base, MCP_AUTH_MODE: 'bearer' })).toThrow('MCP_BEARER_TOKEN is required')
+    expect(loadSettings({ ...base, MCP_AUTH_MODE: 'private-network' }).mcpAuth).toEqual({ mode: 'private-network' })
+  })
+
   it('rejects missing bearer credentials before parsing MCP input', async () => {
     const response = await fetch(`http://127.0.0.1:${mcpServer.port}/mcp`, {
       method: 'POST',
@@ -66,6 +94,14 @@ describe('Catalog MCP', () => {
 
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({ error: 'invalid_mcp_access_token' })
+  })
+
+  it('rejects unauthenticated relay readiness probes before calling the Catalog origin', async () => {
+    const requestCount = catalogRequests.length
+    const response = await fetch(`http://127.0.0.1:${mcpServer.port}/ready`)
+
+    expect(response.status).toBe(401)
+    expect(catalogRequests).toHaveLength(requestCount)
   })
 
   it('lists and calls only fixed tools through the authenticated Catalog boundary', async () => {

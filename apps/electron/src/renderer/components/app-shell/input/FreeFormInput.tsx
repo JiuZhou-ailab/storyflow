@@ -2240,9 +2240,6 @@ export function FreeFormInput({
           </div>
           )}
 
-          {/* Spacer */}
-          <div className="min-w-1 flex-1" />
-
           {/* Right side: keep primary actions visible while truncating long model names. */}
           <div className="flex min-w-0 max-w-[52%] items-center justify-end shrink-0">
           {/* 5. Model/Connection Selector - Hidden in compact mode (EditPopover embedding) */}

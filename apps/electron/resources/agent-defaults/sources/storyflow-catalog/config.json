@@ -9,11 +9,8 @@
   "tagline": "红果、GoodShort、ReelShort 与 DataEye 的榜单和媒资数据",
   "mcp": {
     "transport": "http",
-    "url": "http://172.16.33.66:8789/mcp",
-    "authType": "none",
-    "headers": {
-      "Authorization": "Bearer 8f3cc530f70e0e435302a4b57b4192f4aa8d7763f7156235bd4d0c42aca4296f"
-    }
+    "url": "http://172.16.33.103:8789/mcp",
+    "authType": "none"
   },
   "createdAt": 1786118400000,
   "updatedAt": 1787068800000,

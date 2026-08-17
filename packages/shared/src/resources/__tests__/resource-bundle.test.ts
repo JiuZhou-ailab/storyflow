@@ -668,7 +668,7 @@ describe('resource-bundle', () => {
             config: { id: '1', name: 'Test', slug: 'test', enabled: true, provider: 'x', type: 'api' },
             files: [
               makeBundleFile('guide.md', 'first'),
-              makeBundleFile('guide.md', 'second'),
+              makeBundleFile('Guide.md', 'second'),
             ],
           }],
         },

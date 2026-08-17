@@ -9,7 +9,8 @@ services:
     environment:
       CATALOG_API_URL: ${CATALOG_API_URL}
       CATALOG_ORIGIN_TOKEN: ${CATALOG_ORIGIN_TOKEN}
-      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
+      MCP_AUTH_MODE: bearer
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:?MCP_BEARER_TOKEN is required}
       PORT: 8789
     expose:
       - "8789"

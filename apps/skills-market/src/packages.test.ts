@@ -46,6 +46,23 @@ describe('Skills Market packages', () => {
     await expect(validateMarketBundle(bundle)).rejects.toThrow('executable or binary')
   })
 
+  test('rejects a Skill that Pi cannot import', async () => {
+    const bundle = validBundle()
+    const skillFile = bundle.resources.skills![0]!.files.find(file => file.relativePath === 'SKILL.md')!
+    const content = '---\nname: 展示名\ndescription: Test skill\n---\n\n# Test\n'
+    skillFile.contentBase64 = Buffer.from(content).toString('base64')
+    skillFile.size = new TextEncoder().encode(content).byteLength
+
+    await expect(validateMarketBundle(bundle)).rejects.toThrow('Skill name must be lowercase')
+  })
+
+  test('rejects file paths that collide on macOS or Windows', async () => {
+    const bundle = validBundle()
+    bundle.resources.skills![0]!.files.push({ relativePath: 'skill.md', contentBase64: 'eA==', size: 1 })
+
+    await expect(validateMarketBundle(bundle)).rejects.toThrow('Duplicate package path')
+  })
+
   test('converts only a digest-pinned curated archive and preserves its text scripts', async () => {
     const archive = zipSync({
       '.learnings/STATE.md': strToU8('# State\n'),
@@ -77,11 +94,23 @@ describe('Skills Market packages', () => {
         archiveSha256: await sha256Hex(archive),
         bundleSha256: '',
         objectKey: 'curated/test.zip',
+        manifest: {
+          schemaVersion: 1,
+          slug: 'curated-test',
+          version: '1.0.0',
+          displayName: 'Published Curated Test',
+          summary: 'Published summary',
+          license: 'MIT',
+          author: { name: '@source/curated-test', url: 'https://example.com/published-source' },
+          tags: ['published'],
+        },
       },
     }
 
     const converted = await convertCuratedSkillArchive(seed, archive)
     expect(converted.manifest.slug).toBe('curated-test')
+    expect(converted.manifest.author.url).toBe('https://example.com/published-source')
+    expect(converted.manifest.displayName).toBe('Published Curated Test')
     expect(converted.files.get('.learnings/STATE.md')).toBe('# State\n')
     expect(converted.files.get('scripts/check.py')).toBe('print("ok")\n')
     expect(converted.files.get('LICENSE')).toBe('MIT\n')

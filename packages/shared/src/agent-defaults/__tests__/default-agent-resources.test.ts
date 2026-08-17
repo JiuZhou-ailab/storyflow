@@ -102,6 +102,59 @@ describe('default agent resources', () => {
     expect(existsSync(join(agentRootDir, 'sources', 'demo-source', 'config.json'))).toBe(true);
   });
 
+  it('migrates and disables the built-in legacy Catalog source until VPN access is available', () => {
+    const assetsDir = join(tempDir, 'resources', 'agent-defaults');
+    const agentRootDir = join(tempDir, '.craft-agent');
+    const bundledConfig = {
+      id: 'builtin-storyflow-catalog',
+      name: '爆款短剧数据',
+      slug: 'storyflow-catalog',
+      enabled: false,
+      provider: 'storyflow',
+      type: 'mcp',
+      mcp: { transport: 'http', url: 'http://172.16.33.103:8789/mcp', authType: 'none' },
+    };
+    const legacyConfig = {
+      id: 'builtin-storyflow-catalog',
+      name: 'Storyflow Catalog',
+      slug: 'storyflow-catalog',
+      enabled: true,
+      provider: 'storyflow',
+      type: 'api',
+      api: {
+        baseUrl: 'https://storyflow-model.zjding.com',
+        authType: 'managed',
+        testEndpoint: { method: 'GET', path: '/v2/catalog/sources' },
+        operations: [
+          { name: 'list_sources', method: 'GET', path: '/v2/catalog/sources' },
+          { name: 'list_ranking_snapshots', method: 'GET', path: '/v2/ranking-snapshots' },
+          { name: 'search_rankings', method: 'GET', path: '/v2/rankings' },
+          { name: 'get_conversion_manifest', method: 'GET', path: '/v2/series/{source}/{sourceId}/manifest' },
+        ],
+      },
+    };
+    const configPath = join(agentRootDir, 'sources', 'storyflow-catalog', 'config.json');
+    const guidePath = join(agentRootDir, 'sources', 'storyflow-catalog', 'guide.md');
+    const permissionsPath = join(agentRootDir, 'sources', 'storyflow-catalog', 'permissions.json');
+    writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'config.json'), `${JSON.stringify(bundledConfig)}\n`);
+    writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'guide.md'), 'new MCP guide');
+    writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'permissions.json'), '{"allowedMcpPatterns":["rankings"]}\n');
+    writeFile(configPath, `${JSON.stringify(legacyConfig)}\n`);
+    writeFile(guidePath, 'customized legacy API guide');
+    writeFile(permissionsPath, '{"allowedMcpPatterns":["list"]}\n');
+
+    const result = seedDefaultAgentResources({ assetsDir, agentRootDir });
+    const migrated = JSON.parse(readFileSync(configPath, 'utf8'));
+
+    expect(result.sources.imported).toEqual(['storyflow-catalog']);
+    expect(result.sources.skipped).toEqual([]);
+    expect(migrated.type).toBe('mcp');
+    expect(migrated.enabled).toBe(false);
+    expect(migrated.api).toBeUndefined();
+    expect(readFileSync(guidePath, 'utf8')).toBe('new MCP guide');
+    expect(readFileSync(permissionsPath, 'utf8')).toContain('rankings');
+  });
+
   it('does not throw when the Craft root is not writable as a directory', () => {
     const assetsDir = join(tempDir, 'resources', 'agent-defaults');
     const agentRootDir = join(tempDir, '.craft-agent');
@@ -122,6 +175,28 @@ describe('default agent resources', () => {
     ]);
     expect(result?.sources.imported).toEqual([]);
     expect(result?.sources.failed).toEqual(['demo-source']);
+  });
+
+  it('leaves the legacy Catalog config retryable when companion migration fails', () => {
+    const assetsDir = join(tempDir, 'resources', 'agent-defaults');
+    const agentRootDir = join(tempDir, '.craft-agent');
+    const installedDir = join(agentRootDir, 'sources', 'storyflow-catalog');
+    const configPath = join(installedDir, 'config.json');
+    const legacyConfig = {
+      id: 'builtin-storyflow-catalog', slug: 'storyflow-catalog', provider: 'storyflow', type: 'api',
+      api: { baseUrl: 'https://storyflow-model.zjding.com', authType: 'managed' },
+    };
+
+    writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'config.json'), '{"type":"mcp"}\n');
+    writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'guide.md'), 'new guide');
+    writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'permissions.json'), '{}\n');
+    writeFile(configPath, `${JSON.stringify(legacyConfig)}\n`);
+    writeFile(join(installedDir, 'guide.md'), 'old guide');
+    mkdirSync(join(installedDir, 'permissions.json'), { recursive: true });
+
+    seedDefaultAgentResources({ assetsDir, agentRootDir });
+
+    expect(JSON.parse(readFileSync(configPath, 'utf8')).type).toBe('api');
   });
 
   it('ships reviewable default resources without local runtime state', () => {
@@ -169,8 +244,8 @@ describe('default agent resources', () => {
     expect(catalogConfig).toContain('"type": "mcp"');
     const parsedCatalogConfig = JSON.parse(catalogConfig);
     expect(parsedCatalogConfig.mcp.authType).toBe('none');
-    expect(parsedCatalogConfig.mcp.headers.Authorization).toMatch(/^Bearer \S+$/);
-    expect(catalogConfig).toContain('"url": "http://172.16.33.66:8789/mcp"');
+    expect(parsedCatalogConfig.mcp.headers).toBeUndefined();
+    expect(catalogConfig).toContain('"url": "http://172.16.33.103:8789/mcp"');
     expect(catalogConfig).not.toContain('MODEL_ACCESS_BROKER_TOKEN');
     expect(validateSourceConfig(JSON.parse(catalogConfig)).valid).toBe(true);
     expect(validatePermissionsContent(catalogPermissions).valid).toBe(true);

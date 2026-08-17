@@ -9,6 +9,8 @@ import {
   validateStoryflowSkillManifest,
   sha256Hex,
 } from '@craft-agent/shared/skills/marketplace'
+import { validateSkillContent } from '@craft-agent/session-tools-core/skill-validation'
+import { portablePathCollisionKey, validatePortableFilePath } from '@craft-agent/shared/resources/portable-path'
 import { unzipSync } from 'fflate'
 import type { CuratedSkill } from './catalog.ts'
 
@@ -89,6 +91,7 @@ export async function validateMarketBundle(
   }
 
   const decoded = new Map<string, string>()
+  const pathKeys = new Set<string>()
   let totalDecodedBytes = 0
   for (const file of skill.files) {
     if (!file || typeof file.relativePath !== 'string' || !isSafePackagePath(
@@ -97,7 +100,9 @@ export async function validateMarketBundle(
     )) {
       throw new Error('Skill package contains an unsafe path')
     }
-    if (decoded.has(file.relativePath)) throw new Error(`Duplicate package path: ${file.relativePath}`)
+    const collisionKey = portablePathCollisionKey(file.relativePath)
+    if (pathKeys.has(collisionKey)) throw new Error(`Duplicate package path: ${file.relativePath}`)
+    pathKeys.add(collisionKey)
     if (!isAllowedTextPath(file.relativePath, options.allowPinnedScripts)) {
       throw new Error(`Unsupported executable or binary path: ${file.relativePath}`)
     }
@@ -114,9 +119,9 @@ export async function validateMarketBundle(
 
   const skillMarkdown = decoded.get('SKILL.md')
   if (!skillMarkdown) throw new Error('SKILL.md is required')
-  if (!/^name:\s*.+$/m.test(skillMarkdown)) throw new Error('SKILL.md needs a non-empty name')
-  if (!/^description:\s*.+$/m.test(skillMarkdown) || !skillMarkdown.replace(/^---[\s\S]*?---/, '').trim()) {
-    throw new Error('SKILL.md needs description frontmatter and a non-empty body')
+  const skillValidation = validateSkillContent(skillMarkdown, skill.slug)
+  if (!skillValidation.valid) {
+    throw new Error(`Invalid SKILL.md: ${skillValidation.errors.map(issue => issue.message).join('; ')}`)
   }
 
   const manifestText = decoded.get(STORYFLOW_SKILL_MANIFEST_FILE)
@@ -147,21 +152,9 @@ export async function convertCuratedSkillArchive(
   if (await sha256Hex(archive) !== packageMetadata.archiveSha256) {
     throw new Error('Curated Skill archive checksum does not match the catalog')
   }
-
-  const manifest: StoryflowSkillManifest = {
-    schemaVersion: 1,
-    slug: seed.slug,
-    version: packageMetadata.version,
-    displayName: seed.displayName,
-    summary: seed.summary,
-    license: seed.license,
-    author: { name: seed.sourceName, ...(seed.sourceUrl ? { url: seed.sourceUrl } : {}) },
-    tags: seed.tags,
-    methodology: {
-      sourceName: seed.recommendation.sourceName,
-      sourceUrl: seed.recommendation.sourceUrl,
-      adaptation: `Pinned upstream package ${packageMetadata.version}`,
-    },
+  const manifest = packageMetadata.manifest
+  if (manifest.slug !== seed.slug || manifest.version !== packageMetadata.version) {
+    throw new Error('Curated package manifest identity does not match its catalog coordinates')
   }
   const manifestContent = `${JSON.stringify(manifest, null, 2)}\n`
   let fileCount = 0
@@ -206,7 +199,7 @@ function decodeUtf8Base64(value: string): string {
 }
 
 function isSafePackagePath(path: string, allowPinnedHiddenPaths = false): boolean {
-  if (!path || path.startsWith('/') || path.includes('\\') || path.includes('//')) return false
+  if (validatePortableFilePath(path)) return false
   return path.split('/').every(segment => (
     segment
     && segment !== '.'

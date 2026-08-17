@@ -85,6 +85,7 @@ describe('ChatDisplay scroll layout', () => {
   it('keeps the composer toolbar actions visible in narrow side panels', () => {
     expect(freeFormInputSource).toContain('flex min-w-0 items-center gap-1 px-2 py-2')
     expect(freeFormInputSource).toContain('flex min-w-0 flex-1 items-center gap-1 overflow-hidden')
+    expect(freeFormInputSource).not.toContain('<div className="min-w-1 flex-1" />')
     expect(freeFormInputSource).toContain('flex min-w-0 max-w-[52%] items-center justify-end shrink-0')
     expect(freeFormInputSource).toContain('input-toolbar-btn inline-flex !h-7 min-w-0 max-w-[240px]')
     expect(freeFormInputSource).toContain('<span className="min-w-0 truncate">{currentModelDisplayName}</span>')

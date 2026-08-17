@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/skills-market",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "typecheck": "bun ../../node_modules/typescript/bin/tsc --noEmit"
   },
   "dependencies": {
+    "@craft-agent/session-tools-core": "workspace:*",
     "@craft-agent/shared": "workspace:*",
     "fflate": "^0.8.2",
     "jose": "^6.0.0"

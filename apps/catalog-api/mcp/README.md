@@ -1,3 +1,3 @@
 # Storyflow Catalog MCP
 
-Bearer-authenticated Streamable HTTP MCP adapter exposing fixed read-only Catalog operations; it never receives database credentials or arbitrary SQL. Files: `src/`, `package.json`, `bun.lock`, `Dockerfile`.
+Streamable HTTP MCP adapter exposing fixed read-only Catalog operations; VPN-private deployments rely on the network boundary, while public relays require `MCP_BEARER_TOKEN`. It never receives database credentials or arbitrary SQL. Files: `src/`, `package.json`, `bun.lock`, `Dockerfile`.

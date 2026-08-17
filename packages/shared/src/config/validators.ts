@@ -19,8 +19,8 @@
 import { z } from 'zod';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
-import { validateSkillContent as validatePortableSkillContent } from '@craft-agent/session-tools-core';
-export { SkillMetadataSchema } from '@craft-agent/session-tools-core';
+import { validateSkillContent as validatePortableSkillContent } from '@craft-agent/session-tools-core/skill-validation';
+export { SkillMetadataSchema } from '@craft-agent/session-tools-core/skill-validation';
 import { CONFIG_DIR } from './paths.ts';
 import { safeJsonParse, readJsonFileSync } from '../utils/files.ts';
 import { findIconFile } from '../utils/icon.ts';

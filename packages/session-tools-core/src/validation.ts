@@ -9,9 +9,9 @@
  */
 
 import { z } from 'zod';
-import matter from 'gray-matter';
 import { existsSync, readFileSync } from 'node:fs';
 import type { ValidationResult, ValidationIssue } from './types.ts';
+export { SkillMetadataSchema, validateSkillContent, validateSkillSlug } from './skill-validation.ts';
 
 /** Strip UTF-8 BOM that breaks JSON.parse */
 function stripBom(text: string): string {
@@ -188,113 +188,6 @@ export function validateSlug(slug: string): ValidationResult {
   }
 
   return validResult();
-}
-
-// ============================================================
-// Skill Validation
-// ============================================================
-
-const SKILL_NAME_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const MAX_SKILL_NAME_LENGTH = 64;
-const MAX_SKILL_DESCRIPTION_LENGTH = 1024;
-
-/** Validate an Agent Skills identifier before using it as a filesystem segment. */
-export function validateSkillSlug(slug: string): ValidationResult {
-  if (slug.length <= MAX_SKILL_NAME_LENGTH && SKILL_NAME_REGEX.test(slug)) {
-    return validResult();
-  }
-
-  const suggestedSlug = slug
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-+/g, '-')
-    .slice(0, MAX_SKILL_NAME_LENGTH)
-    .replace(/-+$/g, '');
-
-  return invalidResult(
-    'slug',
-    `Skill slug must be lowercase alphanumeric with single hyphens and at most ${MAX_SKILL_NAME_LENGTH} characters`,
-    `Suggested: '${suggestedSlug || 'valid-skill-name'}'`
-  );
-}
-
-/**
- * Zod schema for skill metadata (SKILL.md frontmatter)
- */
-export const SkillMetadataSchema = z.object({
-  name: z.string()
-    .min(1, "Add a 'name' field matching the Skill folder")
-    .max(MAX_SKILL_NAME_LENGTH, `Skill name must be at most ${MAX_SKILL_NAME_LENGTH} characters`)
-    .regex(SKILL_NAME_REGEX, 'Skill name must be lowercase letters, numbers, and single hyphens'),
-  description: z.string()
-    .min(1, "Add a 'description' field explaining what this skill does")
-    .max(MAX_SKILL_DESCRIPTION_LENGTH, `Skill description must be at most ${MAX_SKILL_DESCRIPTION_LENGTH} characters`),
-  metadata: z.object({
-    displayName: z.string().min(1).optional(),
-  }).passthrough().optional(),
-  globs: z.array(z.string()).optional(),
-  alwaysAllow: z.array(z.string()).optional(),
-  icon: z.string().optional(),
-  requiredSources: z.union([z.string(), z.array(z.unknown())]).optional(),
-}).passthrough();
-
-/**
- * Validate skill SKILL.md content (without filesystem access).
- * Used by both Claude and Codex implementations.
- *
- * @param markdownContent - The full SKILL.md file content
- * @param slug - The skill slug (folder name), used for slug format validation
- */
-export function validateSkillContent(markdownContent: string, slug: string): ValidationResult {
-  const errors: ValidationIssue[] = [];
-  const warnings: ValidationIssue[] = [];
-
-  // 1. Validate slug format
-  const slugResult = validateSkillSlug(slug);
-  errors.push(...slugResult.errors);
-
-  // 2. Parse frontmatter
-  let frontmatter: unknown;
-  let body: string;
-  try {
-    const parsed = matter(markdownContent);
-    frontmatter = parsed.data;
-    body = parsed.content;
-  } catch (e) {
-    return invalidResult(
-      'frontmatter',
-      `Invalid YAML frontmatter: ${e instanceof Error ? e.message : 'Unknown error'}`,
-      'Check YAML syntax in frontmatter section'
-    );
-  }
-
-  // 3. Validate frontmatter schema
-  const metaResult = SkillMetadataSchema.safeParse(frontmatter);
-  if (!metaResult.success) {
-    errors.push(...zodErrorToIssues(metaResult.error, 'SKILL.md'));
-  } else if (metaResult.data.name !== slug) {
-    errors.push({
-      path: 'name',
-      message: `Skill name '${metaResult.data.name}' does not match its parent directory '${slug}'`,
-      suggestion: `Set frontmatter name to '${slug}'`,
-    });
-  }
-
-  // 4. Check content is not empty
-  if (!body || body.trim().length === 0) {
-    errors.push({
-      path: 'content',
-      message: 'Skill content is empty (nothing after frontmatter)',
-      suggestion: 'Add instructions after the frontmatter describing what the skill should do',
-    });
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-  };
 }
 
 // ============================================================

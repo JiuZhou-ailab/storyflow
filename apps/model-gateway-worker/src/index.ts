@@ -1,5 +1,5 @@
-// input: Model requests and broker-issued Storyflow capability JWTs
-// output: Authenticated model calls with isolated upstream credentials
+// input: Model requests, legacy Catalog reads, and broker-issued Storyflow capability JWTs
+// output: Authenticated model calls plus a one-release Catalog compatibility proxy
 // pos: Edge authorization boundary that keeps upstream credentials out of desktop builds
 import { decodeProtectedHeader, jwtVerify, type JWTPayload } from 'jose'
 import {
@@ -18,6 +18,8 @@ export interface Env {
   STORYFLOW_GATEWAY_JWT_ISSUER?: string
   NEWAPI_API_KEY?: string
   NEWAPI_UPSTREAM_BASE_URL?: string
+  CATALOG_ORIGIN_URL?: string
+  CATALOG_ORIGIN_TOKEN?: string
 }
 
 type FetchLike = (request: Request) => Promise<Response>
@@ -95,18 +97,21 @@ export async function handleRequest(
 
   const geminiModel = geminiModelFromPath(requestUrl.pathname)
   const isAnthropic = requestUrl.pathname === '/v1/messages'
-  if (!MODEL_API_PATHS.has(requestUrl.pathname) && !geminiModel) {
+  const isCatalog = isLegacyCatalogPath(requestUrl.pathname)
+  if (!MODEL_API_PATHS.has(requestUrl.pathname) && !geminiModel && !isCatalog) {
     return Response.json({ error: 'Unknown model gateway route' }, { status: 404 })
   }
-  const allowedMethod = requestUrl.pathname === '/v1/models' ? 'GET' : 'POST'
+  const allowedMethod = requestUrl.pathname === '/v1/models' || isCatalog ? 'GET' : 'POST'
   if (request.method !== allowedMethod) {
     return methodNotAllowed(allowedMethod)
   }
 
   const startedAt = Date.now()
-  const requiredScope = geminiModel && MANAGED_GEMINI_VIDEO_MODELS.has(geminiModel)
-    ? 'model:video'
-    : 'model:chat'
+  const requiredScope = isCatalog
+    ? 'catalog:read'
+    : geminiModel && MANAGED_GEMINI_VIDEO_MODELS.has(geminiModel)
+      ? 'model:video'
+      : 'model:chat'
   const token = geminiModel
     ? readRequiredEnv(request.headers.get('x-goog-api-key') ?? undefined)
       ?? readBearerToken(request.headers.get('authorization'))
@@ -130,6 +135,11 @@ export async function handleRequest(
   const logIdentity = {
     user: access.sub,
     ...(access.user_name ? { user_name: access.user_name } : {}),
+  }
+
+  // ponytail: remove when v0.14 is the minimum supported desktop version.
+  if (isCatalog) {
+    return proxyLegacyCatalogRequest(requestUrl, env, fetchImpl, startedAt, logIdentity)
   }
 
   const newApiKey = readRequiredEnv(env.NEWAPI_API_KEY)
@@ -418,6 +428,35 @@ function invalidModelAccessTokenResponse(): Response {
   )
 }
 
+async function proxyLegacyCatalogRequest(
+  requestUrl: URL,
+  env: Env,
+  fetchImpl: FetchLike,
+  startedAt: number,
+  logIdentity: Pick<GatewayRequestLogDetails, 'user' | 'user_name'>,
+): Promise<Response> {
+  const originToken = readRequiredEnv(env.CATALOG_ORIGIN_TOKEN)
+  const originUrl = safeHttpsOrigin(env.CATALOG_ORIGIN_URL)
+  if (!originToken || !originUrl) {
+    logGatewayRequest(startedAt, { stage: 'config', ...logIdentity, error: 'catalog_missing_configuration' })
+    return Response.json({ error: 'Video catalog is not configured' }, { status: 503 })
+  }
+
+  try {
+    const response = await fetchImpl(new Request(
+      `${originUrl}${requestUrl.pathname}${requestUrl.search}`,
+      { headers: { 'X-Storyflow-Origin-Token': originToken } },
+    ))
+    logGatewayRequest(startedAt, response.ok
+      ? logIdentity
+      : { stage: 'upstream', ...logIdentity, upstream_status: response.status })
+    return response
+  } catch {
+    logGatewayRequest(startedAt, { stage: 'upstream', ...logIdentity, error: 'catalog_unavailable' })
+    return Response.json({ error: 'Video catalog is unavailable' }, { status: 502 })
+  }
+}
+
 async function resolveManagedModelCatalog(
   upstreamBaseUrl: string,
   newApiKey: string,
@@ -474,6 +513,24 @@ function buildUpstreamUrl(baseUrl: string, pathname: string, search: string): st
 function geminiModelFromPath(pathname: string): string | null {
   const match = /^\/v1beta\/models\/([A-Za-z0-9._-]+):(?:generateContent|streamGenerateContent)$/.exec(pathname)
   return match?.[1] ?? null
+}
+
+function isLegacyCatalogPath(pathname: string): boolean {
+  return pathname === '/v2/catalog/sources'
+    || pathname === '/v2/ranking-snapshots'
+    || pathname === '/v2/rankings'
+    || /^\/v2\/series\/[a-z0-9-]{1,32}\/[A-Za-z0-9_-]{1,64}\/manifest$/.test(pathname)
+}
+
+function safeHttpsOrigin(raw: string | undefined): string | null {
+  try {
+    const url = new URL(raw ?? '')
+    return url.protocol === 'https:' && !url.username && !url.password && url.pathname === '/'
+      ? url.origin
+      : null
+  } catch {
+    return null
+  }
 }
 
 function copyHeader(source: Headers, target: Headers, name: string): void {

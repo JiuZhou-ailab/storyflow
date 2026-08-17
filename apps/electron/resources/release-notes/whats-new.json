@@ -1,19 +1,19 @@
 {
-  "version": "0.10.7",
-  "digest": "4d9fa61f3206853ccc049d9cfea371d696b64b6ecc44130eef1b76576e808d93",
-  "generatedAt": "2026-08-06T15:19:58.565Z",
-  "title": "Storyflow v0.10.7 更新说明",
-  "summary": "Storyflow 0.10.7 让对话、设置和 Skills 用起来更顺手：顶栏更轻，用量更清楚，精选写作 Skill 可以直接安装，Gemini 托管模型也更完整。",
+  "version": "0.14.0",
+  "digest": "02a9785cd055ee766284a0c697c2cb47ee29fa82030458514850b25229c1af27",
+  "generatedAt": "2026-08-17T18:10:31.551Z",
+  "title": "Storyflow v0.14.0 更新说明",
+  "summary": "Storyflow 0.14.0 让爆款短剧数据和 Skills 安装真正可用，同时修正首次对话的输入布局。",
   "highlights": [
-    "聊天内容更顶格：标题与菜单悬浮在左上角，不再挤占对话空间，窗口其余顶栏保持可拖动。",
-    "用量信息更克制：单轮耗时和 Token 收进回复操作栏，当前项目的总用量统一在设置中查看。",
-    "精选写作 Skill 可直接安装：番茄写作、小说创作、评审、改编与分镜等精选能力现在通过固定版本包安装。",
-    "Gemini 选择更完整：托管模型新增 Gemini 3.6 Flash、Gemini 3.1 Pro Preview、Gemini 2.5 Pro 与 Gemini 2.5 Flash。"
+    "独立数据源可以直接启用：连接公司 VPN 后，即可查询红果、GoodShort、ReelShort 与 DataEye 的榜单、快照和媒资状态，无需填写访问凭据。",
+    "升级后自动衔接新入口：已有安装会迁移内置数据源；连接公司 VPN 后重新启用即可使用，不会继续访问已经下线的旧入口。",
+    "下载后可以正确导入：Skills Market 会在发布前验证 Skill 格式，现有可安装内容也已修正为运行时能够识别的版本。",
+    "精选 Skill 安装更稳定：修复两项精选 Skill 的下载校验，并确保免费会话把 Skill 安装到当前用户可发现的位置。"
   ],
-  "accentColor": "#358415",
+  "accentColor": "#af1d9c",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 13,
+    "commitCount": 11,
     "userVisibleCommitCount": 0
   }
 }

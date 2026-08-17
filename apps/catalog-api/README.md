@@ -9,5 +9,5 @@
 - `GET /v2/series/{source}/{sourceId}/manifest`：仅在分集完整且传输受支持时返回 URL。
 
 所有查询参数采用白名单；`source=all` 只分组返回，不跨来源混排。
-`compose.yaml` 同时部署 VPN 私网 MCP 与现有 Tunnel；`compose.dokploy.yaml` 保留公网中转部署。
+`compose.yaml` 同时部署 VPN 私网 MCP 与现有 Tunnel，私网访问不向桌面端分发应用层凭据；`compose.dokploy.yaml` 保留需要独立 Bearer 的公网中转部署。
 Files: `src/`, `mcp/`, `pyproject.toml`, `uv.lock`, `Dockerfile`, `compose.yaml`, `compose.dokploy.yaml`.

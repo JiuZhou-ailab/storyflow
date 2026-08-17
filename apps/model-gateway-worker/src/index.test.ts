@@ -64,6 +64,8 @@ function makeEnv() {
     STORYFLOW_GATEWAY_JWT_AUDIENCE: 'storyflow-model-gateway',
     NEWAPI_API_KEY: 'server-only-newapi-key',
     NEWAPI_UPSTREAM_BASE_URL: 'https://jzapi.duanju.com',
+    CATALOG_ORIGIN_URL: 'https://storyflow-catalog-origin.zjding.com',
+    CATALOG_ORIGIN_TOKEN: 'server-only-catalog-token',
   }
 }
 
@@ -244,6 +246,27 @@ describe('model gateway worker', () => {
       code: 'model_access_token_invalid',
     })
     expect(upstreamCalls).toBe(0)
+  })
+
+  it('keeps v0.13 Catalog reads working during the desktop migration', async () => {
+    const token = await signTestJwt(CURRENT_MODEL_SECRET, {
+      scopes: ['catalog:read'],
+    })
+    const response = await handleRequest(
+      new Request('https://model.storyflow.example.com/v2/catalog/sources', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      makeEnv(),
+      async request => {
+        expect(request.url).toBe('https://storyflow-catalog-origin.zjding.com/v2/catalog/sources')
+        expect(request.headers.get('x-storyflow-origin-token')).toBe('server-only-catalog-token')
+        expect(request.headers.get('authorization')).toBeNull()
+        return Response.json({ version: 2, sources: [{ id: 'hongguo' }] })
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ version: 2, sources: [{ id: 'hongguo' }] })
   })
 
   it('rejects expired, unscoped, and unknown-tier tokens', async () => {
@@ -514,7 +537,9 @@ describe('model gateway worker', () => {
       fetchStub,
     )
     const catalog = await handleRequest(
-      request('/v2/rankings', videoToken),
+      new Request('https://model.storyflow.example.com/v2/rankings', {
+        headers: { Authorization: `Bearer ${videoToken}` },
+      }),
       makeEnv(),
       fetchStub,
     )
@@ -523,7 +548,7 @@ describe('model gateway worker', () => {
     expect(unapproved.status).toBe(403)
     expect(await unapproved.json()).toMatchObject({ code: 'model_not_allowed' })
     expect(files.status).toBe(404)
-    expect(catalog.status).toBe(404)
+    expect(catalog.status).toBe(403)
     expect(upstreamCalls).toBe(0)
   })
 

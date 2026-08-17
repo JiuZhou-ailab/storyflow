@@ -1,6 +1,6 @@
-// input: Authenticated MCP requests and the private Storyflow Catalog HTTP API
+// input: Private-network or bearer-authenticated MCP requests and the Storyflow Catalog HTTP API
 // output: Four fixed read-only Catalog tools over Streamable HTTP
-// pos: Authenticated protocol adapter that never receives database credentials or SQL
+// pos: Protocol adapter that keeps origin credentials server-side and never exposes SQL
 
 import { timingSafeEqual } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -16,7 +16,7 @@ const RANKING_KINDS = ['current_hot', 'platform_daily', 'weekly_hot', 'weekly_ra
 export interface Settings {
   catalogApiUrl: URL
   catalogOriginToken: string
-  mcpBearerToken: string
+  mcpAuth: { mode: 'private-network' } | { mode: 'bearer'; token: string }
   host: string
   port: number
 }
@@ -27,9 +27,17 @@ export function loadSettings(env: Record<string, string | undefined> = process.e
     throw new Error('CATALOG_API_URL must use HTTP or HTTPS')
   }
   const catalogOriginToken = required(env, 'CATALOG_ORIGIN_TOKEN')
-  const mcpBearerToken = required(env, 'MCP_BEARER_TOKEN')
+  const mcpAuthMode = required(env, 'MCP_AUTH_MODE')
   if (catalogOriginToken.length < 32) throw new Error('CATALOG_ORIGIN_TOKEN must contain at least 32 characters')
-  if (mcpBearerToken.length < 32) throw new Error('MCP_BEARER_TOKEN must contain at least 32 characters')
+  if (mcpAuthMode !== 'private-network' && mcpAuthMode !== 'bearer') {
+    throw new Error('MCP_AUTH_MODE must be private-network or bearer')
+  }
+  const mcpAuth = mcpAuthMode === 'bearer'
+    ? { mode: 'bearer' as const, token: required(env, 'MCP_BEARER_TOKEN') }
+    : { mode: 'private-network' as const }
+  if (mcpAuth.mode === 'bearer' && mcpAuth.token.length < 32) {
+    throw new Error('MCP_BEARER_TOKEN must contain at least 32 characters')
+  }
 
   const port = Number(env.PORT ?? 8789)
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -38,7 +46,7 @@ export function loadSettings(env: Record<string, string | undefined> = process.e
   return {
     catalogApiUrl,
     catalogOriginToken,
-    mcpBearerToken,
+    mcpAuth,
     host: env.HOST?.trim() || '0.0.0.0',
     port,
   }
@@ -126,6 +134,12 @@ export function createFetchHandler(
         response = request.method === 'GET'
           ? Response.json({ status: 'ok' })
           : methodNotAllowed('GET')
+      } else if (
+        (path === '/ready' || path === '/mcp')
+        && settings.mcpAuth.mode === 'bearer'
+        && !isAuthorized(request, settings.mcpAuth.token)
+      ) {
+        response = invalidMcpAccessToken()
       } else if (path === '/ready') {
         if (request.method !== 'GET') return methodNotAllowed('GET')
         try {
@@ -136,11 +150,6 @@ export function createFetchHandler(
         }
       } else if (path !== '/mcp') {
         response = Response.json({ error: 'not_found' }, { status: 404 })
-      } else if (!isAuthorized(request, settings.mcpBearerToken)) {
-        response = Response.json(
-          { error: 'invalid_mcp_access_token' },
-          { status: 401, headers: { 'WWW-Authenticate': 'Bearer' } },
-        )
       } else if (request.method !== 'POST') {
         response = methodNotAllowed('POST')
       } else {
@@ -279,6 +288,13 @@ function methodNotAllowed(method: string): Response {
   return Response.json({ error: 'method_not_allowed' }, { status: 405, headers: { Allow: method } })
 }
 
+function invalidMcpAccessToken(): Response {
+  return Response.json(
+    { error: 'invalid_mcp_access_token' },
+    { status: 401, headers: { 'WWW-Authenticate': 'Bearer' } },
+  )
+}
+
 function jsonRpcError(status: number, code: number, message: string): Response {
   return Response.json({ jsonrpc: '2.0', error: { code, message }, id: null }, { status })
 }
@@ -304,6 +320,7 @@ if (import.meta.main) {
   Bun.serve({
     hostname: settings.host,
     port: settings.port,
+    maxRequestBodySize: MAX_REQUEST_BYTES,
     fetch: createFetchHandler(settings),
   })
   console.log(`catalog-mcp: listening on ${settings.host}:${settings.port}`)

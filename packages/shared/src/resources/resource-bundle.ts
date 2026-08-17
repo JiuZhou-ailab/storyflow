@@ -26,6 +26,7 @@ import { generateShortId } from '../automations/resolve-config-path.ts'
 import { VALID_EVENTS } from '../automations/schemas.ts'
 import { debug } from '../utils/debug.ts'
 import { isValidSkillSlug, validateSkillDocumentForSlug } from '../skills/storage.ts'
+import { portablePathCollisionKey } from './portable-path.ts'
 
 import type { FolderSourceConfig } from '../sources/types.ts'
 import type { AutomationMatcher } from '../automations/types.ts'
@@ -600,10 +601,11 @@ function validateFileEntries(files: BundleFile[], prefix: string, errors: string
     }
 
     // Check for duplicate paths
-    if (paths.has(file.relativePath)) {
+    const collisionKey = portablePathCollisionKey(file.relativePath)
+    if (paths.has(collisionKey)) {
       errors.push(`${prefix}.files[${j}]: duplicate path '${file.relativePath}'`)
     }
-    paths.add(file.relativePath)
+    paths.add(collisionKey)
 
     const fileError = validateBundleFile(file)
     if (fileError) {

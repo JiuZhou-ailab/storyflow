@@ -10,6 +10,7 @@
 import { existsSync, readdirSync, readFileSync, statSync, mkdirSync, writeFileSync } from 'fs'
 import { join, relative, dirname, sep } from 'path'
 import { debug } from './debug.ts'
+import { portablePathCollisionKey, validatePortableFilePath } from '../resources/portable-path.ts'
 
 /**
  * Maximum bundle size in bytes (~100MB).
@@ -60,21 +61,8 @@ export function validateBundleFile(file: BundleFile): string | null {
     return 'Missing or invalid relativePath'
   }
 
-  // Path traversal checks
-  if (file.relativePath.includes('..')) {
-    return `Path traversal detected: ${file.relativePath}`
-  }
-  if (file.relativePath.startsWith('/') || file.relativePath.startsWith('\\')) {
-    return `Absolute path not allowed: ${file.relativePath}`
-  }
-  if (file.relativePath.includes('\\')) {
-    return `Backslash path separator not allowed: ${file.relativePath}`
-  }
-
-  // Check for empty segments (double slashes)
-  if (file.relativePath.includes('//')) {
-    return `Invalid path (double slash): ${file.relativePath}`
-  }
+  const pathError = validatePortableFilePath(file.relativePath)
+  if (pathError) return `${pathError}: ${file.relativePath}`
 
   // Validate base64 and size
   if (typeof file.contentBase64 !== 'string') {
@@ -175,11 +163,15 @@ export function collectDirectoryFiles(dir: string, options?: CollectOptions): Bu
  * @throws Error if any file fails path validation (path traversal, absolute path, etc.)
  */
 export function restoreFiles(targetDir: string, files: BundleFile[]): void {
+  const paths = new Set<string>()
   for (const file of files) {
     const error = validateBundleFile(file)
     if (error) {
       throw new Error(`Invalid bundle file: ${error}`)
     }
+    const collisionKey = portablePathCollisionKey(file.relativePath)
+    if (paths.has(collisionKey)) throw new Error(`Duplicate portable bundle path: ${file.relativePath}`)
+    paths.add(collisionKey)
 
     const nativePath = fromPortableRelPath(file.relativePath)
     const fullPath = join(targetDir, nativePath)
