@@ -517,6 +517,16 @@ jobs:
           gh release download "$RELEASE_TAG" --dir .release-assets
           ls -lah .release-assets
 
+      - name: Publish GitHub Release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          if [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')" = "true" ]; then
+            gh release edit "$RELEASE_TAG" --draft=false
+          fi
+
       - name: Publish release assets to Cloudflare R2
         env:
           STORYFLOW_R2_BUCKET: ${{ secrets.STORYFLOW_R2_BUCKET }}
@@ -586,13 +596,3 @@ jobs:
               curl "${curl_args[@]}" "$base_url/latest.yml" | grep -F "version: $version"
               ;;
           esac
-
-      - name: Publish GitHub Release
-        env:
-          GH_REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
-        run: |
-          if [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')" = "true" ]; then
-            gh release edit "$RELEASE_TAG" --draft=false
-          fi
