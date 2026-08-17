@@ -2,11 +2,3 @@ interface:
   display_name: "爆款短剧发现"
   short_description: "Query trending drama rankings and episode links"
   default_prompt: "Use $hot-drama to find the current top Hongguo drama and return its first ten episode URLs."
-
-dependencies:
-  tools:
-    - type: "mcp"
-      value: "storyflow-catalog"
-      description: "Internal read-only short-drama catalog"
-      transport: "streamable_http"
-      url: "http://172.16.33.66:8789/mcp"

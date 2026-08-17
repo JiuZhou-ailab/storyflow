@@ -61,12 +61,15 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       if (hasSkills && options.skillScope !== 'project' && options.skillScope !== 'user') {
         throw new Error('Skill import requires an explicit project or user scope')
       }
+      const skillScope = hasSkills && isFreeConversationWorkspaceId(workspaceId)
+        ? 'user'
+        : options.skillScope
 
       const { importResources } = await import('@craft-agent/shared/resources')
       const { getPiUserSkillsDir } = await import('@craft-agent/shared/skills')
       const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
       const credManager = getCredentialManager()
-      const skillsRootPath = options.skillScope === 'project'
+      const skillsRootPath = skillScope === 'project'
         ? getWorkspaceSkillsPath(workspace.rootPath)
         : getPiUserSkillsDir()
 
@@ -102,7 +105,7 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       for (const slug of result.sources.imported) {
         deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `sources/${slug}/config.json`)
       }
-      if (options.skillScope === 'project') {
+      if (skillScope === 'project') {
         for (const slug of result.skills.imported) {
           deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `.pi/skills/${slug}/SKILL.md`)
         }

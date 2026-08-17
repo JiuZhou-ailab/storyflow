@@ -89,7 +89,7 @@ describe('Resources Skill install scope', () => {
     expect(pushedEvents).toEqual([])
   })
 
-  it('installs Market Skills into the hidden Free Conversations runtime', async () => {
+  it('installs Free Conversations Skills into Pi user scope', async () => {
     const { importResources, ctx, pushedEvents } = createHarness()
 
     await importResources(
@@ -100,8 +100,8 @@ describe('Resources Skill install scope', () => {
       { skillScope: 'project' },
     )
 
-    expect(existsSync(join(workspaceRoot, '.pi', 'skills', 'free-market-skill', 'SKILL.md'))).toBe(true)
-    expect(existsSync(join(userSkillsRoot, 'free-market-skill', 'SKILL.md'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.pi', 'skills', 'free-market-skill', 'SKILL.md'))).toBe(false)
+    expect(existsSync(join(userSkillsRoot, 'free-market-skill', 'SKILL.md'))).toBe(true)
     expect(pushedEvents).toContainEqual({
       channel: RPC_CHANNELS.skills.CHANGED,
       args: [FREE_CONVERSATION_WORKSPACE_ID],

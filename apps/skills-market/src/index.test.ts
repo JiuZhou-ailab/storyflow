@@ -3,14 +3,26 @@
 // pos: Local executable API contract for the Skills Market MVP
 
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { handleRequest, type Env } from './index.ts'
 import { CURATED_SKILLS } from './catalog.ts'
 
 const env: Env = {}
+const hotDramaSkill = readFileSync(new URL('../curated/hot-drama/SKILL.md', import.meta.url), 'utf8')
+const hotDramaOpenAi = readFileSync(new URL('../curated/hot-drama/agents/openai.yaml', import.meta.url), 'utf8')
 
 describe('Skills Market worker', () => {
   test('does not expose ignored local Skill roots as public sources', () => {
     expect(CURATED_SKILLS.every(skill => !skill.sourceUrl?.includes('.agents/skills'))).toBeTrue()
+  })
+
+  test('keeps hot-drama on the built-in typed Source boundary', () => {
+    expect(hotDramaSkill).toContain('requiredSources:\n  - storyflow-catalog')
+    expect(hotDramaSkill).toContain('`list_sources`')
+    expect(hotDramaSkill).toContain('`list_ranking_snapshots`')
+    expect(hotDramaSkill).toContain('`search_rankings`')
+    expect(hotDramaSkill).toContain('`get_conversion_manifest`')
+    expect(`${hotDramaSkill}\n${hotDramaOpenAi}`).not.toMatch(/172\.16\.|bearer|type:\s*["']?mcp/i)
   })
 
   test('lists only installable Skills by default and keeps source-only discovery explicit', async () => {
