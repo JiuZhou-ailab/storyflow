@@ -1,4 +1,4 @@
-# input: Deployment-only database, origin, MCP, and Cloudflare Tunnel secrets
+# input: Deployment-only database, origin, MCP, bind-address, and Cloudflare Tunnel settings
 # output: VPC-local Catalog API and MCP plus the existing outbound tunnel
 # pos: Database-adjacent deployment for private MCP and existing origin consumers
 
@@ -35,7 +35,7 @@ services:
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
       PORT: 8789
     ports:
-      - "172.16.33.103:8789:8789"
+      - "${MCP_BIND_ADDRESS:-127.0.0.1}:8789:8789"
     healthcheck:
       test:
         - CMD
