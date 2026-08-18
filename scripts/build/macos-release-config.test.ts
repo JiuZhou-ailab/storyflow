@@ -74,7 +74,13 @@ describe('macOS release configuration', () => {
     expect(workflow).toContain('bun run release:upload-r2');
     expect(workflow).toContain('Verify public release surfaces');
     expect(workflow.indexOf('Publish GitHub Release')).toBeGreaterThan(
-      workflow.indexOf('Verify public release surfaces'),
+      workflow.indexOf('Verify release assets'),
+    );
+    expect(workflow.indexOf('Publish GitHub Release')).toBeLessThan(
+      workflow.indexOf('Publish release assets to Cloudflare R2'),
+    );
+    expect(workflow.indexOf('Verify public release surfaces')).toBeGreaterThan(
+      workflow.indexOf('Publish release assets to Cloudflare R2'),
     );
     expect(workflow).toContain('Annotate macOS update manifest');
     expect(workflow).toContain('${{ matrix.arch }}=$manifest');
