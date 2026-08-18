@@ -1,6 +1,6 @@
-# input: Optional deploy intent plus client-session/model-access/Market signing secrets and Cloudflare deployment authority
-# output: Optionally deployed managed services followed by live model, Market, and tool capability canaries
-# pos: Shared managed-auth deployment and verification boundary; desktop releases call verify-only mode
+# input: Optional deploy intent plus managed-auth signing secrets and Cloudflare deployment authority
+# output: Optionally deployed auth, model, and tool services followed by their live capability canaries
+# pos: Shared managed-auth deployment and verification boundary; Skills Market deploys independently
 name: Deploy managed auth
 
 on:
@@ -17,9 +17,9 @@ on:
       STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET:
         required: true
       STORYFLOW_GATEWAY_JWT_CURRENT_SECRET:
-        required: true
+        required: false
       STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET:
-        required: true
+        required: false
   workflow_dispatch:
     inputs:
       deploy:
@@ -63,19 +63,19 @@ jobs:
           STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}
         run: |
           set -euo pipefail
-          for name in STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET STORYFLOW_GATEWAY_JWT_CURRENT_SECRET STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET; do
+          for name in STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET; do
             test -n "${!name}" || { echo "Missing $name"; exit 1; }
           done
           if [ "$DEPLOY_MANAGED_AUTH" = "true" ]; then
-            for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STORYFLOW_GATEWAY_JWT_CURRENT_SECRET STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET; do
               test -n "${!name}" || { echo "Missing $name"; exit 1; }
             done
+            test "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" != "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
+              || { echo "Client-session and model-access secrets must differ"; exit 1; }
+            test "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" != "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" \
+              && test "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" != "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
+              || { echo "Skills Market signing secret must be independent"; exit 1; }
           fi
-          test "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" != "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
-            || { echo "Client-session and model-access secrets must differ"; exit 1; }
-          test "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" != "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" \
-            && test "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" != "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
-            || { echo "Skills Market signing secret must be independent"; exit 1; }
 
       - name: Test managed auth contract
         if: ${{ inputs.deploy }}
@@ -84,9 +84,7 @@ jobs:
             apps/auth-broker-worker/src/index.test.ts \
             apps/model-gateway-worker/src/index.test.ts \
             apps/model-gateway-worker/src/managed-auth-flow.test.ts \
-            apps/tool-gateway-worker/src/index.test.ts \
-            apps/skills-market/src/index.test.ts \
-            apps/skills-market/src/security.test.ts
+            apps/tool-gateway-worker/src/index.test.ts
 
       - name: Deploy model gateway
         if: ${{ inputs.deploy }}
@@ -136,32 +134,6 @@ jobs:
           test "$status" = 401
           grep -q '"code":"tool_access_token_invalid"' "$RUNNER_TEMP/tool-gateway-negative.json"
 
-      - name: Migrate and deploy Skills Market
-        if: ${{ inputs.deploy }}
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}
-        run: |
-          set -euo pipefail
-          bunx wrangler@4.114.0 d1 migrations apply storyflow-skills-market --remote \
-            --config apps/skills-market/wrangler.toml
-          printf '%s' "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" \
-            | bunx wrangler@4.114.0 secret put STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET \
-                --config apps/skills-market/wrangler.toml >/dev/null
-          bunx wrangler@4.114.0 deploy --config apps/skills-market/wrangler.toml
-
-      - name: Verify Skills Market
-        run: |
-          set -euo pipefail
-          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
-            https://storyflow-skills.zjding.com/health > "$RUNNER_TEMP/market-health.json"
-          MARKET_HEALTH_PATH="$RUNNER_TEMP/market-health.json" bun --eval '
-            const body = await Bun.file(process.env.MARKET_HEALTH_PATH).json();
-            if (body.status !== "ok" || !(body.catalog > 0)) process.exit(1);
-          '
-          bun run skills-market:verify
-
       - name: Deploy auth broker
         if: ${{ inputs.deploy }}
         env:
@@ -186,7 +158,6 @@ jobs:
       - name: Verify managed auth integration
         env:
           STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
-          STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --retry 5 --retry-delay 2 \
@@ -269,36 +240,8 @@ jobs:
             if (!Array.isArray(body.results) || body.results.length === 0) process.exit(1);
           '
 
-          status="$(curl --silent --show-error --output "$RUNNER_TEMP/market-token-response.json" \
-            --write-out '%{http_code}' \
-            -X POST \
-            -H "Authorization: Bearer $APP_SESSION_TOKEN" \
-            https://storyflow-auth.zjding.com/api/client-auth/skills-market/token)"
-          test "$status" = 200
-          MARKET_ACCESS_TOKEN="$(MARKET_TOKEN_RESPONSE_PATH="$RUNNER_TEMP/market-token-response.json" bun --eval '
-            import { jwtVerify } from "jose";
-            const body = await Bun.file(process.env.MARKET_TOKEN_RESPONSE_PATH).json();
-            const { payload } = await jwtVerify(
-              body.marketPublishToken,
-              new TextEncoder().encode(process.env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET),
-              { issuer: "storyflow-auth-broker", audience: "storyflow-skills-market" },
-            );
-            if (
-              body.expiresInSeconds !== 300
-              || !payload.scopes?.includes("skills:read")
-              || !payload.scopes?.includes("skills:publish")
-              || payload.user_name !== "Release Canary"
-              || payload.organization_id !== "release-canary-company"
-            ) process.exit(1);
-            console.log(body.marketPublishToken);
-          ')"
-
-          status="$(curl --silent --show-error --output "$RUNNER_TEMP/market-private-catalog.json" \
-            --write-out '%{http_code}' \
-            -H "Authorization: Bearer $MARKET_ACCESS_TOKEN" \
-            https://storyflow-skills.zjding.com/api/skills)"
-          test "$status" = 200
-          MARKET_CATALOG_PATH="$RUNNER_TEMP/market-private-catalog.json" bun --eval '
-            const body = await Bun.file(process.env.MARKET_CATALOG_PATH).json();
-            if (!Array.isArray(body.skills) || body.skills.length === 0) process.exit(1);
-          '
+      - name: Verify Skills Market auth integration
+        if: ${{ inputs.deploy }}
+        env:
+          STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
+        run: bun run apps/skills-market/scripts/verify-auth-integration.ts

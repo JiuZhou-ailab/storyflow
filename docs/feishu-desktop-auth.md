@@ -218,7 +218,7 @@ Configure four independent signing keys:
 | --- | --- | --- |
 | Client session | `STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID`, `STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET` | never present |
 | Model access | `STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID`, `STORYFLOW_GATEWAY_JWT_CURRENT_SECRET` | same values on Model Gateway |
-| Skills Market | `STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID`, `STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET` | same values on Skills Market |
+| Skills Market | `STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID`, `STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET` | same current pair plus optional `STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_KEY_ID` and `STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_SECRET` on Skills Market |
 | Tool access | `STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_KEY_ID`, `STORYFLOW_TOOL_GATEWAY_JWT_PRIVATE_KEY` | matching key ID and `STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_PUBLIC_KEY` |
 
 Key IDs are non-secret Worker variables. Put only the secret values in
@@ -247,6 +247,10 @@ The model gateway upstream URL is a non-secret Worker variable in
 `apps/model-gateway-worker/wrangler.toml`. Rotate any upstream key that has ever
 been pasted into chat, logs, or source before deployment.
 
+Managed auth and Skills Market deploy independently. Managed-auth production
+deploys run the broker-to-Market capability canary; Market deploys run their own
+contract and bundle canaries. Desktop releases do not deploy or verify Market.
+
 `ANYSEARCH_API_KEY` and `FIRECRAWL_API_KEY` are maintained only as Tool Gateway
 Worker Secrets. Tool capabilities use ES256: the private key exists only on the
 Auth Broker and the matching public key is a non-secret Tool Gateway variable.
@@ -273,6 +277,10 @@ For later model-key rotation, deploy the gateway first with the new key as
 `CURRENT_*` and the old keyed value as `PREVIOUS_*`, then switch the broker to
 the new current key. Remove the gateway previous key after 24 hours plus
 clock skew.
+
+For Skills Market rotation, deploy Market first with the new key as `CURRENT_*`
+and the old pair as `PREVIOUS_*`, then switch the broker to the new current key.
+Remove the Market previous pair after the five-minute capability lifetime.
 
 For client-session rotation, deploy the broker with the new key as `CURRENT_*`
 and the old value as `PREVIOUS_*`. Successful refreshes roll sessions to the

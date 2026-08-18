@@ -11,6 +11,8 @@ import { validateMarketBundle } from './packages.ts'
 
 const MARKET_KEY_ID = 'skills-market-test'
 const MARKET_SECRET = 'skills-market-secret'
+const PREVIOUS_MARKET_KEY_ID = 'skills-market-previous'
+const PREVIOUS_MARKET_SECRET = 'skills-market-previous-secret'
 
 interface TokenOptions {
   issuer?: string
@@ -29,6 +31,8 @@ interface TokenOptions {
 const marketEnv = {
   STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID: MARKET_KEY_ID,
   STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: MARKET_SECRET,
+  STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_KEY_ID: PREVIOUS_MARKET_KEY_ID,
+  STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_SECRET: PREVIOUS_MARKET_SECRET,
 } satisfies Env
 
 async function marketToken(options: TokenOptions = {}): Promise<string> {
@@ -107,6 +111,26 @@ describe('publish capability verification', () => {
     ])
     const responses = await Promise.all(tokens.map(token => handleRequest(authenticatedSubmission(token), marketEnv)))
     expect(responses.map(response => response.status)).toEqual([401, 401, 401, 401])
+  })
+
+  test('accepts the previous Market key only during an explicitly configured rotation window', async () => {
+    const token = await marketToken({
+      keyId: PREVIOUS_MARKET_KEY_ID,
+      secret: PREVIOUS_MARKET_SECRET,
+      scopes: ['skills:read'],
+    })
+    const accepted = await handleRequest(new Request('https://market.test/api/skills', {
+      headers: { Authorization: `Bearer ${token}` },
+    }), marketEnv)
+    const rejected = await handleRequest(new Request('https://market.test/api/skills', {
+      headers: { Authorization: `Bearer ${token}` },
+    }), {
+      STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID: MARKET_KEY_ID,
+      STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: MARKET_SECRET,
+    })
+
+    expect(accepted.status).toBe(200)
+    expect(rejected.status).toBe(401)
   })
 })
 

@@ -7,7 +7,7 @@
     "dev": "bunx wrangler dev",
     "dev:local": "bun --watch src/local-dev.ts",
     "deploy": "bunx wrangler deploy",
-    "test": "bun test src/*.test.ts",
+    "test": "bun test src/*.test.ts scripts/*.test.ts",
     "typecheck": "bun ../../node_modules/typescript/bin/tsc --noEmit"
   },
   "dependencies": {

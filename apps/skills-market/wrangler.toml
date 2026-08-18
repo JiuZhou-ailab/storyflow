@@ -21,3 +21,4 @@ bucket_name = "storyflow-skills-market-packages"
 
 [vars]
 STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID = "skills-market-2026-08"
+STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_KEY_ID = ""

@@ -49,6 +49,8 @@ export interface Env {
   AI?: WorkersAI
   STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID?: string
   STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET?: string
+  STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_KEY_ID?: string
+  STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_SECRET?: string
 }
 
 interface PublisherIdentity {
@@ -483,12 +485,20 @@ async function readMarketIdentity(
     return null
   }
 
-  const keyId = env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID?.trim()
-  const secret = env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET?.trim()
-  if (!keyId || !secret) throw new RequestError(503, 'Skills Market identity verification is not configured')
+  const currentKey = readMarketVerificationKey(
+    env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID,
+    env.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET,
+  )
+  if (!currentKey) throw new RequestError(503, 'Skills Market identity verification is not configured')
   try {
-    if (decodeProtectedHeader(token).kid !== keyId) throw new Error('unknown key')
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+    const kid = decodeProtectedHeader(token).kid
+    const previousKey = readMarketVerificationKey(
+      env.STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_KEY_ID,
+      env.STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_SECRET,
+    )
+    const key = kid === currentKey.id ? currentKey : previousKey?.id === kid ? previousKey : null
+    if (!key) throw new Error('unknown key')
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(key.secret), {
       algorithms: ['HS256'],
       issuer: 'storyflow-auth-broker',
       audience: 'storyflow-skills-market',
@@ -509,6 +519,12 @@ async function readMarketIdentity(
   } catch {
     throw new RequestError(401, 'Invalid Skills Market publish token')
   }
+}
+
+function readMarketVerificationKey(id: string | undefined, secret: string | undefined): { id: string, secret: string } | null {
+  const normalizedId = id?.trim()
+  const normalizedSecret = secret?.trim()
+  return normalizedId && normalizedSecret ? { id: normalizedId, secret: normalizedSecret } : null
 }
 
 function readBearerToken(value: string | null): string | null {

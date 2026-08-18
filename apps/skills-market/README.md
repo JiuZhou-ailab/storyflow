@@ -11,6 +11,7 @@ actions; this Worker never renders a web product or executes installed Skills.
 | `src/packages.ts` | Deterministic single-Skill ResourceBundle validation. |
 | `src/review.ts` | Synchronous Workers AI admission decision and output validation. |
 | `src/index.ts` | HTTP, bearer identity, D1 publication, and R2 distribution. |
+| `scripts/` | Market-owned cross-service canary and its deterministic test. |
 | `migrations/` | Versioned catalog and review-evidence schema. |
 
 Publication is synchronous:
@@ -47,7 +48,8 @@ bun run test
 bun run typecheck
 ```
 
-Provision and deploy:
+Production deploys run from the independent `Skills Market` GitHub
+workflow; desktop releases never invoke it. For an operator-driven deploy:
 
 ```bash
 bunx wrangler login
@@ -65,3 +67,10 @@ Catalog, detail, and bundle GETs accept the same optional bearer capability so
 company Skills remain private. Anonymous GETs expose public Skills only, and
 `POST /api/submissions` requires the bearer capability. All other paths,
 including `/`, return a JSON `404`.
+
+Market verifies both `CURRENT` and optional `PREVIOUS` key pairs. For rotation,
+set both key IDs in `wrangler.toml`, store the old secret as
+`STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_SECRET`, and deploy Market with the new
+current pair and old previous pair. Then switch the broker issuer to the new
+current pair. After the five-minute capability lifetime, clear the previous ID
+and secret and deploy Market again.

@@ -1,0 +1,52 @@
+# input: Catalog API source and dependency changes
+# output: Deterministic Catalog API contract test result without private-network access
+# pos: Independent data-source CI boundary; desktop product validation excludes this service
+name: Validate Catalog Data Source
+
+on:
+  pull_request:
+    paths:
+      - "apps/catalog-api/**"
+      - ".github/workflows/validate-catalog.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/catalog-api/**"
+      - ".github/workflows/validate-catalog.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-catalog-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Test Catalog API
+        run: uv run --frozen --project apps/catalog-api python -m unittest discover -s apps/catalog-api/src -p 'test_*.py'
+
+      - name: Install Catalog MCP dependencies
+        working-directory: apps/catalog-api/mcp
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Test Catalog MCP
+        working-directory: apps/catalog-api/mcp
+        run: bun test src/index.test.ts

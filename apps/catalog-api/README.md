@@ -10,4 +10,5 @@
 
 所有查询参数采用白名单；`source=all` 只分组返回，不跨来源混排。
 `compose.yaml` 同时部署 VPN 私网 MCP 与现有 Tunnel，私网访问不向桌面端分发应用层凭据；`compose.dokploy.yaml` 保留需要独立 Bearer 的公网中转部署。
+GitHub 的 `Validate Catalog Data Source` workflow 只运行确定性服务契约测试；VPN 内 `/ready` 与 MCP 工具验收属于数据源自身发布流程，不阻塞桌面产品发版。
 Files: `src/`, `mcp/`, `pyproject.toml`, `uv.lock`, `Dockerfile`, `compose.yaml`, `compose.dokploy.yaml`.

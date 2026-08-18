@@ -1,6 +1,6 @@
-// input: Managed-auth and marketing deployment workflows, release workflow, and Worker route configuration
-// output: Regression coverage for optional deployment, secret scope, and mandatory live verification
-// pos: Contract keeping production deployment authority out of dependency installation and desktop publication
+// input: Managed-auth, Market, Catalog, marketing, and desktop release workflows plus Worker route configuration
+// output: Regression coverage for service ownership, secret scope, and independent deployment boundaries
+// pos: Contract keeping data-source and Skills deployment authority out of desktop publication
 
 import { describe, expect, it } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
@@ -15,6 +15,7 @@ function readRepoFile(path: string): string {
 
 type WorkflowStep = {
   env?: Record<string, unknown>
+  if?: string
   name?: string
   run?: string
 }
@@ -63,6 +64,7 @@ describe('managed auth deployment', () => {
     expect(workflow).toContain('deploy:')
     expect(workflow).toContain('DEPLOY_MANAGED_AUTH')
     expect(workflow).toContain('Verify managed auth integration')
+    expect(workflow).toContain('Verify Skills Market auth integration')
     expect(workflow).toContain('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET')
     expect(workflow).toContain('STORYFLOW_GATEWAY_JWT_CURRENT_SECRET')
     expect(workflow).toContain('STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET')
@@ -73,7 +75,7 @@ describe('managed auth deployment', () => {
     expect(workflow).toContain('tool_access_token_invalid')
     expect(workflow).toContain('client_session_token_invalid')
     expect(workflow).toContain('MODEL_CATALOG_RESPONSE_PATH')
-    expect(workflow).toContain('MARKET_TOKEN_RESPONSE_PATH')
+    expect(workflow).not.toContain('MARKET_TOKEN_RESPONSE_PATH')
     expect(workflow).toContain('TOOL_TOKEN_RESPONSE_PATH')
     expect(workflow).toContain('TOOL_SEARCH_RESPONSE_PATH')
     expect(workflow).toContain('payload.exp - now <= 12 * 60 * 60 + 5 * 60')
@@ -112,11 +114,6 @@ describe('managed auth deployment', () => {
       CLOUDFLARE_ACCOUNT_ID: '${{ vars.CLOUDFLARE_ACCOUNT_ID }}',
       STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET }}',
     })
-    expect(findStep(deploy, 'Migrate and deploy Skills Market').env).toEqual({
-      CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}',
-      CLOUDFLARE_ACCOUNT_ID: '${{ vars.CLOUDFLARE_ACCOUNT_ID }}',
-      STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}',
-    })
     expect(findStep(deploy, 'Deploy tool gateway').env).toEqual({
       CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}',
       CLOUDFLARE_ACCOUNT_ID: '${{ vars.CLOUDFLARE_ACCOUNT_ID }}',
@@ -130,8 +127,60 @@ describe('managed auth deployment', () => {
     })
     expect(findStep(deploy, 'Verify managed auth integration').env).toEqual({
       STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}',
-      STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}',
     })
+    expect(findStep(deploy, 'Verify Skills Market auth integration')).toMatchObject({
+      if: '${{ inputs.deploy }}',
+      env: {
+        STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}',
+      },
+      run: 'bun run apps/skills-market/scripts/verify-auth-integration.ts',
+    })
+  })
+
+  it('deploys Skills Market and validates Catalog outside desktop CI/CD', () => {
+    const managedAuthWorkflow = readRepoFile('.github/workflows/deploy-managed-auth.yml')
+    const marketWorkflow = readRepoFile('.github/workflows/deploy-skills-market.yml')
+    const catalogWorkflow = readRepoFile('.github/workflows/validate-catalog.yml')
+    const releaseWorkflow = readRepoFile('.github/workflows/release.yml')
+    const packageManifest = JSON.parse(readRepoFile('package.json')) as {
+      scripts: Record<string, string>
+    }
+
+    expect(managedAuthWorkflow).not.toContain('Migrate and deploy Skills Market')
+    expect(managedAuthWorkflow).toContain('Verify Skills Market auth integration')
+    expect(managedAuthWorkflow).not.toContain('storyflow-skills.zjding.com')
+    expect(marketWorkflow).toContain('name: Skills Market')
+    expect(marketWorkflow).toContain('pull_request:')
+    expect(marketWorkflow).toContain('push:')
+    expect(marketWorkflow).toContain('workflow_dispatch:')
+    expect(marketWorkflow).toMatch(/uses: actions\/checkout@v5\n\s+with:\n\s+ref: \$\{\{ github\.sha \}\}/)
+    expect(marketWorkflow).toContain('test "$GITHUB_REF" = "refs/heads/main"')
+    expect(marketWorkflow).toContain('Migrate and deploy Skills Market')
+    expect(marketWorkflow).toContain('bun run skills-market:test')
+    expect(marketWorkflow).toContain('bun run skills-market:verify')
+    expect(marketWorkflow).not.toContain('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET')
+    expect(marketWorkflow).toContain('STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_SECRET')
+    expect(marketWorkflow).toContain('previous key id and secret must be configured together')
+    expect(marketWorkflow).toContain('secret list --format json')
+    expect(marketWorkflow).toContain('secret delete STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_SECRET')
+    expect(marketWorkflow.indexOf('- name: Checkout')).toBeLessThan(marketWorkflow.indexOf('- name: Verify deployment configuration'))
+    expect(marketWorkflow.indexOf('- name: Setup Bun')).toBeLessThan(marketWorkflow.indexOf('- name: Verify deployment configuration'))
+    expect(marketWorkflow).toContain('packages/shared/src/resources/**')
+    expect(marketWorkflow).toContain('packages/pi-agent-server/src/**')
+    expect(catalogWorkflow).toContain('name: Validate Catalog Data Source')
+    expect(catalogWorkflow).toContain('uv run --frozen --project apps/catalog-api')
+    expect(catalogWorkflow).toContain('working-directory: apps/catalog-api/mcp')
+    expect(catalogWorkflow).toContain('bun test src/index.test.ts')
+    expect(catalogWorkflow).not.toContain('172.16.33.103')
+    expect(releaseWorkflow).not.toContain('STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET')
+    expect(releaseWorkflow).not.toContain('STORYFLOW_GATEWAY_JWT_CURRENT_SECRET')
+    expect(releaseWorkflow).not.toContain('storyflow-skills.zjding.com')
+    expect(releaseWorkflow).not.toContain('172.16.33.103')
+    expect(packageManifest.scripts['validate:dev']).not.toContain('test:catalog-api')
+    expect(packageManifest.scripts.test).toContain("':!apps/catalog-api/**'")
+    expect(packageManifest.scripts.test).toContain("':!apps/skills-market/**'")
+    expect(readRepoFile('apps/skills-market/package.json')).toContain('scripts/*.test.ts')
+    expect(readRepoFile('apps/skills-market/wrangler.toml')).toContain('STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_KEY_ID = ""')
   })
 
   it('scopes marketing production authority to verification and deployment', () => {
@@ -162,6 +211,7 @@ describe('managed auth deployment', () => {
   it('keeps authenticated dependency installs from running lifecycle code', () => {
     const workflowPaths = [
       '.github/workflows/deploy-marketing.yml',
+      '.github/workflows/deploy-skills-market.yml',
       '.github/workflows/release.yml',
       '.github/workflows/validate-server.yml',
       '.github/workflows/validate.yml',
@@ -192,6 +242,8 @@ describe('managed auth deployment', () => {
     expect(releaseWorkflow).toContain('deploy: false')
     expect(releaseWorkflow).toMatch(/create-release:\n\s+needs: preflight-release-secrets/)
     expect(releaseWorkflow).toMatch(/verify-release:\n\s+needs:\n\s+- validate\n\s+- verify-managed-auth/)
+    expect(releaseWorkflow).not.toContain('STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET')
+    expect(releaseWorkflow).not.toContain('STORYFLOW_GATEWAY_JWT_CURRENT_SECRET')
     expect(deployWorkflow).toContain('DEPLOY_MANAGED_AUTH: ${{ inputs.deploy }}')
     expect(deployWorkflow).toContain('if: ${{ inputs.deploy }}')
     expect(deployWorkflow).not.toContain('github.event_name != \'workflow_call\' || inputs.deploy')
