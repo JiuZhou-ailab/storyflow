@@ -1,18 +1,19 @@
 {
-  "version": "0.15.0",
-  "digest": "4834d80229f486c4859d255a9dd38ab9e4fce4d381011c79b9114fe65b8c883e",
-  "generatedAt": "2026-08-19T11:42:13.572Z",
-  "title": "Storyflow v0.15.0 更新说明",
-  "summary": "Storyflow 0.15.0 让爆款短剧数据无需 VPN 即可使用，并补齐 ReelShort 分集视频查询。",
+  "version": "0.16.0",
+  "digest": "ab68ed1f23b00a5705e6d191d3ab30850fa5bcc8c5e06645f9e4e4b966c3e74a",
+  "generatedAt": "2026-08-19T12:37:38.591Z",
+  "title": "Storyflow v0.16.0 更新说明",
+  "summary": "Storyflow 0.16.0 统一了品牌图标和消息操作，新会话默认使用 GPT-5.6 Luna。",
   "highlights": [
-    "公网入口直接可用：登录 Storyflow 后即可查询红果、GoodShort、ReelShort 与 DataEye 的榜单和媒资数据，无需 VPN 或手动填写访问凭据。",
-    "ReelShort 视频可按剧查找：按剧名或剧目 ID 查询已观测到的分集 URL，需要完整剧集时可返回按集数排序的媒资清单。",
-    "旧安装自动迁移：已安装的数据源升级后会切换到新域名，同时保留启用状态和自定义显示信息。"
+    "用户消息操作更顺手：复制与编辑并重新生成统一显示在消息底部，长对话里点击编辑也能即时响应。",
+    "默认模型升级：新会话默认使用 GPT-5.6 Luna。",
+    "Storyflow 新图标上线：桌面应用、登录页、分享页与官网统一使用新的 Storyflow 图标。",
+    "macOS Dock 保持简洁：未读状态继续显示在 Storyflow 内，不再在 Dock 图标上叠加未读角标。"
   ],
-  "accentColor": "#957018",
+  "accentColor": "#af1da8",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 4,
+    "commitCount": 6,
     "userVisibleCommitCount": 0
   }
 }
