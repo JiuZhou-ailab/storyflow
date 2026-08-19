@@ -1568,7 +1568,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   }, [pendingPermission, pendingCredential, pendingUserQuestion])
 
   const rewindPendingRef = React.useRef(false)
-  const [rewindPending, setRewindPending] = useState(false)
   const handleRewindUserMessage = useCallback(async (message: Message) => {
     if (!session) return
     if (message.role !== 'user') return
@@ -1593,7 +1592,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
 
     rewindPendingRef.current = true
-    setRewindPending(true)
     try {
       const result = await window.electronAPI.rewindSession(session.id, message.id)
       if (!result.success) {
@@ -1614,7 +1612,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       toast.error(t('chat.rewindFailed', 'Could not rewind conversation'))
     } finally {
       rewindPendingRef.current = false
-      setRewindPending(false)
     }
   }, [onDraftInputChange, session, t])
   const handleRewindUserMessageRef = React.useRef(handleRewindUserMessage)
@@ -1923,7 +1920,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             onOpenUrl={onOpenUrl}
                             sessionId={session?.id}
                             compactMode={compactMode}
-                            onEdit={session.isProcessing || rewindPending ? undefined : () => {
+                            onEdit={session.isProcessing ? undefined : () => {
                               void handleRewindUserMessageRef.current(turn.message)
                             }}
                           />

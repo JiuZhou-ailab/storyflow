@@ -21,6 +21,7 @@ import type { StoredAttachment, ContentBadge } from '@craft-agent/core'
 import { normalizePath } from '@craft-agent/core/utils'
 import { cn } from '../../lib/utils'
 import { Markdown } from '../markdown'
+import { CopyButton } from '../overlay/CopyButton'
 import { FileTypeIcon, getFileTypeLabel } from './attachment-helpers'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../tooltip'
 import { useTranslation } from 'react-i18next'
@@ -498,26 +499,7 @@ export function UserMessageBubble({
           separate pill below — keeps the chat to one bubble per message
           while the chip and pulsing icon make the waiting state obvious
           (#616 follow-up). */}
-      <div className="flex w-full items-center justify-end gap-1.5">
-        {onEdit && !showQueued && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={onEdit}
-                  aria-label={t('chat.editAndRegenerate', 'Edit and regenerate')}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 transition-all hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
-                >
-                  <PencilLine className="h-3.5 w-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {t('chat.editAndRegenerate', 'Edit and regenerate')}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
+      <div className="flex w-full flex-col items-end gap-1">
         <div
           className={cn(
             "max-w-[80%] bg-user-message-bubble rounded-[12px] break-words min-w-0 select-text [&_p]:m-0 [&_p]:leading-5",
@@ -547,6 +529,28 @@ export function UserMessageBubble({
               </Markdown>
             )
           }
+        </div>
+        <div className="flex items-center justify-end gap-0.5">
+          <CopyButton content={displayContent} />
+          {onEdit && !showQueued && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={onEdit}
+                    aria-label={t('chat.editAndRegenerate', 'Edit and regenerate')}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <PencilLine className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {t('chat.editAndRegenerate', 'Edit and regenerate')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
       </div>
     </div>
