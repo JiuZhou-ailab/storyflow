@@ -11,7 +11,6 @@ const distDir = join(appDir, "dist");
 const assetsDir = join(distDir, "assets");
 const entrypoint = join(appDir, "src", "main.tsx");
 const htmlPath = join(appDir, "index.html");
-const faviconPath = join(appDir, "favicon.svg");
 const faviconIcoPath = join(appDir, "favicon.ico");
 const appleTouchIconPath = join(appDir, "apple-touch-icon.png");
 const redirectsPath = join(appDir, "_redirects");
@@ -69,9 +68,6 @@ html = html.replace(
 );
 
 writeFileSync(join(distDir, "index.html"), html);
-if (existsSync(faviconPath)) {
-  copyFileSync(faviconPath, join(distDir, "favicon.svg"));
-}
 if (existsSync(faviconIcoPath)) {
   copyFileSync(faviconIcoPath, join(distDir, "favicon.ico"));
 }

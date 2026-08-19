@@ -144,7 +144,10 @@ figure {
 }
 
 .header-mark img {
+  aspect-ratio: 1;
+  border-radius: 25%;
   height: 24px;
+  object-fit: cover;
   width: 24px;
 }
 
@@ -184,13 +187,11 @@ figure {
 }
 
 .hero-logo {
-  color: #2563eb;
-  font-size: 34px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  line-height: 1;
+  aspect-ratio: 1;
+  border-radius: 25%;
+  display: block;
   margin-bottom: 48px;
-  text-align: center;
+  object-fit: cover;
   width: 224px;
 }
 

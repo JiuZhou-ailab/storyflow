@@ -409,9 +409,7 @@ function Hero() {
 
   return (
     <section className="hero">
-      <div className="hero-logo" aria-label="Storyflow">
-        STORYFLOW
-      </div>
+      <img className="hero-logo" src="/apple-touch-icon.png" alt="Storyflow" />
       <div className="hero-copy">
         <h1>小说创作者的 AI 桌面工作台</h1>
         <p>

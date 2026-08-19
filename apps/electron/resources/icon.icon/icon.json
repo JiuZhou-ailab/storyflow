@@ -6,7 +6,7 @@
     {
       "layers" : [
         {
-          "image-name" : "icon.svg",
+          "image-name" : "icon.png",
           "name" : "icon",
           "position" : {
             "scale" : 37,

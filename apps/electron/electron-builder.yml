@@ -48,7 +48,7 @@ mac:
   # macOS 26+ Liquid Glass: Tell macOS to look for icon in Assets.car
   # The value must match --app-icon used in actool (see afterPack.js)
   extendInfo:
-    CFBundleIconName: AppIcon
+    CFBundleIconName: icon
   target:
     - dmg
     - zip

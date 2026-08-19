@@ -38,6 +38,7 @@ describe('macOS release configuration', () => {
     expect(builderConfig).toContain('forceCodeSigning: true');
     expect(builderConfig).toContain('notarize: true');
     expect(builderConfig).toContain('sign: true');
+    expect(builderConfig).toContain('CFBundleIconName: icon');
     expect(builderConfig).toMatch(/target:\n\s+- dmg\n\s+- zip/);
   });
 

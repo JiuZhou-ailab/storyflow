@@ -20,6 +20,7 @@ import {
   Zap,
 } from 'lucide-react'
 import appPackage from '../../../../package.json'
+import storyflowLogo from '@/assets/storyflow-logo.png'
 import { atom, useAtom, useAtomValue, useStore } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 import { useTranslation } from 'react-i18next'
@@ -438,7 +439,8 @@ export function ActivityRail({
         style={{ height: WINDOW_TITLE_BAR_HEIGHT }}
       />
       <div className="flex min-h-0 flex-1 flex-col px-2 pt-1">
-        <div className="flex items-center px-2.5 pb-2">
+        <div className="flex items-center gap-2 px-2.5 pb-2">
+          <img src={storyflowLogo} alt="" aria-hidden="true" className="size-4 shrink-0 rounded-[25%] object-cover" />
           <span className="min-w-0 flex-1 truncate text-[16px] font-medium text-foreground/85">
             Storyflow
             <span className="ml-1 text-[11px] font-normal text-muted-foreground/65">v{appPackage.version}</span>
