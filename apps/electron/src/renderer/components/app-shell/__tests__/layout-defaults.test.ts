@@ -299,7 +299,7 @@ describe('app shell layout defaults', () => {
     expect(activityRailControlsSource).toContain('style={{ width: ACTIVITY_RAIL_WIDTH, height: WINDOW_TITLE_BAR_HEIGHT }}')
     expect(activityRailControlsSource).not.toContain('left-[84px]')
     expect(activityRailControlsSource.match(/titlebar-no-drag pointer-events-auto/g)).toHaveLength(2)
-    expect(activityRailSource).toContain('className="flex items-center px-2.5 pb-2"')
+    expect(activityRailSource).toContain('className="flex items-center gap-2 px-2.5 pb-2"')
     expect(appShellSource).toContain('{showActivityRail ? activityRailControls : null}')
     expect(appShellSource.indexOf('{showActivityRail ? activityRailControls : null}')).toBeGreaterThan(
       appShellSource.indexOf('data-testid="panel-stack-inset"'),
