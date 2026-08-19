@@ -142,7 +142,7 @@ describe('builtin LLM connection defaults', () => {
       {
         name: 'GPT (Responses)',
         baseUrl: 'https://storyflow-model.zjding.com/v1',
-        defaultModel: 'gpt-5.5',
+        defaultModel: 'gpt-5.6-luna',
         customEndpoint: { api: 'openai-responses' },
       },
       {

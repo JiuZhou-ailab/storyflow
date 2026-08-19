@@ -51,7 +51,7 @@
         "providerType": "pi_compat",
         "authType": "api_key_with_endpoint",
         "baseUrl": "https://storyflow-model.zjding.com/v1",
-        "defaultModel": "gpt-5.5",
+        "defaultModel": "gpt-5.6-luna",
         "modelSelectionMode": "userDefined3Tier",
         "piAuthProvider": "openai",
         "customEndpoint": {
