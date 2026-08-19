@@ -3,13 +3,12 @@
  *
  * Handles native OS notifications and app badge count.
  * - Shows notifications when new messages arrive (when app is not focused)
- * - Updates dock badge count with total unread messages
+ * - Keeps unread state in Storyflow; macOS Dock stays unbadged
  * - Clicking notification navigates to the relevant session
  */
 
 import { Notification, app, BrowserWindow, nativeImage } from 'electron'
 import { join } from 'path'
-import { readFileSync } from 'fs'
 import { mainLog } from './logger'
 import { RPC_CHANNELS } from '../shared/types'
 import type { WindowManager } from './window-manager'
@@ -21,7 +20,6 @@ let windowManager: WindowManager | null = null
 let eventSink: EventSink | null = null
 let clientResolver: ClientResolver | null = null
 let baseIconPath: string | null = null
-let baseIconDataUrl: string | null = null
 let currentBadgeCount: number = 0
 let instanceNumber: number | null = null  // Multi-instance dev: instance number for dock badge
 
@@ -125,15 +123,19 @@ function handleNotificationClick(workspaceId: string, sessionId: string): void {
 }
 
 /**
- * Initialize the base icon for badge overlay
+ * Initialize the base dock/taskbar icon
  * Call this during app startup
  */
 export function initBadgeIcon(iconPath: string): void {
   try {
     baseIconPath = iconPath
-    // Read and cache the icon as base64 data URL
-    const iconBuffer = readFileSync(iconPath)
-    baseIconDataUrl = `data:image/png;base64,${iconBuffer.toString('base64')}`
+    // Keep the Dock on the unbadged app icon. In-app session unread state is
+    // still rendered by the rail/list; macOS Dock badges are too persistent
+    // for this product surface.
+    if (process.platform === 'darwin') {
+      syncMacOSInstanceBadge()
+      app.dock?.setIcon(nativeImage.createFromPath(iconPath))
+    }
     mainLog.info('Badge icon initialized:', iconPath)
   } catch (error) {
     mainLog.error('Failed to initialize badge icon:', error)
@@ -143,7 +145,7 @@ export function initBadgeIcon(iconPath: string): void {
 /**
  * Update the app badge count (cross-platform)
  *
- * - macOS: Uses a canvas-based approach to draw the badge directly onto the dock icon.
+ * - macOS: Keeps the original Dock icon without a persistent badge.
  * - Windows: Uses taskbar overlay icon for badge display.
  * - Linux: Uses app.setBadgeCount() where supported (Unity, KDE).
  *
@@ -167,23 +169,17 @@ export function updateBadgeCount(count: number): void {
 }
 
 /**
- * Update badge count on macOS using dock icon overlay
+ * Keep the macOS Dock icon unbadged while preserving in-app unread state.
  */
 function updateBadgeCountMacOS(count: number): void {
   try {
-    if (count > 0) {
-      // Draw badge onto icon using the renderer process (Canvas API)
-      if (eventSink && baseIconDataUrl) {
-        eventSink(RPC_CHANNELS.badge.DRAW, { to: 'all' }, { count, iconDataUrl: baseIconDataUrl })
-      }
-    } else {
-      // Reset to original icon (no badge)
-      if (baseIconPath) {
-        const originalIcon = nativeImage.createFromPath(baseIconPath)
-        app.dock?.setIcon(originalIcon)
-      }
+    // Keep unread indicators inside Storyflow. A native Dock badge survives
+    // focus changes and is misleading when the unread session is elsewhere.
+    if (baseIconPath) {
+      app.dock?.setIcon(nativeImage.createFromPath(baseIconPath))
     }
-    mainLog.info('Badge count updated (macOS):', count)
+    syncMacOSInstanceBadge()
+    mainLog.info('Dock badge suppressed (macOS):', count)
   } catch (error) {
     mainLog.error('Failed to update badge count (macOS):', error)
   }
@@ -228,17 +224,19 @@ function updateBadgeCountLinux(count: number): void {
 }
 
 /**
- * Set the dock/taskbar icon with a pre-rendered badge image (cross-platform)
- * Called from IPC when renderer has drawn the badge
+ * Set the dock/taskbar icon with a pre-rendered badge image (cross-platform).
+ * macOS intentionally restores the original unbadged icon.
  */
 export function setDockIconWithBadge(dataUrl: string): void {
   try {
-    const icon = nativeImage.createFromDataURL(dataUrl)
-
     if (process.platform === 'darwin') {
-      app.dock?.setIcon(icon)
-      mainLog.info('Dock icon updated with badge (macOS)')
+      if (baseIconPath) {
+        app.dock?.setIcon(nativeImage.createFromPath(baseIconPath))
+      }
+      syncMacOSInstanceBadge()
+      mainLog.info('Dock badge cleared (macOS)')
     } else if (process.platform === 'win32') {
+      const icon = nativeImage.createFromDataURL(dataUrl)
       // On Windows, set the taskbar overlay icon
       const windows = BrowserWindow.getAllWindows()
       const window = windows[0]
@@ -267,7 +265,7 @@ export function isAnyWindowFocused(): boolean {
  * a permanent badge on the dock icon to distinguish between instances.
  * Uses macOS dock.setBadge() for text-based badge display.
  *
- * @param number - Instance number (1, 2, etc.) or null for default instance
+ * @param number - Instance number (1, 2, etc.)
  */
 export function initInstanceBadge(number: number): void {
   if (process.platform !== 'darwin') {
@@ -278,11 +276,13 @@ export function initInstanceBadge(number: number): void {
   instanceNumber = number
 
   try {
-    // Use dock.setBadge() for simple text badge
-    // This shows the number in a red badge on the dock icon
-    app.dock?.setBadge(String(number))
+    syncMacOSInstanceBadge()
     mainLog.info(`Instance badge set: ${number}`)
   } catch (error) {
     mainLog.error('Failed to set instance badge:', error)
   }
+}
+
+function syncMacOSInstanceBadge(): void {
+  app.dock?.setBadge(instanceNumber === null ? '' : String(instanceNumber))
 }

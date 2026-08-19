@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import { RPC_CHANNELS } from '../../shared/types'
 
 let clickHandler: (() => void) | null = null
+let dockBadgeValues: string[] = []
+let dockIconSetCount = 0
 
 mock.module('electron', () => {
   class MockNotification {
@@ -23,7 +25,10 @@ mock.module('electron', () => {
   return {
     Notification: MockNotification,
     app: {
-      dock: { setIcon: () => {} },
+      dock: {
+        setIcon: () => { dockIconSetCount += 1 },
+        setBadge: (value: string) => { dockBadgeValues.push(value) },
+      },
       setBadgeCount: () => {},
     },
     BrowserWindow: {
@@ -39,6 +44,8 @@ mock.module('electron', () => {
 describe('notification click routing', () => {
   beforeEach(() => {
     clickHandler = null
+    dockBadgeValues = []
+    dockIconSetCount = 0
   })
 
   it('routes notification navigation to resolved client target when resolver is provided', async () => {
@@ -106,5 +113,20 @@ describe('notification click routing', () => {
     expect(pushed.length).toBe(1)
     expect(pushed[0]?.target).toEqual({ to: 'workspace', workspaceId: 'ws-2' })
     expect(pushed[0]?.args[0]).toEqual({ workspaceId: 'ws-2', sessionId: 'sess-2' })
+  })
+
+  it('keeps the macOS Dock icon unbadged while unread state stays in-app', async () => {
+    if (process.platform !== 'darwin') return
+
+    const notifications = await import('../notifications')
+    notifications.initBadgeIcon('/tmp/storyflow-test-icon.png')
+    notifications.updateBadgeCount(1)
+
+    expect(dockBadgeValues.at(-1)).toBe('')
+    expect(dockIconSetCount).toBeGreaterThan(0)
+
+    notifications.initInstanceBadge(2)
+    notifications.updateBadgeCount(2)
+    expect(dockBadgeValues.at(-1)).toBe('2')
   })
 })

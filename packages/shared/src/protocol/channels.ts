@@ -346,7 +346,6 @@ export const RPC_CHANNELS = {
   badge: {
     REFRESH: 'badge:refresh',
     SET_ICON: 'badge:setIcon',
-    DRAW: 'badge:draw',
     DRAW_WINDOWS: 'badge:draw-windows',
   },
   releaseNotes: {

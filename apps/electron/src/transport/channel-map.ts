@@ -336,7 +336,6 @@ export const CHANNEL_MAP = {
   // Badge
   refreshBadge: invoke(RPC_CHANNELS.badge.REFRESH),
   setDockIconWithBadge: invoke(RPC_CHANNELS.badge.SET_ICON),
-  onBadgeDraw: listener(RPC_CHANNELS.badge.DRAW),
   onBadgeDrawWindows: listener(RPC_CHANNELS.badge.DRAW_WINDOWS),
 
   // Window focus

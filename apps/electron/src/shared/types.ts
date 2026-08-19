@@ -737,7 +737,6 @@ export interface ElectronAPI {
 
   refreshBadge(): Promise<void>
   setDockIconWithBadge(dataUrl: string): Promise<void>
-  onBadgeDraw(callback: (data: { count: number; iconDataUrl: string }) => void): () => void
   onBadgeDrawWindows(callback: (data: { count: number }) => void): () => void
   getWindowFocusState(): Promise<boolean>
   onWindowFocusChange(callback: (isFocused: boolean) => void): () => void

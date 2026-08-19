@@ -45,7 +45,6 @@ export interface BroadcastEventMap {
   [RPC_CHANNELS.update.DOWNLOAD_PROGRESS]: [progress: number]
 
   // Badge broadcasts (global)
-  [RPC_CHANNELS.badge.DRAW]: [data: { count: number; iconDataUrl: string }]
   [RPC_CHANNELS.badge.DRAW_WINDOWS]: [data: { count: number }]
 
   // Window events (per-window)

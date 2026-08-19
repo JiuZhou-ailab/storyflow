@@ -110,7 +110,6 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   // badge — local dock badge
   RPC_CHANNELS.badge.REFRESH,
   RPC_CHANNELS.badge.SET_ICON,
-  RPC_CHANNELS.badge.DRAW,
   RPC_CHANNELS.badge.DRAW_WINDOWS,
 
   // menu — local menu events
