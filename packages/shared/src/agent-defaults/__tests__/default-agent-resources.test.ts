@@ -102,17 +102,22 @@ describe('default agent resources', () => {
     expect(existsSync(join(agentRootDir, 'sources', 'demo-source', 'config.json'))).toBe(true);
   });
 
-  it('migrates and disables the built-in legacy Catalog source until VPN access is available', () => {
+  it('migrates the built-in legacy Catalog API to the public MCP endpoint', () => {
     const assetsDir = join(tempDir, 'resources', 'agent-defaults');
     const agentRootDir = join(tempDir, '.craft-agent');
     const bundledConfig = {
       id: 'builtin-storyflow-catalog',
       name: '爆款短剧数据',
       slug: 'storyflow-catalog',
-      enabled: false,
+      enabled: true,
       provider: 'storyflow',
       type: 'mcp',
-      mcp: { transport: 'http', url: 'http://172.16.33.103:8789/mcp', authType: 'none' },
+      mcp: {
+        transport: 'http',
+        url: 'http://120.27.207.223:7844/hot-drama/mcp',
+        authType: 'none',
+        headers: { Authorization: 'Bearer test-shared-token-at-least-32-characters' },
+      },
     };
     const legacyConfig = {
       id: 'builtin-storyflow-catalog',
@@ -149,10 +154,39 @@ describe('default agent resources', () => {
     expect(result.sources.imported).toEqual(['storyflow-catalog']);
     expect(result.sources.skipped).toEqual([]);
     expect(migrated.type).toBe('mcp');
-    expect(migrated.enabled).toBe(false);
+    expect(migrated.enabled).toBe(true);
     expect(migrated.api).toBeUndefined();
+    expect(migrated.mcp.url).toBe('http://120.27.207.223:7844/hot-drama/mcp');
     expect(readFileSync(guidePath, 'utf8')).toBe('new MCP guide');
     expect(readFileSync(permissionsPath, 'utf8')).toContain('rankings');
+  });
+
+  it('migrates the built-in VPN MCP endpoint without re-enabling a disabled Source', () => {
+    const assetsDir = join(tempDir, 'resources', 'agent-defaults');
+    const agentRootDir = join(tempDir, '.craft-agent');
+    const bundledDir = join(assetsDir, 'sources', 'storyflow-catalog');
+    const installedDir = join(agentRootDir, 'sources', 'storyflow-catalog');
+    const bundled = {
+      id: 'builtin-storyflow-catalog', slug: 'storyflow-catalog', provider: 'storyflow', type: 'mcp', enabled: true,
+      mcp: { transport: 'http', url: 'http://120.27.207.223:7844/hot-drama/mcp', authType: 'none' },
+    };
+    const installed = {
+      ...bundled,
+      enabled: false,
+      mcp: { transport: 'http', url: 'http://172.16.33.103:8789/mcp', authType: 'none' },
+    };
+    writeFile(join(bundledDir, 'config.json'), `${JSON.stringify(bundled)}\n`);
+    writeFile(join(bundledDir, 'guide.md'), 'new guide');
+    writeFile(join(bundledDir, 'permissions.json'), '{}\n');
+    writeFile(join(installedDir, 'config.json'), `${JSON.stringify(installed)}\n`);
+    writeFile(join(installedDir, 'guide.md'), 'old guide');
+    writeFile(join(installedDir, 'permissions.json'), '{}\n');
+
+    seedDefaultAgentResources({ assetsDir, agentRootDir });
+
+    const migrated = JSON.parse(readFileSync(join(installedDir, 'config.json'), 'utf8'));
+    expect(migrated.enabled).toBe(false);
+    expect(migrated.mcp.url).toBe('http://120.27.207.223:7844/hot-drama/mcp');
   });
 
   it('does not throw when the Craft root is not writable as a directory', () => {
@@ -244,8 +278,8 @@ describe('default agent resources', () => {
     expect(catalogConfig).toContain('"type": "mcp"');
     const parsedCatalogConfig = JSON.parse(catalogConfig);
     expect(parsedCatalogConfig.mcp.authType).toBe('none');
-    expect(parsedCatalogConfig.mcp.headers).toBeUndefined();
-    expect(catalogConfig).toContain('"url": "http://172.16.33.103:8789/mcp"');
+    expect(parsedCatalogConfig.mcp.headers.Authorization).toMatch(/^Bearer .{32,}$/);
+    expect(catalogConfig).toContain('"url": "http://120.27.207.223:7844/hot-drama/mcp"');
     expect(catalogConfig).not.toContain('MODEL_ACCESS_BROKER_TOKEN');
     expect(validateSourceConfig(JSON.parse(catalogConfig)).valid).toBe(true);
     expect(validatePermissionsContent(catalogPermissions).valid).toBe(true);

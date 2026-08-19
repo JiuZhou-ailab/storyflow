@@ -1,0 +1,25 @@
+# input: One host bind address and the pre-created storyflow-edge Docker network
+# output: A single Nginx HTTP entrypoint on port 7844
+# pos: Infrastructure-only path router; upstream services own authentication and behavior
+
+services:
+  edge-gateway:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    ports:
+      - "${EDGE_BIND_ADDRESS:-127.0.0.1}:7844:7844"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7844/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  edge:
+    name: storyflow-edge
+    external: true

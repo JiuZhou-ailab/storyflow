@@ -25,6 +25,7 @@ storyflow/
 │   ├── cli/                 # 无头服务端的命令行客户端
 │   ├── auth-broker-worker/  # 账户身份交换与短期能力令牌签发
 │   ├── catalog-api/         # 多来源短剧榜单、媒资覆盖度与有序 OSS 分集清单
+│   ├── edge-gateway/        # 公网单端口到独立 Docker 服务的路径路由
 │   ├── electron/            # 主桌面应用：main、preload、renderer
 │   ├── feedback-worker/     # 用户反馈入口：截图上传和 GitHub issue 创建
 │   ├── marketing/           # Storyflow 官网和下载入口

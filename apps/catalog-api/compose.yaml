@@ -1,6 +1,6 @@
-# input: Deployment-only database, origin, MCP, bind-address, and Cloudflare Tunnel settings
-# output: VPC-local Catalog API and MCP plus the existing outbound tunnel
-# pos: Database-adjacent deployment for private MCP and existing origin consumers
+# input: Deployment-only database, origin, MCP bearer, bind-address, and Cloudflare Tunnel settings
+# output: Database-adjacent Catalog API and authenticated MCP on the shared edge network
+# pos: Catalog deployment behind the independent edge gateway
 
 services:
   catalog-api:
@@ -32,10 +32,16 @@ services:
     environment:
       CATALOG_API_URL: http://catalog-api:8788
       CATALOG_ORIGIN_TOKEN: ${ORIGIN_TOKEN}
-      MCP_AUTH_MODE: private-network
+      MCP_AUTH_MODE: bearer
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:?MCP_BEARER_TOKEN is required}
       PORT: 8789
     ports:
       - "${MCP_BIND_ADDRESS:-127.0.0.1}:8789:8789"
+    networks:
+      default:
+      edge:
+        aliases:
+          - hot-drama-mcp
     healthcheck:
       test:
         - CMD
@@ -55,3 +61,8 @@ services:
       catalog-api:
         condition: service_healthy
     command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+
+networks:
+  edge:
+    name: storyflow-edge
+    external: true

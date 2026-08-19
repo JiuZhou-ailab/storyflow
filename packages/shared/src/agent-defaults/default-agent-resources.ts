@@ -101,16 +101,28 @@ function copyMissingResourceDirs(
   return result;
 }
 
-function isLegacyCatalogConfig(value: unknown): value is Record<string, unknown> {
+const OUTDATED_CATALOG_MCP_URLS = new Set([
+  'http://172.16.33.66:8789/mcp',
+  'http://172.16.33.103:8789/mcp',
+]);
+
+function isOutdatedCatalogConfig(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object') return false;
   const config = value as Record<string, unknown>;
   const api = config.api as Record<string, unknown> | undefined;
-  return config.id === 'builtin-storyflow-catalog'
+  const mcp = config.mcp as Record<string, unknown> | undefined;
+  const isBundledCatalog = config.id === 'builtin-storyflow-catalog'
     && config.slug === 'storyflow-catalog'
-    && config.provider === 'storyflow'
-    && config.type === 'api'
-    && api?.baseUrl === 'https://storyflow-model.zjding.com'
-    && api.authType === 'managed';
+    && config.provider === 'storyflow';
+  if (!isBundledCatalog) return false;
+
+  return (config.type === 'api'
+      && api?.baseUrl === 'https://storyflow-model.zjding.com'
+      && api.authType === 'managed')
+    || (config.type === 'mcp'
+      && mcp?.transport === 'http'
+      && mcp.authType === 'none'
+      && OUTDATED_CATALOG_MCP_URLS.has(String(mcp.url)));
 }
 
 function migrateLegacyCatalog(sourceRoot: string, targetRoot: string): boolean {
@@ -121,13 +133,14 @@ function migrateLegacyCatalog(sourceRoot: string, targetRoot: string): boolean {
 
   try {
     const installed = JSON.parse(readFileSync(installedConfigPath, 'utf8')) as unknown;
-    if (!isLegacyCatalogConfig(installed)) return false;
+    if (!isOutdatedCatalogConfig(installed)) return false;
 
     const current = installed as Record<string, unknown>;
     const bundled = JSON.parse(readFileSync(join(bundledDir, 'config.json'), 'utf8')) as Record<string, unknown>;
     const migrated = {
       ...bundled,
       createdAt: current.createdAt ?? bundled.createdAt,
+      enabled: current.enabled ?? bundled.enabled,
       ...(current.name !== 'Storyflow Catalog' ? { name: current.name } : {}),
       ...(current.icon !== '🎬' ? { icon: current.icon } : {}),
       ...(current.tagline !== '红果、GoodShort、ReelShort 与 DataEye 的来源内榜单和媒资覆盖证据'
