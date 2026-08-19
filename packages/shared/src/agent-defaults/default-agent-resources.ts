@@ -104,6 +104,7 @@ function copyMissingResourceDirs(
 const OUTDATED_CATALOG_MCP_URLS = new Set([
   'http://172.16.33.66:8789/mcp',
   'http://172.16.33.103:8789/mcp',
+  'http://120.27.207.223:7844/hot-drama/mcp',
 ]);
 
 function isOutdatedCatalogConfig(value: unknown): value is Record<string, unknown> {

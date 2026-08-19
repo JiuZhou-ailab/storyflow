@@ -9,7 +9,7 @@
   "tagline": "红果、GoodShort、ReelShort 与 DataEye 的榜单和媒资数据",
   "mcp": {
     "transport": "http",
-    "url": "http://120.27.207.223:7844/hot-drama/mcp",
+    "url": "https://script.duanju.com/hot-drama/mcp",
     "authType": "none",
     "headers": {
       "Authorization": "Bearer 8f3cc530f70e0e435302a4b57b4192f4aa8d7763f7156235bd4d0c42aca4296f"
