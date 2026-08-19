@@ -9,6 +9,7 @@ import threading
 import unittest
 from datetime import datetime
 from http.server import ThreadingHTTPServer
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import catalog_sources
@@ -16,6 +17,29 @@ from catalog_api import CatalogHandler, Settings
 
 
 class _Repository:
+    last_video_query: tuple[object, ...] | None = None
+
+    def video_sources(self) -> list[dict[str, object]]:
+        return [{"id": "reelshort-app", "contentKind": "episode"}]
+
+    def video_assets(
+        self,
+        source: str,
+        search: str,
+        source_series_id: str,
+        limit: int,
+        offset: int,
+    ) -> dict[str, object]:
+        self.last_video_query = (source, search, source_series_id, limit, offset)
+        return {
+            "source": source,
+            "total": 1,
+            "offset": offset,
+            "limit": limit,
+            "nextOffset": None,
+            "assets": [{"sourceAssetId": "episode-1"}],
+        }
+
     def legacy_series(self) -> list[dict[str, object]]:
         return [
             {"id": "cold-complete", "title": "Cold Complete", "episodeCount": 2},
@@ -114,6 +138,30 @@ class CatalogApiCompatibilityTest(unittest.TestCase):
                 invalid_cursor, "dataeye", "weekly_hot;DROP TABLE"
             )
         self.assertEqual(invalid_cursor.queries, [])
+
+    def test_video_assets_use_a_bounded_typed_query(self) -> None:
+        query = urlencode(
+            {
+                "source": "reelshort-app",
+                "seriesId": "book-1",
+                "q": "First Love",
+                "limit": 10,
+                "offset": 20,
+            }
+        )
+        request = Request(
+            f"http://127.0.0.1:{self.server.server_port}/v2/video-assets?{query}",
+            headers={"X-Storyflow-Origin-Token": _Handler.settings.origin_token},
+        )
+        with urlopen(request, timeout=2) as response:
+            body = json.load(response)
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["assets"][0]["sourceAssetId"], "episode-1")
+        self.assertEqual(
+            _Handler.repository.last_video_query,  # type: ignore[attr-defined]
+            ("reelshort-app", "First Love", "book-1", 10, 20),
+        )
 
 
 def _hongguo_row(series_id: str, hot_score: int) -> dict[str, object]:

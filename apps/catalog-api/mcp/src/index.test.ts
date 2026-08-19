@@ -34,6 +34,13 @@ beforeAll(() => {
           query: Object.fromEntries(url.searchParams),
         })
       }
+      if (url.pathname === '/v2/video-assets') {
+        return Response.json({
+          version: 2,
+          status: 'ok',
+          query: Object.fromEntries(url.searchParams),
+        })
+      }
       return Response.json({ error: 'not_found' }, { status: 404 })
     },
   })
@@ -115,6 +122,7 @@ describe('Catalog MCP', () => {
       const tools = await client.listTools()
       expect(tools.tools.map(tool => tool.name)).toEqual([
         'catalog_sources',
+        'video_assets',
         'ranking_snapshots',
         'rankings',
         'series_manifest',
@@ -140,6 +148,22 @@ describe('Catalog MCP', () => {
       })
       expect(catalogRequests.at(-1)?.headers.get('authorization')).toBeNull()
       expect(catalogRequests.at(-1)?.headers.get('x-storyflow-origin-token')).toBe(ORIGIN_TOKEN)
+
+      const assets = await client.callTool({
+        name: 'video_assets',
+        arguments: { source: 'reelshort-app', seriesId: 'book-1', limit: 10 },
+      })
+      expect(assets.isError).not.toBe(true)
+      const assetContent = assets.content as Array<{ type: string; text?: string }>
+      const assetText = assetContent[0]?.type === 'text' ? assetContent[0].text ?? '' : ''
+      expect(JSON.parse(assetText)).toMatchObject({
+        query: {
+          source: 'reelshort-app',
+          seriesId: 'book-1',
+          limit: '10',
+          offset: '0',
+        },
+      })
     } finally {
       await client.close()
     }

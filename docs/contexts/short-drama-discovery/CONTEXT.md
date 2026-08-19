@@ -28,9 +28,13 @@ _Avoid_: Ready boolean without evidence
 声明集数、连续分集与受支持文件媒资完全一致时才返回的有序输入清单。
 _Avoid_: Partial URL list, signed HLS as downloadable file
 
+**Video Asset**:
+来源内可精确标识的一集视频或广告素材；明确区分可直接下载的文件 URL 与需要 HLS remux 的播放 URL。
+_Avoid_: Raw video field, every URL is a download URL
+
 **Source Adapter**:
 唯一理解某个爬虫表结构并把它转换为上述领域对象的反腐层。
-_Avoid_: SQL in Skill, generic arbitrary-query adapter
+_Avoid_: SQL in Skill, generic arbitrary-query adapter, title-based source joins
 
 **Catalog Source**:
 通过 Storyflow 身份提供来源化榜单、剧目和媒资覆盖查询的只读数据源；自身不执行采集。

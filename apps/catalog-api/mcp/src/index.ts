@@ -1,5 +1,5 @@
 // input: Private-network or bearer-authenticated MCP requests and the Storyflow Catalog HTTP API
-// output: Four fixed read-only Catalog tools over Streamable HTTP
+// output: Five fixed read-only Catalog tools over Streamable HTTP
 // pos: Protocol adapter that keeps origin credentials server-side and never exposes SQL
 
 import { timingSafeEqual } from 'node:crypto'
@@ -11,6 +11,7 @@ const MAX_REQUEST_BYTES = 64 * 1024
 const MAX_CATALOG_RESPONSE_BYTES = 2 * 1024 * 1024
 const CATALOG_TIMEOUT_MS = 20_000
 const SOURCES = ['hongguo', 'goodshort', 'reelshort', 'dataeye'] as const
+const VIDEO_SOURCES = ['hongguo', 'dramabox', 'goodshort', 'reelshort', 'reelshort-app', 'dataeye'] as const
 const RANKING_KINDS = ['current_hot', 'platform_daily', 'weekly_hot', 'weekly_rank'] as const
 
 export interface Settings {
@@ -68,9 +69,29 @@ export function createMcpServer(
 
   server.registerTool('catalog_sources', {
     title: 'Catalog Sources',
-    description: 'List supported short-drama catalog sources and their ranking capabilities.',
+    description: 'List supported short-drama ranking and video-asset sources.',
     annotations: readOnly,
   }, async () => toolResult(() => catalog('/v2/catalog/sources')))
+
+  server.registerTool('video_assets', {
+    title: 'Video Assets',
+    description: 'Search one source for bounded episode or creative video assets. Direct files include downloadUrl; HLS assets use playbackUrl with downloadMethod=hls_remux.',
+    inputSchema: {
+      source: z.enum(VIDEO_SOURCES),
+      seriesId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
+      query: z.string().max(200).optional(),
+      limit: z.number().int().min(1).max(100).default(20),
+      offset: z.number().int().min(0).max(1_000_000).default(0),
+    },
+    annotations: readOnly,
+  }, async ({ source, seriesId, query, limit, offset }) => toolResult(() =>
+    catalog('/v2/video-assets', {
+      source,
+      seriesId,
+      q: query,
+      limit,
+      offset,
+    })))
 
   server.registerTool('ranking_snapshots', {
     title: 'Ranking Snapshots',

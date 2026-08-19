@@ -1,5 +1,5 @@
-# input: Source-scoped ranking, series, and episode facts from catalog adapters
-# output: Stable v2 ranking entries, media coverage, and snapshot identities
+# input: Source-scoped ranking, series, episode, and video-asset facts from catalog adapters
+# output: Stable v2 rankings, media coverage, manifests, and video assets
 # pos: Pure short-drama discovery domain model shared by every catalog source
 
 from __future__ import annotations
@@ -167,6 +167,61 @@ def ranking_entry(
     }
 
 
+def video_asset(
+    source: str,
+    source_series_id: object,
+    series_title: object,
+    source_asset_id: object,
+    asset_title: object,
+    content_kind: str,
+    episode: object,
+    delivery: str,
+    mime_type: str,
+    playback_url: object,
+    download_url: object,
+    observed: object,
+    variants: list[dict[str, object]] | None = None,
+) -> dict[str, object] | None:
+    series_id = str(source_series_id or "").strip()
+    title = str(series_title or "").strip()
+    asset_id = str(source_asset_id or "").strip()
+    playback = str(playback_url or "").strip()
+    download = str(download_url or "").strip()
+    if not series_id or not title or not asset_id or not playback:
+        return None
+    episode_number = positive_int(episode)
+    download_method = (
+        "direct"
+        if download
+        else "hls_remux"
+        if delivery in {"hls", "signed_hls"}
+        else "unavailable"
+    )
+    return {
+        "key": f"{source}:{series_id}:{asset_id}",
+        "source": source,
+        "sourceAssetId": asset_id,
+        "contentKind": content_kind,
+        "series": {
+            "key": f"{source}:{series_id}",
+            "source": source,
+            "sourceSeriesId": series_id,
+            "title": title,
+        },
+        "episode": episode_number,
+        "title": str(asset_title or "").strip() or title,
+        "observedAt": observed_at(observed),
+        "media": {
+            "delivery": delivery,
+            "mimeType": mime_type,
+            "playbackUrl": playback,
+            "downloadUrl": download or None,
+            "downloadMethod": download_method,
+            "variants": variants or [],
+        },
+    }
+
+
 def self_test() -> None:
     assert parse_week("2026-07-20 ~ 2026-07-26") == (
         "2026-07-20",
@@ -181,3 +236,19 @@ def self_test() -> None:
         "incomplete_playable_media",
         "unsupported_media_delivery",
     ]
+    asset = video_asset(
+        "reelshort-app",
+        "book-1",
+        "Drama",
+        "episode-1",
+        "Episode 1",
+        "episode",
+        1,
+        "hls",
+        "application/vnd.apple.mpegurl",
+        "https://example.com/episode.m3u8",
+        None,
+        "2026-08-19 08:00:00",
+    )
+    assert asset is not None
+    assert asset["media"]["downloadMethod"] == "hls_remux"  # type: ignore[index]

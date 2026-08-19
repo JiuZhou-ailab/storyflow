@@ -1,5 +1,5 @@
 # input: MySQL read-only credentials and origin-authenticated Catalog HTTP requests
-# output: Stable multi-source rankings and complete-series manifests, plus v1 compatibility
+# output: Stable rankings, complete-series manifests, bounded video assets, and v1 compatibility
 # pos: Private read-model API behind the Storyflow edge gateway
 
 from __future__ import annotations
@@ -82,6 +82,22 @@ class CatalogRepository:
     def sources(self) -> list[dict[str, object]]:
         return catalog_sources.list_sources()
 
+    def video_sources(self) -> list[dict[str, object]]:
+        return catalog_sources.list_video_sources()
+
+    def video_assets(
+        self,
+        source: str,
+        search: str,
+        source_series_id: str,
+        limit: int,
+        offset: int,
+    ) -> dict[str, object]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            return catalog_sources.query_video_assets(
+                cursor, source, search, source_series_id, limit, offset
+            )
+
     def snapshots(self, source: str, ranking_kind: str) -> list[dict[str, object]]:
         with self._connect() as connection, connection.cursor() as cursor:
             return catalog_sources.list_snapshots(cursor, source, ranking_kind)
@@ -145,8 +161,14 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 _validate_query(query, set())
                 self._json(
                     HTTPStatus.OK,
-                    {"version": 2, "sources": self.repository.sources()},
+                    {
+                        "version": 2,
+                        "sources": self.repository.sources(),
+                        "videoSources": self.repository.video_sources(),
+                    },
                 )
+            elif url.path == "/v2/video-assets":
+                self._video_assets(query)
             elif url.path == "/v2/ranking-snapshots":
                 self._ranking_snapshots(query)
             elif url.path == "/v2/rankings":
@@ -187,6 +209,26 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 }
             )
         self._json(HTTPStatus.OK, {"version": 2, "groups": groups})
+
+    def _video_assets(self, query: dict[str, list[str]]) -> None:
+        _validate_query(query, {"source", "seriesId", "q", "limit", "offset"})
+        source = _query_value(query, "source")
+        if not source:
+            raise ValueError("video_source_required")
+        source_series_id = _query_value(query, "seriesId")
+        if source_series_id and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_series_id):
+            raise ValueError("invalid_series_id")
+        search = _query_value(query, "q")
+        if len(search) > 200:
+            raise ValueError("query_too_long")
+        page = self.repository.video_assets(
+            source,
+            search,
+            source_series_id,
+            _query_integer(query, "limit", 20, 1, 100),
+            _query_integer(query, "offset", 0, 0, 1_000_000),
+        )
+        self._json(HTTPStatus.OK, {"version": 2, "status": "ok", **page})
 
     def _rankings(self, query: dict[str, list[str]]) -> None:
         _validate_query(
