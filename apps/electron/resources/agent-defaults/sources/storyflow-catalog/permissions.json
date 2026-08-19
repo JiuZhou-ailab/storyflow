@@ -3,6 +3,7 @@
     { "pattern": "catalog_sources", "comment": "读取证据来源" },
     { "pattern": "ranking_snapshots", "comment": "读取榜单快照" },
     { "pattern": "rankings", "comment": "只读查询来源内榜单" },
+    { "pattern": "video_assets", "comment": "只读查询视频媒资" },
     { "pattern": "series_manifest", "comment": "读取已验证的转剧本 manifest" }
   ]
 }

@@ -51,15 +51,36 @@ SOURCE_DEFINITIONS: dict[str, dict[str, object]] = {
 }
 
 VIDEO_SOURCE_DEFINITIONS: dict[str, dict[str, object]] = {
-    "hongguo": {"displayName": "红果", "contentKind": "episode"},
-    "dramabox": {"displayName": "DramaBox", "contentKind": "episode"},
-    "goodshort": {"displayName": "GoodShort", "contentKind": "episode"},
-    "reelshort": {"displayName": "ReelShort Web", "contentKind": "episode"},
+    "hongguo": {
+        "displayName": "红果",
+        "contentKind": "episode",
+        "rankingSource": "hongguo",
+    },
+    "dramabox": {
+        "displayName": "DramaBox",
+        "contentKind": "episode",
+        "rankingSource": None,
+    },
+    "goodshort": {
+        "displayName": "GoodShort",
+        "contentKind": "episode",
+        "rankingSource": "goodshort",
+    },
+    "reelshort": {
+        "displayName": "ReelShort Web",
+        "contentKind": "episode",
+        "rankingSource": "reelshort",
+    },
     "reelshort-app": {
         "displayName": "ReelShort App",
         "contentKind": "episode",
+        "rankingSource": "reelshort",
     },
-    "dataeye": {"displayName": "DataEye", "contentKind": "creative"},
+    "dataeye": {
+        "displayName": "DataEye",
+        "contentKind": "creative",
+        "rankingSource": "dataeye",
+    },
 }
 
 HONGGUO_RANKINGS_SQL = """
@@ -849,6 +870,9 @@ def self_test() -> None:
         "reelshort-app",
         "dataeye",
     ]
+    assert next(
+        item for item in list_video_sources() if item["id"] == "reelshort-app"
+    )["rankingSource"] == "reelshort"
     variants = _reelshort_app_variants(
         [
             {

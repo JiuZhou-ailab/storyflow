@@ -15,11 +15,11 @@ DataEye 周热榜不能与平台日榜共用分值，历史表也可能因唯一
 - Catalog API 是爬虫库的唯一产品读取边界；不暴露 SQL、表名或任意查询能力。
 - 每个来源由 Source Adapter 映射为 `RankingSnapshot`、`SeriesKey` 与 `MediaCoverage`。
 - 跨来源结果按来源分组，不比较或重算不同口径的 rank/metric。
-- 完整分集只通过 Conversion-ready Manifest 暴露；部分媒资只返回数量和原因，不返回 URL。
+- 完整有序分集只通过 Conversion-ready Manifest 暴露；部分媒资可通过有界的 Video Asset 查询返回，并明确区分播放地址与直接下载地址。
 - `source:sourceSeriesId` 是跨接口身份；裸数字 `seriesId` 仅作为红果 v1 兼容。
 - 数据库凭据和源站令牌只保留在服务端；VPN 私网 MCP 依赖网络边界，公网中转必须使用独立 Bearer，桌面安装包不携带共享凭据。
 - Catalog 作为 Storyflow 托管的只读 Source 交付，使用具名 typed operations 与 Source guide，不向 Agent 暴露任意 HTTP、SQL 或爬虫控制面。
-- 普通榜单调研方法属于 Source guide；只有跨数据源或衔接视频转剧本的工作流才保留为薄 Skill。
+- Source guide 只陈述可验证的能力、字段语义和安全边界；调研方法、回答格式和工具组合由模型决定，只有可复用工作流才保留为薄 Skill。
 - Skill 只负责用户意图、参数选择和下一步衔接，不承载数据访问、鉴权或领域推断。
 
 ## 后果
