@@ -213,9 +213,10 @@ describe('sendMessage durability', () => {
       { messagesLoaded: false, isProcessing: true },
     )
     ;(restoredManager as unknown as { sessions: Map<string, unknown> }).sessions.set(sessionId, restored)
-    await (restoredManager as unknown as {
-      loadMessagesFromDisk(session: typeof restored): Promise<void>
-    }).loadMessagesFromDisk(restored)
+    // Queue recovery now lives behind the SessionPersistence module.
+    await ((restoredManager as unknown as {
+      persistence: { loadMessagesFromDisk(session: typeof restored): Promise<void> }
+    }).persistence).loadMessagesFromDisk(restored)
     expect(restored.messageQueue[0]?.options?.workspaceFreshnessContext)
       .toBe('read chapter-2.md before editing')
   })

@@ -13,6 +13,11 @@ const sessionManagerSource = readFileSync(
   new URL('../../../../../../../packages/server-core/src/sessions/SessionManager.ts', import.meta.url),
   'utf8',
 )
+// Remote-transfer import logic lives in the ExportImport module (Facade delegates).
+const exportImportSource = readFileSync(
+  new URL('../../../../../../../packages/server-core/src/sessions/export-import.ts', import.meta.url),
+  'utf8',
+)
 
 describe('runtime domain separation', () => {
   it('switches rooms through one runtime workspace activation path', () => {
@@ -57,14 +62,16 @@ describe('runtime domain separation', () => {
   })
 
   it('starts the target session with target-domain operational defaults', () => {
-    const importStart = sessionManagerSource.indexOf('async importRemoteSessionTransfer(')
-    const importEnd = sessionManagerSource.indexOf('/**', importStart)
-    const importSource = sessionManagerSource.slice(importStart, importEnd)
+    const importStart = exportImportSource.indexOf('async importRemoteSessionTransfer(')
+    const importEnd = exportImportSource.indexOf('\n  async ', importStart + 10)
+    const importSource = exportImportSource.slice(importStart, importEnd)
 
     expect(importStart).toBeGreaterThan(-1)
-    expect(importSource).toContain('this.createSession(workspaceId)')
+    expect(importSource).toContain('this.deps.createSession(workspaceId)')
     expect(importSource).not.toContain('payload.permissionMode')
     expect(importSource).not.toContain('payload.sessionStatus')
     expect(importSource).not.toContain('payload.labels')
+    // The Facade must keep delegating, not re-implementing, the import path.
+    expect(sessionManagerSource).toContain('this.exportImport.importRemoteSessionTransfer')
   })
 })

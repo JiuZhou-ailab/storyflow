@@ -259,7 +259,9 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
       },
     })
 
-    await (sm as any).generateRemoteTransferSummary(managed).catch(() => { /* expected */ })
+    await ((sm as any).exportImport as { generateRemoteTransferSummary(m: unknown): Promise<string | null> })
+      .generateRemoteTransferSummary(managed)
+      .catch(() => { /* expected */ })
 
     expect(ensureCalls).toBe(1)
   })

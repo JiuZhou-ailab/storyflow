@@ -20,6 +20,7 @@ import { normalizeThinkingLevel, type ThinkingLevel } from '@craft-agent/shared/
 import { isFreeConversationWorkspaceId } from '@craft-agent/shared/workspaces';
 import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces';
 import { needsPiRuntimeMigrationSeed } from './runtime-config';
+import { getSessionLog } from './session-runtime';
 
 export type AgentInstance = PiAgent;
 
@@ -215,6 +216,18 @@ export function createManagedSessionState(
     managed.branchSeedApplied = !!managed.sdkSessionId;
   }
   return managed;
+}
+
+/**
+ * Create a managed session with the standard scoped logger wired in.
+ * Convenience wrapper over {@link createManagedSessionState}.
+ */
+export function createManagedSession(
+  source: { id: string; agentRuntime?: LegacyAgentRuntime; legacyAgentRuntime?: LegacyAgentRuntime } & Partial<ManagedSession>,
+  workspace: Workspace,
+  overrides?: Partial<ManagedSession>,
+): ManagedSession {
+  return createManagedSessionState(source, workspace, overrides, message => getSessionLog().debug(message));
 }
 
 export function resolveSupportsBranching(managed: ManagedSession): boolean {

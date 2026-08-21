@@ -364,16 +364,19 @@ describe('refreshConnectionRuntime', () => {
       resolvedModel: 'custom-model',
     } as ReturnType<typeof resolveBackendContext>
 
-    await (sm as unknown as {
-      runAgentRuntimeRefresh(
-        session: typeof managed,
-        context: ReturnType<typeof resolveBackendContext>,
-        runtimeSignature: string,
-        restartSignature: string,
-        restartRequired: boolean,
-        reason: string,
-      ): Promise<void>
-    }).runAgentRuntimeRefresh(
+    // Runtime refresh now lives behind the AgentRuntime module.
+    await ((sm as unknown as {
+      agentRuntime: {
+        runAgentRuntimeRefresh(
+          session: typeof managed,
+          context: ReturnType<typeof resolveBackendContext>,
+          runtimeSignature: string,
+          restartSignature: string,
+          restartRequired: boolean,
+          reason: string,
+        ): Promise<void>
+      }
+    }).agentRuntime).runAgentRuntimeRefresh(
       managed,
       backendContext,
       '__runtime_signature__',

@@ -54,7 +54,9 @@ function createHarness(initialAnnotations: AnnotationV1[] = []) {
   let persistCalls = 0
   const events: Array<{ event: any; workspaceId: string }> = []
 
-  const manager = Object.create(SessionManager.prototype) as any
+  // Real construction: SessionManager has no constructor body, so this is
+  // cheap — and per-instance stubs below shadow the prototype methods.
+  const manager = new SessionManager() as any
   manager.sessions = new Map([['session-1', managed]])
   manager.persistSession = () => { persistCalls += 1 }
   manager.sendEvent = (event: any, workspaceId: string) => {
