@@ -42,7 +42,7 @@ storyflow/
 │   ├── server/              # 独立无头服务入口
 │   ├── server-core/         # RPC 传输、可复用 handler、平台契约
 │   ├── session-tools-core/  # 多运行时共享的工具实现
-│   ├── shared/              # 配置、协议、会话、来源、写作逻辑
+│   ├── shared/              # 跨宿主契约与原语（协议、配置、来源、校验）
 │   └── ui/                  # 共享 React UI、Markdown、diff、chat 组件
 ├── docs/
 │   └── plans/               # 设计和实现规划文档
@@ -228,7 +228,7 @@ bun run apps/cli/src/index.ts run --workspace-dir . "Inspect this repository"
 - **Skills**：由 Pi 从用户级与项目级目录解析；内容创作 Skills 默认安装到当前项目的 `.pi/skills/`，通用工具可由用户显式选择用户级范围。第一方 Skills Market 负责浏览、AI 审核发布、不可变下载与校验安装，但不参与运行时执行。
 - **Automations**：可根据标签、计划任务、工具事件、权限变化和会话生命周期创建或更新会话。
 
-这些系统的大部分共享逻辑位于 `packages/shared/src`，可复用服务端 handler 位于 `packages/server-core/src/handlers/rpc`。
+这些系统的跨宿主契约与校验位于 `packages/shared/src`（成员资格标准见其 README），运行时连接池等单宿主实现位于对应宿主包，可复用服务端 handler 位于 `packages/server-core/src/handlers/rpc`。
 
 ## 验证策略
 
@@ -283,8 +283,8 @@ bun run release -- --platform=darwin --arch=arm64
 
 ## 开发注意事项
 
-- Electron IPC/RPC channel 应在 `packages/shared/src/protocol` 声明，在 `apps/electron/src/transport` 映射，在 `apps/electron/src/shared/types.ts` 类型化，并在对应 handler package 中注册。
-- 部分 system handler 同时存在于可复用的 `server-core` 和 Electron 本地 GUI/main-process 层。新增运行时 channel 时，需要按场景检查两条注册路径。
+- Electron IPC/RPC channel 的完整链路：在 `packages/shared/src/protocol/channels.ts` 声明，在 `packages/shared/src/protocol/routing.ts` 分类（`CHANNEL_ROUTING` 表，`satisfies` 保证新 channel 必须分类），在 `apps/electron/src/transport` 映射，在 `apps/electron/src/shared/types.ts` 类型化，并在对应 handler package 中注册。
+- CORE system handler 唯一实现在可复用的 `server-core`；Electron main 只保留 GUI handler（update / menu / notification / badge / window focus 等 OS 能力）。新增 channel 时按 `routing.ts` 分类注册一次即可；`server-core` 的 routing-coverage 测试与 Electron 的 registration 测试会自动校验注册集合与契约一致。
 - 不要提交生成文件或仅运行时文件，尤其是 `.playwright-mcp/`、打包后的 `dist/` 输出、日志和本地凭据。
 - 添加新依赖前，优先使用本地 helper package 和已有抽象。
 - 根文档应与实际 package 布局和支持命令保持一致。
