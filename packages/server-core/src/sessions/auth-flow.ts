@@ -14,7 +14,7 @@ import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { loadAllSources, isSourceUsable } from '@craft-agent/shared/sources'
 import { getSessionPath as getSessionStoragePath } from '@craft-agent/shared/sessions'
 import type { SessionEvent } from '@craft-agent/shared/protocol'
-import { buildServersFromSources, applyBridgeUpdates } from './source-bridge'
+import { buildServersFromSources } from './source-bridge'
 import { getResourceProjectRoot, getSessionLog } from './session-runtime'
 import type { ManagedSession } from './managed-session'
 
@@ -192,7 +192,7 @@ export class AuthFlow {
       )
       await this.deps.withAgentRuntimeLock(managed, async () => {
         if (!managed.agent) return
-        await applyBridgeUpdates(managed.agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source auth')
+        await managed.agent.applyBridgeUpdates({ sessionPath, enabledSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source auth' })
       })
     }
 

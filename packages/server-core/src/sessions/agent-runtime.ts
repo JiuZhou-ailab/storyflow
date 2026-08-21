@@ -39,7 +39,7 @@ import {
   type AgentInstance,
   type ManagedSession,
 } from './managed-session'
-import { buildServersFromSources, applyBridgeUpdates } from './source-bridge'
+import { buildServersFromSources } from './source-bridge'
 import { isManagedDefaultGatewayConnection } from './managed-gateway-auth-error'
 import {
   buildBackendHostRuntimeContext,

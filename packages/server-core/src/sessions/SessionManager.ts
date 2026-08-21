@@ -108,15 +108,23 @@ import {
   getSessionRuntimeHooks,
   getResourceProjectRoot,
   hasPersistedPiTranscript,
+  getLastFinalOutputMessageId,
 } from './session-runtime'
 import { SessionBroadcaster } from './session-broadcaster'
-import { ShareService } from './share-service'
+import { shareToViewer, updateShare, revokeShare } from './share-service'
 import { MessageEdits } from './message-edits'
-import { PlanTracking } from './plan-tracking'
+import {
+  setPendingPlanExecution,
+  markCompactionComplete,
+  markPendingPlanExecutionDispatched,
+  clearPendingPlanExecution,
+  getPendingPlanExecution,
+  type PendingPlanExecutionState,
+} from './plan-tracking'
 import { SessionCrudMetadata } from './session-crud-metadata'
 import { AuthFlow } from './auth-flow'
 import { ExportImport } from './export-import'
-import { buildServersFromSources, applyBridgeUpdates } from './source-bridge'
+import { buildServersFromSources } from './source-bridge'
 import { SessionPersistence } from './persistence'
 import { AgentRuntimeLease } from './agent-runtime-lease'
 import { AgentRuntime } from './agent-runtime'
@@ -193,17 +201,10 @@ export class SessionManager implements ISessionManager {
   private sessions: Map<string, ManagedSession> = new Map()
   /** Outbound event delivery — sole owner of the EventSink and delta batching state. */
   private broadcaster = new SessionBroadcaster()
-  private shareService = new ShareService({
-    getSession: id => this.sessions.get(id),
-    broadcaster: this.broadcaster,
-  })
   private messageEdits = new MessageEdits({
     getSession: id => this.sessions.get(id),
     persistSession: managed => this.persistSession(managed),
     broadcaster: this.broadcaster,
-  })
-  private planTracking = new PlanTracking({
-    getSession: id => this.sessions.get(id),
   })
   private crudMetadata = new SessionCrudMetadata({
     getSession: id => this.sessions.get(id),
@@ -215,7 +216,6 @@ export class SessionManager implements ISessionManager {
     setMetadataWriteGuard: managed => this.setMetadataWriteGuard(managed),
     notifyFileChange: (workspaceRootPath, relativePath) =>
       this.configWatchers.get(workspaceRootPath)?.notifyFileChange(relativePath),
-    getLastFinalOutputMessageId: messages => this.getLastFinalOutputMessageId(messages),
   })
   private authFlow = new AuthFlow({
     getSession: id => this.sessions.get(id),
@@ -830,7 +830,7 @@ export class SessionManager implements ISessionManager {
       const intendedSlugs = enabledSources.map(s => s.config.slug)
 
       // Update source runtime config/credentials for backends that need it
-      await applyBridgeUpdates(agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source reload')
+      await agent.applyBridgeUpdates({ sessionPath, enabledSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source reload' })
       await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
 
       getSessionLog().info(`Sources reloaded for session ${managed.id}: ${Object.keys(mcpServers).length} MCP, ${Object.keys(apiServers).length} API`)
@@ -1935,29 +1935,34 @@ export class SessionManager implements ISessionManager {
   // Pending Plan Execution (Accept & Compact)
   // ============================================
 
-  /** Set pending plan execution state (delegates to PlanTracking). */
+  /** Set pending plan execution state (no-op if the session is gone). */
   async setPendingPlanExecution(sessionId: string, planPath: string, draftInputSnapshot?: string): Promise<void> {
-    await this.planTracking.setPendingPlanExecution(sessionId, planPath, draftInputSnapshot)
+    const managed = this.sessions.get(sessionId)
+    if (managed) await setPendingPlanExecution(managed, planPath, draftInputSnapshot)
   }
 
-  /** Mark compaction complete for pending plan execution (delegates to PlanTracking). */
+  /** Mark compaction complete for pending plan execution (no-op if the session is gone). */
   async markCompactionComplete(sessionId: string): Promise<void> {
-    await this.planTracking.markCompactionComplete(sessionId)
+    const managed = this.sessions.get(sessionId)
+    if (managed) await markCompactionComplete(managed)
   }
 
-  /** Mark pending plan execution as dispatched from the UI (delegates to PlanTracking). */
+  /** Mark pending plan execution as dispatched from the UI (no-op if the session is gone). */
   async markPendingPlanExecutionDispatched(sessionId: string): Promise<void> {
-    await this.planTracking.markPendingPlanExecutionDispatched(sessionId)
+    const managed = this.sessions.get(sessionId)
+    if (managed) await markPendingPlanExecutionDispatched(managed)
   }
 
-  /** Clear pending plan execution state (delegates to PlanTracking). */
+  /** Clear pending plan execution state (no-op if the session is gone). */
   async clearPendingPlanExecution(sessionId: string): Promise<void> {
-    await this.planTracking.clearPendingPlanExecution(sessionId)
+    const managed = this.sessions.get(sessionId)
+    if (managed) await clearPendingPlanExecution(managed)
   }
 
-  /** Read pending plan execution state for a session (delegates to PlanTracking). */
-  getPendingPlanExecution(sessionId: string): { planPath: string; draftInputSnapshot?: string; awaitingCompaction: boolean; executionDispatched: boolean } | null {
-    return this.planTracking.getPendingPlanExecution(sessionId)
+  /** Read pending plan execution state for a session. */
+  getPendingPlanExecution(sessionId: string): PendingPlanExecutionState | null {
+    const managed = this.sessions.get(sessionId)
+    return managed ? getPendingPlanExecution(managed) : null
   }
 
   /**
@@ -1985,19 +1990,25 @@ export class SessionManager implements ISessionManager {
   // Session Sharing
   // ============================================
 
-  /** Share session to the web viewer (delegates to ShareService). */
+  /** Share session to the web viewer. */
   async shareToViewer(sessionId: string): Promise<import('@craft-agent/shared/protocol').ShareResult> {
-    return this.shareService.shareToViewer(sessionId)
+    const managed = this.sessions.get(sessionId)
+    if (!managed) return { success: false, error: 'Session not found' }
+    return shareToViewer(managed, this.broadcaster)
   }
 
-  /** Update an existing shared session (delegates to ShareService). */
+  /** Update an existing shared session. */
   async updateShare(sessionId: string): Promise<import('@craft-agent/shared/protocol').ShareResult> {
-    return this.shareService.updateShare(sessionId)
+    const managed = this.sessions.get(sessionId)
+    if (!managed) return { success: false, error: 'Session not found' }
+    return updateShare(managed, this.broadcaster)
   }
 
-  /** Revoke a shared session (delegates to ShareService). */
+  /** Revoke a shared session. */
   async revokeShare(sessionId: string): Promise<import('@craft-agent/shared/protocol').ShareResult> {
-    return this.shareService.revokeShare(sessionId)
+    const managed = this.sessions.get(sessionId)
+    if (!managed) return { success: false, error: 'Session not found' }
+    return revokeShare(managed, this.broadcaster)
   }
 
   // ============================================
@@ -2050,7 +2061,7 @@ export class SessionManager implements ISessionManager {
         agent.setAllSources(allSources)
         const usableSources = sources.filter(isSourceUsable)
         const intendedSlugs = usableSources.map(source => source.config.slug)
-        await applyBridgeUpdates(agent, sessionPath, usableSources, mcpServers, managed.id, workspaceRootPath, 'source config change')
+        await agent.applyBridgeUpdates({ sessionPath, enabledSources: usableSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source config change' })
         await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
 
         getSessionLog().info(`Applied ${Object.keys(mcpServers).length} MCP + ${Object.keys(apiServers).length} API sources to active agent (${allSources.length} total)`)
@@ -2072,17 +2083,6 @@ export class SessionManager implements ISessionManager {
   getSessionSources(sessionId: string): string[] {
     const managed = this.sessions.get(sessionId)
     return managed?.enabledSourceSlugs ?? []
-  }
-
-  /** Get the last user-visible final output, including plan-only turns. */
-  private getLastFinalOutputMessageId(messages: Message[]): string | undefined {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-      if ((msg.role === 'assistant' && !msg.isIntermediate) || msg.role === 'plan') {
-        return msg.id
-      }
-    }
-    return undefined
   }
 
   /** Track which session the user is actively viewing (delegates to SessionCrudMetadata). */
@@ -2597,7 +2597,7 @@ export class SessionManager implements ISessionManager {
     this.setProcessing(managed, true)
     managed.streamingText = ''
     managed.processingGeneration++
-    managed.turnStartFinalMessageId = this.getLastFinalOutputMessageId(managed.messages)
+    managed.turnStartFinalMessageId = getLastFinalOutputMessageId(managed.messages)
 
     // Capture the generation to detect if a new request supersedes this one.
     // This prevents the finally block from clobbering state when a follow-up message arrives.
@@ -2723,7 +2723,7 @@ export class SessionManager implements ISessionManager {
         const usableSources = sources.filter(isSourceUsable)
         const intendedSlugs = usableSources.map(s => s.config.slug)
         await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
-        await applyBridgeUpdates(agent, sessionPath, usableSources, mcpServers, sessionId, workspaceRootPath, 'send message')
+        await agent.applyBridgeUpdates({ sessionPath, enabledSources: usableSources, mcpServers, sessionId, workspaceRootPath, context: 'send message' })
         getSessionLog().info(`Applied ${mcpCount} MCP + ${apiCount} API sources to session ${sessionId} (${allSources.length} total)`)
       }
       sendSpan.mark('servers.applied')
@@ -3203,7 +3203,7 @@ export class SessionManager implements ISessionManager {
     //    - If user is NOT viewing: mark as unread (they have new content)
     //    IMPORTANT: only apply this when the turn produced a NEW final output.
     const isViewing = this.isSessionBeingViewed(sessionId, managed.workspace.id)
-    const currentFinalMessageId = this.getLastFinalOutputMessageId(managed.messages)
+    const currentFinalMessageId = getLastFinalOutputMessageId(managed.messages)
     const didReceiveNewFinalOutput = !!currentFinalMessageId && currentFinalMessageId !== turnStartFinalMessageId
 
     if (reason === 'complete' && didReceiveNewFinalOutput) {
@@ -4133,7 +4133,7 @@ export class SessionManager implements ISessionManager {
         this.accumulateTurnUsage(managed, event.usage)
 
         {
-          const finalMessageId = this.getLastFinalOutputMessageId(managed.messages)
+          const finalMessageId = getLastFinalOutputMessageId(managed.messages)
           if (finalMessageId && finalMessageId !== managed.turnStartFinalMessageId) {
             const finalMessage = managed.messages.findLast(message => message.id === finalMessageId)
             if (finalMessage) {

@@ -1,5 +1,5 @@
 // input: Loaded sources, credential managers, and the host server builder
-// output: MCP/API server construction from sources and backend bridge-update application
+// output: MCP/API server construction from sources (buildServersFromSources)
 // pos: Shared leaf under the SessionManager facade; used by source reload (Facade) and auth flow
 
 import { perf } from '@craft-agent/shared/utils'
@@ -17,7 +17,6 @@ import {
   createStoryflowManagedTokenGetter,
   getTrustedManagedSourcePolicy,
 } from '@craft-agent/shared/sources'
-import type { AgentInstance } from './managed-session'
 import { getSessionLog } from './session-runtime'
 
 export async function buildServersFromSources(
@@ -102,28 +101,4 @@ export async function buildServersFromSources(
 
   span.end()
   return result
-}
-
-/**
- * Apply source runtime updates for backends that need them.
- * Delegates to the backend's own applyBridgeUpdates() method.
- * Each backend handles its own strategy via applyBridgeUpdates().
- */
-export async function applyBridgeUpdates(
-  agent: AgentInstance,
-  sessionPath: string,
-  enabledSources: LoadedSource[],
-  mcpServers: Record<string, import('@craft-agent/shared/agent/backend').SdkMcpServerConfig>,
-  sessionId: string,
-  workspaceRootPath: string,
-  context: string
-): Promise<void> {
-  await agent.applyBridgeUpdates({
-    sessionPath,
-    enabledSources,
-    mcpServers,
-    sessionId,
-    workspaceRootPath,
-    context,
-  })
 }

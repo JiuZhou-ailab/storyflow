@@ -25,7 +25,7 @@ import { readFileAttachment } from '@craft-agent/shared/utils'
 import { releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
 import type { AgentInstance, ManagedSession } from './managed-session'
 import { getSessionLog, getResourceProjectRoot } from './session-runtime'
-import { buildServersFromSources, applyBridgeUpdates } from './source-bridge'
+import { buildServersFromSources } from './source-bridge'
 
 /** Metadata tracked per in-flight permission request (keyed by requestId). */
 export interface PermissionRequestMeta {
@@ -510,7 +510,7 @@ export function wireAgentCallbacks(
       .map(s => s.config.slug)
 
     // Update source runtime config/credentials for backends that need it
-    await applyBridgeUpdates(managed.agent!, sessionPath, allEnabledSources, mcpServers, managed.id, workspaceRootPath, 'source enable')
+    await managed.agent!.applyBridgeUpdates({ sessionPath, enabledSources: allEnabledSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source enable' })
 
     await managed.agent!.setSourceServers(mcpServers, apiServers, intendedSlugs)
 

@@ -19,7 +19,7 @@ import { canSwitchSessionModelConnection } from '@craft-agent/server-core/domain
 import { isValidWorkingDirectory } from '../utils/path-validation'
 import type { Message } from '@craft-agent/core/types'
 import { resolveSupportsBranching, type ManagedSession } from './managed-session'
-import { getSessionLog } from './session-runtime'
+import { getLastFinalOutputMessageId, getSessionLog } from './session-runtime'
 
 export interface SessionCrudMetadataDeps {
   /** Registry lookup — identity-checked by callers via the shared sessions map. */
@@ -34,7 +34,6 @@ export interface SessionCrudMetadataDeps {
   setMetadataWriteGuard: (managed: ManagedSession) => void
   /** Bun Linux recursive-watch workaround: nudge the workspace watcher directly. */
   notifyFileChange: (workspaceRootPath: string, relativePath: string) => void
-  getLastFinalOutputMessageId: (messages: Message[]) => string | undefined
 }
 
 export class SessionCrudMetadata {
@@ -210,7 +209,7 @@ export class SessionCrudMetadata {
 
     // Update lastReadMessageId for legacy/manual unread functionality
     if (managed.messages.length > 0) {
-      const lastFinalId = this.deps.getLastFinalOutputMessageId(managed.messages)
+      const lastFinalId = getLastFinalOutputMessageId(managed.messages)
       if (lastFinalId && managed.lastReadMessageId !== lastFinalId) {
         managed.lastReadMessageId = lastFinalId
         needsPersist = true

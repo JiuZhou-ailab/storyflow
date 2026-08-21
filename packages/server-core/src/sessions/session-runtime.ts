@@ -9,6 +9,7 @@ import type { Workspace } from '@craft-agent/shared/config'
 import { isFreeConversationWorkspaceId } from '@craft-agent/shared/workspaces'
 import type { BackendHostRuntimeContext } from '@craft-agent/shared/agent/backend'
 import type { ManagedModelAccess } from '@craft-agent/shared/agent/backend/types'
+import type { Message } from '@craft-agent/core/types'
 import { MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE } from './managed-gateway-auth-error'
 
 // Module-level platform ref — set once during init via setSessionPlatform()
@@ -112,4 +113,15 @@ export function hasPersistedPiTranscript(sessionPath: string): boolean {
   } catch {
     return false
   }
+}
+
+/** Get the last user-visible final output message id, including plan-only turns. */
+export function getLastFinalOutputMessageId(messages: Message[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if ((msg.role === 'assistant' && !msg.isIntermediate) || msg.role === 'plan') {
+      return msg.id
+    }
+  }
+  return undefined
 }
