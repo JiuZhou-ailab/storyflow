@@ -3,7 +3,7 @@
 // pos: Keeps view refreshes from recompiling filters on no-op changes
 
 import { describe, expect, it } from 'bun:test'
-import type { ViewConfig } from '@craft-agent/shared/views'
+import type { ViewConfig } from '../../../shared/views'
 import { areViewConfigsEqual } from '../useViews'
 
 const views: ViewConfig[] = [

@@ -1,3 +1,7 @@
+// input: Workspace root paths, shared view type contracts, and legacy smartLabels configs
+// output: views.json persistence — load/save/list/saveViews plus default view seeding
+// pos: Server-side persistence half of the views subdomain; expression engines live per host
+
 /**
  * Views Storage
  *
@@ -10,15 +14,13 @@
 
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
-import type { ViewConfig } from './types.ts';
-import { getDefaultViews } from './defaults.ts';
-import { debug } from '../utils/debug.ts';
-import { readJsonFileSync } from '../utils/files.ts';
+import type { ViewConfig } from '@craft-agent/shared/views';
+import { debug, readJsonFileSync } from '@craft-agent/shared/utils';
 import {
   getExistingWorkspaceLabelConfigPath,
   getExistingWorkspaceViewsPath,
   getWorkspaceViewsPath,
-} from '../workspaces/paths.ts';
+} from '@craft-agent/shared/workspaces';
 
 /**
  * Views configuration file structure.
@@ -28,6 +30,44 @@ export interface ViewsConfig {
   version: number;
   /** Array of view definitions */
   views: ViewConfig[];
+}
+
+/**
+ * Default views seeded into views.json.
+ * Built-in views provided to new workspaces (or when views.json is missing).
+ * Users can modify or remove these — they're just the starting point.
+ */
+export function getDefaultViews(): ViewConfig[] {
+  return [
+    {
+      id: 'view-new',
+      name: 'New',
+      description: 'Sessions with unread messages',
+      color: 'accent',
+      expression: 'hasUnread == true',
+    },
+    {
+      id: 'view-plan',
+      name: 'Plan',
+      description: 'Sessions with a pending plan awaiting approval',
+      color: 'info',
+      expression: 'hasPendingPlan == true',
+    },
+    {
+      id: 'view-explore',
+      name: 'Explore',
+      description: 'Sessions in Explore (read-only) mode',
+      color: 'foreground/50',
+      expression: 'permissionMode == "safe"',
+    },
+    {
+      id: 'view-processing',
+      name: 'Processing',
+      description: 'Sessions where the agent is currently running',
+      color: 'success',
+      expression: 'isProcessing == true',
+    },
+  ];
 }
 
 /**

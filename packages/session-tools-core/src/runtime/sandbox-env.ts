@@ -8,7 +8,7 @@ import type { ScriptRuntimeLanguage } from './resolve-script-runtime.ts';
 
 /**
  * Env vars stripped from subprocesses to prevent credential leakage.
- * NOTE: Keep in sync with packages/shared/src/mcp/client.ts (BLOCKED_ENV_VARS).
+ * NOTE: Keep in sync with packages/server-core/src/mcp/client.ts (BLOCKED_ENV_VARS).
  */
 export const BLOCKED_ENV_VARS = [
   'ANTHROPIC_API_KEY',

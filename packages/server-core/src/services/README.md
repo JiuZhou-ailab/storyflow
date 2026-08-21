@@ -9,3 +9,4 @@ RPC 与会话边界之下可复用的服务。
 - `search.ts` / `search.test.ts` — 执行有边界的 workspace 搜索。
 - `vcredist.ts` / `vcredist.test.ts` — 检查 Visual C++ 运行库。
 - `workspace-version-control.ts` — 通过独立 index 与 `refs/storyflow/*` 提供不侵入用户 Git 状态的 workspace 版本控制。
+- `views-storage.ts` — workspace `views.json` 的持久化、默认视图种子与 smartLabels 迁移。

@@ -1,12 +1,13 @@
+// input: Nothing — pure type re-exports
+// output: The cross-host ViewConfig contract (config shape and evaluation context)
+// pos: Shared half of the views subdomain; runtime engines live per host
+//      (electron: apps/electron/src/shared/views, persistence: server-core services)
+
 /**
- * Views Module
+ * View Types
  *
- * Dynamic views computed from session state using Filtrex expressions.
- * Never persisted on sessions — purely runtime evaluation.
+ * Views are dynamic, user-configurable filters computed from session state
+ * using Filtrex expressions. They are never persisted on sessions — purely runtime.
  */
 
 export type { ViewConfig, CompiledView, ViewEvaluationContext } from './types.ts';
-export { compileView, compileAllViews, evaluateViews, buildViewContext } from './evaluator.ts';
-export { validateViewExpression, AVAILABLE_FIELDS, AVAILABLE_FUNCTIONS } from './validation.ts';
-export { getDefaultViews } from './defaults.ts';
-export { VIEW_FUNCTIONS } from './functions.ts';

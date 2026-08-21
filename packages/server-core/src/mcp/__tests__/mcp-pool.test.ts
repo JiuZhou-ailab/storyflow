@@ -1,3 +1,7 @@
+// input: MCP server configs and a connect-intercepting pool subclass
+// output: Regression coverage for sync() config-change detection (token refresh reconnects)
+// pos: Guard for the main-process MCP pool's reconnection semantics
+
 /**
  * Tests for McpClientPool — config change detection during sync().
  *
@@ -7,9 +11,8 @@
  * tokens were refreshed but never applied to existing transports.
  */
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { McpClientPool } from '../src/mcp/mcp-pool.ts';
-import type { SdkMcpServerConfig } from '../src/agent/backend/types.ts';
-import type { PoolClient } from '../src/mcp/client.ts';
+import { McpClientPool } from '../mcp-pool';
+import type { PoolClient, SdkMcpServerConfig } from '@craft-agent/shared/mcp';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 // ============================================================
@@ -34,6 +37,13 @@ function makeMockClient(): PoolClient {
 
 function httpConfig(token: string, url = 'https://mcp.example.com'): SdkMcpServerConfig {
   return { type: 'http', url, headers: { Authorization: `Bearer ${token}` } };
+}
+
+/** Narrow the union to read the Authorization header of an HTTP config. */
+function authHeader(config: SdkMcpServerConfig): string | undefined {
+  return config.type === 'http' || config.type === 'sse'
+    ? config.headers?.Authorization
+    : undefined;
 }
 
 /**
@@ -82,7 +92,7 @@ describe('McpClientPool.sync — config change detection', () => {
 
     expect(pool.disconnectCalls).toEqual(['craft']);
     expect(pool.connectCalls).toHaveLength(1);
-    expect(pool.connectCalls[0].config.headers?.Authorization).toBe('Bearer new-token');
+    expect(authHeader(pool.connectCalls[0].config)).toBe('Bearer new-token');
     expect(pool.isConnected('craft')).toBe(true);
   });
 
@@ -157,7 +167,8 @@ describe('McpClientPool.sync — config change detection', () => {
 
     expect(pool.disconnectCalls).toContain('linear');
     expect(pool.disconnectCalls).toContain('craft');
-    expect(pool.connectCalls.find(c => c.slug === 'craft')?.config.headers?.Authorization).toBe('Bearer new-craft-token');
+    const craftCall = pool.connectCalls.find(c => c.slug === 'craft');
+    expect(craftCall && authHeader(craftCall.config)).toBe('Bearer new-craft-token');
     expect(pool.connectCalls.find(c => c.slug === 'github')).toBeDefined();
     expect(pool.isConnected('craft')).toBe(true);
     expect(pool.isConnected('linear')).toBe(false);

@@ -1,16 +1,12 @@
-/**
- * Pool client for API sources.
- *
- * Connects to an in-process McpServer via
- * in-memory transport, exposing it through the same PoolClient interface
- * that CraftMcpClient uses for remote MCP sources.
- */
+// input: An in-process McpServer instance built by shared API-source tooling
+// output: ApiSourcePoolClient — an in-memory-transport PoolClient for API sources
+// pos: Main-process bridge that exposes API sources through the same pool interface as remote MCP
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import type { PoolClient } from './client.ts';
+import type { PoolClient } from '@craft-agent/shared/mcp';
 
 export class ApiSourcePoolClient implements PoolClient {
   private client: Client;

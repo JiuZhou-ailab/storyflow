@@ -23,7 +23,11 @@ export {
   resolveRuntimeWorkspace,
   listSessionWorkspaces,
 } from './application-context.ts';
-export { isPathWithinProjectRoot } from './paths.ts';
+export {
+  isPathWithinProjectRoot,
+  getExistingWorkspaceLabelConfigPath,
+  getExistingWorkspaceViewsPath,
+} from './paths.ts';
 
 // Storage functions
 export {
@@ -47,6 +51,7 @@ export {
   getExistingWorkspaceConfigPath,
   getExistingWorkspaceSessionsPath,
   getExistingWorkspaceSourcesPath,
+  isLocalMcpEnabled,
   // Config operations
   loadWorkspaceConfig,
   saveWorkspaceConfig,

@@ -21,7 +21,7 @@ import type { ThinkingLevel } from '../thinking-levels.ts';
 import type { PermissionMode } from '../mode-manager.ts';
 import type { LoadedSource } from '../../sources/types.ts';
 import type { AuthRequest } from '@craft-agent/session-tools-core';
-import type { McpClientPool } from '../../mcp/mcp-pool.ts';
+import type { McpClientPoolLike } from '../../mcp/types.ts';
 import type { Workspace } from '../../config/storage.ts';
 import type { SessionConfig as Session } from '../../sessions/storage.ts';
 import type { SourceManager } from '../core/source-manager.ts';
@@ -252,7 +252,7 @@ export interface CoreBackendConfig {
    * Centralized MCP client pool for source tool execution.
    * Owns all MCP source connections in the main process.
    */
-  mcpPool?: McpClientPool;
+  mcpPool?: McpClientPoolLike;
 
   /** Callback when SDK session ID is captured/updated */
   onSdkSessionIdUpdate?: (sdkSessionId: string) => void;
@@ -362,27 +362,11 @@ export interface ChatOptions {
 
 /**
  * SDK-compatible MCP server configuration.
- * Supports HTTP/SSE (remote) and stdio (local subprocess) transports.
+ * Defined in the mcp subdomain (single source of truth); re-exported here
+ * for the backend contract surface.
  */
-export type SdkMcpServerConfig =
-  | {
-      type: 'http' | 'sse';
-      url: string;
-      headers?: Record<string, string>;
-      /** Environment variable name containing bearer token (Codex-specific) */
-      bearerTokenEnvVar?: string;
-    }
-  | {
-      type: 'stdio';
-      command: string;
-      args?: string[];
-      /** Environment variables to set (literal values) */
-      env?: Record<string, string>;
-      /** Environment variable names to forward from parent process (Codex-specific) */
-      envVars?: string[];
-      /** Working directory for the server process (Codex-specific) */
-      cwd?: string;
-    };
+import type { SdkMcpServerConfig } from '../../mcp/types.ts';
+export type { SdkMcpServerConfig };
 
 /**
  * Configuration for creating a backend.

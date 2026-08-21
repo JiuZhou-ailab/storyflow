@@ -383,7 +383,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { listViews } = await import('@craft-agent/shared/views/storage')
+    const { listViews } = await import('../../services/views-storage')
     return listViews(workspace.rootPath)
   })
 
@@ -392,7 +392,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { saveViews } = await import('@craft-agent/shared/views/storage')
+    const { saveViews } = await import('../../services/views-storage')
     saveViews(workspace.rootPath, views)
     // Broadcast labels changed since views are used alongside labels in sidebar
     pushTyped(server, RPC_CHANNELS.labels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)

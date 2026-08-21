@@ -1,6 +1,6 @@
 // input: MCP/API server configs, proxy tool calls, and session output boundaries.
 // output: One lifecycle owner for source clients, proxy tools, and normalized results.
-// pos: Shared main-process connection pool between Product Host and external Sources.
+// pos: Main-process connection pool between Product Host and external Sources; satisfies McpClientPoolLike from shared.
 
 /**
  * Centralized MCP Client Pool
@@ -17,93 +17,27 @@
  * - Runtime source switching without session restart
  */
 
-import { CraftMcpClient, type McpClientConfig, type PoolClient } from './client.ts';
+import { CraftMcpClient } from './client.ts';
 import { ApiSourcePoolClient } from './api-source-pool-client.ts';
-import type { SdkMcpServerConfig } from '../agent/backend/types.ts';
+import type {
+  ApiServerConfig,
+  McpClientConfig,
+  McpToolResult,
+  PoolClient,
+  ProxyToolDef,
+  SdkMcpServerConfig,
+} from '@craft-agent/shared/mcp';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { isLocalMcpEnabled } from '../workspaces/storage.ts';
-import { guardLargeResult } from '../utils/large-response.ts';
+import type { ApiOperationPermission } from '@craft-agent/shared/sources/types';
+import { isLocalMcpEnabled } from '@craft-agent/shared/workspaces';
+import { guardLargeResult } from '@craft-agent/shared/utils';
 import {
   saveBinaryResponse,
   detectExtensionFromMagic,
   sanitizeFilename,
-} from '../utils/binary-detection.ts';
-import { materializeApiOperationRequest } from '../sources/api-path.ts';
-import type { ApiOperationPermission } from '../sources/types.ts';
-
-/**
- * Configuration for an in-process API source server.
- * Used by sync() to connect API sources alongside MCP sources.
- */
-export interface ApiServerConfig {
-  type: 'sdk';
-  instance: McpServer;
-  toolPermissions?: Record<string, ApiOperationPermission>;
-}
-
-/**
- * Proxy tool definition — the format passed to backends for registration.
- * Uses mcp__{slug}__{toolName} naming convention.
- */
-export interface ProxyToolDef {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-}
-
-/**
- * Result of an MCP tool call, matching the subprocess protocol format.
- */
-export interface McpToolResult {
-  content: string;
-  isError: boolean;
-  /** Source slug for error attribution (set on failure) */
-  sourceSlug?: string;
-}
-
-/**
- * Convert SdkMcpServerConfig (used by backend types) to CraftMcpClient config.
- */
-function sdkConfigToClientConfig(config: SdkMcpServerConfig): McpClientConfig | null {
-  if (config.type === 'http' || config.type === 'sse') {
-    return {
-      transport: 'http',
-      url: config.url,
-      headers: config.headers,
-    };
-  }
-  if (config.type === 'stdio') {
-    return {
-      transport: 'stdio',
-      command: config.command,
-      args: config.args,
-      env: config.env,
-    };
-  }
-  return null;
-}
-
-/**
- * Check if an MCP source's config has changed in a way that requires reconnection.
- * Compares auth headers (token refresh) and URL changes.
- * Ignores stdio sources since they don't use OAuth tokens.
- */
-function mcpConfigChanged(oldConfig: SdkMcpServerConfig, newConfig: SdkMcpServerConfig): boolean {
-  if (oldConfig.type !== newConfig.type) return true;
-
-  if (
-    (oldConfig.type === 'http' || oldConfig.type === 'sse') &&
-    (newConfig.type === 'http' || newConfig.type === 'sse')
-  ) {
-    if (oldConfig.url !== newConfig.url) return true;
-    const oldAuth = oldConfig.headers?.['Authorization'];
-    const newAuth = newConfig.headers?.['Authorization'];
-    if (oldAuth !== newAuth) return true;
-  }
-
-  return false;
-}
+} from '@craft-agent/shared/utils/binary-detection';
+import { materializeApiOperationRequest } from '@craft-agent/shared/sources';
 
 export class McpClientPool {
   /** Active MCP clients keyed by source slug */
@@ -495,4 +429,47 @@ export class McpClientPool {
     }
     return { method: permission.method, path };
   }
+}
+
+/**
+ * Convert SdkMcpServerConfig (used by backend types) to CraftMcpClient config.
+ */
+function sdkConfigToClientConfig(config: SdkMcpServerConfig): McpClientConfig | null {
+  if (config.type === 'http' || config.type === 'sse') {
+    return {
+      transport: 'http',
+      url: config.url,
+      headers: config.headers,
+    };
+  }
+  if (config.type === 'stdio') {
+    return {
+      transport: 'stdio',
+      command: config.command,
+      args: config.args,
+      env: config.env,
+    };
+  }
+  return null;
+}
+
+/**
+ * Check if an MCP source's config has changed in a way that requires reconnection.
+ * Compares auth headers (token refresh) and URL changes.
+ * Ignores stdio sources since they don't use OAuth tokens.
+ */
+function mcpConfigChanged(oldConfig: SdkMcpServerConfig, newConfig: SdkMcpServerConfig): boolean {
+  if (oldConfig.type !== newConfig.type) return true;
+
+  if (
+    (oldConfig.type === 'http' || oldConfig.type === 'sse') &&
+    (newConfig.type === 'http' || newConfig.type === 'sse')
+  ) {
+    if (oldConfig.url !== newConfig.url) return true;
+    const oldAuth = oldConfig.headers?.['Authorization'];
+    const newAuth = newConfig.headers?.['Authorization'];
+    if (oldAuth !== newAuth) return true;
+  }
+
+  return false;
 }

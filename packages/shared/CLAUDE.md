@@ -1,5 +1,7 @@
 # CLAUDE.md — `@craft-agent/shared`
 
+See [README.md](./README.md) for the directory map and the shared-membership constitution (entry criteria, subdomain isolation, ADR rule).
+
 ## Purpose
 Core business logic package for Craft Agent:
 - Pi agent runtime and session-scoped tools

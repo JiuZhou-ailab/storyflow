@@ -1,3 +1,7 @@
+// input: Raw view expression strings from config UIs
+// output: Expression syntax validation with field/function documentation hints
+// pos: Electron-side config-time validation paired with the views evaluator
+
 /**
  * View Validation
  *

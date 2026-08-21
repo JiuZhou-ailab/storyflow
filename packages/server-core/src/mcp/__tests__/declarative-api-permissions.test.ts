@@ -6,10 +6,9 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { shouldAllowToolInMode } from '../mode-manager.ts'
-import { permissionsConfigCache } from '../permissions-config.ts'
-import { McpClientPool } from '../../mcp/mcp-pool.ts'
-import { createApiServer } from '../../sources/api-tools.ts'
+import { shouldAllowToolInMode, permissionsConfigCache } from '@craft-agent/shared/agent'
+import { McpClientPool } from '../mcp-pool'
+import { createApiServer } from '@craft-agent/shared/sources'
 
 const temporaryRoots: string[] = []
 

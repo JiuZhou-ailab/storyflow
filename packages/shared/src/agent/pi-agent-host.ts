@@ -13,7 +13,7 @@ import type { LoadedSource } from '../sources/types.ts';
 import { buildCallLlmRequest, type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
 import { getLlmConnections, getDefaultLlmConnection } from '../config/storage.ts';
 import { loadAllSources } from '../sources/storage.ts';
-import type { ApiServerConfig } from '../mcp/mcp-pool.ts';
+import type { ApiServerConfig } from '../mcp/types.ts';
 
 import type {
   ChatOptions,

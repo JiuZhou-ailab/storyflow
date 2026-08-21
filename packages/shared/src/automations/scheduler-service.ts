@@ -1,3 +1,7 @@
+// input: Wall-clock minute boundaries
+// output: SchedulerService — SchedulerTick events with local-time payload for cron automations
+// pos: Automations-internal clock source; consumed only by automation-system.ts
+
 /**
  * SchedulerService - Emits SchedulerTick events every minute
  *

@@ -1,12 +1,14 @@
 /**
  * MCP Connection Validation
  *
- * Validates HTTP/SSE MCP servers by connecting directly via CraftMcpClient
+ * Validates HTTP/SSE MCP servers by connecting directly via the MCP SDK
  * and listing tools. Avoids spawning a Claude Code subprocess (which is killed
  * by Electron's macOS sandbox — see issue #697).
+ *
+ * SDK imports are dynamic so this module stays loadable in hosts where the
+ * validator runs without pulling the client runtime at module scope.
  */
 
-import { CraftMcpClient } from './client.js';
 import { debug } from '../utils/debug.ts';
 import { normalizeMcpUrl } from '../sources/mcp-url.ts';
 import type { McpTransport } from '../sources/types.ts';
@@ -138,9 +140,9 @@ function classifyConnectionError(err: unknown): McpValidationResult {
 }
 
 /**
- * Validates an HTTP/SSE MCP connection by connecting via CraftMcpClient and
- * listing tools. The internal `connect()` call performs a `listTools()` health
- * check, so a successful connect proves the server is reachable and responsive.
+ * Validates an HTTP/SSE MCP connection by connecting via the MCP SDK and
+ * listing tools. A successful `tools/list` proves the server is reachable
+ * and responsive.
  */
 export async function validateMcpConnection(
   config: McpValidationConfig
@@ -155,19 +157,28 @@ export async function validateMcpConnection(
     ...(config.mcpAccessToken ? { Authorization: `Bearer ${config.mcpAccessToken}` } : {}),
   };
 
-  // SSE transport is not supported by CraftMcpClient (HTTP only). Streamable
-  // HTTP is the modern transport; SSE servers will surface a clear connect error.
-  const mcpClient = new CraftMcpClient({
-    transport: 'http',
-    url: mcpUrl,
-    headers: Object.keys(headers).length > 0 ? headers : undefined,
-  });
+  // SSE transport is not supported here (HTTP only). Streamable HTTP is the
+  // modern transport; SSE servers will surface a clear connect error.
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import(
+    '@modelcontextprotocol/sdk/client/streamableHttp.js'
+  );
+
+  let client: InstanceType<typeof Client> | null = null;
 
   try {
-    await mcpClient.connect();
-    const serverInfo = mcpClient.getServerInfo();
+    client = new Client({ name: 'craft-agent-validator', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(new URL(mcpUrl), {
+      requestInit: {
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
+      },
+    });
 
-    const tools = await mcpClient.listTools();
+    await client.connect(transport);
+    const info = client.getServerVersion();
+    const serverInfo = info ? { name: info.name, version: info.version } : undefined;
+
+    const tools = (await client.listTools()).tools;
     const toolNames = tools.map((t) => t.name);
 
     debug(`Validating schemas for ${tools.length} tools`);
@@ -211,7 +222,7 @@ export async function validateMcpConnection(
     debug('[mcp-validation] error:', err instanceof Error ? err.message : err);
     return classifyConnectionError(err);
   } finally {
-    await mcpClient.close().catch(() => {});
+    await client?.close().catch(() => {});
   }
 }
 

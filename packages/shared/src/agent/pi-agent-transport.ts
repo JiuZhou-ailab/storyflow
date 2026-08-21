@@ -54,7 +54,7 @@ import {
 import type { SessionToolContext } from './session-tool-context.ts';
 
 // McpClientPool for source tool proxying (centralized pool from main process)
-import type { McpClientPool } from '../mcp/mcp-pool.ts';
+import type { McpClientPoolLike } from '../mcp/types.ts';
 
 // Path utilities
 import { join } from 'path';
@@ -195,7 +195,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
   }> = new Map();
 
   // Pool reference for convenience (from this.config.mcpPool)
-  protected get mcpPool(): McpClientPool | undefined { return this.config.mcpPool; }
+  protected get mcpPool(): McpClientPoolLike | undefined { return this.config.mcpPool; }
 
   // Cached session tool context (lazy-created on first session tool call)
   protected _sessionToolContext: SessionToolContext | null = null;

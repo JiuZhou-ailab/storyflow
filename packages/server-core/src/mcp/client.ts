@@ -1,3 +1,7 @@
+// input: HTTP/stdio MCP connection configs from shared/mcp types
+// output: CraftMcpClient — an SDK-backed MCP client with connect health check
+// pos: Main-process MCP transport client; pure types remain in @craft-agent/shared/mcp
+
 /**
  * MCP client using official @modelcontextprotocol/sdk
  * Supports both HTTP and stdio transports for remote and local MCP servers
@@ -8,36 +12,13 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-
-/**
- * HTTP transport config for remote MCP servers
- */
-export interface HttpMcpClientConfig {
-  transport: 'http';
-  url: string;
-  headers?: Record<string, string>;
-}
-
-/**
- * Stdio transport config for local MCP servers (spawns subprocess)
- */
-export interface StdioMcpClientConfig {
-  transport: 'stdio';
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-}
-
-/**
- * Unified config supporting both transport types
- */
-export type McpClientConfig = HttpMcpClientConfig | StdioMcpClientConfig;
+import type { McpClientConfig, PoolClient } from '@craft-agent/shared/mcp';
 
 /**
  * Sensitive environment variables that should NOT be passed to MCP subprocesses.
  * These could contain API keys, tokens, or credentials that MCP servers don't need
  * and shouldn't have access to.
- * NOTE: This list is duplicated in packages/session-tools-core/src/handlers/transform-data.ts (BLOCKED_ENV_VARS).
+ * NOTE: This list is duplicated in packages/session-tools-core/src/runtime/sandbox-env.ts (BLOCKED_ENV_VARS).
  * If you add a new entry here, update it there too.
  */
 const BLOCKED_ENV_VARS = [
@@ -58,16 +39,6 @@ const BLOCKED_ENV_VARS = [
   'STRIPE_SECRET_KEY',
   'NPM_TOKEN',
 ];
-
-/**
- * Interface for clients managed by McpClientPool.
- * Both CraftMcpClient (remote MCP sources) and ApiSourcePoolClient (API sources) implement this.
- */
-export interface PoolClient {
-  listTools(): Promise<Tool[]>;
-  callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
-  close(): Promise<void>;
-}
 
 export class CraftMcpClient {
   private client: Client;

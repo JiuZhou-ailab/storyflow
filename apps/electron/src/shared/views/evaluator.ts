@@ -1,3 +1,7 @@
+// input: ViewConfig expressions from shared views types and session metadata
+// output: Compiled Filtrex evaluators plus per-render view matching
+// pos: Electron-side view computation engine; the ViewConfig contract stays in @craft-agent/shared/views
+
 /**
  * View Evaluator
  *
@@ -12,9 +16,9 @@
  */
 
 import { compileExpression, useDotAccessOperatorAndOptionalChaining } from 'filtrex';
-import type { ViewConfig, CompiledView, ViewEvaluationContext } from './types.ts';
+import type { ViewConfig, CompiledView, ViewEvaluationContext } from '@craft-agent/shared/views';
 import { VIEW_FUNCTIONS } from './functions.ts';
-import { debug } from '../utils/debug.ts';
+import { debug } from '@craft-agent/shared/utils';
 
 /**
  * Compile a single view expression into a native JS function.
@@ -114,9 +118,9 @@ export function buildViewContext(meta: {
   tokenUsage?: {
     inputTokens?: number;
     outputTokens?: number;
-    totalTokens?: number;
     costUsd?: number;
     contextTokens?: number;
+    totalTokens?: number;
   };
 }): ViewEvaluationContext {
   return {

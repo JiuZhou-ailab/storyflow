@@ -118,6 +118,8 @@ export type {
 
 // API Tools (types)
 export type { SummarizeCallback } from './api-tools.ts';
+export { createApiServer } from './api-tools.ts';
+export { materializeApiOperationRequest } from './api-path.ts';
 
 // Token Refresh Manager (handles OAuth token refresh with rate limiting)
 export {

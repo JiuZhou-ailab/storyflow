@@ -6,7 +6,7 @@ import type { PiAgent, AgentEvent, AuthRequest, PermissionMode } from '@craft-ag
 import { resolveBackendContext } from '@craft-agent/shared/agent/backend';
 import type { ConversationRewindBoundary } from '@craft-agent/shared/agent/backend/types';
 import { normalizeLlmConnectionSlug, type Workspace } from '@craft-agent/shared/config';
-import type { McpClientPool } from '@craft-agent/shared/mcp';
+import type { McpClientPool } from '../mcp';
 import type { FileAttachment, SendMessageOptions, Session } from '@craft-agent/shared/protocol';
 import {
   getSessionPath as getSessionStoragePath,

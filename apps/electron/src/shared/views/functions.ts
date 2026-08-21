@@ -1,3 +1,7 @@
+// input: Raw label entries and string/array values from view expressions
+// output: VIEW_FUNCTIONS — the Filtrex extraFunctions registry for view expressions
+// pos: Electron-side expression helper functions paired with the views evaluator
+
 /**
  * View Custom Functions
  *
@@ -6,7 +10,7 @@
  * All functions are safe, side-effect-free, and handle edge cases gracefully.
  */
 
-import { extractLabelId } from '../labels/values';
+import { extractLabelId } from '@craft-agent/shared/labels';
 
 /**
  * Days elapsed since a timestamp (in ms).

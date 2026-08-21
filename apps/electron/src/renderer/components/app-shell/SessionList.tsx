@@ -33,7 +33,7 @@ import { useEscapeInterrupt } from "@/context/EscapeInterruptContext"
 import { useNavigationActions, useNavigationState, routes, isSessionsNavigation } from "@/contexts/NavigationContext"
 import { useFocusActions } from "@/context/FocusContext"
 import { sendToWorkspaceAtom, sessionMetaMapAtom, type SessionMeta } from "@/atoms/sessions"
-import type { ViewConfig } from "@craft-agent/shared/views"
+import type { ViewConfig } from "../../../shared/views"
 import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
 import { buildCollapsedGroupsScopeSuffix } from "@/utils/session-list-collapse"
 

@@ -25,7 +25,7 @@ import { PromptHandler, EventLogHandler, WebhookHandler, type AutomationsConfigP
 import { type AgentAutomationInput, type AgentAutomationMatcher, type AutomationsConfig, type AutomationEvent, type AutomationMatcher, type PendingPrompt, type WebhookActionResult, type AppEvent, type AgentEvent } from './types.ts';
 import { validateAutomationsConfig } from './validation.ts';
 import { matcherMatchesAgentInput } from './utils.ts';
-import { SchedulerService, type SchedulerTickPayload } from '../scheduler/scheduler-service.ts';
+import { SchedulerService, type SchedulerTickPayload } from './scheduler-service.ts';
 
 const log = createLogger('automation-system');
 

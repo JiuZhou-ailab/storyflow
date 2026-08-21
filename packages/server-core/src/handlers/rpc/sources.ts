@@ -192,7 +192,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
         return { success: false, error: 'Source has not been tested yet' }
       }
 
-      const { CraftMcpClient } = await import('@craft-agent/shared/mcp')
+      const { CraftMcpClient } = await import('../../mcp')
       let client: InstanceType<typeof CraftMcpClient>
 
       if (source.config.mcp.transport === 'stdio') {

@@ -1,13 +1,11 @@
-/**
- * input: API source configuration and the in-process MCP pool client
- * output: Regression coverage for framework-neutral API source tool discovery and execution
- * pos: Verifies API Sources use the official MCP SDK without a Claude Agent SDK wrapper
- */
+// input: API source configuration and the in-process MCP pool client
+// output: Regression coverage for framework-neutral API source tool discovery and execution
+// pos: Verifies API Sources use the official MCP SDK without a Claude Agent SDK wrapper
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { ApiSourcePoolClient } from '../../mcp/api-source-pool-client.ts';
-import { createApiServer } from '../api-tools.ts';
-import type { ApiConfig } from '../types.ts';
+import { ApiSourcePoolClient } from '../api-source-pool-client';
+import { createApiServer } from '@craft-agent/shared/sources';
+import type { ApiConfig } from '@craft-agent/shared/sources/types';
 
 const originalFetch = globalThis.fetch;
 

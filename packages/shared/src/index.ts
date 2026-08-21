@@ -8,7 +8,7 @@
  *   import { PiAgent } from '@craft-agent/shared/agent';
  *   import { loadStoredConfig } from '@craft-agent/shared/config';
  *   import { getCredentialManager } from '@craft-agent/shared/credentials';
- *   import { CraftMcpClient } from '@craft-agent/shared/mcp';
+ *   import { validateMcpConnection } from '@craft-agent/shared/mcp';
  *   import { debug } from '@craft-agent/shared/utils';
  *   import { loadSource, createSource, getSourceCredentialManager } from '@craft-agent/shared/sources';
  *   import { createWorkspace, loadWorkspace } from '@craft-agent/shared/workspaces';
@@ -19,7 +19,7 @@
  *   - clients: Craft API client
  *   - config: Storage, models, preferences
  *   - credentials: Encrypted credential storage
- *   - mcp: MCP client, connection validation
+ *   - mcp: MCP types and connection validation (runtime pool: @craft-agent/server-core)
  *   - prompts: System prompt generation
  *   - sources: Workspace-scoped source management (MCP, API, local)
  *   - utils: Debug logging, file handling, summarization
