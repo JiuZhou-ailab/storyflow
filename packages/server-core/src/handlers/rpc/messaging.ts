@@ -12,6 +12,35 @@ import type {
   MessagingPlatformOwnerInfo,
 } from '../messaging-registry-interface'
 
+/** UI ↔ Server channels registered by registerMessagingHandlers. */
+export const HANDLED_CHANNELS = [
+  RPC_CHANNELS.messaging.GET_CONFIG,
+  RPC_CHANNELS.messaging.UPDATE_CONFIG,
+  RPC_CHANNELS.messaging.TEST_TELEGRAM,
+  RPC_CHANNELS.messaging.SAVE_TELEGRAM,
+  RPC_CHANNELS.messaging.TEST_LARK,
+  RPC_CHANNELS.messaging.SAVE_LARK,
+  RPC_CHANNELS.messaging.DISCONNECT,
+  RPC_CHANNELS.messaging.FORGET,
+  RPC_CHANNELS.messaging.GET_BINDINGS,
+  RPC_CHANNELS.messaging.GENERATE_CODE,
+  RPC_CHANNELS.messaging.UNBIND,
+  RPC_CHANNELS.messaging.UNBIND_BINDING,
+  RPC_CHANNELS.messaging.GENERATE_SUPERGROUP_CODE,
+  RPC_CHANNELS.messaging.GET_SUPERGROUP,
+  RPC_CHANNELS.messaging.UNBIND_SUPERGROUP,
+  RPC_CHANNELS.messaging.WA_START_CONNECT,
+  RPC_CHANNELS.messaging.WA_SUBMIT_PHONE,
+  RPC_CHANNELS.messaging.GET_PLATFORM_OWNERS,
+  RPC_CHANNELS.messaging.SET_PLATFORM_OWNERS,
+  RPC_CHANNELS.messaging.GET_PLATFORM_ACCESS_MODE,
+  RPC_CHANNELS.messaging.SET_PLATFORM_ACCESS_MODE,
+  RPC_CHANNELS.messaging.GET_PENDING_SENDERS,
+  RPC_CHANNELS.messaging.DISMISS_PENDING_SENDER,
+  RPC_CHANNELS.messaging.ALLOW_PENDING_SENDER,
+  RPC_CHANNELS.messaging.SET_BINDING_ACCESS,
+] as const
+
 export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps): void {
   const registry = deps.messagingRegistry
   if (!registry) return

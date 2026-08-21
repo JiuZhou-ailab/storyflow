@@ -193,4 +193,13 @@ describe('RPC handler profile registration', () => {
     expect([...expected].filter(ch => !actual.has(ch))).toEqual([])
     expect([...actual].filter(ch => !expected.has(ch))).toEqual([])
   })
+
+  it('gui registrar channels are all LOCAL_ONLY (GUI handlers are never routed remote)', async () => {
+    const { LOCAL_ONLY_CHANNELS } = await import('@craft-agent/shared/protocol')
+    const gui = await getExpectedGuiChannels()
+
+    const misrouted = [...gui].filter(ch => !LOCAL_ONLY_CHANNELS.has(ch)).sort()
+
+    expect(misrouted).toEqual([])
+  })
 })

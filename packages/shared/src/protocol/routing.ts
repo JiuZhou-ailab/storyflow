@@ -1,483 +1,442 @@
-// input: Shared RPC channel registry
-// output: Local-only and remote-eligible routing classifications
+// input: Shared RPC channel registry (wire-format values from channels.ts)
+// output: Exhaustive CHANNEL_ROUTING table, derived LOCAL_ONLY/REMOTE_ELIGIBLE sets, query helpers
 // pos: Transport routing contract for hybrid local/remote execution
 
 /**
  * Exhaustive channel routing table for hybrid local/remote transport.
  *
- * Every RPC channel must belong to exactly one of two sets:
+ * Every RPC channel must belong to exactly one of two classes:
  * - LOCAL_ONLY: Always runs on the local Electron server, never proxied.
  * - REMOTE_ELIGIBLE: Runs on whichever server owns the workspace.
  *
- * An exhaustiveness test ensures new channels fail CI until classified.
+ * Keys are wire-format strings — the stable API contract — so reorganizing
+ * key paths in channels.ts never touches this table. The `satisfies` clause
+ * makes compilation fail until every channel in RPC_CHANNELS is classified.
  */
 
-import { RPC_CHANNELS } from './channels'
+import type { RpcChannel } from './channels'
+
+/** Routing class assigned to every channel in CHANNEL_ROUTING. */
+type RoutingClass = 'LOCAL_ONLY' | 'REMOTE_ELIGIBLE'
+
+export const CHANNEL_ROUTING = {
+  // ---------------------------------------------------------------------------
+  // LOCAL_ONLY — fundamentally requires local OS / Electron
+  // ---------------------------------------------------------------------------
+
+  'remote:testConnection': 'LOCAL_ONLY',
+
+  'workspaces:get': 'LOCAL_ONLY',
+  'workspaces:create': 'LOCAL_ONLY',
+  'workspaces:checkSlug': 'LOCAL_ONLY',
+  'workspaces:updateRemote': 'LOCAL_ONLY',
+
+  'window:getWorkspace': 'LOCAL_ONLY',
+  'window:getMode': 'LOCAL_ONLY',
+  'window:resolveRuntimeWorkspace': 'LOCAL_ONLY',
+  'window:openWorkspace': 'LOCAL_ONLY',
+  'window:openSessionInNewWindow': 'LOCAL_ONLY',
+  'window:switchWorkspace': 'LOCAL_ONLY',
+  'window:close': 'LOCAL_ONLY',
+  'window:closeRequested': 'LOCAL_ONLY',
+  'window:confirmClose': 'LOCAL_ONLY',
+  'window:cancelClose': 'LOCAL_ONLY',
+  'window:setTrafficLights': 'LOCAL_ONLY',
+  'window:focusState': 'LOCAL_ONLY',
+  'window:getFocusState': 'LOCAL_ONLY',
+
+  'file:openDialog': 'LOCAL_ONLY',
+  'file:moveEntry': 'LOCAL_ONLY',
+  'file:deleteEntry': 'LOCAL_ONLY',
+  'file:readUserAttachment': 'LOCAL_ONLY',
+
+  'dialog:openFolder': 'LOCAL_ONLY',
+
+  'auth:logout': 'LOCAL_ONLY',
+  'auth:showLogoutConfirmation': 'LOCAL_ONLY',
+  'auth:showDeleteSessionConfirmation': 'LOCAL_ONLY',
+
+  'shell:openUrl': 'LOCAL_ONLY',
+  'shell:openFile': 'LOCAL_ONLY',
+  'shell:showInFolder': 'LOCAL_ONLY',
+
+  'skills:openEditor': 'LOCAL_ONLY',
+  'skills:openFinder': 'LOCAL_ONLY',
+
+  'system:versions': 'LOCAL_ONLY',
+  'system:homeDir': 'LOCAL_ONLY',
+  'system:isDebugMode': 'LOCAL_ONLY',
+
+  'theme:getSystemPreference': 'LOCAL_ONLY',
+  'theme:systemChanged': 'LOCAL_ONLY',
+  'theme:appChanged': 'LOCAL_ONLY',
+  'theme:getApp': 'LOCAL_ONLY',
+  'theme:getPresets': 'LOCAL_ONLY',
+  'theme:loadPreset': 'LOCAL_ONLY',
+  'theme:getColorTheme': 'LOCAL_ONLY',
+  'theme:setColorTheme': 'LOCAL_ONLY',
+  'theme:broadcastPreferences': 'LOCAL_ONLY',
+  'theme:preferencesChanged': 'LOCAL_ONLY',
+  'theme:getWorkspaceColorTheme': 'LOCAL_ONLY',
+  'theme:setWorkspaceColorTheme': 'LOCAL_ONLY',
+  'theme:getAllWorkspaceThemes': 'LOCAL_ONLY',
+  'theme:broadcastWorkspaceTheme': 'LOCAL_ONLY',
+  'theme:workspaceThemeChanged': 'LOCAL_ONLY',
+
+  'update:check': 'LOCAL_ONLY',
+  'update:getInfo': 'LOCAL_ONLY',
+  'update:install': 'LOCAL_ONLY',
+  'update:dismiss': 'LOCAL_ONLY',
+  'update:getDismissed': 'LOCAL_ONLY',
+  'update:available': 'LOCAL_ONLY',
+  'update:downloadProgress': 'LOCAL_ONLY',
+
+  'releaseNotes:get': 'LOCAL_ONLY',
+  'releaseNotes:getLatestVersion': 'LOCAL_ONLY',
+  'releaseNotes:getWhatsNewManifest': 'LOCAL_ONLY',
+
+  'badge:refresh': 'LOCAL_ONLY',
+  'badge:setIcon': 'LOCAL_ONLY',
+  'badge:draw-windows': 'LOCAL_ONLY',
+
+  'menu:newChat': 'LOCAL_ONLY',
+  'menu:newWindow': 'LOCAL_ONLY',
+  'menu:openSettings': 'LOCAL_ONLY',
+  'menu:keyboardShortcuts': 'LOCAL_ONLY',
+  'menu:toggleSidebar': 'LOCAL_ONLY',
+  'menu:quit': 'LOCAL_ONLY',
+  'menu:minimize': 'LOCAL_ONLY',
+  'menu:maximize': 'LOCAL_ONLY',
+  'menu:zoomIn': 'LOCAL_ONLY',
+  'menu:zoomOut': 'LOCAL_ONLY',
+  'menu:zoomReset': 'LOCAL_ONLY',
+  'menu:toggleDevTools': 'LOCAL_ONLY',
+  'menu:undo': 'LOCAL_ONLY',
+  'menu:redo': 'LOCAL_ONLY',
+  'menu:cut': 'LOCAL_ONLY',
+  'menu:copy': 'LOCAL_ONLY',
+  'menu:paste': 'LOCAL_ONLY',
+  'menu:selectAll': 'LOCAL_ONLY',
+
+  'deeplink:navigate': 'LOCAL_ONLY',
+
+  'notification:show': 'LOCAL_ONLY',
+  'notification:navigate': 'LOCAL_ONLY',
+  'notification:getEnabled': 'LOCAL_ONLY',
+  'notification:setEnabled': 'LOCAL_ONLY',
+
+  'input:getAutoCapitalisation': 'LOCAL_ONLY',
+  'input:setAutoCapitalisation': 'LOCAL_ONLY',
+  'input:getSendMessageKey': 'LOCAL_ONLY',
+  'input:setSendMessageKey': 'LOCAL_ONLY',
+  'input:getSpellCheck': 'LOCAL_ONLY',
+  'input:setSpellCheck': 'LOCAL_ONLY',
+
+  'power:getKeepAwake': 'LOCAL_ONLY',
+  'power:setKeepAwake': 'LOCAL_ONLY',
+
+  'userProfile:read': 'LOCAL_ONLY',
+  'userProfile:write': 'LOCAL_ONLY',
+
+  'systemInstructions:read': 'LOCAL_ONLY',
+  'systemInstructions:write': 'LOCAL_ONLY',
+
+  'caching:getExtendedPromptCache': 'LOCAL_ONLY',
+  'caching:setExtendedPromptCache': 'LOCAL_ONLY',
+  'caching:getEnable1MContext': 'LOCAL_ONLY',
+  'caching:setEnable1MContext': 'LOCAL_ONLY',
+
+  'tools:getBrowserToolEnabled': 'LOCAL_ONLY',
+  'tools:setBrowserToolEnabled': 'LOCAL_ONLY',
+
+  'browser-pane:create': 'LOCAL_ONLY',
+  'browser-pane:destroy': 'LOCAL_ONLY',
+  'browser-pane:list': 'LOCAL_ONLY',
+  'browser-pane:navigate': 'LOCAL_ONLY',
+  'browser-pane:go-back': 'LOCAL_ONLY',
+  'browser-pane:go-forward': 'LOCAL_ONLY',
+  'browser-pane:reload': 'LOCAL_ONLY',
+  'browser-pane:stop': 'LOCAL_ONLY',
+  'browser-pane:focus': 'LOCAL_ONLY',
+  'browser-pane:snapshot': 'LOCAL_ONLY',
+  'browser-pane:click': 'LOCAL_ONLY',
+  'browser-pane:fill': 'LOCAL_ONLY',
+  'browser-pane:select': 'LOCAL_ONLY',
+  'browser-pane:screenshot': 'LOCAL_ONLY',
+  'browser-pane:evaluate': 'LOCAL_ONLY',
+  'browser-pane:scroll': 'LOCAL_ONLY',
+  'browser-empty-state:launch': 'LOCAL_ONLY',
+  'browser-pane:state-changed': 'LOCAL_ONLY',
+  'browser-pane:removed': 'LOCAL_ONLY',
+  'browser-pane:interacted': 'LOCAL_ONLY',
+
+  'gitbash:check': 'LOCAL_ONLY',
+  'gitbash:browse': 'LOCAL_ONLY',
+  'gitbash:setPath': 'LOCAL_ONLY',
+
+  'debug:log': 'LOCAL_ONLY',
+
+  'onboarding:getAuthState': 'LOCAL_ONLY',
+  'onboarding:validateMcp': 'LOCAL_ONLY',
+  'onboarding:startMcpOAuth': 'LOCAL_ONLY',
+  'onboarding:deferSetup': 'LOCAL_ONLY',
+  'settings:getNetworkProxy': 'LOCAL_ONLY',
+  'settings:setNetworkProxy': 'LOCAL_ONLY',
+
+  'settings:getServerConfig': 'LOCAL_ONLY',
+  'settings:setServerConfig': 'LOCAL_ONLY',
+  'settings:getServerStatus': 'LOCAL_ONLY',
+
+  // ---------------------------------------------------------------------------
+  // REMOTE_ELIGIBLE — runs on whichever server owns the workspace
+  // ---------------------------------------------------------------------------
+
+  'server:getWorkspaces': 'REMOTE_ELIGIBLE',
+  'server:createWorkspace': 'REMOTE_ELIGIBLE',
+  'server:getStatus': 'REMOTE_ELIGIBLE',
+  'server:getHealth': 'REMOTE_ELIGIBLE',
+  'server:getActiveSessions': 'REMOTE_ELIGIBLE',
+  'server:shuttingDown': 'REMOTE_ELIGIBLE',
+  'server:statusChanged': 'REMOTE_ELIGIBLE',
+  'server:homeDir': 'REMOTE_ELIGIBLE',
+
+  'sessions:get': 'REMOTE_ELIGIBLE',
+  'sessions:listByWorkspace': 'REMOTE_ELIGIBLE',
+  'sessions:getUnreadSummary': 'REMOTE_ELIGIBLE',
+  'sessions:markAllRead': 'REMOTE_ELIGIBLE',
+  'sessions:unreadSummaryChanged': 'REMOTE_ELIGIBLE',
+  'sessions:create': 'REMOTE_ELIGIBLE',
+  'sessions:delete': 'REMOTE_ELIGIBLE',
+  'sessions:rewind': 'REMOTE_ELIGIBLE',
+  'sessions:getMessages': 'REMOTE_ELIGIBLE',
+  'sessions:releaseMessages': 'REMOTE_ELIGIBLE',
+  'sessions:sendMessage': 'REMOTE_ELIGIBLE',
+  'sessions:rewriteNovelSelection': 'REMOTE_ELIGIBLE',
+  'sessions:cancel': 'REMOTE_ELIGIBLE',
+  'sessions:killShell': 'REMOTE_ELIGIBLE',
+  'sessions:respondToPermission': 'REMOTE_ELIGIBLE',
+  'sessions:respondToUserQuestion': 'REMOTE_ELIGIBLE',
+  'sessions:respondToCredential': 'REMOTE_ELIGIBLE',
+  'sessions:command': 'REMOTE_ELIGIBLE',
+  'sessions:getPendingPlanExecution': 'REMOTE_ELIGIBLE',
+  'sessions:getPermissionModeState': 'REMOTE_ELIGIBLE',
+  'session:event': 'REMOTE_ELIGIBLE',
+  'session:getModel': 'REMOTE_ELIGIBLE',
+  'session:setModel': 'REMOTE_ELIGIBLE',
+  'sessions:getFiles': 'REMOTE_ELIGIBLE',
+  'sessions:getNotes': 'REMOTE_ELIGIBLE',
+  'sessions:setNotes': 'REMOTE_ELIGIBLE',
+  'sessions:watchFiles': 'REMOTE_ELIGIBLE',
+  'sessions:unwatchFiles': 'REMOTE_ELIGIBLE',
+  'sessions:filesChanged': 'REMOTE_ELIGIBLE',
+  'sessions:searchContent': 'REMOTE_ELIGIBLE',
+  'sessions:export': 'REMOTE_ELIGIBLE',
+  'sessions:import': 'REMOTE_ELIGIBLE',
+  'sessions:exportRemoteTransfer': 'REMOTE_ELIGIBLE',
+  'sessions:importRemoteTransfer': 'REMOTE_ELIGIBLE',
+
+  'transfer:start': 'REMOTE_ELIGIBLE',
+  'transfer:chunk': 'REMOTE_ELIGIBLE',
+  'transfer:commit': 'REMOTE_ELIGIBLE',
+  'transfer:abort': 'REMOTE_ELIGIBLE',
+
+  'tasks:getOutput': 'REMOTE_ELIGIBLE',
+
+  'file:read': 'REMOTE_ELIGIBLE',
+  'file:write': 'REMOTE_ELIGIBLE',
+  'file:delete': 'REMOTE_ELIGIBLE',
+  'file:createDirectory': 'REMOTE_ELIGIBLE',
+  'file:readDataUrl': 'REMOTE_ELIGIBLE',
+  'file:readPreviewDataUrl': 'REMOTE_ELIGIBLE',
+  'file:readBinary': 'REMOTE_ELIGIBLE',
+  'file:readAttachment': 'REMOTE_ELIGIBLE',
+  'file:storeAttachment': 'REMOTE_ELIGIBLE',
+  'file:generateThumbnail': 'REMOTE_ELIGIBLE',
+
+  'fs:search': 'REMOTE_ELIGIBLE',
+  'fs:searchBatch': 'REMOTE_ELIGIBLE',
+  'fs:listFiles': 'REMOTE_ELIGIBLE',
+  'fs:listDirectory': 'REMOTE_ELIGIBLE',
+
+  'search:queryWorkspace': 'REMOTE_ELIGIBLE',
+
+  'credentials:healthCheck': 'REMOTE_ELIGIBLE',
+
+  'LLM_Connection:list': 'REMOTE_ELIGIBLE',
+  'LLM_Connection:listWithStatus': 'REMOTE_ELIGIBLE',
+  'LLM_Connection:get': 'REMOTE_ELIGIBLE',
+  'LLM_Connection:getApiKey': 'REMOTE_ELIGIBLE',
+  'LLM_Connection:save': 'REMOTE_ELIGIBLE',
+  'LLM_Connection:delete': 'REMOTE_ELIGIBLE',
+  'LLM_Connection:test': 'REMOTE_ELIGIBLE',
+  'LLM_Connection:setDefault': 'REMOTE_ELIGIBLE',
+  'LLM_Connection:setWorkspaceDefault': 'REMOTE_ELIGIBLE',
+  'LLM_Connection:refreshModels': 'REMOTE_ELIGIBLE',
+  'LLM_Connection:changed': 'REMOTE_ELIGIBLE',
+
+  'chatgpt:startOAuth': 'REMOTE_ELIGIBLE',
+  'chatgpt:completeOAuth': 'REMOTE_ELIGIBLE',
+  'chatgpt:cancelOAuth': 'REMOTE_ELIGIBLE',
+  'chatgpt:getAuthStatus': 'REMOTE_ELIGIBLE',
+  'chatgpt:logout': 'REMOTE_ELIGIBLE',
+
+  'copilot:startOAuth': 'REMOTE_ELIGIBLE',
+  'copilot:cancelOAuth': 'REMOTE_ELIGIBLE',
+  'copilot:getAuthStatus': 'REMOTE_ELIGIBLE',
+  'copilot:logout': 'REMOTE_ELIGIBLE',
+  'copilot:deviceCode': 'REMOTE_ELIGIBLE',
+
+  'onboarding:startClaudeOAuth': 'REMOTE_ELIGIBLE',
+  'onboarding:exchangeClaudeCode': 'REMOTE_ELIGIBLE',
+  'onboarding:claudeOAuthCompleted': 'REMOTE_ELIGIBLE',
+  'onboarding:hasClaudeOAuthState': 'REMOTE_ELIGIBLE',
+  'onboarding:clearClaudeOAuthState': 'REMOTE_ELIGIBLE',
+
+  'settings:setupLlmConnection': 'REMOTE_ELIGIBLE',
+  'settings:testLlmConnectionSetup': 'REMOTE_ELIGIBLE',
+  'settings:getDefaultThinkingLevel': 'REMOTE_ELIGIBLE',
+  'settings:setDefaultThinkingLevel': 'REMOTE_ELIGIBLE',
+
+  'pi:getApiKeyProviders': 'REMOTE_ELIGIBLE',
+  'pi:getProviderBaseUrl': 'REMOTE_ELIGIBLE',
+  'pi:getProviderModels': 'REMOTE_ELIGIBLE',
+
+  'preferences:read': 'REMOTE_ELIGIBLE',
+  'preferences:write': 'REMOTE_ELIGIBLE',
+
+  'drafts:get': 'REMOTE_ELIGIBLE',
+  'drafts:set': 'REMOTE_ELIGIBLE',
+  'drafts:delete': 'REMOTE_ELIGIBLE',
+  'drafts:getAll': 'REMOTE_ELIGIBLE',
+
+  'sources:get': 'REMOTE_ELIGIBLE',
+  'sources:create': 'REMOTE_ELIGIBLE',
+  'sources:delete': 'REMOTE_ELIGIBLE',
+  'sources:startOAuth': 'REMOTE_ELIGIBLE',
+  'sources:saveCredentials': 'REMOTE_ELIGIBLE',
+  'sources:changed': 'REMOTE_ELIGIBLE',
+  'sources:getPermissions': 'REMOTE_ELIGIBLE',
+  'sources:getMcpTools': 'REMOTE_ELIGIBLE',
+
+  'oauth:start': 'REMOTE_ELIGIBLE',
+  'oauth:complete': 'REMOTE_ELIGIBLE',
+  'oauth:cancel': 'REMOTE_ELIGIBLE',
+  'oauth:revoke': 'REMOTE_ELIGIBLE',
+
+  'workspace:getPermissions': 'REMOTE_ELIGIBLE',
+  'workspace:readImage': 'REMOTE_ELIGIBLE',
+  'workspace:writeImage': 'REMOTE_ELIGIBLE',
+  'workspaceSettings:get': 'REMOTE_ELIGIBLE',
+  'workspaceSettings:update': 'REMOTE_ELIGIBLE',
+
+  'permissions:getDefaults': 'REMOTE_ELIGIBLE',
+  'permissions:defaultsChanged': 'REMOTE_ELIGIBLE',
+
+  'skills:get': 'REMOTE_ELIGIBLE',
+  'skills:getFiles': 'REMOTE_ELIGIBLE',
+  'skills:export': 'REMOTE_ELIGIBLE',
+  'skills:create': 'REMOTE_ELIGIBLE',
+  'skills:delete': 'REMOTE_ELIGIBLE',
+  'skills:changed': 'REMOTE_ELIGIBLE',
+
+  'statuses:list': 'REMOTE_ELIGIBLE',
+  'statuses:reorder': 'REMOTE_ELIGIBLE',
+  'statuses:changed': 'REMOTE_ELIGIBLE',
+
+  'labels:list': 'REMOTE_ELIGIBLE',
+  'labels:create': 'REMOTE_ELIGIBLE',
+  'labels:delete': 'REMOTE_ELIGIBLE',
+  'labels:changed': 'REMOTE_ELIGIBLE',
+
+  'views:list': 'REMOTE_ELIGIBLE',
+  'views:save': 'REMOTE_ELIGIBLE',
+
+  'toolIcons:getMappings': 'REMOTE_ELIGIBLE',
+
+  'logo:getUrl': 'REMOTE_ELIGIBLE',
+
+  'automations:get': 'REMOTE_ELIGIBLE',
+  'automations:test': 'REMOTE_ELIGIBLE',
+  'automations:setEnabled': 'REMOTE_ELIGIBLE',
+  'automations:duplicate': 'REMOTE_ELIGIBLE',
+  'automations:delete': 'REMOTE_ELIGIBLE',
+  'automations:getHistory': 'REMOTE_ELIGIBLE',
+  'automations:getLastExecuted': 'REMOTE_ELIGIBLE',
+  'automations:replay': 'REMOTE_ELIGIBLE',
+  'automations:changed': 'REMOTE_ELIGIBLE',
+
+  'git:getBranch': 'REMOTE_ELIGIBLE',
+  'git:getVersionStatus': 'REMOTE_ELIGIBLE',
+  'git:compareVersions': 'REMOTE_ELIGIBLE',
+  'git:readFileAtVersion': 'REMOTE_ELIGIBLE',
+  'git:createVersion': 'REMOTE_ELIGIBLE',
+  'git:listVersions': 'REMOTE_ELIGIBLE',
+  'git:restoreVersion': 'REMOTE_ELIGIBLE',
+
+  'resources:export': 'REMOTE_ELIGIBLE',
+  'resources:import': 'REMOTE_ELIGIBLE',
+
+  'messaging:wa:register': 'REMOTE_ELIGIBLE',
+  'messaging:wa:incoming': 'REMOTE_ELIGIBLE',
+  'messaging:wa:buttonPress': 'REMOTE_ELIGIBLE',
+  'messaging:wa:status': 'REMOTE_ELIGIBLE',
+  'messaging:wa:qr': 'REMOTE_ELIGIBLE',
+  'messaging:wa:send': 'REMOTE_ELIGIBLE',
+  'messaging:wa:sendButtons': 'REMOTE_ELIGIBLE',
+  'messaging:wa:sendTyping': 'REMOTE_ELIGIBLE',
+  'messaging:wa:sendFile': 'REMOTE_ELIGIBLE',
+  'messaging:wa:connect': 'REMOTE_ELIGIBLE',
+  'messaging:wa:disconnect': 'REMOTE_ELIGIBLE',
+  'messaging:bindingChanged': 'REMOTE_ELIGIBLE',
+  'messaging:platformStatus': 'REMOTE_ELIGIBLE',
+  'messaging:pendingChanged': 'REMOTE_ELIGIBLE',
+  'messaging:getConfig': 'REMOTE_ELIGIBLE',
+  'messaging:updateConfig': 'REMOTE_ELIGIBLE',
+  'messaging:testTelegram': 'REMOTE_ELIGIBLE',
+  'messaging:saveTelegram': 'REMOTE_ELIGIBLE',
+  'messaging:testLark': 'REMOTE_ELIGIBLE',
+  'messaging:saveLark': 'REMOTE_ELIGIBLE',
+  'messaging:disconnect': 'REMOTE_ELIGIBLE',
+  'messaging:forget': 'REMOTE_ELIGIBLE',
+  'messaging:getBindings': 'REMOTE_ELIGIBLE',
+  'messaging:generateCode': 'REMOTE_ELIGIBLE',
+  'messaging:generateSupergroupCode': 'REMOTE_ELIGIBLE',
+  'messaging:getSupergroup': 'REMOTE_ELIGIBLE',
+  'messaging:unbindSupergroup': 'REMOTE_ELIGIBLE',
+  'messaging:unbind': 'REMOTE_ELIGIBLE',
+  'messaging:unbindBinding': 'REMOTE_ELIGIBLE',
+  'messaging:wa:startConnect': 'REMOTE_ELIGIBLE',
+  'messaging:wa:submitPhone': 'REMOTE_ELIGIBLE',
+  'messaging:wa:uiEvent': 'REMOTE_ELIGIBLE',
+  'messaging:access:getOwners': 'REMOTE_ELIGIBLE',
+  'messaging:access:setOwners': 'REMOTE_ELIGIBLE',
+  'messaging:access:getMode': 'REMOTE_ELIGIBLE',
+  'messaging:access:setMode': 'REMOTE_ELIGIBLE',
+  'messaging:access:getPending': 'REMOTE_ELIGIBLE',
+  'messaging:access:dismissPending': 'REMOTE_ELIGIBLE',
+  'messaging:access:allowPending': 'REMOTE_ELIGIBLE',
+  'messaging:access:setBindingAccess': 'REMOTE_ELIGIBLE',
+
+  // ---------------------------------------------------------------------------
+} as const satisfies Record<RpcChannel, RoutingClass>
 
 // ---------------------------------------------------------------------------
-// LOCAL_ONLY — fundamentally requires local OS / Electron
+// Derived sets — same exported API the two-set implementation had
 // ---------------------------------------------------------------------------
 
-export const LOCAL_ONLY_CHANNELS = new Set<string>([
-  // remote — local connectivity management (reaches out to remote server from local app)
-  RPC_CHANNELS.remote.TEST_CONNECTION,
+function channelsOfClass(klass: RoutingClass): ReadonlySet<string> {
+  const channels = new Set<string>()
+  for (const [channel, channelClass] of Object.entries(CHANNEL_ROUTING)) {
+    if (channelClass === klass) channels.add(channel)
+  }
+  return channels
+}
 
-  // workspaces — local workspace CRUD (workspace list is local config)
-  RPC_CHANNELS.workspaces.GET,
-  RPC_CHANNELS.workspaces.CREATE,
-  RPC_CHANNELS.workspaces.CHECK_SLUG,
-  RPC_CHANNELS.workspaces.UPDATE_REMOTE,
+/** Channels that always run on the local Electron server. */
+export const LOCAL_ONLY_CHANNELS = channelsOfClass('LOCAL_ONLY')
 
-  // window — Electron window management
-  RPC_CHANNELS.window.GET_WORKSPACE,
-  RPC_CHANNELS.window.GET_MODE,
-  RPC_CHANNELS.window.RESOLVE_RUNTIME_WORKSPACE,
-  RPC_CHANNELS.window.OPEN_WORKSPACE,
-  RPC_CHANNELS.window.OPEN_SESSION_IN_NEW_WINDOW,
-  RPC_CHANNELS.window.SWITCH_WORKSPACE,
-  RPC_CHANNELS.window.CLOSE,
-  RPC_CHANNELS.window.CLOSE_REQUESTED,
-  RPC_CHANNELS.window.CONFIRM_CLOSE,
-  RPC_CHANNELS.window.CANCEL_CLOSE,
-  RPC_CHANNELS.window.SET_TRAFFIC_LIGHTS,
-  RPC_CHANNELS.window.FOCUS_STATE,
-  RPC_CHANNELS.window.GET_FOCUS_STATE,
-
-  // file — native file dialog
-  RPC_CHANNELS.file.OPEN_DIALOG,
-  // file — destructive workspace mutations require the local trust boundary
-  RPC_CHANNELS.file.MOVE_ENTRY,
-  RPC_CHANNELS.file.DELETE_ENTRY,
-  // file — draft hydration for user-attached paths. Paths in drafts.json were captured
-  // via webUtils.getPathForFile in the renderer, so they point at the user's local machine
-  // — even when the workspace itself lives on a remote server. Routing this REMOTE_ELIGIBLE
-  // would send the local path to a remote filesystem that can't resolve it.
-  RPC_CHANNELS.file.READ_USER_ATTACHMENT,
-
-  // dialog — native folder dialog
-  RPC_CHANNELS.dialog.OPEN_FOLDER,
-
-  // auth — local auth state + native dialogs
-  RPC_CHANNELS.auth.LOGOUT,
-  RPC_CHANNELS.auth.SHOW_LOGOUT_CONFIRMATION,
-  RPC_CHANNELS.auth.SHOW_DELETE_SESSION_CONFIRMATION,
-
-  // shell — local OS shell (openFile/showInFolder guarded for remote)
-  RPC_CHANNELS.shell.OPEN_URL,
-  RPC_CHANNELS.shell.OPEN_FILE,
-  RPC_CHANNELS.shell.SHOW_IN_FOLDER,
-
-  // skills — local filesystem actions (guarded for remote)
-  RPC_CHANNELS.skills.OPEN_EDITOR,
-  RPC_CHANNELS.skills.OPEN_FINDER,
-
-  // system — local OS info
-  RPC_CHANNELS.system.VERSIONS,
-  RPC_CHANNELS.system.HOME_DIR,
-  RPC_CHANNELS.system.IS_DEBUG_MODE,
-
-  // theme — app/OS-level preferences, not workspace content
-  RPC_CHANNELS.theme.GET_SYSTEM_PREFERENCE,
-  RPC_CHANNELS.theme.SYSTEM_CHANGED,
-  RPC_CHANNELS.theme.APP_CHANGED,
-  RPC_CHANNELS.theme.GET_APP,
-  RPC_CHANNELS.theme.GET_PRESETS,
-  RPC_CHANNELS.theme.LOAD_PRESET,
-  RPC_CHANNELS.theme.GET_COLOR_THEME,
-  RPC_CHANNELS.theme.SET_COLOR_THEME,
-  RPC_CHANNELS.theme.BROADCAST_PREFERENCES,
-  RPC_CHANNELS.theme.PREFERENCES_CHANGED,
-  RPC_CHANNELS.theme.GET_WORKSPACE_COLOR_THEME,
-  RPC_CHANNELS.theme.SET_WORKSPACE_COLOR_THEME,
-  RPC_CHANNELS.theme.GET_ALL_WORKSPACE_THEMES,
-  RPC_CHANNELS.theme.BROADCAST_WORKSPACE_THEME,
-  RPC_CHANNELS.theme.WORKSPACE_THEME_CHANGED,
-
-  // update — local auto-update
-  RPC_CHANNELS.update.CHECK,
-  RPC_CHANNELS.update.GET_INFO,
-  RPC_CHANNELS.update.INSTALL,
-  RPC_CHANNELS.update.DISMISS,
-  RPC_CHANNELS.update.GET_DISMISSED,
-  RPC_CHANNELS.update.AVAILABLE,
-  RPC_CHANNELS.update.DOWNLOAD_PROGRESS,
-
-  // releaseNotes — local app info
-  RPC_CHANNELS.releaseNotes.GET,
-  RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION,
-  RPC_CHANNELS.releaseNotes.GET_WHATS_NEW_MANIFEST,
-
-  // badge — local dock badge
-  RPC_CHANNELS.badge.REFRESH,
-  RPC_CHANNELS.badge.SET_ICON,
-  RPC_CHANNELS.badge.DRAW_WINDOWS,
-
-  // menu — local menu events
-  RPC_CHANNELS.menu.NEW_CHAT,
-  RPC_CHANNELS.menu.NEW_WINDOW,
-  RPC_CHANNELS.menu.OPEN_SETTINGS,
-  RPC_CHANNELS.menu.KEYBOARD_SHORTCUTS,
-  RPC_CHANNELS.menu.TOGGLE_SIDEBAR,
-  RPC_CHANNELS.menu.QUIT,
-  RPC_CHANNELS.menu.MINIMIZE,
-  RPC_CHANNELS.menu.MAXIMIZE,
-  RPC_CHANNELS.menu.ZOOM_IN,
-  RPC_CHANNELS.menu.ZOOM_OUT,
-  RPC_CHANNELS.menu.ZOOM_RESET,
-  RPC_CHANNELS.menu.TOGGLE_DEV_TOOLS,
-  RPC_CHANNELS.menu.UNDO,
-  RPC_CHANNELS.menu.REDO,
-  RPC_CHANNELS.menu.CUT,
-  RPC_CHANNELS.menu.COPY,
-  RPC_CHANNELS.menu.PASTE,
-  RPC_CHANNELS.menu.SELECT_ALL,
-
-  // deeplink — local deep link handling
-  RPC_CHANNELS.deeplink.NAVIGATE,
-
-  // notification — local OS notifications
-  RPC_CHANNELS.notification.SHOW,
-  RPC_CHANNELS.notification.NAVIGATE,
-  RPC_CHANNELS.notification.GET_ENABLED,
-  RPC_CHANNELS.notification.SET_ENABLED,
-
-  // input — local input preferences
-  RPC_CHANNELS.input.GET_AUTO_CAPITALISATION,
-  RPC_CHANNELS.input.SET_AUTO_CAPITALISATION,
-  RPC_CHANNELS.input.GET_SEND_MESSAGE_KEY,
-  RPC_CHANNELS.input.SET_SEND_MESSAGE_KEY,
-  RPC_CHANNELS.input.GET_SPELL_CHECK,
-  RPC_CHANNELS.input.SET_SPELL_CHECK,
-
-  // power — local power management
-  RPC_CHANNELS.power.GET_KEEP_AWAKE,
-  RPC_CHANNELS.power.SET_KEEP_AWAKE,
-
-  // user profile — user-level local Markdown context, not workspace/server state
-  RPC_CHANNELS.userProfile.READ,
-  RPC_CHANNELS.userProfile.WRITE,
-
-  // system instructions — Pi-native user-level AGENTS.md, never remote workspace state
-  RPC_CHANNELS.systemInstructions.READ,
-  RPC_CHANNELS.systemInstructions.WRITE,
-
-  // caching — prompt cache and context settings
-  RPC_CHANNELS.caching.GET_EXTENDED_PROMPT_CACHE,
-  RPC_CHANNELS.caching.SET_EXTENDED_PROMPT_CACHE,
-  RPC_CHANNELS.caching.GET_ENABLE_1M_CONTEXT,
-  RPC_CHANNELS.caching.SET_ENABLE_1M_CONTEXT,
-
-  // tools — local tool settings
-  RPC_CHANNELS.tools.GET_BROWSER_TOOL_ENABLED,
-  RPC_CHANNELS.tools.SET_BROWSER_TOOL_ENABLED,
-
-  // browserPane — Electron BrowserView
-  RPC_CHANNELS.browserPane.CREATE,
-  RPC_CHANNELS.browserPane.DESTROY,
-  RPC_CHANNELS.browserPane.LIST,
-  RPC_CHANNELS.browserPane.NAVIGATE,
-  RPC_CHANNELS.browserPane.GO_BACK,
-  RPC_CHANNELS.browserPane.GO_FORWARD,
-  RPC_CHANNELS.browserPane.RELOAD,
-  RPC_CHANNELS.browserPane.STOP,
-  RPC_CHANNELS.browserPane.FOCUS,
-  RPC_CHANNELS.browserPane.SNAPSHOT,
-  RPC_CHANNELS.browserPane.CLICK,
-  RPC_CHANNELS.browserPane.FILL,
-  RPC_CHANNELS.browserPane.SELECT,
-  RPC_CHANNELS.browserPane.SCREENSHOT,
-  RPC_CHANNELS.browserPane.EVALUATE,
-  RPC_CHANNELS.browserPane.SCROLL,
-  RPC_CHANNELS.browserPane.LAUNCH,
-  RPC_CHANNELS.browserPane.STATE_CHANGED,
-  RPC_CHANNELS.browserPane.REMOVED,
-  RPC_CHANNELS.browserPane.INTERACTED,
-
-  // gitbash — Windows-specific local
-  RPC_CHANNELS.gitbash.CHECK,
-  RPC_CHANNELS.gitbash.BROWSE,
-  RPC_CHANNELS.gitbash.SET_PATH,
-
-  // debug — local debug logging
-  RPC_CHANNELS.debug.LOG,
-
-  // onboarding — local auth setup flow
-  RPC_CHANNELS.onboarding.GET_AUTH_STATE,
-  RPC_CHANNELS.onboarding.VALIDATE_MCP,
-  RPC_CHANNELS.onboarding.START_MCP_OAUTH,
-  RPC_CHANNELS.onboarding.DEFER_SETUP,
-  RPC_CHANNELS.settings.GET_NETWORK_PROXY,
-  RPC_CHANNELS.settings.SET_NETWORK_PROXY,
-
-  // server config — local embedded server settings
-  RPC_CHANNELS.settings.GET_SERVER_CONFIG,
-  RPC_CHANNELS.settings.SET_SERVER_CONFIG,
-  RPC_CHANNELS.settings.GET_SERVER_STATUS,
-])
-
-// ---------------------------------------------------------------------------
-// REMOTE_ELIGIBLE — runs on whichever server owns the workspace
-// ---------------------------------------------------------------------------
-
-export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
-  // server — server-level operations (no workspace context needed)
-  RPC_CHANNELS.server.GET_WORKSPACES,
-  RPC_CHANNELS.server.CREATE_WORKSPACE,
-  RPC_CHANNELS.server.GET_STATUS,
-  RPC_CHANNELS.server.GET_HEALTH,
-  RPC_CHANNELS.server.GET_ACTIVE_SESSIONS,
-  RPC_CHANNELS.server.SHUTTING_DOWN,
-  RPC_CHANNELS.server.STATUS_CHANGED,
-  RPC_CHANNELS.server.HOME_DIR,
-
-  // sessions — core session runtime
-  RPC_CHANNELS.sessions.GET,
-  RPC_CHANNELS.sessions.LIST_BY_WORKSPACE,
-  RPC_CHANNELS.sessions.GET_UNREAD_SUMMARY,
-  RPC_CHANNELS.sessions.MARK_ALL_READ,
-  RPC_CHANNELS.sessions.UNREAD_SUMMARY_CHANGED,
-  RPC_CHANNELS.sessions.CREATE,
-  RPC_CHANNELS.sessions.DELETE,
-  RPC_CHANNELS.sessions.REWIND,
-  RPC_CHANNELS.sessions.GET_MESSAGES,
-  RPC_CHANNELS.sessions.RELEASE_MESSAGES,
-  RPC_CHANNELS.sessions.SEND_MESSAGE,
-  RPC_CHANNELS.sessions.REWRITE_NOVEL_SELECTION,
-  RPC_CHANNELS.sessions.CANCEL,
-  RPC_CHANNELS.sessions.KILL_SHELL,
-  RPC_CHANNELS.sessions.RESPOND_TO_PERMISSION,
-  RPC_CHANNELS.sessions.RESPOND_TO_USER_QUESTION,
-  RPC_CHANNELS.sessions.RESPOND_TO_CREDENTIAL,
-  RPC_CHANNELS.sessions.COMMAND,
-  RPC_CHANNELS.sessions.GET_PENDING_PLAN_EXECUTION,
-  RPC_CHANNELS.sessions.GET_PERMISSION_MODE_STATE,
-  RPC_CHANNELS.sessions.EVENT,
-  RPC_CHANNELS.sessions.GET_MODEL,
-  RPC_CHANNELS.sessions.SET_MODEL,
-  RPC_CHANNELS.sessions.GET_FILES,
-  RPC_CHANNELS.sessions.GET_NOTES,
-  RPC_CHANNELS.sessions.SET_NOTES,
-  RPC_CHANNELS.sessions.WATCH_FILES,
-  RPC_CHANNELS.sessions.UNWATCH_FILES,
-  RPC_CHANNELS.sessions.FILES_CHANGED,
-  RPC_CHANNELS.sessions.SEARCH_CONTENT,
-  RPC_CHANNELS.sessions.EXPORT,
-  RPC_CHANNELS.sessions.IMPORT,
-  RPC_CHANNELS.sessions.EXPORT_REMOTE_TRANSFER,
-  RPC_CHANNELS.sessions.IMPORT_REMOTE_TRANSFER,
-
-  // transfer — chunked large-payload import (sessions, resources)
-  RPC_CHANNELS.transfer.START,
-  RPC_CHANNELS.transfer.CHUNK,
-  RPC_CHANNELS.transfer.COMMIT,
-  RPC_CHANNELS.transfer.ABORT,
-
-  // tasks — workspace content
-  RPC_CHANNELS.tasks.GET_OUTPUT,
-
-  // file — workspace files (not openDialog which is native)
-  RPC_CHANNELS.file.READ,
-  RPC_CHANNELS.file.WRITE,
-  RPC_CHANNELS.file.DELETE,
-  RPC_CHANNELS.file.CREATE_DIRECTORY,
-  RPC_CHANNELS.file.READ_DATA_URL,
-  RPC_CHANNELS.file.READ_PREVIEW_DATA_URL,
-  RPC_CHANNELS.file.READ_BINARY,
-  RPC_CHANNELS.file.READ_ATTACHMENT,
-  RPC_CHANNELS.file.STORE_ATTACHMENT,
-  RPC_CHANNELS.file.GENERATE_THUMBNAIL,
-
-  // fs — workspace filesystem
-  RPC_CHANNELS.fs.SEARCH,
-  RPC_CHANNELS.fs.SEARCH_BATCH,
-  RPC_CHANNELS.fs.LIST_FILES,
-  RPC_CHANNELS.fs.LIST_DIRECTORY,
-
-  // search — content owned by the active runtime workspace
-  RPC_CHANNELS.search.QUERY_WORKSPACE,
-
-  // credentials — remote server's credential state
-  RPC_CHANNELS.credentials.HEALTH_CHECK,
-
-  // llmConnections — LLM config lives on server running workspace
-  RPC_CHANNELS.llmConnections.LIST,
-  RPC_CHANNELS.llmConnections.LIST_WITH_STATUS,
-  RPC_CHANNELS.llmConnections.GET,
-  RPC_CHANNELS.llmConnections.GET_API_KEY,
-  RPC_CHANNELS.llmConnections.SAVE,
-  RPC_CHANNELS.llmConnections.DELETE,
-  RPC_CHANNELS.llmConnections.TEST,
-  RPC_CHANNELS.llmConnections.SET_DEFAULT,
-  RPC_CHANNELS.llmConnections.SET_WORKSPACE_DEFAULT,
-  RPC_CHANNELS.llmConnections.REFRESH_MODELS,
-  RPC_CHANNELS.llmConnections.CHANGED,
-
-  // chatgpt — OAuth via capability passthrough
-  RPC_CHANNELS.chatgpt.START_OAUTH,
-  RPC_CHANNELS.chatgpt.COMPLETE_OAUTH,
-  RPC_CHANNELS.chatgpt.CANCEL_OAUTH,
-  RPC_CHANNELS.chatgpt.GET_AUTH_STATUS,
-  RPC_CHANNELS.chatgpt.LOGOUT,
-
-  // copilot — OAuth via capability passthrough
-  RPC_CHANNELS.copilot.START_OAUTH,
-  RPC_CHANNELS.copilot.CANCEL_OAUTH,
-  RPC_CHANNELS.copilot.GET_AUTH_STATUS,
-  RPC_CHANNELS.copilot.LOGOUT,
-  RPC_CHANNELS.copilot.DEVICE_CODE,
-
-  // Claude OAuth — runs on workspace server so credentials and connection config
-  // end up on the same server that will use them. Browser opening is client-side.
-  // (ChatGPT OAuth stays LOCAL_ONLY — requires localhost callback server.)
-  RPC_CHANNELS.onboarding.START_CLAUDE_OAUTH,
-  RPC_CHANNELS.onboarding.EXCHANGE_CLAUDE_CODE,
-  RPC_CHANNELS.onboarding.CLAUDE_OAUTH_COMPLETED,
-  RPC_CHANNELS.onboarding.HAS_CLAUDE_OAUTH_STATE,
-  RPC_CHANNELS.onboarding.CLEAR_CLAUDE_OAUTH_STATE,
-
-  // settings — workspace-level settings
-  RPC_CHANNELS.settings.SETUP_LLM_CONNECTION,
-  RPC_CHANNELS.settings.TEST_LLM_CONNECTION_SETUP,
-  RPC_CHANNELS.settings.GET_DEFAULT_THINKING_LEVEL,
-  RPC_CHANNELS.settings.SET_DEFAULT_THINKING_LEVEL,
-
-  // pi — provider config on workspace server
-  RPC_CHANNELS.pi.GET_API_KEY_PROVIDERS,
-  RPC_CHANNELS.pi.GET_PROVIDER_BASE_URL,
-  RPC_CHANNELS.pi.GET_PROVIDER_MODELS,
-
-  // preferences — workspace-level preferences
-  RPC_CHANNELS.preferences.READ,
-  RPC_CHANNELS.preferences.WRITE,
-
-  // drafts — workspace content
-  RPC_CHANNELS.drafts.GET,
-  RPC_CHANNELS.drafts.SET,
-  RPC_CHANNELS.drafts.DELETE,
-  RPC_CHANNELS.drafts.GET_ALL,
-
-  // sources — global source config plus workspace overrides
-  RPC_CHANNELS.sources.GET,
-  RPC_CHANNELS.sources.CREATE,
-  RPC_CHANNELS.sources.DELETE,
-  RPC_CHANNELS.sources.START_OAUTH,
-  RPC_CHANNELS.sources.SAVE_CREDENTIALS,
-  RPC_CHANNELS.sources.CHANGED,
-  RPC_CHANNELS.sources.GET_PERMISSIONS,
-  RPC_CHANNELS.sources.GET_MCP_TOOLS,
-
-  // oauth — OAuth state management
-  RPC_CHANNELS.oauth.START,
-  RPC_CHANNELS.oauth.COMPLETE,
-  RPC_CHANNELS.oauth.CANCEL,
-  RPC_CHANNELS.oauth.REVOKE,
-
-  // workspace — workspace config + images (sharp on headless)
-  RPC_CHANNELS.workspace.GET_PERMISSIONS,
-  RPC_CHANNELS.workspace.READ_IMAGE,
-  RPC_CHANNELS.workspace.WRITE_IMAGE,
-  RPC_CHANNELS.workspace.SETTINGS_GET,
-  RPC_CHANNELS.workspace.SETTINGS_UPDATE,
-
-  // permissions — workspace permissions
-  RPC_CHANNELS.permissions.GET_DEFAULTS,
-  RPC_CHANNELS.permissions.DEFAULTS_CHANGED,
-
-  // skills — skill content per-workspace (not openEditor/openFinder which are local OS)
-  RPC_CHANNELS.skills.GET,
-  RPC_CHANNELS.skills.GET_FILES,
-  RPC_CHANNELS.skills.EXPORT,
-  RPC_CHANNELS.skills.CREATE,
-  RPC_CHANNELS.skills.DELETE,
-  RPC_CHANNELS.skills.CHANGED,
-
-  // statuses — workspace metadata
-  RPC_CHANNELS.statuses.LIST,
-  RPC_CHANNELS.statuses.REORDER,
-  RPC_CHANNELS.statuses.CHANGED,
-
-  // labels — workspace metadata
-  RPC_CHANNELS.labels.LIST,
-  RPC_CHANNELS.labels.CREATE,
-  RPC_CHANNELS.labels.DELETE,
-  RPC_CHANNELS.labels.CHANGED,
-
-  // views — workspace UI views
-  RPC_CHANNELS.views.LIST,
-  RPC_CHANNELS.views.SAVE,
-
-  // toolIcons — workspace config
-  RPC_CHANNELS.toolIcons.GET_MAPPINGS,
-
-  // logo — workspace config
-  RPC_CHANNELS.logo.GET_URL,
-
-  // automations — workspace automations
-  RPC_CHANNELS.automations.GET,
-  RPC_CHANNELS.automations.TEST,
-  RPC_CHANNELS.automations.SET_ENABLED,
-  RPC_CHANNELS.automations.DUPLICATE,
-  RPC_CHANNELS.automations.DELETE,
-  RPC_CHANNELS.automations.GET_HISTORY,
-  RPC_CHANNELS.automations.GET_LAST_EXECUTED,
-  RPC_CHANNELS.automations.REPLAY,
-  RPC_CHANNELS.automations.CHANGED,
-
-  // git — workspace filesystem
-  RPC_CHANNELS.git.GET_BRANCH,
-  RPC_CHANNELS.git.GET_VERSION_STATUS,
-  RPC_CHANNELS.git.COMPARE_VERSIONS,
-  RPC_CHANNELS.git.READ_FILE_AT_VERSION,
-  RPC_CHANNELS.git.CREATE_VERSION,
-  RPC_CHANNELS.git.LIST_VERSIONS,
-  RPC_CHANNELS.git.RESTORE_VERSION,
-
-  // resources — workspace resource export/import
-  RPC_CHANNELS.resources.EXPORT,
-  RPC_CHANNELS.resources.IMPORT,
-
-  // messaging — gateway channels run on workspace server
-  RPC_CHANNELS.messaging.WA_REGISTER,
-  RPC_CHANNELS.messaging.WA_INCOMING,
-  RPC_CHANNELS.messaging.WA_BUTTON_PRESS,
-  RPC_CHANNELS.messaging.WA_STATUS,
-  RPC_CHANNELS.messaging.WA_QR,
-  RPC_CHANNELS.messaging.WA_SEND,
-  RPC_CHANNELS.messaging.WA_SEND_BUTTONS,
-  RPC_CHANNELS.messaging.WA_SEND_TYPING,
-  RPC_CHANNELS.messaging.WA_SEND_FILE,
-  RPC_CHANNELS.messaging.WA_CONNECT,
-  RPC_CHANNELS.messaging.WA_DISCONNECT,
-  RPC_CHANNELS.messaging.BINDING_CHANGED,
-  RPC_CHANNELS.messaging.PLATFORM_STATUS,
-  RPC_CHANNELS.messaging.PENDING_CHANGED,
-  RPC_CHANNELS.messaging.GET_CONFIG,
-  RPC_CHANNELS.messaging.UPDATE_CONFIG,
-  RPC_CHANNELS.messaging.TEST_TELEGRAM,
-  RPC_CHANNELS.messaging.SAVE_TELEGRAM,
-  RPC_CHANNELS.messaging.TEST_LARK,
-  RPC_CHANNELS.messaging.SAVE_LARK,
-  RPC_CHANNELS.messaging.DISCONNECT,
-  RPC_CHANNELS.messaging.FORGET,
-  RPC_CHANNELS.messaging.GET_BINDINGS,
-  RPC_CHANNELS.messaging.GENERATE_CODE,
-  RPC_CHANNELS.messaging.GENERATE_SUPERGROUP_CODE,
-  RPC_CHANNELS.messaging.GET_SUPERGROUP,
-  RPC_CHANNELS.messaging.UNBIND_SUPERGROUP,
-  RPC_CHANNELS.messaging.UNBIND,
-  RPC_CHANNELS.messaging.UNBIND_BINDING,
-  RPC_CHANNELS.messaging.WA_START_CONNECT,
-  RPC_CHANNELS.messaging.WA_SUBMIT_PHONE,
-  RPC_CHANNELS.messaging.WA_UI_EVENT,
-  RPC_CHANNELS.messaging.GET_PLATFORM_OWNERS,
-  RPC_CHANNELS.messaging.SET_PLATFORM_OWNERS,
-  RPC_CHANNELS.messaging.GET_PLATFORM_ACCESS_MODE,
-  RPC_CHANNELS.messaging.SET_PLATFORM_ACCESS_MODE,
-  RPC_CHANNELS.messaging.GET_PENDING_SENDERS,
-  RPC_CHANNELS.messaging.DISMISS_PENDING_SENDER,
-  RPC_CHANNELS.messaging.ALLOW_PENDING_SENDER,
-  RPC_CHANNELS.messaging.SET_BINDING_ACCESS,
-])
+/** Channels that run on whichever server owns the workspace. */
+export const REMOTE_ELIGIBLE_CHANNELS = channelsOfClass('REMOTE_ELIGIBLE')
 
 // ---------------------------------------------------------------------------
 // Query helpers

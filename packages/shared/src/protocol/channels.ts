@@ -459,6 +459,19 @@ export const RPC_CHANNELS = {
 
 // IPC_CHANNELS compat alias removed — all consumers now use RPC_CHANNELS
 
+/** Union of all namespace tables — internal key paths, may be reorganized freely. */
+type NamespaceTables = typeof RPC_CHANNELS[keyof typeof RPC_CHANNELS]
+
+/** Values of one table; distributed so a union of tables expands per-member
+ * (plain `T[keyof T]` would intersect keys across members and yield never). */
+type TableValues<T> = T extends unknown ? T[keyof T] : never
+
+/**
+ * Every RPC channel as a wire-format string literal.
+ * Derived from RPC_CHANNELS, so adding a channel extends this union automatically.
+ */
+export type RpcChannel = TableValues<NamespaceTables>
+
 /**
  * Flatten all channel string values from the nested RPC_CHANNELS object.
  * Used by the exhaustive routing test to ensure every channel is classified.
