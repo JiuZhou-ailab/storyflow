@@ -405,19 +405,6 @@ export const RPC_CHANNELS = {
     IMPORT: 'resources:import',
   },
   messaging: {
-    // WhatsApp subprocess → Gateway (subprocess invokes on server)
-    WA_REGISTER: 'messaging:wa:register',
-    WA_INCOMING: 'messaging:wa:incoming',
-    WA_BUTTON_PRESS: 'messaging:wa:buttonPress',
-    WA_STATUS: 'messaging:wa:status',
-    WA_QR: 'messaging:wa:qr',
-    // Gateway → WhatsApp subprocess (server invokes on client)
-    WA_SEND: 'messaging:wa:send',
-    WA_SEND_BUTTONS: 'messaging:wa:sendButtons',
-    WA_SEND_TYPING: 'messaging:wa:sendTyping',
-    WA_SEND_FILE: 'messaging:wa:sendFile',
-    WA_CONNECT: 'messaging:wa:connect',
-    WA_DISCONNECT: 'messaging:wa:disconnect',
     // Gateway → UI clients (broadcast)
     BINDING_CHANGED: 'messaging:bindingChanged',
     PLATFORM_STATUS: 'messaging:platformStatus',

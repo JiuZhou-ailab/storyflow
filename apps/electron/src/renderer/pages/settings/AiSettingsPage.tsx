@@ -30,7 +30,6 @@ import { windowWorkspaceIdAtom } from '@/atoms/sessions'
 import { motion, AnimatePresence } from 'motion/react'
 import type { LlmConnectionWithStatus, ThinkingLevel, WorkspaceSettings, Workspace } from '../../../shared/types'
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -69,11 +68,6 @@ import {
   sortLlmConnectionsForDisplay,
 } from './ai-settings-options'
 import { AiContextSettings } from './AiContextSettings'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'ai',
-}
 
 // ============================================
 // Credential Health Warning Banner

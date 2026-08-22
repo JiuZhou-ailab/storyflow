@@ -18,9 +18,9 @@ import noLocalStorage from './eslint-rules/no-localstorage.cjs'
 import noDirectPlatformCheck from './eslint-rules/no-direct-platform-check.cjs'
 import noHardcodedPathSeparator from './eslint-rules/no-hardcoded-path-separator.cjs'
 import noDirectFileOpen from './eslint-rules/no-direct-file-open.cjs'
-import noInlineSourceAuthCheck from './eslint-rules/no-inline-source-auth-check.cjs'
-import noHardcodedZIndex from './eslint-rules/no-hardcoded-z-index.cjs'
-import noNonstandardShadows from './eslint-rules/no-nonstandard-shadows.cjs'
+import noInlineSourceAuthCheck from '../../packages/shared/eslint-rules/no-inline-source-auth-check.cjs'
+import noHardcodedZIndex from '../../packages/ui/eslint-rules/no-hardcoded-z-index.cjs'
+import noNonstandardShadows from '../../packages/ui/eslint-rules/no-nonstandard-shadows.cjs'
 
 export default [
   // Ignore patterns

@@ -1,3 +1,7 @@
+// input: Messaging platform runtimes, bindings, and connection actions
+// output: Telegram, WhatsApp, and Lark connection settings
+// pos: Workspace-scoped settings surface for messaging gateways
+
 /**
  * MessagingSettingsPage
  *
@@ -69,13 +73,7 @@ import {
 } from '@/atoms/messaging'
 import { sessionMetaMapAtom, windowWorkspaceIdAtom, type SessionMeta } from '@/atoms/sessions'
 import { getSessionTitle } from '@/utils/session'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { MessagingPlatformRuntimeInfo } from '../../../shared/types'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'messaging',
-}
 
 export default function MessagingSettingsPage() {
   const { t } = useTranslation()

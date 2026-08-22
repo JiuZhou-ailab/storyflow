@@ -7,18 +7,12 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, FolderCog, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { SettingsSubpage } from '../../../shared/types'
 import { SETTINGS_ITEMS } from '../../../shared/menu-schema'
 import { SETTINGS_ICONS } from '@/components/icons/SettingsIcons'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { getSettingsPageComponent } from './settings-pages'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'navigator',
-}
 
 interface SettingsNavigatorProps {
   /** Currently selected settings subpage */

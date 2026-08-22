@@ -9,7 +9,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { routes } from '@/lib/navigate'
 import { isMac } from '@/lib/platform'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import { ShortcutsSettingsContent } from './ShortcutsPage'
 
 import {
@@ -18,11 +17,6 @@ import {
   SettingsToggle,
   SettingsMenuSelectRow,
 } from '@/components/settings'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'input',
-}
 
 // ============================================
 // Main Component

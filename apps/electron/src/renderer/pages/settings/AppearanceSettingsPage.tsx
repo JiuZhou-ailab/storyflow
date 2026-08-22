@@ -22,7 +22,6 @@ import { useTheme, type FontFamily, type ThemeMode } from '@/context/ThemeContex
 import { windowWorkspacesAtom } from '@/atoms/sessions'
 import { routes } from '@/lib/navigate'
 import { Monitor, Sun, Moon } from 'lucide-react'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { ToolIconMapping } from '../../../shared/types'
 
 import {
@@ -40,11 +39,6 @@ import { Info_DataTable, SortableHeader } from '@/components/info/Info_DataTable
 import { Info_Badge } from '@/components/info/Info_Badge'
 import type { PresetTheme } from '@config/theme'
 import { createPresetThemeOptions, createThemeOptions } from './appearance-theme-options'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'appearance',
-}
 
 // ============================================
 // Tool Icons Table

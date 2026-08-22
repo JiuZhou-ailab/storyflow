@@ -30,7 +30,6 @@ import { RenameDialog } from '@/components/ui/rename-dialog'
 import type { PermissionMode, WorkspaceSettings, LoadedSource } from '../../../shared/types'
 import { useDirectoryPicker } from '@/hooks/useDirectoryPicker'
 import { ServerDirectoryBrowser } from '@/components/ServerDirectoryBrowser'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { toast } from 'sonner'
 
@@ -41,11 +40,6 @@ import {
   SettingsToggle,
   SettingsMenuSelectRow,
 } from '@/components/settings'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'workspace',
-}
 
 // ============================================
 // Main Component

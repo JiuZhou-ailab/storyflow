@@ -22,12 +22,6 @@ import { useAutomationActions } from '@/hooks/useAutomations'
 import { routes } from '@/lib/navigate'
 import { cn } from '@/lib/utils'
 import { getDocUrl } from '@craft-agent/shared/docs/doc-links'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'automations',
-}
 
 export default function AutomationsSettingsPage() {
   const { t } = useTranslation()

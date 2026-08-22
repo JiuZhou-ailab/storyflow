@@ -78,19 +78,6 @@ const EXEMPT_REMOTE_CHANNELS: readonly string[] = [
   RPC_CHANNELS.messaging.PENDING_CHANGED,
   RPC_CHANNELS.messaging.PLATFORM_STATUS,
   RPC_CHANNELS.messaging.WA_UI_EVENT,
-  // WhatsApp subprocess ↔ gateway protocol, declared ahead of the Baileys
-  // subprocess adapter — no handler exists anywhere yet:
-  RPC_CHANNELS.messaging.WA_REGISTER,
-  RPC_CHANNELS.messaging.WA_INCOMING,
-  RPC_CHANNELS.messaging.WA_BUTTON_PRESS,
-  RPC_CHANNELS.messaging.WA_STATUS,
-  RPC_CHANNELS.messaging.WA_QR,
-  RPC_CHANNELS.messaging.WA_SEND,
-  RPC_CHANNELS.messaging.WA_SEND_BUTTONS,
-  RPC_CHANNELS.messaging.WA_SEND_TYPING,
-  RPC_CHANNELS.messaging.WA_SEND_FILE,
-  RPC_CHANNELS.messaging.WA_CONNECT,
-  RPC_CHANNELS.messaging.WA_DISCONNECT,
 ]
 
 describe('remote routing coverage', () => {

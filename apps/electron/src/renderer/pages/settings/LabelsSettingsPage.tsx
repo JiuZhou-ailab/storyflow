@@ -1,3 +1,7 @@
+// input: Workspace label trees, auto-apply rules, and label mutation actions
+// output: Workspace label configuration tables and edit controls
+// pos: Workspace-scoped settings surface for label policy
+
 /**
  * LabelsSettingsPage
  *
@@ -31,12 +35,6 @@ import {
   SettingsCard,
 } from '@/components/settings'
 import { routes } from '@/lib/navigate'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'labels',
-}
 
 export default function LabelsSettingsPage() {
   const { t } = useTranslation()

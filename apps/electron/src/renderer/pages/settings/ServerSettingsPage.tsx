@@ -1,3 +1,7 @@
+// input: Remote server configuration, runtime status, and Electron server actions
+// output: Remote server settings and lifecycle controls
+// pos: Global settings surface for optional remote workspace hosting
+
 /**
  * ServerSettingsPage
  *
@@ -13,7 +17,6 @@ import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@craft-agent/ui'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { ServerConfig, ServerStatus } from '@craft-agent/shared/config/server-config'
 
 import {
@@ -24,11 +27,6 @@ import {
   SettingsToggle,
   SettingsInputRow,
 } from '@/components/settings'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'server',
-}
 
 interface ServerFormState {
   enabled: boolean

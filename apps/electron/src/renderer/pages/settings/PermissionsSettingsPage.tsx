@@ -1,3 +1,7 @@
+// input: Default and workspace permission rules plus active workspace identity
+// output: Explore-mode permission settings and edit controls
+// pos: Workspace-scoped settings surface for tool permission policy
+
 /**
  * PermissionsSettingsPage
  *
@@ -30,12 +34,6 @@ import {
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
 import { getDocUrl } from '@craft-agent/shared/docs/doc-links'
 import { routes } from '@/lib/navigate'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'permissions',
-}
 
 /**
  * Build default permissions data from ~/.craft-agent/permissions/default.json.
