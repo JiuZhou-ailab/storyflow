@@ -70,11 +70,10 @@ import {
   setAutoUpdateEventSink,
   setUpdateInstallPreparation,
 } from './auto-update'
-import { consumeLaunchUpdateCheckDecision } from './auto-update-launch-policy'
 import { createQuitCoordinator } from './quit-coordinator'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
-import { shouldCreateWindowsAfterStartup } from './startup-state'
+import { getStartupRecoveryDownloadUrl, shouldCreateWindowsAfterStartup } from './startup-state'
 import {
   createClientAuthConfigFromRuntimeEnv,
   createClientAuthService,
@@ -93,7 +92,6 @@ import {
   type ManagedCapabilityBroker,
 } from './managed-capability-broker'
 import { resolveElectronRuntimePaths } from './runtime-paths'
-import { getAppVersion } from '@craft-agent/shared/version'
 import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
 import {
   downloadSkillFromMarket,
@@ -352,7 +350,15 @@ app.whenReady().then(async () => {
   // (first call before app.whenReady only configured Node-level proxy)
   await applyConfiguredProxySettings()
 
-  // Note: electron-updater handles pending updates internally via autoInstallOnAppQuit
+  // Keep the update plane independent from server bootstrap. A broken user-data
+  // migration must not prevent Storyflow from discovering its repair release.
+  if (app.isPackaged) {
+    checkForUpdatesOnLaunch().catch(err => {
+      mainLog.error('[auto-update] Launch check failed:', err)
+    })
+  } else {
+    mainLog.info('[auto-update] Skipping auto-update in dev mode')
+  }
 
   // Application menu is created after windowManager initialization (see below)
 
@@ -1159,25 +1165,8 @@ app.whenReady().then(async () => {
       mainLog.warn('[power] Power manager init failed (non-critical):', err instanceof Error ? err.message : err)
     }
 
-    // Initialize auto-update (check immediately on launch)
-    // Skip in dev mode to avoid replacing /Applications app and launching it instead
+    // The launch check starts before server bootstrap; connect renderer events once available.
     if (moduleSink) setAutoUpdateEventSink(moduleSink)
-    if (app.isPackaged) {
-      const launchUpdateDecision = consumeLaunchUpdateCheckDecision({
-        userDataDir: app.getPath('userData'),
-        currentVersion: getAppVersion(),
-      })
-
-      if (launchUpdateDecision.shouldCheck) {
-        checkForUpdatesOnLaunch().catch(err => {
-          mainLog.error('[auto-update] Launch check failed:', err)
-        })
-      } else {
-        mainLog.info(`[auto-update] Skipping launch check: ${launchUpdateDecision.reason}`)
-      }
-    } else {
-      mainLog.info('[auto-update] Skipping auto-update in dev mode')
-    }
 
     // Process pending deep link from cold start
     if (pendingDeepLink) {
@@ -1196,10 +1185,26 @@ app.whenReady().then(async () => {
     mainLog.error('Failed to initialize app:', error instanceof Error ? error.message : error, (error as any)?.stack)
     releaseServerLock()
     if (!mainStartupIsHeadless) {
-      dialog.showErrorBox(
-        'Storyflow failed to start',
-        error instanceof Error ? error.message : String(error),
-      )
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const result = await dialog.showMessageBox({
+        type: 'error',
+        title: 'Storyflow failed to start',
+        message: 'Storyflow failed to start',
+        detail: `${errorMessage}\n\nDownload and install the latest version to repair Storyflow without removing your projects or settings.`,
+        buttons: ['Download latest version', 'Close'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      })
+      if (result.response === 0) {
+        const downloadUrl = getStartupRecoveryDownloadUrl(process.platform, process.arch)
+        try {
+          await shell.openExternal(downloadUrl)
+        } catch (downloadError) {
+          mainLog.error('[startup] Failed to open recovery download:', downloadError)
+          dialog.showErrorBox('Unable to open download', downloadUrl)
+        }
+      }
       app.quit()
     }
   }

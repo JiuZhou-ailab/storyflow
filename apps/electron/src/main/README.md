@@ -25,7 +25,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `runtime-paths.ts` - Packaged/dev runtime resource path resolver.
 - `shell-env.ts` - User shell environment loader.
 - `skills-market-client.ts` - Authenticated Skill publication without renderer token exposure.
-- `startup-state.ts` - Startup window creation policy.
+- `startup-state.ts` - Startup window and stable recovery-download policy.
 - `thumbnail-protocol.ts` - Custom thumbnail protocol.
 - `window-manager.ts` - Native app window lifecycle.
 - `window-state.ts` - Window state persistence.

@@ -83,7 +83,7 @@ jobs:
               bun test \
                 ./apps/electron/src/main/__tests__/auto-update-stale-cache.isolated.ts \
                 apps/electron/src/main/__tests__/manual-update-check.test.ts \
-                apps/electron/src/main/__tests__/auto-update-launch-policy.test.ts \
+                apps/electron/src/main/__tests__/startup-state.test.ts \
                 apps/electron/src/renderer/lib/__tests__/manual-update-check-entrypoints.test.ts \
                 apps/electron/src/renderer/lib/__tests__/update-indicator.test.ts
               bun run typecheck:electron

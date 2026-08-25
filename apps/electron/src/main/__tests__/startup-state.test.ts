@@ -3,8 +3,26 @@
 // pos: Verifies startup failures or corrupt state cannot create broken UI windows
 
 import { describe, expect, it } from 'bun:test'
-import { shouldCreateWindowsAfterStartup } from '../startup-state'
+import { getStartupRecoveryDownloadUrl, shouldCreateWindowsAfterStartup } from '../startup-state'
 import { parseWindowState } from '../window-state'
+
+describe('getStartupRecoveryDownloadUrl', () => {
+  it('selects the stable installer for the current platform and architecture', () => {
+    expect(getStartupRecoveryDownloadUrl('darwin', 'arm64')).toBe(
+      'https://story-storage.zjding.com/latest/Storyflow-arm64.dmg',
+    )
+    expect(getStartupRecoveryDownloadUrl('darwin', 'x64')).toBe(
+      'https://story-storage.zjding.com/latest/Storyflow-x64.dmg',
+    )
+    expect(getStartupRecoveryDownloadUrl('win32', 'x64')).toBe(
+      'https://story-storage.zjding.com/latest/Storyflow-x64.exe',
+    )
+  })
+
+  it('falls back to the public download page on unsupported platforms', () => {
+    expect(getStartupRecoveryDownloadUrl('linux', 'x64')).toBe('https://story.zjding.com')
+  })
+})
 
 describe('shouldCreateWindowsAfterStartup', () => {
   it('blocks UI window creation after non-client startup failure', () => {

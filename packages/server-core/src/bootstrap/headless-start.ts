@@ -2,7 +2,7 @@
 // output: A transport-ready server instance with an explicitly startable Agent runtime
 // pos: Owns the two-stage server lifecycle shared by Electron and headless hosts
 
-import { lstatSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { lstatSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { uptime as osUptime } from 'node:os'
 import { join } from 'node:path'
@@ -128,15 +128,18 @@ export function generateServerToken(): string {
 // ---------------------------------------------------------------------------
 
 const LOCK_FILE = join(CONFIG_DIR, '.server.lock')
-const LOCK_OWNER_FILE = join(LOCK_FILE, 'owner.json')
+const LEASE_PATH = join(CONFIG_DIR, '.server.lease')
+const INCOMPATIBLE_LEASE_OWNER_FILE = join(LOCK_FILE, 'owner.json')
+const SERVER_LEASE_VERSION = 1
 const LOCK_STALE_MS = 60_000
 const LOCK_UPDATE_MS = LOCK_STALE_MS / 2
 const LOCK_RETRY_MS = 500
 let serverLockHeld = false
 
-interface LegacyLockPayload {
+interface ServerLockPayload {
   pid: number
   startedAt: number
+  leaseVersion?: number
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -149,18 +152,19 @@ function isProcessAlive(pid: number): boolean {
 }
 
 /**
- * Parse pre-lease lock files. Supports both the JSON format
- * (`{pid, startedAt}`) and its older plain-PID predecessor.
+ * Parse the compatibility lock file. Current releases write JSON while older
+ * releases may still leave a plain PID.
  */
-function parseLegacyLockContent(raw: string): LegacyLockPayload | null {
+function parseLockContent(raw: string): ServerLockPayload | null {
   const trimmed = raw.trim()
-  // Try JSON first (newer legacy format)
+  // Try the structured format first.
   if (trimmed.startsWith('{')) {
     try {
       const parsed = JSON.parse(trimmed) as Record<string, unknown>
       const pid = typeof parsed.pid === 'number' ? parsed.pid : NaN
       const startedAt = typeof parsed.startedAt === 'number' ? parsed.startedAt : 0
-      if (!isNaN(pid)) return { pid, startedAt }
+      const leaseVersion = typeof parsed.leaseVersion === 'number' ? parsed.leaseVersion : undefined
+      if (!isNaN(pid)) return { pid, startedAt, leaseVersion }
     } catch { /* fall through to legacy parse */ }
   }
   // Legacy format: plain PID number
@@ -180,35 +184,14 @@ function isLockFromPreviousBoot(startedAt: number): boolean {
   return startedAt < bootTime
 }
 
-function lockPathIsDirectory(): boolean {
-  try {
-    return lstatSync(LOCK_FILE).isDirectory()
-  } catch {
-    return false
-  }
+function isLiveForeignOwner(owner: ServerLockPayload | null): owner is ServerLockPayload {
+  return owner !== null
+    && owner.pid !== process.pid
+    && isProcessAlive(owner.pid)
+    && !isLockFromPreviousBoot(owner.startedAt)
 }
 
-function assertActiveLeaseIsNotOwnedByALiveProcess(): void {
-  if (!lockPathIsDirectory()) return
-
-  try {
-    const owner = JSON.parse(readFileSync(LOCK_OWNER_FILE, 'utf-8')) as Partial<LegacyLockPayload>
-    if (
-      typeof owner.pid === 'number'
-      && typeof owner.startedAt === 'number'
-      && isProcessAlive(owner.pid)
-      && !isLockFromPreviousBoot(owner.startedAt)
-    ) {
-      throw new Error(`Another Storyflow server instance is active (PID ${owner.pid}). Close it and retry.`)
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('Another Storyflow server instance')) throw error
-    // Missing or unreadable owner metadata is handled by proper-lockfile's stale lease rules.
-  }
-}
-
-function migrateLegacyServerLock(logger: PlatformServices['logger']): void {
-  // Remove after upgrades from pre-lease releases are no longer supported.
+function prepareCompatibilityLock(logger: PlatformServices['logger']): void {
   let stats: ReturnType<typeof lstatSync>
   try {
     stats = lstatSync(LOCK_FILE)
@@ -217,25 +200,47 @@ function migrateLegacyServerLock(logger: PlatformServices['logger']): void {
     throw error
   }
 
-  if (stats.isDirectory()) return
+  // v0.17.0 briefly used the released file path as a lease directory. Migrate
+  // it once, but never steal it from a live owner or an in-progress startup.
+  if (stats.isDirectory()) {
+    let owner: ServerLockPayload | null = null
+    try {
+      owner = parseLockContent(readFileSync(INCOMPATIBLE_LEASE_OWNER_FILE, 'utf-8'))
+    } catch {
+      // A missing owner is safe to remove only after its lease heartbeat expires.
+    }
+
+    if (isLiveForeignOwner(owner)) {
+      throw new Error(`Another Storyflow server instance is active (PID ${owner.pid}). Close it and retry.`)
+    }
+    if (!owner && stats.mtimeMs >= Date.now() - LOCK_STALE_MS) {
+      throw new Error('Another Storyflow server instance may be starting. Retry shortly.')
+    }
+
+    rmSync(LOCK_FILE, { recursive: true })
+    logger.warn('[bootstrap] Migrated incompatible v0.17.0 server lease directory')
+    return
+  }
+
   if (!stats.isFile()) {
     throw new Error(`Unsupported server lock at ${LOCK_FILE}. Remove it after verifying no Storyflow server is running.`)
   }
 
-  let legacyLock: LegacyLockPayload | null
-  try {
-    legacyLock = parseLegacyLockContent(readFileSync(LOCK_FILE, 'utf-8'))
-  } catch (error) {
-    if (lockPathIsDirectory()) return
-    throw error
-  }
+  const legacyLock = parseLockContent(readFileSync(LOCK_FILE, 'utf-8'))
 
-  if (
-    legacyLock
-    && legacyLock.pid !== process.pid
-    && isProcessAlive(legacyLock.pid)
-    && !isLockFromPreviousBoot(legacyLock.startedAt)
-  ) {
+  if (legacyLock?.leaseVersion === SERVER_LEASE_VERSION) {
+    const leaseActive = lockfile.checkSync(CONFIG_DIR, {
+      lockfilePath: LEASE_PATH,
+      realpath: false,
+      stale: LOCK_STALE_MS,
+    })
+    if (leaseActive) {
+      throw new Error(`Another Storyflow server instance is active (PID ${legacyLock.pid}). Close it and retry.`)
+    }
+    if (isLiveForeignOwner(legacyLock) && stats.mtimeMs >= Date.now() - LOCK_STALE_MS) {
+      throw new Error('Another Storyflow server instance may be starting. Retry shortly.')
+    }
+  } else if (isLiveForeignOwner(legacyLock)) {
     throw new Error(
       `A legacy Storyflow server lock may still be active (PID ${legacyLock.pid}). ` +
       `Close Storyflow and retry; only delete ${LOCK_FILE} once if that PID is unrelated.`,
@@ -246,20 +251,40 @@ function migrateLegacyServerLock(logger: PlatformServices['logger']): void {
     unlinkSync(LOCK_FILE)
     logger.warn('[bootstrap] Removed stale legacy server lock')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT' || lockPathIsDirectory()) return
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
     throw error
+  }
+}
+
+function removeOwnedCompatibilityLock(): void {
+  try {
+    const owner = parseLockContent(readFileSync(LOCK_FILE, 'utf-8'))
+    if (owner?.pid === process.pid && owner.leaseVersion === SERVER_LEASE_VERSION) unlinkSync(LOCK_FILE)
+  } catch {
+    // Best-effort cleanup
   }
 }
 
 export async function acquireServerLock(logger: PlatformServices['logger']): Promise<void> {
   if (serverLockHeld) throw new Error('This process already owns the Storyflow server lease.')
 
-  migrateLegacyServerLock(logger)
-  assertActiveLeaseIsNotOwnedByALiveProcess()
+  prepareCompatibilityLock(logger)
+  try {
+    writeFileSync(
+      LOCK_FILE,
+      JSON.stringify({ pid: process.pid, startedAt: Date.now(), leaseVersion: SERVER_LEASE_VERSION }),
+      { encoding: 'utf-8', flag: 'wx' },
+    )
+  } catch (error) {
+    if (['EEXIST', 'EISDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+      throw new Error('Another Storyflow server instance became active during startup. Retry shortly.')
+    }
+    throw error
+  }
 
   try {
     await lockfile.lock(CONFIG_DIR, {
-      lockfilePath: LOCK_FILE,
+      lockfilePath: LEASE_PATH,
       realpath: false,
       stale: LOCK_STALE_MS,
       update: LOCK_UPDATE_MS,
@@ -275,18 +300,9 @@ export async function acquireServerLock(logger: PlatformServices['logger']): Pro
         process.exit(1)
       },
     })
-    try {
-      writeFileSync(LOCK_OWNER_FILE, JSON.stringify({ pid: process.pid, startedAt: Date.now() }), 'utf-8')
-      serverLockHeld = true
-    } catch (error) {
-      try {
-        lockfile.unlockSync(CONFIG_DIR, { lockfilePath: LOCK_FILE, realpath: false })
-      } catch {
-        // Best-effort cleanup before surfacing the acquisition failure.
-      }
-      throw error
-    }
+    serverLockHeld = true
   } catch (error) {
+    removeOwnedCompatibilityLock()
     if ((error as NodeJS.ErrnoException).code === 'ELOCKED') {
       throw new Error('Another Storyflow server instance is active. Close it and retry.')
     }
@@ -302,11 +318,14 @@ export async function acquireServerLock(logger: PlatformServices['logger']): Pro
 export function releaseServerLock(): void {
   if (!serverLockHeld) return
 
+  let leaseReleased = false
   try {
-    lockfile.unlockSync(CONFIG_DIR, { lockfilePath: LOCK_FILE, realpath: false })
+    lockfile.unlockSync(CONFIG_DIR, { lockfilePath: LEASE_PATH, realpath: false })
+    leaseReleased = true
   } catch {
     // Best-effort cleanup
   } finally {
+    if (leaseReleased) removeOwnedCompatibilityLock()
     serverLockHeld = false
   }
 }

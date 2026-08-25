@@ -3,12 +3,13 @@
 // pos: Process-isolated coverage for the shared server bootstrap lock boundary
 
 import { afterAll, expect, test } from 'bun:test'
-import { lstatSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const configDir = mkdtempSync(join(tmpdir(), 'storyflow-server-lock-'))
 const lockPath = join(configDir, '.server.lock')
+const leasePath = join(configDir, '.server.lease')
 process.env.CRAFT_CONFIG_DIR = configDir
 
 const { acquireServerLock, releaseServerLock } = await import('./headless-start')
@@ -37,10 +38,36 @@ test('does not steal an expired lease from a live owner', async () => {
 
 test('recovers an expired server lease left by a killed process', async () => {
   mkdirSync(lockPath)
+  writeFileSync(join(lockPath, 'owner.json'), JSON.stringify({ pid: 2_147_483_647, startedAt: Date.now() - 120_000 }))
   const staleAt = new Date(Date.now() - 120_000)
   utimesSync(lockPath, staleAt, staleAt)
 
   await acquireServerLock(logger)
 
-  expect(lstatSync(lockPath).isDirectory()).toBe(true)
+  expect(lstatSync(lockPath).isFile()).toBe(true)
+  expect(JSON.parse(readFileSync(lockPath, 'utf-8')).pid).toBe(process.pid)
+  expect(lstatSync(leasePath).isDirectory()).toBe(true)
+  releaseServerLock()
+  expect(existsSync(lockPath)).toBe(false)
+  expect(existsSync(leasePath)).toBe(false)
+})
+
+test('uses the heartbeat lease instead of a reused PID', async () => {
+  writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, startedAt: Date.now(), leaseVersion: 1 }))
+  mkdirSync(leasePath)
+  const staleAt = new Date(Date.now() - 120_000)
+  utimesSync(lockPath, staleAt, staleAt)
+  utimesSync(leasePath, staleAt, staleAt)
+
+  await acquireServerLock(logger)
+
+  expect(JSON.parse(readFileSync(lockPath, 'utf-8')).pid).toBe(process.pid)
+})
+
+test('does not steal a fresh compatibility lock while its owner is starting', async () => {
+  releaseServerLock()
+  writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, startedAt: Date.now(), leaseVersion: 1 }))
+
+  await expect(acquireServerLock(logger)).rejects.toThrow('may be starting')
+  expect(JSON.parse(readFileSync(lockPath, 'utf-8')).pid).toBe(process.ppid)
 })

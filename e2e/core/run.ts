@@ -1,13 +1,16 @@
 // input: Built Electron app, a temporary local workspace, and a deterministic OpenAI-compatible HTTP stub
-// output: Assertions for fixed root viewport, account lazy-render, local startup, a real Pi edit turn, version restore, and restart recovery
+// output: Assertions for lock migration, local startup, a real Pi edit turn, version restore, and restart recovery
 // pos: Release-gate smoke test for the desktop product's durable core loop
 
 import { spawnSync } from 'node:child_process'
 import {
+  existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -49,7 +52,10 @@ async function main(): Promise<void> {
   try {
     configureAccountSmokeEnvironment()
     configureModel(fixture, model.url)
-    app = await launchApp(fixture.configDir, launchOptions)
+    seedIncompatibleV017ServerLock(fixture.configDir)
+    app = await launchApp(fixture.configDir, { ...launchOptions, preserveServerLockState: true })
+    assert.equal(lstatSync(join(fixture.configDir, '.server.lock')).isFile(), true)
+    assert.equal(lstatSync(join(fixture.configDir, '.server.lease')).isDirectory(), true)
 
     const auth = await callOn<{ required: boolean; configured: boolean; authenticated: boolean }>(
       app,
@@ -134,7 +140,9 @@ async function main(): Promise<void> {
 
     await sleep(250)
     await app.close()
-    app = await launchApp(fixture.configDir, launchOptions)
+    assert.equal(existsSync(join(fixture.configDir, '.server.lock')), false)
+    assert.equal(existsSync(join(fixture.configDir, '.server.lease')), false)
+    app = await launchApp(fixture.configDir, { ...launchOptions, preserveServerLockState: true })
 
     const recovered = await callOn<Array<{ id: string }>>(
       app,
@@ -155,6 +163,17 @@ async function main(): Promise<void> {
       process.stderr.write(`core Electron E2E: cleanup deferred for locked temp directory ${fixture.configDir}\n`)
     }
   }
+}
+
+function seedIncompatibleV017ServerLock(configDir: string): void {
+  const lockPath = join(configDir, '.server.lock')
+  mkdirSync(lockPath)
+  writeJson(join(lockPath, 'owner.json'), {
+    pid: 2_147_483_647,
+    startedAt: Date.now() - 120_000,
+  })
+  const staleAt = new Date(Date.now() - 120_000)
+  utimesSync(lockPath, staleAt, staleAt)
 }
 
 async function smokeFreeConversationSkillImport(app: LaunchedApp): Promise<void> {
@@ -280,7 +299,9 @@ async function smokeAccountCenter(app: LaunchedApp): Promise<void> {
       document.head.append(style)
     }`)
     if (await evalOn<boolean>(app, `!!document.querySelector('[role="dialog"] [data-slot="dialog-close"]')`)) {
-      await clickSelector(app, '[role="dialog"] [data-slot="dialog-close"]')
+      await callOn<void>(app, `function () {
+        document.querySelector('[role="dialog"] [data-slot="dialog-close"]')?.click()
+      }`)
       await waitFor(
         app,
         `!document.querySelector('[role="dialog"] [data-slot="dialog-close"]')`,
