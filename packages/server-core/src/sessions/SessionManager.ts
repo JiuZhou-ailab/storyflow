@@ -49,6 +49,8 @@ import {
   getSessionPath as getSessionStoragePath,
   sessionPersistenceQueue,
   getHeaderMetadataSignature,
+  getSessionFilePath,
+  readSessionHeader,
   type SessionBundle,
   type DispatchMode,
   type StoredSession,
@@ -300,7 +302,7 @@ export class SessionManager implements ISessionManager {
   // Pi subprocess lifecycle (create/refresh/rotate/dispose) lives in AgentRuntime.
   private agentRuntime = new AgentRuntime({
     isSessionTracked: managed => this.sessions.get(managed.id) === managed,
-    allSessions: () => [...this.sessions.values()],
+    allSessions: () => this.sessions.values(),
     getAutomationSystem: workspaceRootPath => this.automationSystems.get(workspaceRootPath),
     withAgentRuntimeLock: (managed, work, allowClosing) => this.withAgentRuntimeLock(managed, work, allowClosing),
     tryRefreshAgentRuntimeLocked: (managed, reason) => this.tryRefreshAgentRuntimeLocked(managed, reason),
@@ -865,7 +867,33 @@ export class SessionManager implements ISessionManager {
   // Suppress fs.watch metadata-revert events for the window in which our own
   // atomic write completes. See onSessionMetadataChange.
   private setMetadataWriteGuard(managed: ManagedSession): void {
-    managed._metadataWriteGuardUntil = Date.now() + METADATA_WRITE_GUARD_MS
+    const guardUntil = Date.now() + METADATA_WRITE_GUARD_MS
+    managed._metadataWriteGuardUntil = guardUntil
+
+    const timer = setTimeout(() => {
+      if (this.sessions.get(managed.id) !== managed || managed._metadataWriteGuardUntil !== guardUntil) return
+
+      managed._metadataWriteGuardUntil = undefined
+      if (!managed.pendingExternalMetadata) return
+
+      // The deferred watcher payload may be an atomic-write echo. Re-read the
+      // final file instead of applying that possibly stale snapshot.
+      const header = readSessionHeader(getSessionFilePath(managed.workspace.rootPath, managed.id))
+      managed.pendingExternalMetadata = undefined
+      if (!header) {
+        getSessionLog().warn(`Could not reconcile deferred metadata for session ${managed.id}`)
+        return
+      }
+
+      if (managed.isProcessing) {
+        managed.pendingExternalMetadata = header
+        return
+      }
+
+      getSessionLog().info(`Reconciling deferred metadata for idle session ${managed.id}`)
+      this.applyExternalSessionMetadata(managed, header)
+    }, METADATA_WRITE_GUARD_MS)
+    timer.unref()
   }
 
   /**
@@ -1074,7 +1102,9 @@ export class SessionManager implements ISessionManager {
    * Used after importing sessions to refresh the in-memory session list.
    */
   reloadSessions(): void {
-    void this.persistence.loadSessionsFromDisk()
+    void this.persistence.loadSessionsFromDisk().catch(error => {
+      getSessionLog().error('Failed to reload sessions from disk:', error)
+    })
   }
 
   getSessions(workspaceId?: string): Session[] {
@@ -3229,7 +3259,8 @@ export class SessionManager implements ISessionManager {
 
     // 4. Apply deferred external metadata updates captured while processing.
     if (managed.pendingExternalMetadata) {
-      const pendingHeader = managed.pendingExternalMetadata
+      const pendingHeader = readSessionHeader(getSessionFilePath(managed.workspace.rootPath, managed.id))
+        ?? managed.pendingExternalMetadata
       managed.pendingExternalMetadata = undefined
       getSessionLog().info(`Applying deferred external metadata for session ${sessionId} after processing stop`)
       this.applyExternalSessionMetadata(managed, pendingHeader)

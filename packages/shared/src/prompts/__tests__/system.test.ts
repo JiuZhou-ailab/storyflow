@@ -1,8 +1,11 @@
-// input: Storyflow prompt options and user preference stubs
-// output: Regression coverage for runtime guidance and prompt policy
+// input: Storyflow prompt options, user preference stubs, and temporary workspace trees
+// output: Regression coverage for runtime guidance, prompt policy, and context-file discovery
 // pos: Contract tests for the central Storyflow system prompt
 
 import { describe, it, expect, mock, beforeEach } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 // Stub the preferences module so we can toggle `getCoAuthorPreference` per test
 // without touching disk. `formatPreferencesForPrompt` is stubbed to '' because
@@ -13,7 +16,7 @@ mock.module('../../config/preferences.ts', () => ({
   formatPreferencesForPrompt: () => '',
 }))
 
-import { getSystemPrompt } from '../system'
+import { findAllProjectContextFiles, getSystemPrompt, invalidateContextFileCache } from '../system'
 
 const GIT_CONVENTIONS_HEADING = '## Git Conventions'
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Storyflow <agents-noreply@craft.do>'
@@ -109,6 +112,25 @@ describe('system prompt guidance', () => {
     expect(prompt).not.toContain('/tmp/workspace')
     expect(prompt).toContain('workspace root at `.craft-agent/sources/{slug}/`')
     expect(prompt).not.toContain('<project_context_files working_directory=')
+  })
+})
+
+describe('project context discovery', () => {
+  it('finds mixed-case context files and skips excluded directories', () => {
+    const root = mkdtempSync(join(tmpdir(), 'storyflow-context-files-'))
+    try {
+      mkdirSync(join(root, 'pkg'))
+      mkdirSync(join(root, 'node_modules'))
+      writeFileSync(join(root, 'AGENTS.MD'), 'root')
+      writeFileSync(join(root, 'pkg', 'Claude.mD'), 'nested')
+      writeFileSync(join(root, 'node_modules', 'AGENTS.md'), 'ignored')
+
+      invalidateContextFileCache(root)
+      expect(findAllProjectContextFiles(root)).toEqual(['AGENTS.MD', 'pkg/Claude.mD'])
+    } finally {
+      invalidateContextFileCache(root)
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 

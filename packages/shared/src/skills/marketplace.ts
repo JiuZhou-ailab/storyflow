@@ -6,6 +6,7 @@ import type { ResourceBundle } from '../resources/types.ts'
 
 export const DEFAULT_SKILLS_MARKET_ORIGIN = 'https://storyflow-skills.zjding.com'
 export const STORYFLOW_SKILL_MANIFEST_FILE = 'storyflow.json'
+const MAX_SKILL_BUNDLE_BYTES = 5 * 1024 * 1024
 
 export interface SkillLayoutRoot {
   path: string
@@ -212,6 +213,47 @@ export interface SkillMarketPublishResult {
 
 export type MarketFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
+async function readResponseTextWithinLimit(response: Response): Promise<string> {
+  const declaredLength = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_SKILL_BUNDLE_BYTES) {
+    throw new Error('Skill bundle exceeds 5 MB')
+  }
+
+  if (!response.body) {
+    const raw = await response.text()
+    if (new TextEncoder().encode(raw).byteLength > MAX_SKILL_BUNDLE_BYTES) {
+      throw new Error('Skill bundle exceeds 5 MB')
+    }
+    return raw
+  }
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      totalBytes += value.byteLength
+      if (totalBytes > MAX_SKILL_BUNDLE_BYTES) {
+        await reader.cancel()
+        throw new Error('Skill bundle exceeds 5 MB')
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  const bytes = new Uint8Array(totalBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(bytes)
+}
+
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 
@@ -373,8 +415,7 @@ export async function downloadMarketSkillBundle(
   const fetchImpl = options?.fetchImpl ?? fetch
   const response = await fetchImpl(buildMarketBundleUrl(input.slug, input.version, options?.origin))
   if (!response.ok) throw new Error(`Skill download failed (${response.status})`)
-  const raw = await response.text()
-  if (new TextEncoder().encode(raw).byteLength > 5 * 1024 * 1024) throw new Error('Skill bundle exceeds 5 MB')
+  const raw = await readResponseTextWithinLimit(response)
   const sha256 = await sha256Hex(raw)
   if (sha256 !== input.sha256) throw new Error('Skill bundle checksum does not match the registry')
   const bundle = JSON.parse(raw) as ResourceBundle

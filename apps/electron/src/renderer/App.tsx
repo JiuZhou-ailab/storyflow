@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/hooks/useTheme'
 import type { ThemeOverrides } from '@config/theme'
 import { useSetAtom, useStore, useAtomValue, useAtom } from 'jotai'
-import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SessionStatus, NewChatActionParams, ContentBadge, PermissionModeState, SendMessageOptions, ClientAuthState, SettingsSubpage, WhatsNewManifest } from '../shared/types'
+import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, CredentialResponse, SessionStatus, NewChatActionParams, ContentBadge, PermissionModeState, SendMessageOptions, ClientAuthState, SettingsSubpage, WhatsNewManifest } from '../shared/types'
 import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, sessionOptionsAtom, updateSessionOptionsMap } from './hooks/useSessionOptions'
@@ -46,8 +46,6 @@ import { resolvePostSetupAppState, selectStartupWorkspaceId } from './lib/startu
 
 import { isProjectShellReady } from './lib/app-readiness'
 import { appendUniqueRequestForSession, removeFirstRequestForSession } from './lib/request-queue'
-import { isBackgroundingToolResult } from './lib/background-task-result'
-import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 import {
   isManagedLlmConnectionSlug,
@@ -68,10 +66,6 @@ import {
   loadedSessionsAtom,
   forceSessionMessagesReloadAtom,
   reconcileCurrentSessionTranscriptWorkingSetAtom,
-  backgroundTasksAtomFamily,
-  updateBackgroundTaskProgress,
-  removeBackgroundTaskById,
-  removeBackgroundTaskByToolUseId,
   windowWorkspaceIdAtom,
   windowRuntimeWorkspaceAtom,
   windowWorkspacesAtom,
@@ -89,7 +83,6 @@ import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
 import { llmConnectionsAtom, refreshLlmConnectionsAtom, workspaceDefaultLlmConnectionAtom } from '@/atoms/llm-connections'
 import { extractBadges } from '@/lib/mentions'
-import { getDefaultStore } from 'jotai'
 import { PlatformProvider } from '@craft-agent/ui/context'
 import { useLinkInterceptor } from '@/hooks/useLinkInterceptor'
 import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
@@ -122,9 +115,6 @@ const FilePreviewRenderer = React.lazy(async () => {
 })
 
 type AppState = 'loading' | 'project-hub' | 'workspace-picker' | 'ready'
-
-/** Type for the Jotai store returned by useStore() */
-type JotaiStore = ReturnType<typeof getDefaultStore>
 
 type SessionListRefreshOptions = {
   removeMissing?: boolean
@@ -174,92 +164,6 @@ function workspaceDistribution(sessions: Iterable<{ workspaceId?: string }>): Re
     distribution[key] = (distribution[key] ?? 0) + 1
   }
   return distribution
-}
-
-const BACKGROUND_TASK_EVENT_TYPES = new Set([
-  'task_backgrounded',
-  'shell_backgrounded',
-  'task_progress',
-  'task_completed',
-  'shell_killed',
-  'tool_result',
-])
-
-/**
- * Helper to handle background task events from the agent.
- * Updates the backgroundTasksAtomFamily based on event type.
- * Extracted to avoid code duplication between streaming and non-streaming paths.
- */
-function handleBackgroundTaskEvent(
-  store: JotaiStore,
-  sessionId: string,
-  event: { type: string },
-  agentEvent: unknown
-): void {
-  if (!BACKGROUND_TASK_EVENT_TYPES.has(event.type)) return
-
-  // Type guard for accessing properties
-  const evt = agentEvent as Record<string, unknown>
-  const backgroundTasksAtom = backgroundTasksAtomFamily(sessionId)
-
-  if (event.type === 'task_backgrounded' && 'taskId' in evt && 'toolUseId' in evt) {
-    const currentTasks = store.get(backgroundTasksAtom)
-    const exists = currentTasks.some(t => t.toolUseId === evt.toolUseId)
-    if (!exists) {
-      store.set(backgroundTasksAtom, [
-        ...currentTasks,
-        {
-          id: evt.taskId as string,
-          type: 'agent' as const,
-          toolUseId: evt.toolUseId as string,
-          startTime: Date.now(),
-          elapsedSeconds: 0,
-          intent: evt.intent as string | undefined,
-        },
-      ])
-    }
-  } else if (event.type === 'shell_backgrounded' && 'shellId' in evt && 'toolUseId' in evt) {
-    const currentTasks = store.get(backgroundTasksAtom)
-    const exists = currentTasks.some(t => t.toolUseId === evt.toolUseId)
-    if (!exists) {
-      store.set(backgroundTasksAtom, [
-        ...currentTasks,
-        {
-          id: evt.shellId as string,
-          type: 'shell' as const,
-          toolUseId: evt.toolUseId as string,
-          startTime: Date.now(),
-          elapsedSeconds: 0,
-          intent: evt.intent as string | undefined,
-        },
-      ])
-    }
-  } else if (event.type === 'task_progress' && 'toolUseId' in evt && 'elapsedSeconds' in evt) {
-    const currentTasks = store.get(backgroundTasksAtom)
-    store.set(backgroundTasksAtom, updateBackgroundTaskProgress(currentTasks, evt.toolUseId as string, evt.elapsedSeconds as number))
-  } else if (event.type === 'task_completed' && 'taskId' in evt) {
-    // Remove task when background task completes
-    const currentTasks = store.get(backgroundTasksAtom)
-    store.set(backgroundTasksAtom, removeBackgroundTaskById(currentTasks, evt.taskId as string))
-  } else if (event.type === 'shell_killed' && 'shellId' in evt) {
-    // Remove shell task when KillShell succeeds
-    const currentTasks = store.get(backgroundTasksAtom)
-    store.set(backgroundTasksAtom, removeBackgroundTaskById(currentTasks, evt.shellId as string))
-  } else if (event.type === 'tool_result' && 'toolUseId' in evt) {
-    // Remove task when it completes - but NOT if this is the initial backgrounding result
-    // Background tasks return immediately with agentId/shell_id/backgroundTaskId,
-    // we should only remove when the task actually completes
-    if (!isBackgroundingToolResult(evt.result)) {
-      const currentTasks = store.get(backgroundTasksAtom)
-      store.set(backgroundTasksAtom, removeBackgroundTaskByToolUseId(currentTasks, evt.toolUseId as string))
-    }
-  }
-  // Note: We do NOT clear background tasks on complete/error/interrupted
-  // Background tasks should persist and keep running after the turn ends
-  // They are only removed when:
-  // 1. task_completed event arrives (background task finished)
-  // 2. Their tool_result comes back (foreground task finished)
-  // 3. KillShell succeeds (shell_killed event)
 }
 
 function SessionLoadErrorBanner({
@@ -912,7 +816,7 @@ function AppContent() {
     navigate(routes.view.allSessions(sessionId))
   }, [])
 
-  const { isWindowFocused, showSessionNotification } = useNotifications({
+  const { showSessionNotification } = useNotifications({
     workspaceId: windowWorkspaceId,
     // NOTE: sessions removed - hook now uses sessionMetaMapAtom internally
     // to prevent closures from retaining full message arrays
@@ -1205,8 +1109,6 @@ function AppContent() {
       }
 
       handleEffects(effects, sessionId, event.type)
-      handleBackgroundTaskEvent(store, sessionId, event, agentEvent)
-
       if (event.type === 'complete' && !updatedSession.hidden) {
         const lastMessage = updatedSession.messages.findLast(
           m => (m.role === 'assistant' || m.role === 'plan') && !m.isIntermediate
@@ -2615,7 +2517,6 @@ function AppContent() {
                 <WorkspaceSurface
                   shikiTheme={shikiTheme}
                   contextValue={appShellContextValue}
-                  defaultLayout={[20, 32, 48]}
                   menuNewChatTrigger={menuNewChatTrigger}
                   openGlobalSearchSignal={openGlobalSearchSignal}
                   openWhatsNewSignal={openWhatsNewSignal}

@@ -29,9 +29,6 @@ import {
   replaceLoadedSessionAtom,
   updateSessionAtom,
   updateSessionMetaAtom,
-  removeBackgroundTaskById,
-  removeBackgroundTaskByToolUseId,
-  updateBackgroundTaskProgress,
 } from '../sessions'
 import {
   beginSessionStatusMutation,
@@ -729,38 +726,6 @@ describe('session transcript working set', () => {
 
     expect(store.get(loadedSessionsAtom).has('old')).toBe(false)
     expect(store.get(sessionAtomFamily('old'))?.messages).toEqual([])
-  })
-})
-
-describe('background task atoms', () => {
-  it('keeps the original task list when progress seconds do not change', () => {
-    const tasks = [{
-      id: 'task-1',
-      type: 'agent' as const,
-      toolUseId: 'tool-1',
-      startTime: 1,
-      elapsedSeconds: 12,
-    }]
-
-    expect(updateBackgroundTaskProgress(tasks, 'tool-1', 12)).toBe(tasks)
-    expect(updateBackgroundTaskProgress(tasks, 'tool-1', 13)).toEqual([
-      { ...tasks[0], elapsedSeconds: 13 },
-    ])
-  })
-
-  it('keeps the original task list when removing a missing task', () => {
-    const tasks = [{
-      id: 'task-1',
-      type: 'agent' as const,
-      toolUseId: 'tool-1',
-      startTime: 1,
-      elapsedSeconds: 12,
-    }]
-
-    expect(removeBackgroundTaskById(tasks, 'missing')).toBe(tasks)
-    expect(removeBackgroundTaskByToolUseId(tasks, 'missing')).toBe(tasks)
-    expect(removeBackgroundTaskById(tasks, 'task-1')).toEqual([])
-    expect(removeBackgroundTaskByToolUseId(tasks, 'tool-1')).toEqual([])
   })
 })
 

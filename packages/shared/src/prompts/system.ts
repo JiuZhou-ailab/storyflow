@@ -5,12 +5,11 @@
 import { formatPreferencesForPrompt, getCoAuthorPreference } from '../config/preferences.ts';
 import { getBrowserToolEnabled } from '../config/storage.ts';
 import { debug } from '../utils/debug.ts';
-import { existsSync, readFileSync, readdirSync } from 'fs';
-import { join, relative } from 'path';
-import { DOC_REFS, APP_ROOT } from '../docs/index.ts';
+import { globSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'path';
+import { DOC_REFS } from '../docs/index.ts';
 import { PERMISSION_MODE_CONFIG } from '../agent/mode-types.ts';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
-import { globSync } from 'glob';
 import { WORKSPACE_STATE_DIR } from '../workspaces/paths.ts';
 import { formatLanguagePolicyForPrompt } from '../i18n/language-policy.ts';
 
@@ -70,6 +69,10 @@ function findStateContextFiles(directory: string): string[] {
   return files;
 }
 
+function normalizeContextPath(file: string): string {
+  return file.replaceAll('\\', '/');
+}
+
 /**
  * Find a project context file (AGENTS.md or CLAUDE.md) in the directory.
  * Just checks if file exists, doesn't read content.
@@ -127,15 +130,11 @@ export function findAllProjectContextFiles(directory: string): string[] {
     // Build glob ignore patterns from excluded directories
     const ignorePatterns = EXCLUDED_DIRECTORIES.map((dir) => `**/${dir}/**`);
 
-    // Search for all context files (case-insensitive via nocase option)
-    const pattern = '**/{agents,claude}.md';
-    const matches = globSync(pattern, {
+    const matches = globSync('**/*.{md,MD,Md,mD}', {
       cwd: directory,
-      nocase: true,
-      ignore: ignorePatterns,
-      absolute: false,
-    });
-    const stateMatches = findStateContextFiles(directory);
+      exclude: ignorePatterns,
+    }).map(normalizeContextPath).filter((file) => /(?:^|[\\/])(?:agents|claude)\.md$/i.test(file));
+    const stateMatches = findStateContextFiles(directory).map(normalizeContextPath);
     const allMatches = Array.from(new Set([...stateMatches, ...matches]));
 
     if (allMatches.length === 0) {

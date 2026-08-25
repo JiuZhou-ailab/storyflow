@@ -1119,7 +1119,6 @@ function EditPopoverContent({
               onRespondToCredential={onRespondToCredential}
               compactMode={true}
               placeholder={placeholder}
-              emptyStateLabel={displayLabel || context.label}
             />
           </div>
         </div>

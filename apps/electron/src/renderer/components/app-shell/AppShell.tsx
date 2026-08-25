@@ -4,15 +4,12 @@
 
 import * as React from "react"
 import { useTranslation, Trans } from "react-i18next"
-import { useRef, useState, useEffect, useCallback, useMemo } from "react"
+import { useRef, useEffect, useCallback, useMemo } from "react"
 import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai"
 import { selectAtom } from "jotai/utils"
 import { motion, AnimatePresence, useReducedMotion } from "motion/react"
 import {
   Archive,
-  ChevronRight,
-  ChevronDown,
-  RotateCw,
   Flag,
   ListFilter,
   Tag,
@@ -22,7 +19,6 @@ import {
   Plus,
   Trash2,
   Inbox,
-  Cake,
   Calendar,
   Layers,
   Info,
@@ -38,7 +34,6 @@ import {
   Pencil,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
-import { SourceAvatar } from "@/components/ui/source-avatar"
 import { ActivityRail } from "./ActivityRail"
 import { ACTIVITY_RAIL_WIDTH, type ActivityRailItemId } from "./ActivityRail"
 import { PanelLeftRounded } from "@/components/icons/PanelLeftRounded"
@@ -46,7 +41,6 @@ import { FirstRunTour } from "./FirstRunTour"
 import { GlobalSearchDialog } from "./GlobalSearchDialog"
 import { WhatsNewAnnouncementDialog } from "./WhatsNewAnnouncementDialog"
 import { buildWhatsNewAnnouncementCopy, getWhatsNewStartupAction } from "./whats-new-announcement"
-import { McpIcon } from "../icons/McpIcon"
 import { cn } from "@/lib/utils"
 import { getFileManagerName, isMac } from "@/lib/platform"
 import { Button } from "@/components/ui/button"
@@ -54,7 +48,6 @@ import { Input } from "@/components/ui/input"
 import { RenameDialog } from "@/components/ui/rename-dialog"
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
 import type { MentionFileReference } from "@/components/ui/mention-menu"
-import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipTrigger, TooltipContent, DocumentFormattedMarkdownOverlay, MultiDiffPreviewOverlay } from "@craft-agent/ui"
 import {
   DropdownMenu,
@@ -66,16 +59,8 @@ import {
   StyledDropdownMenuSubTrigger,
   StyledDropdownMenuSubContent,
 } from "@/components/ui/styled-dropdown"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { FadingText } from "@/components/ui/fading-text"
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  AnimatedCollapsibleContent,
-  springTransition as collapsibleSpring,
-} from "@/components/ui/collapsible"
 import { SessionList, type ChatGroupingMode } from "./SessionList"
-import { MainContentPanel, WritingPrimaryContentReadyContext } from "./MainContentPanel"
+import { WritingPrimaryContentReadyContext } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
 import { ResizableColumn } from "./ResizableColumn"
 import type { ChatDisplayHandle } from "./ChatDisplay"
@@ -116,8 +101,8 @@ import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
 import { useAction } from "@/actions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusActions } from "@/context/FocusContext"
-import { getSessionTitle, hasSessionHistoryContent } from "@/utils/session"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
+import { hasSessionHistoryContent } from "@/utils/session"
+import type { Workspace, LoadedSource, LoadedSkill, SourceFilter, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
 import {
   ensureSessionMessagesLoadedAtom,
   reconcileSessionTranscriptWorkingSetAtom,
@@ -141,9 +126,8 @@ import { PERMISSION_MODE_ORDER } from "@craft-agent/shared/agent/modes"
 import { LabelIcon } from "@/components/ui/label-icon"
 import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/label-menu"
 import { createLabelMenuItems, filterItems as filterLabelMenuItems, type LabelMenuItem } from "@/components/ui/label-menu-utils"
-import { getDescendantIds, getLabelDisplayName, extractLabelId, sortLabelsForDisplay } from "@craft-agent/shared/labels"
+import { getLabelDisplayName, sortLabelsForDisplay } from "@craft-agent/shared/labels"
 import type { LabelConfig } from "@craft-agent/shared/labels"
-import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
 import { toast } from "sonner"
 import { navigate, routes } from "@/lib/navigate"
@@ -155,7 +139,6 @@ import {
   isSourcesNavigation,
   isSkillsNavigation,
   isAutomationsNavigation,
-  type NavigationState,
 } from "@/contexts/NavigationContext"
 import type { SettingsSubpage } from "../../../shared/types"
 import { SourcesListPanel } from "./SourcesListPanel"
@@ -247,7 +230,6 @@ interface AppShellProps {
   /** All data and callbacks - passed directly to AppShellProvider */
   contextValue: AppShellContextType
   /** UI-specific props */
-  defaultLayout?: number[]
   defaultCollapsed?: boolean
   menuNewChatTrigger?: number
   /** Monotonic signal for opening global search after entering the ready shell */
@@ -866,7 +848,6 @@ export function AppShell(props: AppShellProps) {
  */
 function AppShellContent({
   contextValue,
-  defaultLayout = [20, 32, 48],
   defaultCollapsed = false,
   menuNewChatTrigger,
   openGlobalSearchSignal = 0,
@@ -892,7 +873,6 @@ function AppShellContent({
     onSelectWorkspace,
     onSelectProjectSession,
     onWorkspaceCreated,
-    onRefreshWorkspaces,
     onOpenWritingWorkspace,
     onOpenFreeConversations,
     onDeleteSession,
@@ -900,18 +880,15 @@ function AppShellContent({
     onUnflagSession,
     onArchiveSession,
     onUnarchiveSession,
-    onMarkSessionRead,
     onSessionStatusChange,
     onRenameSession,
     onCreateSession,
     onOpenSettings,
     onOpenKeyboardShortcuts,
-    onReset,
     onSendMessage,
     onOpenFile,
     onInputChange,
     getDraft,
-    openNewChat,
   } = contextValue
   const activeWorkspace = runtimeWorkspace
   const activeWorkspaceId = runtimeWorkspace?.id ?? null
@@ -1429,7 +1406,7 @@ function AppShellContent({
 
 
   // Load dynamic statuses from workspace config
-  const { statuses: statusConfigs, isLoading: isLoadingStatuses } = useStatuses(projectWorkspaceId)
+  const { statuses: statusConfigs } = useStatuses(projectWorkspaceId)
 
   // Convert StatusConfig to SessionStatus with resolved icons
   const sessionStatuses = React.useMemo(() => {
@@ -1439,32 +1416,6 @@ function AppShellContent({
 
     return statusConfigsToSessionStatuses(statusConfigs, projectWorkspaceId, isDark)
   }, [statusConfigs, projectWorkspaceId, isDark])
-
-  // Optimistic status order: immediately reflects drag-drop order while IPC propagates.
-  // Cleared when statusConfigs changes (config watcher is source of truth).
-  const [optimisticStatusOrder, setOptimisticStatusOrder] = React.useState<string[] | null>(null)
-
-  // Clear optimistic state when the config watcher fires (statusConfigs changes)
-  React.useEffect(() => {
-    setOptimisticStatusOrder(null)
-  }, [statusConfigs])
-
-  // Derive effective todo states: apply optimistic reorder if active, otherwise use canonical order
-  const effectiveSessionStatuses = React.useMemo(() => {
-    if (!optimisticStatusOrder) return sessionStatuses
-    // Reorder sessionStatuses array to match optimistic order
-    const stateMap = new Map(sessionStatuses.map(s => [s.id, s]))
-    const reordered: SessionStatus[] = []
-    for (const id of optimisticStatusOrder) {
-      const state = stateMap.get(id)
-      if (state) reordered.push(state)
-    }
-    // Append any states not in the optimistic order (shouldn't happen, but defensive)
-    for (const state of sessionStatuses) {
-      if (!optimisticStatusOrder.includes(state.id)) reordered.push(state)
-    }
-    return reordered
-  }, [sessionStatuses, optimisticStatusOrder])
 
   // Load labels from workspace config
   const { labels: labelConfigs } = useLabels(projectWorkspaceId)
@@ -1485,12 +1436,12 @@ function AppShellContent({
   )
   const activeStatusFilters = useMemo(() => {
     const filters: { state: SessionStatus; mode: FilterMode }[] = []
-    for (const state of effectiveSessionStatuses) {
+    for (const state of sessionStatuses) {
       const mode = listFilter.get(state.id)
       if (mode) filters.push({ state, mode })
     }
     return filters
-  }, [effectiveSessionStatuses, listFilter])
+  }, [sessionStatuses, listFilter])
   const activeLabelFilters = useMemo(() => {
     const filters: { label: LabelConfig; mode: FilterMode }[] = []
     for (const [labelId, mode] of labelFilter) {
@@ -1511,10 +1462,10 @@ function AppShellContent({
   const filterDropdownResults = useMemo(() => {
     if (!filterDropdownQuery.trim()) return { states: [] as SessionStatus[], labels: [] as LabelMenuItem[] }
     return {
-      states: filterLabelMenuStates(effectiveSessionStatuses, filterDropdownQuery),
+      states: filterLabelMenuStates(sessionStatuses, filterDropdownQuery),
       labels: filterLabelMenuItems(flatLabelMenuItems, filterDropdownQuery),
     }
-  }, [filterDropdownQuery, effectiveSessionStatuses, flatLabelMenuItems])
+  }, [filterDropdownQuery, sessionStatuses, flatLabelMenuItems])
 
   // Reset selected index when query changes
   React.useEffect(() => {
@@ -3771,7 +3722,7 @@ function AppShellContent({
     openSkills: handleOpenProjectSkills,
   })
 
-  // Extend context value with local overrides (wrapped onDeleteSession, sources, skills, labels, enabledModes, rightSidebarOpenButton, effectiveSessionStatuses)
+  // Extend context value with local overrides for workspace-specific chat resources.
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
     ...contextValue,
     onDeleteSession: handleDeleteSession,
@@ -3785,7 +3736,7 @@ function AppShellContent({
     labels: displayLabelConfigs,
     onSessionLabelsChange: handleSessionLabelsChange,
     enabledModes,
-    sessionStatuses: effectiveSessionStatuses,
+    sessionStatuses,
     onSessionSourcesChange: handleSessionSourcesChange,
     rightSidebarButton: null,
     isCompactMode: isAutoCompact,
@@ -3798,7 +3749,7 @@ function AppShellContent({
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, handleNovelWorkspaceSendMessage, sources, skills, mentionFiles, activeSessionWorkingDirectory, openingProjectState, handleWorkspaceOpeningCommand, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, handleNovelWorkspaceSendMessage, sources, skills, mentionFiles, activeSessionWorkingDirectory, openingProjectState, handleWorkspaceOpeningCommand, displayLabelConfigs, handleSessionLabelsChange, enabledModes, sessionStatuses, handleSessionSourcesChange, isAutoCompact, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -4147,52 +4098,9 @@ function AppShellContent({
     resolveFileChangeReviewStatus,
   ])
 
-  const handleFlaggedClick = useCallback(() => {
-    navigate(routes.view.flagged())
-  }, [])
-
-  const handleArchivedClick = useCallback(() => {
-    navigate(routes.view.archived())
-  }, [])
-
-  // Handler for individual todo state views
-  const handleSessionStatusClick = useCallback((stateId: SessionStatusId) => {
-    navigate(routes.view.state(stateId))
-  }, [])
-
-  // Handler for label filter views (hierarchical — includes descendant labels)
-  const handleLabelClick = useCallback((labelId: string) => {
-    navigate(routes.view.label(labelId))
-  }, [])
-
-  const handleViewClick = useCallback((viewId: string) => {
-    navigate(routes.view.view(viewId))
-  }, [])
-
-  // DnD handler: reorder statuses (flat list drag-and-drop)
-  // Sets optimistic order immediately for instant UI feedback, then fires IPC.
-  const handleStatusReorder = useCallback((orderedIds: string[]) => {
-    if (!activeWorkspaceId) return
-    setOptimisticStatusOrder(orderedIds)
-    window.electronAPI.reorderStatuses(activeWorkspaceId, orderedIds)
-  }, [activeWorkspaceId])
-
   // Handler for sources view (all sources)
   const handleSourcesClick = useCallback(() => {
     navigate(routes.view.sources())
-  }, [])
-
-  // Handlers for source type filter views (subcategories in Sources dropdown)
-  const handleSourcesApiClick = useCallback(() => {
-    navigate(routes.view.sourcesApi())
-  }, [])
-
-  const handleSourcesMcpClick = useCallback(() => {
-    navigate(routes.view.sourcesMcp())
-  }, [])
-
-  const handleSourcesLocalClick = useCallback(() => {
-    navigate(routes.view.sourcesLocal())
   }, [])
 
   // Handler for skills view
@@ -4276,20 +4184,6 @@ function AppShellContent({
     // Focus the chat input after navigation completes
     setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
   }, [activeWorkspace, focusZone, navigate])
-
-  // Create a brand new dedicated browser window and focus it.
-  // Intentionally unbound: this action should always create a NEW window.
-  const handleNewBrowserWindow = useCallback(async () => {
-    try {
-      const instanceId = await window.electronAPI.browserPane.create({
-        show: true,
-      })
-      await window.electronAPI.browserPane.focus(instanceId)
-    } catch (error) {
-      console.error('[Chat] Failed to create browser window:', error)
-      toast.error(t('toast.failedToCreateBrowser'))
-    }
-  }, [])
 
   // Delete Source - simplified since agents system is removed
   const handleDeleteSource = useCallback(async (sourceSlug: string) => {
@@ -4570,7 +4464,7 @@ function AppShellContent({
       case 'flagged':
         return t("sidebar.flagged")
       case 'state': {
-        const state = effectiveSessionStatuses.find(s => s.id === sessionFilter.stateId)
+        const state = sessionStatuses.find(s => s.id === sessionFilter.stateId)
         return state ? t(`status.${state.id}`, state.label) : t("sidebar.allSessions")
       }
       case 'label':
@@ -4580,10 +4474,9 @@ function AppShellContent({
       default:
         return t("sidebar.allSessions")
     }
-  }, [navState, t, sessionFilter, automationFilter, labelConfigs, viewConfigs, effectiveSessionStatuses])
+  }, [navState, t, sessionFilter, automationFilter, labelConfigs, viewConfigs, sessionStatuses])
 
   const activityWorkspaceDirectory = showPrimarySidebar
-    && isSidebarVisible
     && showNovelWorkspaceSidebar
     && workspaceDirectoryVisible
     && novelWorkspaceRoot
@@ -4964,7 +4857,7 @@ function AppShellContent({
                                 {/* Pinned: status from state view */}
                                 {(() => {
                                   if (!pinnedFilters.pinnedStatusId) return null
-                                  const state = effectiveSessionStatuses.find(s => s.id === pinnedFilters.pinnedStatusId)
+                                  const state = sessionStatuses.find(s => s.id === pinnedFilters.pinnedStatusId)
                                   if (!state) return null
                                   return (
                                     <StyledDropdownMenuItem disabled key={`pinned-status-${state.id}`}>
@@ -5065,7 +4958,7 @@ function AppShellContent({
                                 <span className="flex-1">{t("sidebar.statuses")}</span>
                               </StyledDropdownMenuSubTrigger>
                               <StyledDropdownMenuSubContent minWidth="min-w-[180px]">
-                                {effectiveSessionStatuses.map(state => {
+                                {sessionStatuses.map(state => {
                                   const applyColor = state.iconColorable
                                   const isPinned = state.id === pinnedFilters.pinnedStatusId
                                   const currentMode = listFilter.get(state.id)
@@ -5479,7 +5372,7 @@ function AppShellContent({
                     setSearchActive(false)
                     setSearchQuery('')
                   }}
-                  sessionStatuses={effectiveSessionStatuses}
+                  sessionStatuses={sessionStatuses}
                   evaluateViews={evaluateViews}
                   labels={displayLabelConfigs}
                   onLabelsChange={handleSessionLabelsChange}

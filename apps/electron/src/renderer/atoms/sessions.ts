@@ -311,7 +311,6 @@ export const initializeSessionsAtom = atom(
     for (const oldId of oldIds) {
       if (!newIdSet.has(oldId)) {
         sessionAtomFamily.remove(oldId)
-        backgroundTasksAtomFamily.remove(oldId)
       }
     }
     // Reset loaded sessions tracking — new workspace needs fresh lazy loading
@@ -521,7 +520,6 @@ export const removeSessionAtom = atom(
 
     // Clean up additional atom families to prevent memory leaks
     // These store per-session UI state that should be garbage collected
-    backgroundTasksAtomFamily.remove(sessionId)
   }
 )
 
@@ -793,65 +791,6 @@ export const reconcileCurrentSessionTranscriptWorkingSetAtom = atom(
   (get, set) => {
     reconcileLoadedSessionTranscripts(get, set)
   },
-)
-
-/**
- * Background task for ActiveTasksBar display
- */
-export interface BackgroundTask {
-  /** Task or shell ID */
-  id: string
-  /** Task type */
-  type: 'agent' | 'shell'
-  /** Tool use ID for correlation with messages */
-  toolUseId: string
-  /** When the task started */
-  startTime: number
-  /** Elapsed seconds (from progress events) */
-  elapsedSeconds: number
-  /** Task intent/description */
-  intent?: string
-}
-
-export function updateBackgroundTaskProgress(
-  tasks: readonly BackgroundTask[],
-  toolUseId: string,
-  elapsedSeconds: number,
-): BackgroundTask[] {
-  const index = tasks.findIndex(task => task.toolUseId === toolUseId)
-  const task = tasks[index]
-  if (!task || task.elapsedSeconds === elapsedSeconds) return tasks as BackgroundTask[]
-  const next = [...tasks]
-  next[index] = { ...task, elapsedSeconds }
-  return next
-}
-
-export function removeBackgroundTaskById(
-  tasks: readonly BackgroundTask[],
-  taskId: string,
-): BackgroundTask[] {
-  return tasks.some(task => task.id === taskId)
-    ? tasks.filter(task => task.id !== taskId)
-    : tasks as BackgroundTask[]
-}
-
-export function removeBackgroundTaskByToolUseId(
-  tasks: readonly BackgroundTask[],
-  toolUseId: string,
-): BackgroundTask[] {
-  return tasks.some(task => task.toolUseId === toolUseId)
-    ? tasks.filter(task => task.toolUseId !== toolUseId)
-    : tasks as BackgroundTask[]
-}
-
-/**
- * Atom family for tracking active background tasks per session
- * Updated on task_backgrounded, shell_backgrounded, task_progress events
- * Cleared when tasks complete or are killed
- */
-export const backgroundTasksAtomFamily = atomFamily(
-  (_sessionId: string) => atom<BackgroundTask[]>([]),
-  (a, b) => a === b
 )
 
 /**

@@ -12,7 +12,7 @@
  * They are never persisted on sessions — purely runtime-evaluated.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import type { ViewConfig } from '@craft-agent/shared/views';
 import { debug, readJsonFileSync } from '@craft-agent/shared/utils';
@@ -30,6 +30,37 @@ export interface ViewsConfig {
   version: number;
   /** Array of view definitions */
   views: ViewConfig[];
+}
+
+const MAX_VIEWS = 100;
+const MAX_VIEW_NAME_LENGTH = 256;
+const MAX_VIEW_DESCRIPTION_LENGTH = 1024;
+const MAX_VIEW_EXPRESSION_LENGTH = 4096;
+const MAX_VIEWS_FILE_BYTES = 1024 * 1024;
+
+function validateViews(views: unknown): asserts views is ViewConfig[] {
+  if (!Array.isArray(views) || views.length > MAX_VIEWS) {
+    throw new Error(`Views config exceeds the limit of ${MAX_VIEWS} views`);
+  }
+
+  for (const view of views) {
+    if (!view || typeof view !== 'object') throw new Error('Views config contains an invalid view');
+    const candidate = view as Record<string, unknown>;
+    if (
+      typeof candidate.id !== 'string'
+      || candidate.id.length === 0
+      || candidate.id.length > MAX_VIEW_NAME_LENGTH
+      || typeof candidate.name !== 'string'
+      || candidate.name.length > MAX_VIEW_NAME_LENGTH
+      || (candidate.description !== undefined
+        && (typeof candidate.description !== 'string' || candidate.description.length > MAX_VIEW_DESCRIPTION_LENGTH))
+      || typeof candidate.expression !== 'string'
+      || candidate.expression.length === 0
+      || candidate.expression.length > MAX_VIEW_EXPRESSION_LENGTH
+    ) {
+      throw new Error('Views config contains an invalid view');
+    }
+  }
 }
 
 /**
@@ -95,7 +126,11 @@ export function loadViewsConfig(workspaceRootPath: string): ViewsConfig {
   }
 
   try {
+    if (statSync(configPath).size > MAX_VIEWS_FILE_BYTES) {
+      throw new Error('Views config exceeds 1 MB');
+    }
     const config = readJsonFileSync<ViewsConfig>(configPath);
+    validateViews(config.views);
     return config;
   } catch (error) {
     debug('[loadViewsConfig] Failed to parse config:', error);
@@ -138,6 +173,7 @@ export function saveViews(
   workspaceRootPath: string,
   views: ViewConfig[]
 ): void {
+  validateViews(views);
   const config = loadViewsConfig(workspaceRootPath);
   config.views = views;
   saveViewsConfig(workspaceRootPath, config);

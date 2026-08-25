@@ -23,6 +23,33 @@ const DANGEROUS_SCHEMES: ReadonlyMap<string, string> = new Map([
 ])
 
 const INTERNAL_DEEPLINK_SCHEME = 'craftagents:'
+const MAX_DEEP_LINK_LENGTH = 16 * 1024
+const MAX_DEEP_LINK_PARAMETERS = 32
+const MAX_DEEP_LINK_PARAMETER_LENGTH = 4096
+
+/** Keep custom-protocol payloads bounded before they cross IPC or become history state. */
+export function isDeepLinkWithinLimits(parsed: URL): boolean {
+  if (parsed.href.length > MAX_DEEP_LINK_LENGTH) return false
+
+  let parameterCount = 0
+  for (const [key, value] of parsed.searchParams) {
+    parameterCount++
+    if (
+      parameterCount > MAX_DEEP_LINK_PARAMETERS
+      || key.length > 256
+      || value.length > MAX_DEEP_LINK_PARAMETER_LENGTH
+    ) {
+      return false
+    }
+  }
+
+  return true
+}
+
+/** External deep links may only request actions that still require user confirmation. */
+export function isAllowedExternalDeepLinkAction(action: string | undefined): action is 'install-skill' {
+  return action === 'install-skill'
+}
 
 export function classifyExternalUrl(rawUrl: string): UrlClassification {
   if (typeof rawUrl !== 'string' || rawUrl.trim() === '') {

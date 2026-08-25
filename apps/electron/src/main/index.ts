@@ -867,6 +867,9 @@ app.whenReady().then(async () => {
             .then(initializeMessagingGateway)
             .catch((err) => {
               mainLog.error('[runtime] Background initialization failed:', err)
+              void instance.stop().catch((stopError) => {
+                mainLog.error('[runtime] Failed to stop after background initialization failure:', stopError)
+              })
             })
         }
 

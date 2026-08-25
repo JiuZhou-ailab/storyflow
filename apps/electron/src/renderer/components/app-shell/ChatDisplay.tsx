@@ -10,11 +10,9 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   CircleAlert,
   ExternalLink,
   Info,
-  X,
 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
 import { toast } from "sonner"
@@ -38,7 +36,7 @@ import {
 } from "@craft-agent/ui"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useTheme } from "@/hooks/useTheme"
-import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, UserQuestionRequest, UserQuestionResponse, LoadedSource, LoadedSkill, CreateSessionOptions, LlmConnectionWithStatus } from "../../../shared/types"
+import type { Session, Message, FileAttachment, PermissionRequest, CredentialRequest, CredentialResponse, UserQuestionRequest, UserQuestionResponse, LoadedSource, LoadedSkill, CreateSessionOptions, LlmConnectionWithStatus } from "../../../shared/types"
 import type { PermissionMode } from "@craft-agent/shared/agent/modes"
 import type { ThinkingLevel } from "@craft-agent/shared/agent/thinking-levels"
 import {
@@ -47,7 +45,6 @@ import {
   groupMessagesByTurn,
   tryPatchTurnsForStreamingContentChange,
   formatTurnAsMarkdown,
-  formatActivityAsMarkdown,
   getAssistantTurnUiKey,
   asRecord,
   getAnnotationNoteText,
@@ -55,17 +52,13 @@ import {
   extractAnnotationSelectedText,
   normalizeFollowUpText,
   type Turn,
-  type AssistantTurn,
-  type UserTurn,
-  type SystemTurn,
-  type AuthRequestTurn,
 } from "@craft-agent/ui"
 import { MemoizedAuthRequestCard } from "@/components/chat/AuthRequestCard"
 import { ChatInputZone, type QueuedInputMessage, type StructuredInputState, type StructuredResponse, type PermissionResponse, type AdminApprovalResponse } from "./input"
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
 import { useNavigationActions } from "@/contexts/NavigationContext"
-import { navigate, routes } from "@/lib/navigate"
+import { routes } from "@/lib/navigate"
 import { loadSendMessageKeySetting } from "@/lib/input-settings"
 import { CHAT_LAYOUT } from "@craft-agent/ui"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
@@ -142,7 +135,6 @@ interface ChatDisplayProps {
   onRejectFileChange?: (change: FileChange) => void
   onOpenFileChanges?: (changes: FileChange[]) => void
   onRevertFileChanges?: (changes: FileChange[]) => Promise<void> | void
-  onRenameSession?: (sessionId: string, name: string) => void
   // Model selection
   currentModel: string
   onModelChange: (model: string, connection?: string) => void
@@ -243,7 +235,6 @@ interface ChatDisplayProps {
   /** Custom placeholder for input (used in compact mode for edit context) */
   placeholder?: string | string[]
   /** Label shown as empty state in compact mode (e.g., "Permission Settings") */
-  emptyStateLabel?: string
   /** When true, the session's locked connection has been removed - disables send and shows unavailable state */
   connectionUnavailable?: boolean
   /** Connections used to choose the default model backend for rewind checks. */
@@ -584,7 +575,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // States (for # menu and badge)
   sessionStatuses,
   onSessionStatusChange,
-  onRenameSession,
   workspaceId,
   // Working directory
   workingDirectory,
@@ -604,7 +594,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Compact mode (for EditPopover embedding)
   compactMode = false,
   placeholder,
-  emptyStateLabel,
   // Connection unavailable
   connectionUnavailable = false,
   llmConnections = [],
@@ -1212,16 +1201,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     if (!overlayState || overlayState.type !== 'activity') return []
     return extractOverlayCards(overlayState.activity)
   }, [overlayState])
-
-  // Pop-out handler - opens message in overlay (read-only markdown)
-  const handlePopOut = useCallback((message: Message) => {
-    if (!session) return
-    setOverlayState({
-      type: 'markdown',
-      content: message.content,
-      title: 'Message Preview',
-    })
-  }, [session])
 
   // Latest message metadata (for commit-time auto-scroll)
   const messageCount = transcriptMessages.length

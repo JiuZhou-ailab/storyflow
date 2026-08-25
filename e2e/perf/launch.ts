@@ -57,9 +57,8 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
   if (!packaged && !existsSync(BUILT_MAIN)) throw new Error(`Built main not found at ${BUILT_MAIN}. Run \`cd apps/electron && bun run build\`.`)
   if (!existsSync(join(fixtureDir, 'config.json'))) throw new Error(`Fixture config.json missing under ${fixtureDir}. Run scripts/perf/generate-fixture.ts first.`)
 
-  // Stale `.server.lock` from a killed run makes bootstrap abort and never open a window. The
-  // fixture is harness-owned and single-use, so clearing it before launch is safe.
-  rmSync(join(fixtureDir, '.server.lock'), { force: true })
+  // The fixture is harness-owned and single-use, so clearing its lease before launch is safe.
+  rmSync(join(fixtureDir, '.server.lock'), { recursive: true, force: true })
 
   const perfLines: PerfLogLine[] = []
   const processLines: string[] = []

@@ -62,45 +62,61 @@ function createTestHarness(overrides?: { workspaceId?: string | null }) {
 }
 
 describe('registerSystemCoreHandlers OPEN_URL', () => {
-  it('routes craftagents action links internally via deeplink:navigate', async () => {
+  it('routes confirmation-gated Skill install links internally via deeplink:navigate', async () => {
     const { openUrl, ctx, invokeClientCalls, pushCalls } = createTestHarness()
 
-    await openUrl(ctx, 'craftagents://action/new-session?input=sg&send=true')
+    await openUrl(ctx, `craftagents://action/install-skill?slug=test&version=1.0.0&sha256=${'a'.repeat(64)}`)
 
     expect(invokeClientCalls).toHaveLength(0)
     expect(pushCalls).toHaveLength(1)
     expect(pushCalls[0]).toEqual({
       channel: RPC_CHANNELS.deeplink.NAVIGATE,
       target: { to: 'client', clientId: 'client-1' },
-      args: [{ action: 'new-session', actionParams: { input: 'sg', send: 'true' } }],
+      args: [{
+        action: 'install-skill',
+        actionParams: { slug: 'test', version: '1.0.0', sha256: 'a'.repeat(64) },
+      }],
     })
   })
 
-  it('routes workspace deep links to workspace target when URL workspace differs', async () => {
+  it('routes local new-session links internally via deeplink:navigate', async () => {
+    const { openUrl, ctx, invokeClientCalls, pushCalls } = createTestHarness()
+
+    await openUrl(ctx, 'craftagents://action/new-session?input=hello&send=true&mode=allow-all')
+
+    expect(invokeClientCalls).toHaveLength(0)
+    expect(pushCalls).toHaveLength(1)
+    expect(pushCalls[0].args[0]).toEqual({
+      action: 'new-session',
+      actionParams: { input: 'hello', send: 'true', mode: 'allow-all' },
+    })
+  })
+
+  it('routes workspace-targeted action links to the requested workspace', async () => {
     const { openUrl, ctx, invokeClientCalls, pushCalls } = createTestHarness({ workspaceId: 'ws-1' })
 
     await openUrl(ctx, 'craftagents://workspace/ws-2/action/new-session?input=hello')
 
     expect(invokeClientCalls).toHaveLength(0)
     expect(pushCalls).toHaveLength(1)
-    expect(pushCalls[0]).toEqual({
-      channel: RPC_CHANNELS.deeplink.NAVIGATE,
-      target: { to: 'workspace', workspaceId: 'ws-2' },
-      args: [{ action: 'new-session', actionParams: { input: 'hello' } }],
+    expect(pushCalls[0].target).toEqual({ to: 'workspace', workspaceId: 'ws-2' })
+    expect(pushCalls[0].args[0]).toEqual({
+      action: 'new-session',
+      actionParams: { input: 'hello' },
     })
   })
 
   it('falls back to client openExternal for craftagents window-mode links', async () => {
     const { openUrl, ctx, invokeClientCalls, pushCalls } = createTestHarness()
 
-    await openUrl(ctx, 'craftagents://action/new-session?window=focused')
+    await openUrl(ctx, 'craftagents://skills/skill/test?window=focused')
 
     expect(pushCalls).toHaveLength(0)
     expect(invokeClientCalls).toHaveLength(1)
     expect(invokeClientCalls[0]).toEqual({
       clientId: 'client-1',
       channel: CLIENT_OPEN_EXTERNAL,
-      args: ['craftagents://action/new-session?window=focused'],
+      args: ['craftagents://skills/skill/test?window=focused'],
     })
   })
 

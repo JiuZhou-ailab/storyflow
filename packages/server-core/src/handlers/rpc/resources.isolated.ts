@@ -86,7 +86,10 @@ describe('Resources Skill install scope', () => {
 
     expect(existsSync(join(workspaceRoot, '.pi', 'skills', 'market-skill', 'SKILL.md'))).toBe(true)
     expect(existsSync(join(userSkillsRoot, 'market-skill', 'SKILL.md'))).toBe(false)
-    expect(pushedEvents).toEqual([])
+    expect(pushedEvents).toContainEqual({
+      channel: RPC_CHANNELS.skills.CHANGED,
+      args: ['workspace-1'],
+    })
   })
 
   it('installs Free Conversations Skills into Pi user scope', async () => {

@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import {
   getSessionFilePath,
   loadSession,
+  readSessionHeader,
   writeSessionJsonl,
   type StoredSession,
 } from '@craft-agent/shared/sessions'
@@ -34,6 +35,7 @@ describe('cold-session metadata persistence', () => {
   })
 
   afterEach(() => {
+    jest.useRealTimers()
     rmSync(tmpRoot, { recursive: true, force: true })
   })
 
@@ -84,6 +86,7 @@ describe('cold-session metadata persistence', () => {
       // messagesLoaded defaults to false — this is the cold-session state.
     )
     ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(sessionId, managed)
+    return managed
   }
 
   function readDiskHeader(sessionId: string): Record<string, unknown> {
@@ -116,6 +119,26 @@ describe('cold-session metadata persistence', () => {
     // round-trip integrity.
     const reloaded = loadSession(tmpRoot, sessionId)
     expect(reloaded?.sessionStatus).toBe('done')
+  })
+
+  it('reconciles the latest disk metadata when an idle write guard expires', () => {
+    jest.useFakeTimers()
+    const sessionId = 'idle-write-guard'
+    const managed = seedColdSession(sessionId, { name: 'local name' })
+
+    ;(sm as unknown as { setMetadataWriteGuard: (session: typeof managed) => void })
+      .setMetadataWriteGuard(managed)
+    const sessionFile = getSessionFilePath(tmpRoot, sessionId)
+    managed.pendingExternalMetadata = readSessionHeader(sessionFile)!
+
+    const stored = loadSession(tmpRoot, sessionId)!
+    stored.name = 'latest external name'
+    writeSessionJsonl(sessionFile, stored)
+
+    jest.advanceTimersByTime(5000)
+
+    expect(managed.name).toBe('latest external name')
+    expect(managed.pendingExternalMetadata).toBeUndefined()
   })
 
   it('setSessionLabels on a cold session is on disk after flushSession resolves', async () => {

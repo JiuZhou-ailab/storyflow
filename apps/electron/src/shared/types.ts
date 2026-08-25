@@ -110,23 +110,6 @@ export interface CreateWorkspaceOptions {
 // GUI-only types (not used by server/handler code)
 // =============================================================================
 
-/**
- * Browser toolbar window IPC channels (preload <-> BrowserPaneManager).
- * Kept separate from RPC_CHANNELS because these are scoped to toolbar windows.
- */
-export const BROWSER_TOOLBAR_CHANNELS = {
-  NAVIGATE: 'browser-toolbar:navigate',
-  GO_BACK: 'browser-toolbar:go-back',
-  GO_FORWARD: 'browser-toolbar:go-forward',
-  RELOAD: 'browser-toolbar:reload',
-  STOP: 'browser-toolbar:stop',
-  OPEN_MENU: 'browser-toolbar:open-menu',
-  HIDE: 'browser-toolbar:hide',
-  DESTROY: 'browser-toolbar:destroy',
-  STATE_UPDATE: 'browser-toolbar:state-update',
-  THEME_COLOR: 'browser-toolbar:theme-color',
-} as const
-
 /** Tool icon mapping entry from tool-icons.json (with icon resolved to data URL) */
 export interface ToolIconMapping {
   id: string
@@ -951,7 +934,7 @@ export type SessionFilter =
  * Settings subpage options - re-exported from settings-registry (single source of truth)
  */
 export type { SettingsSubpage } from './settings-registry'
-import { isValidSettingsSubpage, type SettingsSubpage } from './settings-registry'
+import type { SettingsSubpage } from './settings-registry'
 
 /**
  * Sessions navigation state
@@ -1060,120 +1043,6 @@ export const isAutomationsNavigation = (
 
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
   navigator: 'writing',
-}
-
-export const getNavigationStateKey = (state: NavigationState): string => {
-  if (state.navigator === 'writing') return 'writing'
-  if (state.navigator === 'sources') {
-    if (state.details) {
-      return `sources/source/${state.details.sourceSlug}`
-    }
-    return 'sources'
-  }
-  if (state.navigator === 'skills') {
-    if (state.details?.type === 'skill') {
-      return `skills/skill/${state.details.skillSlug}`
-    }
-    return 'skills'
-  }
-  if (state.navigator === 'automations') {
-    if (state.details?.type === 'automation') {
-      return `automations/automation/${state.details.automationId}`
-    }
-    return 'automations'
-  }
-  if (state.navigator === 'settings') {
-    return `settings:${state.subpage}`
-  }
-  // Chats
-  const f = state.filter
-  let base: string
-  if (f.kind === 'state') base = `state:${f.stateId}`
-  else if (f.kind === 'label') base = `label:${f.labelId}`
-  else if (f.kind === 'view') base = `view:${f.viewId}`
-  else base = f.kind
-  if (state.details) {
-    return `${base}/chat/${state.details.sessionId}`
-  }
-  return base
-}
-
-export const parseNavigationStateKey = (key: string): NavigationState | null => {
-  // Handle sources
-  if (key === 'sources') return { navigator: 'sources', details: null }
-  if (key.startsWith('sources/source/')) {
-    const sourceSlug = key.slice(15)
-    if (sourceSlug) {
-      return { navigator: 'sources', details: { type: 'source', sourceSlug } }
-    }
-    return { navigator: 'sources', details: null }
-  }
-
-  // Handle skills
-  if (key === 'skills') return { navigator: 'skills', details: null }
-  if (key.startsWith('skills/skill/')) {
-    const skillSlug = key.slice(13)
-    if (skillSlug) {
-      return { navigator: 'skills', details: { type: 'skill', skillSlug } }
-    }
-    return { navigator: 'skills', details: null }
-  }
-
-  // Handle automations
-  if (key === 'automations') return { navigator: 'automations', details: null }
-  if (key.startsWith('automations/automation/')) {
-    const automationId = key.slice(22)
-    if (automationId) {
-      return { navigator: 'automations', details: { type: 'automation', automationId } }
-    }
-    return { navigator: 'automations', details: null }
-  }
-
-  // Handle settings
-  if (key === 'settings') return { navigator: 'settings', subpage: 'app' }
-  if (key.startsWith('settings:')) {
-    const subpage = key.slice(9)
-    if (isValidSettingsSubpage(subpage)) {
-      return { navigator: 'settings', subpage }
-    }
-  }
-
-  // Handle sessions
-  const parseSessionsKey = (filterKey: string, sessionId?: string): NavigationState | null => {
-    let filter: SessionFilter
-    if (filterKey === 'allSessions') filter = { kind: 'allSessions' }
-    else if (filterKey === 'flagged') filter = { kind: 'flagged' }
-    else if (filterKey === 'archived') filter = { kind: 'archived' }
-    else if (filterKey.startsWith('state:')) {
-      const stateId = filterKey.slice(6)
-      if (!stateId) return null
-      filter = { kind: 'state', stateId }
-    } else if (filterKey.startsWith('label:')) {
-      const labelId = filterKey.slice(6)
-      if (!labelId) return null
-      filter = { kind: 'label', labelId }
-    } else if (filterKey.startsWith('view:')) {
-      const viewId = filterKey.slice(5)
-      if (!viewId) return null
-      filter = { kind: 'view', viewId }
-    } else {
-      return null
-    }
-    return {
-      navigator: 'sessions',
-      filter,
-      details: sessionId ? { type: 'session', sessionId } : null,
-    }
-  }
-
-  // Check for session details
-  if (key.includes('/session/')) {
-    const [filterPart, , sessionId] = key.split('/')
-    return parseSessionsKey(filterPart, sessionId)
-  }
-
-  // Simple filter key
-  return parseSessionsKey(key)
 }
 
 declare global {

@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { AlertCircle, Info } from 'lucide-react'
 import { usePlatform } from '@craft-agent/ui'
-import { ChatDisplay, type ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
+import { ChatDisplay } from '@/components/app-shell/ChatDisplay'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { SessionMenu } from '@/components/app-shell/SessionMenu'
 import { SessionInfoPopover } from '@/components/app-shell/SessionInfoPopover'
@@ -23,7 +23,6 @@ import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton
 import { usePendingPermission, usePendingCredential, usePendingUserQuestion, useSessionBatchActions, useSessionChatResources, useSessionDraftActions, useSessionInteractionActions, useSessionPanelChrome, useSessionReadActions, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { rendererPerf } from '@/lib/perf'
 import { resolveFileLinkTarget } from '@/lib/platform'
-import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
 import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, sessionMessagesLoadedAtomFamily, sessionMetaAtomFamily, updateSessionAtom } from '@/atoms/sessions'
@@ -75,10 +74,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onInputChange,
     onAttachmentsChange,
   } = useSessionDraftActions()
-  const {
-    onMarkSessionRead,
-    onSetActiveViewingSession,
-  } = useSessionReadActions()
+  const { onSetActiveViewingSession } = useSessionReadActions()
   const {
     onOpenFile = noopOpenFile,
     onOpenUrl = noopOpenUrl,
@@ -402,13 +398,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   // Get display title for header - use getSessionTitle for consistent fallback logic with SessionList
   // Priority: name > first user message > preview > "New chat"
   const displayTitle = session ? getSessionTitle(session) : (sessionMeta ? getSessionTitle(sessionMeta) : t('chat.session'))
-  const isFlagged = session?.isFlagged || sessionMeta?.isFlagged || false
-  const isArchived = session?.isArchived || sessionMeta?.isArchived || false
-  const currentSessionStatus = session?.sessionStatus || sessionMeta?.sessionStatus || 'todo'
-  const hasMessages = !!(session?.messages?.length || sessionMeta?.lastFinalMessageId)
-  const hasUnreadMessages = sessionMeta
-    ? !!(sessionMeta.lastFinalMessageId && sessionMeta.lastFinalMessageId !== sessionMeta.lastReadMessageId)
-    : false
   // Use isAsyncOperationOngoing for shimmer effect (sharing, updating share, revoking, title regeneration)
   const isAsyncOperationOngoing = session?.isAsyncOperationOngoing || sessionMeta?.isAsyncOperationOngoing || false
 
@@ -519,7 +508,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 onSendMessage={() => {}}
                 onOpenFile={handleOpenFile}
                 onOpenUrl={handleOpenUrl}
-                onRenameSession={onRenameSession}
                 currentModel={effectiveModel}
                 onModelChange={handleModelChange}
                 llmConnections={llmConnections}
@@ -629,7 +617,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             onRevertFileChanges={onRevertFileChanges
               ? changes => onRevertFileChanges(sessionId, changes)
               : undefined}
-            onRenameSession={onRenameSession}
             currentModel={effectiveModel}
             onModelChange={handleModelChange}
             llmConnections={llmConnections}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { handleDeepLink } from '../deep-link'
+import { handleDeepLink, parseDeepLink } from '../deep-link'
 import { RPC_CHANNELS } from '../../shared/types'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import type { WindowManager } from '../window-manager'
@@ -20,6 +20,31 @@ function createMockWindow(webContentsId: number) {
 }
 
 describe('handleDeepLink routing', () => {
+  it.each([
+    'craftagents://action/new-session?input=run&send=true&mode=allow-all',
+    'craftagents://action/delete-session/session-123',
+    'craftagents://workspace/ws-target/action/delete-source/source-123',
+    'craftagents://action/anything-goes',
+  ])('rejects external command action: %s', (url) => {
+    expect(parseDeepLink(url)).toBeNull()
+  })
+
+  it('allows the confirmation-gated Skill install action', () => {
+    expect(parseDeepLink(`craftagents://action/install-skill?slug=test&version=1.0.0&sha256=${'a'.repeat(64)}`))
+      .toMatchObject({
+        action: 'install-skill',
+        actionParams: {
+          slug: 'test',
+          version: '1.0.0',
+          sha256: 'a'.repeat(64),
+        },
+      })
+  })
+
+  it('rejects oversized external deep-link payloads', () => {
+    expect(parseDeepLink(`craftagents://action/install-skill?slug=${'a'.repeat(20_000)}`)).toBeNull()
+  })
+
   it('prefers resolved target client over preferred caller client', async () => {
     const targetWindow = createMockWindow(22)
 

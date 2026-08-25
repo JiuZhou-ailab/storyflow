@@ -836,9 +836,3 @@ export const mockAttachmentCallbacks = {
     console.log('[Playground] Open file:', path)
   },
 }
-
-export const mockBackgroundTaskCallbacks = {
-  onKillTask: (taskId: string) => {
-    console.log('[Playground] Kill task:', taskId)
-  },
-}

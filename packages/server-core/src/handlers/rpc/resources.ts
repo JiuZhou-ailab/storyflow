@@ -105,12 +105,7 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       for (const slug of result.sources.imported) {
         deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `sources/${slug}/config.json`)
       }
-      if (skillScope === 'project') {
-        for (const slug of result.skills.imported) {
-          deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `.pi/skills/${slug}/SKILL.md`)
-        }
-      }
-      if (isFreeConversationWorkspaceId(workspaceId) && result.skills.imported.length > 0) {
+      if (result.skills.imported.length > 0) {
         server.push(RPC_CHANNELS.skills.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
       }
 

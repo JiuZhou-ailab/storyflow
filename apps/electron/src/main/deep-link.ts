@@ -20,13 +20,7 @@
  *   craftagents://action/{actionName}[/{id}][?params]
  *   craftagents://workspace/{workspaceId}/action/{actionName}[?params]
  *
- * Actions:
- *   new-chat                  - Create new chat, optional ?input=text&name=name&send=true
- *                               If send=true is provided with input, immediately sends the message
- *   resume-sdk-session/{id}   - Resume Claude Code session by SDK session ID
- *   delete-session/{id}       - Delete session
- *   flag-session/{id}         - Flag session
- *   unflag-session/{id}       - Unflag session
+ * External actions:
  *   install-skill             - Verify a fixed-registry Skill and ask before project import
  *
  * Examples:
@@ -34,8 +28,7 @@
  *   craftagents://allSessions/session/abc123                (specific session)
  *   craftagents://settings/shortcuts                     (shortcuts page)
  *   craftagents://sources/source/github                  (github source info)
- *   craftagents://action/new-chat                        (uses active window)
- *   craftagents://action/resume-sdk-session/{sdkId}      (resume Claude Code session)
+ *   craftagents://action/install-skill?slug=x&version=1.0.0&sha256=...
  *   craftagents://workspace/ws123/allSessions/session/abc123   (targets specific workspace)
  */
 
@@ -44,6 +37,7 @@ import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { RPC_CHANNELS } from '../shared/types'
 import type { EventSink } from '@craft-agent/server-core/transport'
+import { isAllowedExternalDeepLinkAction, isDeepLinkWithinLimits } from '@craft-agent/shared/utils/url-safety'
 
 export interface DeepLinkTarget {
   /** Workspace ID - undefined means use active window */
@@ -104,6 +98,10 @@ export function parseDeepLink(url: string): DeepLinkTarget | null {
     if (parsed.protocol !== 'craftagents:') {
       return null
     }
+    if (!isDeepLinkWithinLimits(parsed)) {
+      mainLog.warn('[DeepLink] Rejected oversized or over-parameterized URL')
+      return null
+    }
 
     // For custom protocols, the hostname contains the first path segment
     // e.g., craftagents://workspace/ws123 → hostname='workspace', pathname='/ws123'
@@ -155,7 +153,9 @@ export function parseDeepLink(url: string): DeepLinkTarget | null {
 
       // Parse /action/{actionName}/...
       if (routeType === 'action') {
-        result.action = pathParts[2]
+        const action = pathParts[2]
+        if (!isAllowedExternalDeepLinkAction(action)) return null
+        result.action = action
         result.actionParams = {}
         // Handle path-based ID (e.g., /action/delete-session/{sessionId})
         if (pathParts[3]) {
@@ -175,9 +175,11 @@ export function parseDeepLink(url: string): DeepLinkTarget | null {
 
     // craftagents://action/... (no workspace - uses active window)
     if (host === 'action') {
+      const action = pathParts[0]
+      if (!isAllowedExternalDeepLinkAction(action)) return null
       const result: DeepLinkTarget = {
         workspaceId: undefined,
-        action: pathParts[0],
+        action,
         actionParams: {},
         windowMode,
         rightSidebar,

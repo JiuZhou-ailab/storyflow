@@ -12,6 +12,7 @@
     "./runtime": "./src/runtime/index.ts",
     "./handlers": "./src/handlers/index.ts",
     "./bootstrap": "./src/bootstrap/index.ts",
+    "./mcp": "./src/mcp/index.ts",
     "./model-fetchers": "./src/model-fetchers/index.ts",
     "./domain": "./src/domain/index.ts",
     "./services": "./src/services/index.ts",
@@ -28,11 +29,13 @@
     "@craft-agent/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "jose": "^6.0.0",
+    "proper-lockfile": "4.1.2",
     "ws": "^8.19.0",
     "sharp": "0.35.3",
     "@earendil-works/pi-ai": "0.84.1"
   },
   "devDependencies": {
+    "@types/proper-lockfile": "4.1.4",
     "typescript": "^5.8.2",
     "@types/node": "^22.0.0"
   }

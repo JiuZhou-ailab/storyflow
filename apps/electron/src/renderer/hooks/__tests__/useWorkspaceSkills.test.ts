@@ -86,6 +86,32 @@ describe('loadSkillsForWorkspace', () => {
     expect(calls).toEqual(['/project-a', '/project-b'])
   })
 
+  it('does not let an invalidated response overwrite a newer catalog', async () => {
+    __resetWorkspaceSkillsLoadCacheForTests()
+
+    let resolveFirst!: (value: LoadedSkill[]) => void
+    const firstResponse = new Promise<LoadedSkill[]>((resolve) => {
+      resolveFirst = resolve
+    })
+    const latest = [skill]
+    let calls = 0
+    const api = {
+      getSkills: async () => {
+        calls += 1
+        return calls === 1 ? firstResponse : latest
+      },
+    }
+
+    const first = loadSkillsForWorkspace('workspace-1', '/project-a', api)
+    invalidateWorkspaceSkillsCache('workspace-1')
+    const second = loadSkillsForWorkspace('workspace-1', '/project-a', api)
+    resolveFirst([])
+
+    expect(await first).toEqual(latest)
+    expect(await second).toEqual(latest)
+    expect(calls).toBe(2)
+  })
+
   it('retries a failed load instead of caching the rejection', async () => {
     __resetWorkspaceSkillsLoadCacheForTests()
     let calls = 0

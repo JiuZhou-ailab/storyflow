@@ -156,6 +156,37 @@ describe('refreshConnectionRuntime', () => {
     expect(otherAgent.reloadCredentials).not.toHaveBeenCalled()
   })
 
+  it('continues credential rotation after a snapshotted session is removed', async () => {
+    let markFirstStarted!: () => void
+    let releaseFirst!: () => void
+    const firstStarted = new Promise<void>(resolve => { markFirstStarted = resolve })
+    const firstRelease = new Promise<void>(resolve => { releaseFirst = resolve })
+
+    const firstAgent = createAgentStub()
+    firstAgent.reloadCredentials = jest.fn().mockImplementation(async () => {
+      markFirstStarted()
+      await firstRelease
+      return true
+    })
+    const removedAgent = createAgentStub()
+    removedAgent.reloadCredentials = jest.fn().mockResolvedValue(true)
+    const lastAgent = createAgentStub()
+    lastAgent.reloadCredentials = jest.fn().mockResolvedValue(true)
+
+    injectSession(sm, 'first', tmpRoot, 'slug-A', firstAgent)
+    injectSession(sm, 'removed', tmpRoot, 'slug-A', removedAgent)
+    injectSession(sm, 'last', tmpRoot, 'slug-A', lastAgent)
+
+    const rotation = sm.reloadConnectionCredentials('slug-A')
+    await firstStarted
+    ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.delete('removed')
+    releaseFirst()
+
+    await expect(rotation).resolves.toBeUndefined()
+    expect(removedAgent.reloadCredentials).not.toHaveBeenCalled()
+    expect(lastAgent.reloadCredentials).toHaveBeenCalledTimes(1)
+  })
+
   it('recreates an idle runtime when it cannot accept rotated credentials', async () => {
     const agent = createAgentStub()
     agent.reloadCredentials = jest.fn().mockResolvedValue(false)

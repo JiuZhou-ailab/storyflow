@@ -50,7 +50,7 @@ import { homedir } from 'node:os'
 import { readFileSync, existsSync } from 'node:fs'
 import { version as packageVersion } from '../package.json'
 import { enableDebug } from '@craft-agent/shared/utils/debug'
-import { bootstrapServer, startHealthHttpServer, generateServerToken } from '@craft-agent/server-core/bootstrap'
+import { bootstrapServer, releaseServerLock, startHealthHttpServer, generateServerToken } from '@craft-agent/server-core/bootstrap'
 import {
   validateSession,
   createWebuiHandler,
@@ -388,6 +388,7 @@ const instance = await (async () => {
     })
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
+    releaseServerLock()
     process.exit(1)
   }
 })()

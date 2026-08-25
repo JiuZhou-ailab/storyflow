@@ -97,6 +97,15 @@ describe('Skills Market contract', () => {
     )).rejects.toThrow('checksum')
   })
 
+  test('stops reading an oversized registry response before buffering it', async () => {
+    const oversized = new Uint8Array(5 * 1024 * 1024 + 1)
+
+    await expect(downloadMarketSkillBundle(
+      { slug: 'scene-sequel', version: '1.0.0', sha256: 'a'.repeat(64) },
+      { fetchImpl: async () => new Response(oversized) },
+    )).rejects.toThrow('exceeds 5 MB')
+  })
+
   test('adds publication metadata without conflating content attribution and publisher identity', () => {
     const skillMarkdown = '---\nname: 剧情因果审查\ndescription: 审查故事因果\n---\n\n正文\n'
     const bytes = new TextEncoder().encode(skillMarkdown)

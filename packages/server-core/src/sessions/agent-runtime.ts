@@ -291,10 +291,14 @@ export class AgentRuntime {
         })
       } catch (error) {
         getSessionLog().warn(`reloadConnectionCredentials failed for ${managed.id}: ${error instanceof Error ? error.message : error}`)
-        await this.deps.withAgentRuntimeLock(managed, async () => {
-          if (managed.agent?.isProcessing()) managed.credentialRestartRequired = true
-          else await this.disposeManagedAgentRuntime(managed, 'failed credential reload')
-        })
+        try {
+          await this.deps.withAgentRuntimeLock(managed, async () => {
+            if (managed.agent?.isProcessing()) managed.credentialRestartRequired = true
+            else await this.disposeManagedAgentRuntime(managed, 'failed credential reload')
+          })
+        } catch (recoveryError) {
+          getSessionLog().warn(`credential reload recovery skipped for ${managed.id}: ${recoveryError instanceof Error ? recoveryError.message : recoveryError}`)
+        }
       }
     }
   }

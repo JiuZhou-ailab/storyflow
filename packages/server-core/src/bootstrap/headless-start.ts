@@ -2,10 +2,11 @@
 // output: A transport-ready server instance with an explicitly startable Agent runtime
 // pos: Owns the two-stage server lifecycle shared by Electron and headless hosts
 
-import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
+import { lstatSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { uptime as osUptime } from 'node:os'
 import { join } from 'node:path'
+import * as lockfile from 'proper-lockfile'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { seedDefaultAgentResources } from '@craft-agent/shared/agent-defaults'
 import { ensureConfigDir, loadStoredConfig, saveConfig } from '@craft-agent/shared/config'
@@ -123,12 +124,17 @@ export function generateServerToken(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Startup lock file
+// Startup lease
 // ---------------------------------------------------------------------------
 
 const LOCK_FILE = join(CONFIG_DIR, '.server.lock')
+const LOCK_OWNER_FILE = join(LOCK_FILE, 'owner.json')
+const LOCK_STALE_MS = 60_000
+const LOCK_UPDATE_MS = LOCK_STALE_MS / 2
+const LOCK_RETRY_MS = 500
+let serverLockHeld = false
 
-interface LockPayload {
+interface LegacyLockPayload {
   pid: number
   startedAt: number
 }
@@ -137,19 +143,18 @@ function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
   }
 }
 
 /**
- * Parse the lock file content. Supports both the new JSON format
- * (`{pid, startedAt}`) and the legacy plain-PID format for backwards
- * compatibility during upgrades.
+ * Parse pre-lease lock files. Supports both the JSON format
+ * (`{pid, startedAt}`) and its older plain-PID predecessor.
  */
-function parseLockContent(raw: string): LockPayload | null {
+function parseLegacyLockContent(raw: string): LegacyLockPayload | null {
   const trimmed = raw.trim()
-  // Try JSON first (new format)
+  // Try JSON first (newer legacy format)
   if (trimmed.startsWith('{')) {
     try {
       const parsed = JSON.parse(trimmed) as Record<string, unknown>
@@ -175,67 +180,140 @@ function isLockFromPreviousBoot(startedAt: number): boolean {
   return startedAt < bootTime
 }
 
-function acquireServerLock(logger: PlatformServices['logger']): void {
-  if (existsSync(LOCK_FILE)) {
-    try {
-      const content = readFileSync(LOCK_FILE, 'utf-8')
-      const lock = parseLockContent(content)
+function lockPathIsDirectory(): boolean {
+  try {
+    return lstatSync(LOCK_FILE).isDirectory()
+  } catch {
+    return false
+  }
+}
 
-      if (lock) {
-        // In Docker, PID 1 is reused across container restarts.
-        // If the lock holds our own PID, it's stale from a previous run.
-        if (lock.pid === process.pid) {
-          logger.warn(`[bootstrap] Lock file holds current PID ${lock.pid} (stale from previous container lifecycle), overwriting`)
-        } else if (isProcessAlive(lock.pid)) {
-          // PID is alive — but is it actually from a previous boot?
-          // If the lock was written before the current boot, the OS has
-          // recycled the PID and the process is unrelated.
-          if (isLockFromPreviousBoot(lock.startedAt)) {
-            logger.warn(`[bootstrap] Lock PID ${lock.pid} is alive but lock predates current boot (stale due to PID reuse), overwriting`)
-          } else {
-            throw new Error(
-              `Another server instance is already running (PID ${lock.pid}). ` +
-              `If this is stale, delete ${LOCK_FILE} and retry.`
-            )
-          }
-        } else {
-          logger.warn(`[bootstrap] Stale lock file found (PID ${lock.pid}), overwriting`)
-        }
-      } else {
-        logger.warn('[bootstrap] Could not parse lock file, overwriting')
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('Another server instance')) throw err
-      logger.warn('[bootstrap] Could not read lock file, overwriting')
+function assertActiveLeaseIsNotOwnedByALiveProcess(): void {
+  if (!lockPathIsDirectory()) return
+
+  try {
+    const owner = JSON.parse(readFileSync(LOCK_OWNER_FILE, 'utf-8')) as Partial<LegacyLockPayload>
+    if (
+      typeof owner.pid === 'number'
+      && typeof owner.startedAt === 'number'
+      && isProcessAlive(owner.pid)
+      && !isLockFromPreviousBoot(owner.startedAt)
+    ) {
+      throw new Error(`Another Storyflow server instance is active (PID ${owner.pid}). Close it and retry.`)
     }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Another Storyflow server instance')) throw error
+    // Missing or unreadable owner metadata is handled by proper-lockfile's stale lease rules.
+  }
+}
+
+function migrateLegacyServerLock(logger: PlatformServices['logger']): void {
+  // Remove after upgrades from pre-lease releases are no longer supported.
+  let stats: ReturnType<typeof lstatSync>
+  try {
+    stats = lstatSync(LOCK_FILE)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
   }
 
-  const payload: LockPayload = { pid: process.pid, startedAt: Date.now() }
-  writeFileSync(LOCK_FILE, JSON.stringify(payload), 'utf-8')
+  if (stats.isDirectory()) return
+  if (!stats.isFile()) {
+    throw new Error(`Unsupported server lock at ${LOCK_FILE}. Remove it after verifying no Storyflow server is running.`)
+  }
 
-  // Safety net: release the lock on unexpected exits (SIGKILL, uncaught exceptions, etc.).
-  // process.on('exit') only allows synchronous code — releaseServerLock is fully sync.
-  process.on('exit', () => { releaseServerLock() })
+  let legacyLock: LegacyLockPayload | null
+  try {
+    legacyLock = parseLegacyLockContent(readFileSync(LOCK_FILE, 'utf-8'))
+  } catch (error) {
+    if (lockPathIsDirectory()) return
+    throw error
+  }
+
+  if (
+    legacyLock
+    && legacyLock.pid !== process.pid
+    && isProcessAlive(legacyLock.pid)
+    && !isLockFromPreviousBoot(legacyLock.startedAt)
+  ) {
+    throw new Error(
+      `A legacy Storyflow server lock may still be active (PID ${legacyLock.pid}). ` +
+      `Close Storyflow and retry; only delete ${LOCK_FILE} once if that PID is unrelated.`,
+    )
+  }
+
+  try {
+    unlinkSync(LOCK_FILE)
+    logger.warn('[bootstrap] Removed stale legacy server lock')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT' || lockPathIsDirectory()) return
+    throw error
+  }
+}
+
+export async function acquireServerLock(logger: PlatformServices['logger']): Promise<void> {
+  if (serverLockHeld) throw new Error('This process already owns the Storyflow server lease.')
+
+  migrateLegacyServerLock(logger)
+  assertActiveLeaseIsNotOwnedByALiveProcess()
+
+  try {
+    await lockfile.lock(CONFIG_DIR, {
+      lockfilePath: LOCK_FILE,
+      realpath: false,
+      stale: LOCK_STALE_MS,
+      update: LOCK_UPDATE_MS,
+      retries: {
+        retries: LOCK_STALE_MS / LOCK_RETRY_MS,
+        factor: 1,
+        minTimeout: LOCK_RETRY_MS,
+        maxTimeout: LOCK_RETRY_MS,
+        randomize: false,
+      },
+      onCompromised(error) {
+        logger.error('[bootstrap] Server lease was compromised; exiting to prevent concurrent writers', error)
+        process.exit(1)
+      },
+    })
+    try {
+      writeFileSync(LOCK_OWNER_FILE, JSON.stringify({ pid: process.pid, startedAt: Date.now() }), 'utf-8')
+      serverLockHeld = true
+    } catch (error) {
+      try {
+        lockfile.unlockSync(CONFIG_DIR, { lockfilePath: LOCK_FILE, realpath: false })
+      } catch {
+        // Best-effort cleanup before surfacing the acquisition failure.
+      }
+      throw error
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ELOCKED') {
+      throw new Error('Another Storyflow server instance is active. Close it and retry.')
+    }
+    throw error
+  }
 }
 
 /**
- * Remove the lock file if it belongs to the current process.
+ * Release the lease if it belongs to the current process.
  * Exported so consumers (e.g. the Electron before-quit handler) can call it
  * directly without going through `instance.stop()`.
  */
 export function releaseServerLock(): void {
+  if (!serverLockHeld) return
+
   try {
-    if (existsSync(LOCK_FILE)) {
-      const lock = parseLockContent(readFileSync(LOCK_FILE, 'utf-8'))
-      // Only delete if it's our lock
-      if (lock && lock.pid === process.pid) {
-        unlinkSync(LOCK_FILE)
-      }
-    }
+    lockfile.unlockSync(CONFIG_DIR, { lockfilePath: LOCK_FILE, realpath: false })
   } catch {
     // Best-effort cleanup
+  } finally {
+    serverLockHeld = false
   }
 }
+
+// A normal process exit permits synchronous lock cleanup; SIGKILL still relies
+// on proper-lockfile's stale lease recovery and owner-PID guard.
+process.on('exit', releaseServerLock)
 
 // ---------------------------------------------------------------------------
 // Config artifacts
@@ -280,7 +358,6 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
     ?? process.env.CRAFT_BUNDLED_ASSETS_ROOT
     ?? process.cwd()
   setBundledAssetsRoot(bundledAssetsRoot)
-  seedDefaultAgentResources()
 
   if (entropy.warning) {
     platform.logger.warn(`[bootstrap] ${entropy.warning}`)
@@ -289,8 +366,10 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
   options.applyPlatformToSubsystems?.(platform)
 
   bootstrapConfigArtifacts(platform)
+  await acquireServerLock(platform.logger)
+  try {
+  seedDefaultAgentResources()
   ensureGlobalConfigExists(platform)
-  acquireServerLock(platform.logger)
 
   const modelRefreshService = options.initModelRefreshService()
   const sessionManager = options.createSessionManager()
@@ -419,7 +498,12 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
   }
 
   if (!options.deferRuntimeInitialization) {
-    await startRuntime()
+    try {
+      await startRuntime()
+    } catch (error) {
+      await stop()
+      throw error
+    }
   }
 
   return {
@@ -435,6 +519,10 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
     ready,
     startRuntime,
     stop,
+  }
+  } catch (error) {
+    releaseServerLock()
+    throw error
   }
 }
 

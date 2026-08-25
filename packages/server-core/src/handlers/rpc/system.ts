@@ -7,7 +7,7 @@ import {
   type CreateWorkspaceVersionOptions,
 } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId, getGitBashPath, setGitBashPath, clearGitBashPath } from '@craft-agent/shared/config'
-import { isSafeExternalUrl } from '@craft-agent/shared/utils/url-safety'
+import { isDeepLinkWithinLimits, isSafeExternalUrl } from '@craft-agent/shared/utils/url-safety'
 import {
   compareWorkspaceVersions,
   readWorkspaceFileAtCommit,
@@ -88,9 +88,18 @@ function collectDeepLinkParams(parsed: URL, pathId?: string): Record<string, str
 
 function parseInternalCraftAgentsDeepLink(parsed: URL): ParsedInternalDeepLink | null {
   if (parsed.protocol !== 'craftagents:') return null
+  if (!isDeepLinkWithinLimits(parsed)) {
+    throw new Error('Refused oversized craftagents deep link')
+  }
 
   const host = parsed.hostname
   const pathParts = parsed.pathname.split('/').filter(Boolean)
+  const action = host === 'action'
+    ? pathParts[0]
+    : host === 'workspace' && pathParts[1] === 'action'
+      ? pathParts[2]
+      : undefined
+
   const windowMode = parsed.searchParams.get('window')
 
   // Preserve window-specific behavior via OS protocol path.
@@ -337,7 +346,7 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
     deps.platform.logger.info('[renderer]', ...args)
   })
 
-  // Shell operations - open URL in external browser (or handle craftagents:// internally)
+  // Shell operations - open URLs externally or route local craftagents:// links internally.
   server.handle(RPC_CHANNELS.shell.OPEN_URL, async (ctx, url: string) => {
     deps.platform.logger.info('[OPEN_URL] Received request:', url)
     try {

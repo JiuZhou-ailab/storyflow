@@ -52,7 +52,6 @@ export function SendToWorkspaceDialog({
   const { t } = useTranslation()
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
   const [isTransferring, setIsTransferring] = useState(false)
-  const [overallProgress, setOverallProgress] = useState(0)
   const workspaceIconMap = useWorkspaceIcons(workspaces)
 
   // Health check results for remote targets (checked on dialog open)
@@ -119,7 +118,6 @@ export function SendToWorkspaceDialog({
     if (!target) return
 
     setIsTransferring(true)
-    setOverallProgress(0)
     const targetName = target.name
     const count = sessionIds.length
 
@@ -128,14 +126,12 @@ export function SendToWorkspaceDialog({
     try {
       const newSessionIds: string[] = []
 
-      for (let i = 0; i < sessionIds.length; i++) {
-        const sessionId = sessionIds[i]
+      for (const sessionId of sessionIds) {
         const result = await window.electronAPI.transferSessionToWorkspace(
           sessionId,
           selectedWorkspaceId,
         )
         newSessionIds.push(result.sessionId)
-        setOverallProgress((i + 1) / sessionIds.length)
       }
 
       toast.success(t('sendToWorkspace.sent', { count, target: targetName }), {
@@ -244,61 +240,11 @@ export function SendToWorkspaceDialog({
           >
             Cancel
           </Button>
-          <TransferButton
-            onClick={handleTransfer}
-            disabled={!selectedWorkspaceId || isTransferring}
-            isTransferring={isTransferring}
-            progress={overallProgress}
-          />
+          <Button onClick={handleTransfer} disabled={!selectedWorkspaceId || isTransferring}>
+            {isTransferring ? 'Sending...' : 'Send'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/** Send button with purple LED border that traces around it during transfer */
-function TransferButton({ onClick, disabled, isTransferring, progress }: {
-  onClick: () => void
-  disabled: boolean
-  isTransferring: boolean
-  progress: number
-}) {
-  const wrapperRef = useRef<HTMLDivElement>(null)
-  const rectRef = useRef<SVGRectElement>(null)
-  const [perim, setPerim] = useState(0)
-
-  useEffect(() => {
-    if (rectRef.current && isTransferring) {
-      setPerim(rectRef.current.getTotalLength())
-    }
-  }, [isTransferring])
-
-  return (
-    <div ref={wrapperRef} className="relative">
-      <Button onClick={onClick} disabled={disabled}>
-        {isTransferring ? 'Sending...' : 'Send'}
-      </Button>
-      {isTransferring && (
-        <svg
-          className="absolute pointer-events-none"
-          style={{ inset: '-3px', width: 'calc(100% + 6px)', height: 'calc(100% + 6px)', overflow: 'visible' }}
-        >
-          <rect
-            ref={rectRef}
-            x="1.5" y="1.5"
-            width="calc(100% - 3px)" height="calc(100% - 3px)"
-            rx="10" ry="10"
-            fill="none"
-            stroke="#8B5CF6"
-            strokeWidth="2"
-            strokeDasharray={perim > 0 ? `${progress * perim} ${perim}` : '0 999'}
-            style={{
-              transition: 'stroke-dasharray 0.2s ease-out',
-              filter: 'drop-shadow(0 0 3px #8B5CF6) drop-shadow(0 0 6px rgba(139,92,246,0.3))',
-            }}
-          />
-        </svg>
-      )}
-    </div>
   )
 }

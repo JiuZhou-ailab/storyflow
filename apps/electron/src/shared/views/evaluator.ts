@@ -18,7 +18,7 @@
 import { compileExpression, useDotAccessOperatorAndOptionalChaining } from 'filtrex';
 import type { ViewConfig, CompiledView, ViewEvaluationContext } from '@craft-agent/shared/views';
 import { VIEW_FUNCTIONS } from './functions.ts';
-import { debug } from '@craft-agent/shared/utils';
+import { debug } from '@craft-agent/shared/utils/debug';
 
 /**
  * Compile a single view expression into a native JS function.

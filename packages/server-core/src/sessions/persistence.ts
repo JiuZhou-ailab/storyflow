@@ -172,6 +172,7 @@ export class SessionPersistence {
       })
     } catch (error) {
       getSessionLog().error('Failed to load sessions from disk:', error)
+      throw error
     }
   }
 
