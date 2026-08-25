@@ -1,19 +1,19 @@
 {
-  "version": "0.16.0",
-  "digest": "ab68ed1f23b00a5705e6d191d3ab30850fa5bcc8c5e06645f9e4e4b966c3e74a",
-  "generatedAt": "2026-08-19T12:37:38.591Z",
-  "title": "Storyflow v0.16.0 更新说明",
-  "summary": "Storyflow 0.16.0 统一了品牌图标和消息操作，新会话默认使用 GPT-5.6 Luna。",
+  "version": "0.17.0",
+  "digest": "4d822d33b63a8b10d745f30163d3d1c8519a76e3052f6ac90974278fab0137ec",
+  "generatedAt": "2026-08-25T10:12:33.942Z",
+  "title": "Storyflow v0.17.0 更新说明",
+  "summary": "Storyflow 0.17.0 让桌面会话、Skill 更新和长时间运行更稳定。",
   "highlights": [
-    "用户消息操作更顺手：复制与编辑并重新生成统一显示在消息底部，长对话里点击编辑也能即时响应。",
-    "默认模型升级：新会话默认使用 GPT-5.6 Luna。",
-    "Storyflow 新图标上线：桌面应用、登录页、分享页与官网统一使用新的 Storyflow 图标。",
-    "macOS Dock 保持简洁：未读状态继续显示在 Storyflow 内，不再在 Dock 图标上叠加未读角标。"
+    "编辑入口更顺畅：从标签、权限等设置发起的 AI 编辑会正常创建并发送到对应会话。",
+    "Skill 更新即时生效：安装或更新 Skill 后，当前工作区会自动刷新，不必重启应用。",
+    "会话恢复更可靠：启动、重连和外部修改后，会话列表、元数据与磁盘内容保持一致。",
+    "外部链接更安全：外部 craftagents:// 链接仅保留需要用户确认的 Skill 安装入口，不会直接创建会话、发送消息或删除内容。"
   ],
-  "accentColor": "#af1da8",
+  "accentColor": "#af241d",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 6,
+    "commitCount": 7,
     "userVisibleCommitCount": 0
   }
 }
