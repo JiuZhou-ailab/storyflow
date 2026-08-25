@@ -1,19 +1,18 @@
 {
-  "version": "0.17.0",
-  "digest": "4d822d33b63a8b10d745f30163d3d1c8519a76e3052f6ac90974278fab0137ec",
-  "generatedAt": "2026-08-25T10:12:33.942Z",
-  "title": "Storyflow v0.17.0 更新说明",
-  "summary": "Storyflow 0.17.0 让桌面会话、Skill 更新和长时间运行更稳定。",
+  "version": "0.17.1",
+  "digest": "9e98d22dff851e5ce6fc23fdf6c116efb32eb089aaf2b1954aa9495e11802618",
+  "generatedAt": "2026-08-25T12:07:33.562Z",
+  "title": "Storyflow v0.17.1 更新说明",
+  "summary": "Storyflow 0.17.1 修复了部分用户升级后无法启动的问题，并补上独立恢复入口。",
   "highlights": [
-    "编辑入口更顺畅：从标签、权限等设置发起的 AI 编辑会正常创建并发送到对应会话。",
-    "Skill 更新即时生效：安装或更新 Skill 后，当前工作区会自动刷新，不必重启应用。",
-    "会话恢复更可靠：启动、重连和外部修改后，会话列表、元数据与磁盘内容保持一致。",
-    "外部链接更安全：外部 craftagents:// 链接仅保留需要用户确认的 Skill 安装入口，不会直接创建会话、发送消息或删除内容。"
+    "升级后正常启动：自动迁移 0.17.0 遗留的不兼容服务锁，修复 EISDIR 与“已有服务运行”的误报。",
+    "启动失败也能更新：更新检查不再依赖本地服务成功启动；若仍失败，可从提示直接下载最新版覆盖安装。",
+    "数据保持原位：覆盖安装不会删除项目和设置。"
   ],
-  "accentColor": "#af241d",
+  "accentColor": "#af1d72",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 7,
+    "commitCount": 1,
     "userVisibleCommitCount": 0
   }
 }

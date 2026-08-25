@@ -91,14 +91,14 @@
     },
     "apps/auth-broker-worker": {
       "name": "@craft-agent/auth-broker-worker",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "jose": "^6.0.0",
       },
     },
     "apps/cli": {
       "name": "@craft-agent/cli",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "bin": {
         "craft-cli": "src/index.ts",
       },
@@ -114,7 +114,7 @@
     },
     "apps/electron": {
       "name": "@craft-agent/electron",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/messaging-gateway": "workspace:*",
@@ -162,11 +162,11 @@
     },
     "apps/feedback-worker": {
       "name": "@craft-agent/feedback-worker",
-      "version": "0.17.0",
+      "version": "0.17.1",
     },
     "apps/marketing": {
       "name": "@craft-agent/marketing",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "beautiful-mermaid": "^1.1.3",
         "react": "^18.3.1",
@@ -180,7 +180,7 @@
     },
     "apps/model-gateway-worker": {
       "name": "@craft-agent/model-gateway-worker",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@craft-agent/shared": "workspace:*",
         "jose": "^6.0.0",
@@ -188,7 +188,7 @@
     },
     "apps/skills-market": {
       "name": "@craft-agent/skills-market",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@craft-agent/session-tools-core": "workspace:*",
         "@craft-agent/shared": "workspace:*",
@@ -198,14 +198,14 @@
     },
     "apps/tool-gateway-worker": {
       "name": "@craft-agent/tool-gateway-worker",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "jose": "^6.0.0",
       },
     },
     "apps/viewer": {
       "name": "@craft-agent/viewer",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/ui": "workspace:*",
@@ -232,7 +232,7 @@
     },
     "apps/webui": {
       "name": "@craft-agent/webui",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@craft-agent/server-core": "workspace:*",
         "@craft-agent/shared": "workspace:*",
@@ -248,11 +248,11 @@
     },
     "packages/core": {
       "name": "@craft-agent/core",
-      "version": "0.17.0",
+      "version": "0.17.1",
     },
     "packages/messaging-gateway": {
       "name": "@craft-agent/messaging-gateway",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/messaging-whatsapp-worker": "workspace:*",
@@ -268,7 +268,7 @@
     },
     "packages/messaging-whatsapp-worker": {
       "name": "@craft-agent/messaging-whatsapp-worker",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@whiskeysockets/baileys": "^6.7.0",
       },
@@ -279,7 +279,7 @@
     },
     "packages/pi-agent-server": {
       "name": "@craft-agent/pi-agent-server",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@earendil-works/pi-agent-core": "0.84.1",
         "@earendil-works/pi-ai": "0.84.1",
@@ -296,7 +296,7 @@
     },
     "packages/server": {
       "name": "@craft-agent/server",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "bin": {
         "craft-server": "src/index.ts",
       },
@@ -313,7 +313,7 @@
     },
     "packages/server-core": {
       "name": "@craft-agent/server-core",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/shared": "workspace:*",
@@ -332,7 +332,7 @@
     },
     "packages/session-tools-core": {
       "name": "@craft-agent/session-tools-core",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "beautiful-mermaid": "*",
         "js-yaml": "^4.1.1",
@@ -345,7 +345,7 @@
     },
     "packages/shared": {
       "name": "@craft-agent/shared",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/session-tools-core": "workspace:*",
@@ -370,7 +370,7 @@
     },
     "packages/ui": {
       "name": "@craft-agent/ui",
-      "version": "0.17.0",
+      "version": "0.17.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/shared": "workspace:*",
