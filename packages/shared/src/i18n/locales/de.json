@@ -1218,6 +1218,8 @@
   "settings.tools.title": "Werkzeuge",
   "settings.workspace.advanced": "Erweitert",
   "settings.workspace.atLeast2Modes": "Mindestens 2 Modi erforderlich",
+  "settings.workspace.automations": "Projekt-Automatisierungen",
+  "settings.workspace.automationsDesc": "Geplante Aktionen, Prompts und Webhooks dieses Projekts ausführen",
   "settings.workspace.defaultMode": "Standardmodus",
   "settings.workspace.defaultModeDesc": "Steuern, was die KI tun kann",
   "settings.workspace.defaultSources": "Standardquellen",

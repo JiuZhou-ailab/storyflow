@@ -2,6 +2,7 @@
 // output: Startup initialization/gating, disk→memory session loading, debounced persistence, lazy message hydration, idle-release
 // pos: Persistence subdomain under the SessionManager facade; owns initGate and message-loading dedup state
 
+import { mkdirSync } from 'node:fs'
 import {
   listSessionsAsync as listStoredSessions,
   loadSession as loadStoredSession,
@@ -24,9 +25,20 @@ import {
   seedBuiltinLlmConnectionFromDefaults,
   getActiveWorkspace,
 } from '@craft-agent/shared/config'
-import { listSessionWorkspaces, loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
+import {
+  getFreeConversationWorkspace,
+  isFreeConversationWorkspaceId,
+  listSessionWorkspaces,
+  loadWorkspaceConfig,
+} from '@craft-agent/shared/workspaces'
+import { loadAllSources } from '@craft-agent/shared/sources'
 import { InitGate, orderWorkspacesByActiveFirst } from '@craft-agent/server-core/domain'
-import { createManagedSession, DEFAULT_TOKEN_USAGE, type ManagedSession } from './managed-session'
+import {
+  createManagedSession,
+  DEFAULT_TOKEN_USAGE,
+  filterRestoredSourceSlugs,
+  type ManagedSession,
+} from './managed-session'
 import type { InitialAutomationMetadata } from './export-import'
 import { getSessionLog } from './session-runtime'
 
@@ -34,6 +46,7 @@ export interface PersistenceDeps {
   /** Registry lookups/mutations over the shared sessions map. */
   getSession: (sessionId: string) => ManagedSession | undefined
   setSession: (sessionId: string, managed: ManagedSession) => void
+  deleteSession: (sessionId: string) => void
   /**
    * D→J edge: a hydrated transcript may contain orphaned queued messages from a
    * crash; the persistence layer re-queues them and hands dispatch back to the
@@ -77,6 +90,10 @@ export class SessionPersistence {
       // Set up authentication environment variables (critical for SDK to work)
       await this.deps.prepareBootServices()
 
+      // Free Conversations is application-owned storage, so unlike user-owned
+      // Project roots it is safe to create before fail-closed session discovery.
+      mkdirSync(getFreeConversationWorkspace().rootPath, { recursive: true })
+
       // Load existing sessions from disk
       await this.loadSessionsFromDisk()
 
@@ -89,10 +106,10 @@ export class SessionPersistence {
   }
 
   // Load all existing sessions from disk into memory (metadata only - messages are lazy-loaded)
-  async loadSessionsFromDisk(): Promise<void> {
+  async loadSessionsFromDisk(workspaceId?: string): Promise<void> {
     try {
       const workspaces = orderWorkspacesByActiveFirst(
-        listSessionWorkspaces(),
+        listSessionWorkspaces().filter(workspace => !workspaceId || workspace.id === workspaceId),
         getActiveWorkspace()?.id,
       )
       let totalSessions = 0
@@ -105,62 +122,78 @@ export class SessionPersistence {
 
       // Iterate over each workspace and load its sessions
       for (const workspace of workspaces) {
-        const workspaceRootPath = workspace.rootPath
-        const sessionMetadata = await listStoredSessions(workspaceRootPath)
-        // Load workspace config once per workspace for default working directory
-        const wsConfig = loadWorkspaceConfig(workspaceRootPath)
-        const wsDefaultWorkingDir = wsConfig?.defaults?.workingDirectory
+        const loadedSessionIds: string[] = []
+        try {
+          const workspaceRootPath = workspace.rootPath
+          const sessionMetadata = await listStoredSessions(workspaceRootPath)
+          // Load workspace config once per workspace for default working directory
+          const wsConfig = loadWorkspaceConfig(workspaceRootPath)
+          const wsDefaultWorkingDir = wsConfig?.defaults?.workingDirectory
 
-        for (const meta of sessionMetadata) {
-          // Create managed session from metadata only (messages lazy-loaded on demand)
-          // This dramatically reduces memory usage at startup - messages are loaded
-          // when getSession() is called for a specific session
-          const managed = createManagedSession(meta, workspace, {
-            enabledSourceSlugs: undefined,  // Loaded with messages
-            workingDirectory: meta.workingDirectory ?? wsDefaultWorkingDir,
-          })
+          for (const meta of sessionMetadata) {
+            const existing = this.deps.getSession(meta.id)
+            if (existing) {
+              if (existing.workspace.id !== workspace.id) {
+                throw new Error(
+                  `Session ${meta.id} is already registered to Project ${existing.workspace.id}`,
+                )
+              }
+              continue
+            }
 
-          // Migration: clear orphaned llmConnection references (e.g., after connection was deleted)
-          if (managed.llmConnection) {
-            const conn = resolveSessionConnection(managed.llmConnection, undefined)
-            if (!conn) {
-              getSessionLog().warn(`Session ${meta.id} has orphaned llmConnection "${managed.llmConnection}", clearing`)
-              managed.llmConnection = undefined
-              managed.connectionLocked = false
+            // Create managed session from metadata only (messages lazy-loaded on demand)
+            const managed = createManagedSession(meta, workspace, {
+              enabledSourceSlugs: undefined,
+              workingDirectory: meta.workingDirectory ?? wsDefaultWorkingDir,
+            })
+
+            // Migration: clear orphaned llmConnection references (e.g., after connection was deleted)
+            if (managed.llmConnection) {
+              const conn = resolveSessionConnection(managed.llmConnection, undefined)
+              if (!conn) {
+                getSessionLog().warn(`Session ${meta.id} has orphaned llmConnection "${managed.llmConnection}", clearing`)
+                managed.llmConnection = undefined
+                managed.connectionLocked = false
+              }
+            }
+
+            // Initialize mode-manager state for restored sessions even before agent creation.
+            // This keeps diagnostics/effective mode aligned with persisted session metadata.
+            const restoredPermissionMode = managed.permissionMode ?? 'ask'
+            setPermissionMode(meta.id, restoredPermissionMode, { changedBy: 'restore' })
+            permissionModeCounts[restoredPermissionMode]++
+            if (managed.previousPermissionMode) {
+              hydratePreviousPermissionMode(meta.id, managed.previousPermissionMode)
+            }
+
+            this.deps.setSession(meta.id, managed)
+            loadedSessionIds.push(meta.id)
+
+            // Initialize session metadata in AutomationSystem for diffing
+            this.deps.setInitialAutomationMetadata(workspaceRootPath, meta.id, {
+              permissionMode: meta.permissionMode,
+              labels: meta.labels,
+              isFlagged: meta.isFlagged,
+              sessionStatus: meta.sessionStatus,
+              sessionName: managed.name,
+            })
+
+            totalSessions++
+            sessionsSinceYield++
+            if (sessionsSinceYield >= 100) {
+              sessionsSinceYield = 0
+              await new Promise<void>((resolve) => setImmediate(resolve))
             }
           }
 
-          // Initialize mode-manager state for restored sessions even before agent creation.
-          // This keeps diagnostics/effective mode aligned with persisted session metadata.
-          const restoredPermissionMode = managed.permissionMode ?? 'ask'
-          setPermissionMode(meta.id, restoredPermissionMode, { changedBy: 'restore' })
-          permissionModeCounts[restoredPermissionMode]++
-          if (managed.previousPermissionMode) {
-            hydratePreviousPermissionMode(meta.id, managed.previousPermissionMode)
-          }
-
-          this.deps.setSession(meta.id, managed)
-
-          // Initialize session metadata in AutomationSystem for diffing
-          this.deps.setInitialAutomationMetadata(workspaceRootPath, meta.id, {
-            permissionMode: meta.permissionMode,
-            labels: meta.labels,
-            isFlagged: meta.isFlagged,
-            sessionStatus: meta.sessionStatus,
-            sessionName: managed.name,
-          })
-
-          totalSessions++
-          sessionsSinceYield++
-          if (sessionsSinceYield >= 100) {
-            sessionsSinceYield = 0
-            await new Promise<void>((resolve) => setImmediate(resolve))
-          }
+          this.initGate.markScopeReady(workspace.id)
+        } catch (error) {
+          for (const sessionId of loadedSessionIds) this.deps.deleteSession(sessionId)
+          totalSessions -= loadedSessionIds.length
+          this.initGate.markScopeFailed(workspace.id, error)
+          getSessionLog().error(`Failed to index Sessions for Project ${workspace.id}:`, error)
+          if (workspaceId) throw error
         }
-
-        // ADR 0013: open this workspace's gate as soon as its sessions are indexed,
-        // so entering one project never waits on other projects' histories.
-        this.initGate.markScopeReady(workspace.id)
 
         // listStoredSessions() is synchronous per workspace. Yield between
         // roots so workspace/file RPCs remain responsive during restoration.
@@ -204,24 +237,42 @@ export class SessionPersistence {
   private hydrateMessagesForColdPersist(managed: ManagedSession): void {
     getSessionLog().debug(`Cold-load triggered for persistSession on ${managed.id}`)
     const stored = loadStoredSession(managed.workspace.rootPath, managed.id)
-    if (stored) {
-      managed.messages = (stored.messages || []).map(storedToMessage)
-      managed.tokenUsage = stored.tokenUsage
-      // Deferred-load fields (intentionally undefined after startup, see
-      // loadSessionsFromDisk). Populate from disk only if not already set in
-      // memory — a caller may have mutated them via setSessionSources etc.
-      if (managed.enabledSourceSlugs === undefined) managed.enabledSourceSlugs = stored.enabledSourceSlugs
-      if (managed.lastReadMessageId === undefined) managed.lastReadMessageId = stored.lastReadMessageId
-      if (managed.hasUnread === undefined) managed.hasUnread = stored.hasUnread
-      if (managed.sharedUrl === undefined) managed.sharedUrl = stored.sharedUrl
-      if (managed.sharedId === undefined) managed.sharedId = stored.sharedId
-      if (managed.transferredSessionSummary === undefined) managed.transferredSessionSummary = stored.transferredSessionSummary
-      if (managed.transferredSessionSummaryApplied === undefined) managed.transferredSessionSummaryApplied = stored.transferredSessionSummaryApplied
-
-      this.recoverOrphanedQueuedMessages(managed)
-      getSessionLog().debug(`Cold-hydrated ${managed.messages.length} messages for session ${managed.id}`)
+    if (!stored) {
+      throw new Error(`Cannot persist cold Session ${managed.id}: its durable transcript is unavailable.`)
     }
+    managed.messages = (stored.messages || []).map(storedToMessage)
+    managed.tokenUsage = stored.tokenUsage
+    // Deferred-load fields (intentionally undefined after startup, see
+    // loadSessionsFromDisk). Populate from disk only if not already set in
+    // memory — a caller may have mutated them via setSessionSources etc.
+    if (managed.enabledSourceSlugs === undefined) {
+      managed.enabledSourceSlugs = this.restoreEnabledSourceSlugs(managed, stored.enabledSourceSlugs)
+    }
+    if (managed.lastReadMessageId === undefined) managed.lastReadMessageId = stored.lastReadMessageId
+    if (managed.hasUnread === undefined) managed.hasUnread = stored.hasUnread
+    if (managed.sharedUrl === undefined) managed.sharedUrl = stored.sharedUrl
+    if (managed.sharedId === undefined) managed.sharedId = stored.sharedId
+    if (managed.transferredSessionSummary === undefined) managed.transferredSessionSummary = stored.transferredSessionSummary
+    if (managed.transferredSessionSummaryApplied === undefined) managed.transferredSessionSummaryApplied = stored.transferredSessionSummaryApplied
+
+    this.recoverOrphanedQueuedMessages(managed)
+    getSessionLog().debug(`Cold-hydrated ${managed.messages.length} messages for session ${managed.id}`)
     managed.messagesLoaded = true
+  }
+
+  private restoreEnabledSourceSlugs(
+    managed: ManagedSession,
+    storedSlugs: readonly string[] | undefined,
+    projectRootOverride?: string,
+  ): string[] | undefined {
+    const projectRoot = isFreeConversationWorkspaceId(managed.workspace.id)
+      ? undefined
+      : projectRootOverride ?? managed.workspace.rootPath
+    return filterRestoredSourceSlugs(
+      managed.workspace,
+      storedSlugs,
+      loadAllSources(projectRoot, managed.workspace.id),
+    )
   }
 
   // Shared by both hydration paths: find orphaned queued messages from
@@ -358,31 +409,48 @@ export class SessionPersistence {
    */
   private async loadMessagesFromDisk(managed: ManagedSession): Promise<void> {
     const storedSession = loadStoredSession(managed.workspace.rootPath, managed.id)
-    if (storedSession) {
-      managed.messages = (storedSession.messages || []).map(storedToMessage)
-      managed.tokenUsage = storedSession.tokenUsage
-      managed.lastReadMessageId = storedSession.lastReadMessageId
-      managed.hasUnread = storedSession.hasUnread  // Explicit unread flag for NEW badge state machine
-      managed.enabledSourceSlugs = storedSession.enabledSourceSlugs
-      managed.sharedUrl = storedSession.sharedUrl
-      managed.sharedId = storedSession.sharedId
-      // Sync name from disk - ensures title persistence across lazy loading
-      managed.name = storedSession.name
-      // Restore LLM connection state - ensures correct provider on resume
-      if (storedSession.llmConnection) {
-        managed.llmConnection = normalizeLlmConnectionSlug(storedSession.llmConnection)
-      }
-      if (storedSession.connectionLocked) {
-        managed.connectionLocked = storedSession.connectionLocked
-      }
-      // Sync transferred session summary state from disk
-      managed.transferredSessionSummary = storedSession.transferredSessionSummary
-      managed.transferredSessionSummaryApplied = storedSession.transferredSessionSummaryApplied
-      getSessionLog().debug(`Lazy-loaded ${managed.messages.length} messages for session ${managed.id}`)
-
-      // Queue recovery: find orphaned queued messages from crash/restart and re-queue them
-      this.recoverOrphanedQueuedMessages(managed)
+    if (!storedSession) {
+      throw new Error(`Cannot load cold Session ${managed.id}: its durable transcript is unavailable.`)
     }
+    this.hydrateMessages(managed, storedSession)
+  }
+
+  /** Hydrate a cold Session from a validated relink target, never the missing old root. */
+  hydrateMessagesFromRoot(managed: ManagedSession, rootPath: string): void {
+    const storedSession = loadStoredSession(rootPath, managed.id)
+    if (!storedSession || storedSession.id !== managed.id) {
+      throw new Error(`The selected Project does not contain readable Session ${managed.id}.`)
+    }
+    this.hydrateMessages(managed, storedSession, rootPath)
+  }
+
+  private hydrateMessages(
+    managed: ManagedSession,
+    storedSession: StoredSession,
+    projectRootOverride?: string,
+  ): void {
+    managed.messages = (storedSession.messages || []).map(storedToMessage)
+    managed.tokenUsage = storedSession.tokenUsage
+    managed.lastReadMessageId = storedSession.lastReadMessageId
+    managed.hasUnread = storedSession.hasUnread
+    managed.enabledSourceSlugs = this.restoreEnabledSourceSlugs(
+      managed,
+      storedSession.enabledSourceSlugs,
+      projectRootOverride,
+    )
+    managed.sharedUrl = storedSession.sharedUrl
+    managed.sharedId = storedSession.sharedId
+    managed.name = storedSession.name
+    if (storedSession.llmConnection) {
+      managed.llmConnection = normalizeLlmConnectionSlug(storedSession.llmConnection)
+    }
+    if (storedSession.connectionLocked) {
+      managed.connectionLocked = storedSession.connectionLocked
+    }
+    managed.transferredSessionSummary = storedSession.transferredSessionSummary
+    managed.transferredSessionSummaryApplied = storedSession.transferredSessionSummaryApplied
     managed.messagesLoaded = true
+    getSessionLog().debug(`Lazy-loaded ${managed.messages.length} messages for session ${managed.id}`)
+    this.recoverOrphanedQueuedMessages(managed)
   }
 }

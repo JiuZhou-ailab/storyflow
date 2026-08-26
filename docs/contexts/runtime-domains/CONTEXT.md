@@ -28,6 +28,18 @@ _Avoid_: Security grant, mounted folder
 A Runtime Domain owned by one project whose history, default working directory, source overlay, and deliverables stay with that project.
 _Avoid_: Global chat, free conversation
 
+**Project**:
+A user-owned directory plus one Product Host registration. A Project may exist with zero Sessions and keeps the same identity when its directory moves.
+_Avoid_: Workspace path, Session container, Agent runtime
+
+**Project ID**:
+The stable Product Host identifier stored in the global Project registry. Directory-owned compatibility metadata and copied files never create or transfer this identity.
+_Avoid_: rootPath, directory config id, Session id
+
+**Project Root Locator**:
+The current canonical filesystem path recorded for a Project. It may become unavailable and may be changed only by explicit relink without changing the Project ID.
+_Avoid_: Project identity, trust grant
+
 **Project Conversation**:
 A conversation owned by one Project Work Domain whose history, context, and deliverables remain with that project.
 _Avoid_: Free conversation with a selected folder
@@ -69,7 +81,7 @@ A Host-enforced fixed tool set assigned to a Subagent Run independently of its c
 _Avoid_: Agent role, persona, prompt-only permission
 
 **Runtime Workspace**:
-The existing Workspace resolved from one workspace id. It binds history, default working directory, navigation identity, and the resource view without a parallel owner or context wrapper.
+The existing Workspace resolved from one Project ID or application-owned workspace id. Its `rootPath` is a locator projected into the runtime, not the identity itself.
 _Avoid_: Runtime context wrapper, navigation identity
 
 **Application Workspace**:
@@ -105,9 +117,13 @@ The model-visible prompt assembled by Pi from the Product System Prompt, Pi-nati
 _Avoid_: Storyflow prompt string, settings field, duplicated resource assembly
 
 **Local User Trust Space**:
-The filesystem authority already held by the operating-system user running Storyflow. Local Agents use this same authority across projects; a Project selects context and defaults, not authorization.
+The filesystem authority already held by the operating-system user running Storyflow. It defines what the Host process can access, but opening a Project does not express user consent for project-owned executable configuration.
 _Avoid_: Project sandbox, attachment grant
 
+**Project Executable Capability Grant**:
+Explicit Product Host consent for one project-owned executable capability. Project instructions and Skills may provide context, but permission expansions, automatic execute defaults, local subprocess Sources, Automations, and Extensions cannot grant themselves authority through Project files.
+_Avoid_: Project registration, filesystem access, one trusted-project boolean
+
 **Trusted Extension**:
-An executable Pi Extension admitted by Pi's package, settings, and project-trust contracts and instantiated by the Agent Kernel.
+An executable Pi Extension admitted by Pi's package/settings contracts or an explicit Project Executable Capability Grant and instantiated by the Agent Kernel.
 _Avoid_: Skill Package extension, Storyflow plugin registry entry

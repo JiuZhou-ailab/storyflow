@@ -1,5 +1,5 @@
 /**
- * input: Loaded Sources plus host-resolved credentials and token getters
+ * input: Loaded Sources plus host-resolved credentials, token getters, and execution grants
  * output: MCP and in-process API server configurations
  * pos: Source connection builder beneath the session runtime
  */
@@ -51,6 +51,16 @@ export interface BuiltServers {
   apiServers: Record<string, ReturnType<typeof createApiServer>>;
   /** Sources that failed to build (missing auth, etc.) */
   errors: Array<{ sourceSlug: string; error: string }>;
+}
+
+export function isProjectStdioExecutionAllowed(
+  source: Pick<LoadedSource, 'origin' | 'config'>,
+  allowProjectStdio: boolean,
+): boolean {
+  return allowProjectStdio
+    || source.origin !== 'workspace'
+    || source.config.type !== 'mcp'
+    || source.config.mcp?.transport !== 'stdio';
 }
 
 /**
@@ -299,12 +309,14 @@ export class SourceServerBuilder {
    * @param sourcesWithCredentials - Sources with their pre-loaded credentials
    * @param getTokenForSource - Function to get token getter for OAuth sources
    * @param sessionPath - Optional path to session folder for saving large API responses
+   * @param options - Host-owned execution grants for project-defined Sources
    */
   async buildAll(
     sourcesWithCredentials: SourceWithCredential[],
     getTokenForSource?: (source: LoadedSource) => (() => Promise<string>) | undefined,
     sessionPath?: string,
-    summarize?: SummarizeCallback
+    summarize?: SummarizeCallback,
+    options: { allowProjectStdio?: boolean } = {}
   ): Promise<BuiltServers> {
     const mcpServers: Record<string, McpServerConfig> = {};
     const apiServers: Record<string, ReturnType<typeof createApiServer>> = {};
@@ -312,6 +324,7 @@ export class SourceServerBuilder {
 
     for (const { source, token, credential } of sourcesWithCredentials) {
       if (!isSourceUsable(source)) continue;
+      if (!isProjectStdioExecutionAllowed(source, options.allowProjectStdio === true)) continue;
 
       try {
         if (source.config.type === 'mcp') {

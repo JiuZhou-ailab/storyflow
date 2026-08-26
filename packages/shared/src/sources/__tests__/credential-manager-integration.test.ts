@@ -38,6 +38,7 @@ function createMockSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSo
     folderPath: '/tmp/test/sources/test-source',
     workspaceRootPath: '/tmp/test',
     workspaceId: 'test-workspace',
+    definitionIdentity: 'test-definition',
     origin: 'workspace',
   };
 }
@@ -254,3 +255,35 @@ describe('isMultiHeaderCredential type guard', () => {
     expect(isMultiHeaderCredential({ 'X-API-Key': 'value' })).toBe(true);
   });
 });
+
+describe('Source credential identity migration', () => {
+  test('does not bind an unscoped legacy credential to the current definition', async () => {
+    const source = createMockSource()
+    const manager = new SourceCredentialManager()
+    const values = new Map<string, { value: string }>()
+    const key = (id: unknown) => JSON.stringify(id)
+    const legacyId = {
+      type: 'source_apikey' as const,
+      workspaceId: source.workspaceId,
+      sourceId: source.config.slug,
+    }
+    values.set(key(legacyId), { value: 'legacy-token' })
+    const credentialStore = {
+      get: mock(async (id: unknown) => values.get(key(id)) ?? null),
+      set: mock(async (id: unknown, value: { value: string }) => { values.set(key(id), value) }),
+      delete: mock(async (id: unknown) => values.delete(key(id))),
+    }
+    const storeSpy = spyOn(credentialsModule, 'getCredentialManager')
+      .mockReturnValue(credentialStore as never)
+
+    try {
+      expect(await manager.load(source)).toBeNull()
+      expect(values.has(key(manager.getCredentialId(source)))).toBe(false)
+      expect(values.get(key(legacyId))).toEqual({ value: 'legacy-token' })
+      expect(credentialStore.set).not.toHaveBeenCalled()
+      expect(credentialStore.delete).not.toHaveBeenCalled()
+    } finally {
+      storeSpy.mockRestore()
+    }
+  })
+})

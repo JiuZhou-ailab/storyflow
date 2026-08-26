@@ -321,6 +321,27 @@ class SessionPersistenceQueue {
   }
 
   /**
+   * Settle and forget a retired locator's pending write, including a rejected
+   * terminal tail. Callers must persist their current snapshot elsewhere.
+   */
+  async retire(sessionId: string): Promise<void> {
+    const entry = this.pending.get(sessionId)
+    if (entry) {
+      clearTimeout(entry.timer)
+      this.pending.delete(sessionId)
+    }
+
+    const write = this.writeInProgress.get(sessionId)
+    if (write) {
+      await write.catch(() => undefined)
+      if (this.writeInProgress.get(sessionId) === write) {
+        this.writeInProgress.delete(sessionId)
+      }
+    }
+    this.lastWrittenHeaderSignature.delete(sessionId)
+  }
+
+  /**
    * Flush all pending and timer-started sessions. Call this on app quit.
    */
   async flushAll(): Promise<void> {

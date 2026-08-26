@@ -10,7 +10,7 @@
  * connection tests, and auth verification.
  */
 
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import type { SessionToolContext } from '../context.ts';
 import type { ToolResult, SourceConfig, ConnectionStatus } from '../types.ts';
 import { errorResponse } from '../response.ts';
@@ -97,6 +97,9 @@ export async function handleSourceTest(
   if (!source) {
     return errorResponse(`Failed to load source config for '${sourceSlug}'.`);
   }
+  if (!ctx.isSourceExecutionAllowed(sourceSlug)) {
+    return errorResponse(`Source '${sourceSlug}' is not enabled by Host settings.`);
+  }
   const definitionReadOnly = ctx.isSourceDefinitionReadOnly?.(sourceSlug) === true;
 
   // Validate loaded config with basic validator
@@ -111,7 +114,7 @@ export async function handleSourceTest(
   // 4. Icon handling
   lines.push('\n## Icon Status');
   const sourcePath = getSourcePath(ctx.workspacePath, sourceSlug);
-  const iconResult = await handleIconCheck(ctx, sourcePath, sourceSlug, source);
+  const iconResult = handleIconCheck(ctx, sourcePath, source);
   lines.push(...iconResult.lines);
   if (iconResult.hasWarning) hasWarnings = true;
 
@@ -230,12 +233,11 @@ export async function handleSourceTest(
 // Icon Handling
 // ============================================================
 
-async function handleIconCheck(
+function handleIconCheck(
   ctx: SessionToolContext,
   sourcePath: string,
-  sourceSlug: string,
   source: SourceConfig
-): Promise<{ lines: string[]; hasWarning: boolean }> {
+): { lines: string[]; hasWarning: boolean } {
   const lines: string[] = [];
   let hasWarning = false;
 
@@ -255,23 +257,9 @@ async function handleIconCheck(
     return { lines, hasWarning };
   }
 
-  // Check if icon is a URL that can be downloaded
-  if (source.icon && ctx.isIconUrl && ctx.isIconUrl(source.icon)) {
-    if (ctx.downloadSourceIcon) {
-      lines.push(`ℹ Icon URL detected: ${source.icon}`);
-      try {
-        const cachedPath = await ctx.downloadSourceIcon(sourceSlug, source.icon);
-        if (cachedPath) {
-          lines.push(`✓ Icon downloaded and cached`);
-          return { lines, hasWarning };
-        }
-      } catch (e) {
-        lines.push(`⚠ Failed to download icon: ${e instanceof Error ? e.message : 'Unknown error'}`);
-        hasWarning = true;
-      }
-    } else {
-      lines.push(`ℹ Icon URL configured but download not available: ${source.icon}`);
-    }
+  if (source.icon && ctx.isIconUrl?.(source.icon)) {
+    lines.push(`✓ Icon URL configured: ${source.icon}`);
+    return { lines, hasWarning };
   }
 
   // Check if icon is an emoji
@@ -280,37 +268,12 @@ async function handleIconCheck(
     return { lines, hasWarning };
   }
 
-  // Try to auto-fetch icon from service
-  if (!source.icon && ctx.deriveServiceUrl && ctx.getHighQualityLogoUrl && ctx.downloadIcon) {
-    const serviceUrl = ctx.deriveServiceUrl(source);
-    if (serviceUrl) {
-      lines.push(`ℹ Attempting to auto-fetch icon from service URL...`);
-      try {
-        const logoUrl = await ctx.getHighQualityLogoUrl(serviceUrl, sourceSlug);
-        if (logoUrl) {
-          const destPath = join(sourcePath, 'icon.png');
-          const downloaded = await ctx.downloadIcon(destPath, logoUrl, sourceSlug);
-          if (downloaded) {
-            lines.push(`✓ Icon auto-fetched and saved`);
-            return { lines, hasWarning };
-          }
-        }
-      } catch {
-        // Silently continue if auto-fetch fails
-      }
-    }
-  }
-
   // No icon found
   hasWarning = true;
   lines.push('⚠ No icon configured');
   lines.push('  Options:');
   lines.push('  - Add icon.png or icon.svg to source folder');
   lines.push('  - Set "icon" field to a URL or emoji in config.json');
-  if (source.type === 'api' && source.api?.baseUrl) {
-    lines.push(`  - Icon may be auto-fetched from ${new URL(source.api.baseUrl).hostname}`);
-  }
-
   return { lines, hasWarning };
 }
 
@@ -503,12 +466,11 @@ async function testApiConnectionWithAuth(
   const lines: string[] = [];
 
   // Build LoadedSource for credential manager
-  const workspaceId = basename(ctx.workspacePath) || '';
   const loadedSource = {
     config: source,
     folderPath: getSourcePath(ctx.workspacePath, sourceSlug),
     workspaceRootPath: ctx.workspacePath,
-    workspaceId,
+    workspaceId: ctx.workspaceId,
   };
 
   // Resolve managed access through the host; every other API uses the Source credential store.
@@ -760,6 +722,10 @@ async function testMcpConnection(
   let error: string | undefined;
 
   if (source.mcp?.transport === 'stdio') {
+    if (ctx.isStdioMcpExecutionAllowed?.(sourceSlug) === false) {
+      const error = 'Project-local MCP execution is disabled by Host settings';
+      return { lines: [`✗ ${error}`], success: false, hasError: true, error };
+    }
     // Stdio MCP - use validateStdioMcpConnection if available
     if (ctx.validateStdioMcpConnection && source.mcp.command) {
       lines.push(`ℹ Testing stdio MCP: ${source.mcp.command}`);
@@ -818,12 +784,11 @@ async function testMcpConnection(
         let headers = source.mcp.headers ? { ...source.mcp.headers } : undefined;
         let accessToken: string | undefined;
         if (ctx.credentialManager) {
-          const workspaceId = basename(ctx.workspacePath) || '';
           const loadedSource = {
             config: source,
             folderPath: getSourcePath(ctx.workspacePath, sourceSlug),
             workspaceRootPath: ctx.workspacePath,
-            workspaceId,
+            workspaceId: ctx.workspaceId,
           };
 
           if (source.mcp.headerNames?.length) {
@@ -949,12 +914,11 @@ async function checkAuthStatus(
     if (source.type === 'mcp' && !ctx.validateMcpConnection) {
       lines.push('✓ Source is authenticated');
     } else if (ctx.credentialManager) {
-      const workspaceId = basename(ctx.workspacePath) || '';
       const loadedSource = {
         config: source,
         folderPath: getSourcePath(ctx.workspacePath, sourceSlug),
         workspaceRootPath: ctx.workspacePath,
-        workspaceId,
+        workspaceId: ctx.workspaceId,
       };
 
       try {

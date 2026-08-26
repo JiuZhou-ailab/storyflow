@@ -23,7 +23,13 @@ import type { Message } from '@craft-agent/core/types'
 import type { SessionStatus } from '@craft-agent/shared/sessions'
 import { readFileAttachment } from '@craft-agent/shared/utils'
 import { releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
-import type { AgentInstance, ManagedSession } from './managed-session'
+import {
+  canAutoEnableSource,
+  capPermissionMode,
+  intersectSourceSlugs,
+  type AgentInstance,
+  type ManagedSession,
+} from './managed-session'
 import { getSessionLog, getResourceProjectRoot } from './session-runtime'
 import { buildServersFromSources } from './source-bridge'
 
@@ -252,8 +258,14 @@ export function wireAgentCallbacks(
       name: request.name,
       llmConnection: request.llmConnection ?? managed.llmConnection,
       model: request.model ?? managed.model,
-      enabledSourceSlugs: request.enabledSourceSlugs ?? managed.enabledSourceSlugs,
-      permissionMode: request.permissionMode ?? managed.permissionMode,
+      enabledSourceSlugs: request.enabledSourceSlugs
+        ? intersectSourceSlugs(request.enabledSourceSlugs, managed.enabledSourceSlugs)
+        : managed.enabledSourceSlugs,
+      permissionMode: capPermissionMode(
+        request.permissionMode,
+        managed.permissionMode,
+        managed.permissionMode ?? 'ask',
+      ),
       thinkingLevel: request.thinkingLevel ?? managed.thinkingLevel,
       labels: request.labels ?? managed.labels,
       workingDirectory: request.workingDirectory,
@@ -457,7 +469,7 @@ export function wireAgentCallbacks(
     }
 
     // Load the source to check if it exists and is ready
-    const sources = getSourcesBySlugs(projectRoot, [sourceSlug])
+    const sources = getSourcesBySlugs(projectRoot, [sourceSlug], managed.workspace.id)
     if (sources.length === 0) {
       getSessionLog().warn(`Source ${sourceSlug} not found in workspace`)
       return false
@@ -474,6 +486,13 @@ export function wireAgentCallbacks(
     // Track whether we added this slug (for rollback on failure)
     const slugSet = new Set(managed.enabledSourceSlugs || [])
     const wasAlreadyEnabled = slugSet.has(sourceSlug)
+    if (
+      !wasAlreadyEnabled
+      && !canAutoEnableSource(managed.workspace, managed.enabledSourceSlugs ?? [], source)
+    ) {
+      getSessionLog().warn(`Source ${sourceSlug} was not granted for automatic activation by the Host`)
+      return false
+    }
 
     // Add to enabled sources if not already there
     if (!wasAlreadyEnabled) {
@@ -483,10 +502,20 @@ export function wireAgentCallbacks(
     }
 
     // Build server configs for all enabled sources
-    const allEnabledSources = getSourcesBySlugs(projectRoot, managed.enabledSourceSlugs || [])
+    const allEnabledSources = getSourcesBySlugs(
+      projectRoot,
+      managed.enabledSourceSlugs || [],
+      managed.workspace.id,
+    )
     // Pass session path so large API responses can be saved to session folder
     const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
-    const { mcpServers, apiServers, errors } = await buildServersFromSources(allEnabledSources, sessionPath, managed.tokenRefreshManager, managed.agent?.getSummarizeCallback())
+    const { mcpServers, apiServers, errors, resolvedSources } = await buildServersFromSources(
+      allEnabledSources,
+      sessionPath,
+      managed.tokenRefreshManager,
+      managed.agent?.getSummarizeCallback(),
+      managed.workspace,
+    )
 
     if (errors.length > 0) {
       getSessionLog().warn(`Source build errors during auto-enable:`, errors)
@@ -505,12 +534,12 @@ export function wireAgentCallbacks(
     }
 
     // Apply source servers to the agent
-    const intendedSlugs = allEnabledSources
+    const intendedSlugs = resolvedSources
       .filter(isSourceUsable)
       .map(s => s.config.slug)
 
     // Update source runtime config/credentials for backends that need it
-    await managed.agent!.applyBridgeUpdates({ sessionPath, enabledSources: allEnabledSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source enable' })
+    await managed.agent!.applyBridgeUpdates({ sessionPath, enabledSources: resolvedSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source enable' })
 
     await managed.agent!.setSourceServers(mcpServers, apiServers, intendedSlugs)
 

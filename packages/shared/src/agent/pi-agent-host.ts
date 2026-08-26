@@ -28,6 +28,7 @@ import type {
 } from './backend/types.ts';
 import { AbortReason } from './backend/types.ts';
 import type { Workspace } from '../config/storage.ts';
+import { isFreeConversationWorkspaceId } from '../workspaces/application-context.ts';
 
 // Core modules
 import { PermissionManager } from './core/permission-manager.ts';
@@ -150,6 +151,7 @@ export abstract class PiAgentHost {
       workingDirectory: this.workingDirectory,
       plansFolderPath: getSessionPlansPath(config.workspace.rootPath, this._sessionId),
       dataFolderPath: getSessionDataPath(config.workspace.rootPath, this._sessionId),
+      allowProjectGrants: isFreeConversationWorkspaceId(config.workspace.id),
     });
 
     // SourceManager: tracks active/inactive sources and formats state for context injection

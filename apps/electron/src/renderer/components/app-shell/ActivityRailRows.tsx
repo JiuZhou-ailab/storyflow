@@ -13,11 +13,13 @@ import {
   Loader2,
   MoreHorizontal,
   Pencil,
+  ShieldAlert,
   SquarePen,
   Trash2,
 } from 'lucide-react'
 import { useAtomValue } from 'jotai'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -188,6 +190,7 @@ export function ProjectFolderRow({
   sessionActions,
   onRenameSession,
   onOpenInNewWindow,
+  onRelink,
   onRename,
   onArchive,
   onRestore,
@@ -210,11 +213,13 @@ export function ProjectFolderRow({
   sessionActions?: ActivityRailSessionActions
   onRenameSession?: (meta: SessionMeta) => void
   onOpenInNewWindow?: () => void
+  onRelink?: () => void
   onRename?: () => void
   onArchive?: () => void
   onRestore?: () => void
   onRemove?: () => void
 }) {
+  const { t } = useTranslation()
   const [showAllSessions, setShowAllSessions] = React.useState(false)
   const visibleSessions = showAllSessions ? sessions : sessions?.slice(0, PROJECT_SESSION_LIMIT)
   const hasMoreSessions = (sessions?.length ?? 0) > PROJECT_SESSION_LIMIT
@@ -243,7 +248,12 @@ export function ProjectFolderRow({
             ? <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
             : <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />}
           <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/85">{workspace.name}</span>
-          {loadingSessions || hasActiveSession ? (
+          {workspace.rootAvailable === false ? (
+            <ShieldAlert
+              className="h-3.5 w-3.5 shrink-0 text-info"
+              aria-label={t('workspace.reconnect', { name: workspace.name })}
+            />
+          ) : loadingSessions || hasActiveSession ? (
             <Loader2
               className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground/75"
               aria-label={loadingSessions ? '正在加载对话' : '项目中有对话正在运行'}
@@ -252,7 +262,7 @@ export function ProjectFolderRow({
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="有未读对话" />
           ) : null}
         </button>
-        {(onOpenInNewWindow || onRename || onArchive || onRestore || onRemove) ? (
+        {(onOpenInNewWindow || onRelink || onRename || onArchive || onRestore || onRemove) ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -267,6 +277,12 @@ export function ProjectFolderRow({
               </button>
             </DropdownMenuTrigger>
             <StyledDropdownMenuContent align="end" sideOffset={4}>
+              {onRelink ? (
+                <StyledDropdownMenuItem onClick={onRelink}>
+                  <FolderOpen className="size-3.5" />
+                  <span>{t('workspace.reconnect', { name: workspace.name })}</span>
+                </StyledDropdownMenuItem>
+              ) : null}
               {onOpenInNewWindow ? (
                 <StyledDropdownMenuItem onClick={onOpenInNewWindow}>
                   <ArrowUpRight className="size-3.5" />

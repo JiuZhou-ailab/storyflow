@@ -5,12 +5,10 @@
 import * as React from 'react'
 import type { ComponentEntry } from './types'
 import { AttachmentPreview } from '@/components/app-shell/AttachmentPreview'
-import { SetupAuthBanner } from '@/components/app-shell/SetupAuthBanner'
 import { TurnCard, type ActivityItem } from '@craft-agent/ui'
 import { ChatInputZone, InputContainer } from '@/components/app-shell/input'
 import { setRecentWorkingDirs } from '@/components/app-shell/input/working-directory-history'
 import type { StructuredResponse } from '@/components/app-shell/input/structured/types'
-import { EmptyStateHint, getHintCount, getHintTemplate } from '@/components/chat/EmptyStateHint'
 import { Button } from '@/components/ui/button'
 import { motion } from 'motion/react'
 import { ArrowUp, Paperclip, ChevronDown, Circle, Sparkles } from 'lucide-react'
@@ -835,31 +833,7 @@ function PermissionInputToggle({ autoToggle = false, autoToggleInterval = 3000, 
   )
 }
 
-// Generate variants for all hints dynamically
-const emptyStateHintVariants = Array.from({ length: getHintCount() }, (_, i) => ({
-  name: `Hint ${i + 1}`,
-  description: getHintTemplate(i).slice(0, 50) + '...',
-  props: { hintIndex: i },
-}))
-
 export const chatComponents: ComponentEntry[] = [
-  {
-    id: 'empty-state-hint',
-    name: 'EmptyStateHint',
-    category: 'Chat',
-    description: 'Rotating workflow suggestions for empty chat state with inline entity badges (sources, files, folders, skills)',
-    component: EmptyStateHint,
-    props: [
-      {
-        name: 'hintIndex',
-        description: 'Specific hint to display (0-14). Leave empty for random.',
-        control: { type: 'number', min: 0, max: 14, step: 1 },
-        defaultValue: 0,
-      },
-    ],
-    variants: emptyStateHintVariants,
-    mockData: () => ({}),
-  },
   {
     id: 'attachment-preview',
     name: 'AttachmentPreview',
@@ -891,45 +865,6 @@ export const chatComponents: ComponentEntry[] = [
     mockData: () => ({
       attachments: [sampleImageAttachment, samplePdfAttachment],
       onRemove: mockAttachmentCallbacks.onRemove,
-    }),
-  },
-  {
-    id: 'setup-auth-banner',
-    name: 'SetupAuthBanner',
-    category: 'Chat',
-    description: 'Shows when an agent needs activation or authentication',
-    component: SetupAuthBanner,
-    props: [
-      {
-        name: 'state',
-        description: 'Banner state',
-        control: {
-          type: 'select',
-          options: [
-            { label: 'Hidden', value: 'hidden' },
-            { label: 'MCP Auth', value: 'mcp_auth' },
-            { label: 'API Auth', value: 'api_auth' },
-            { label: 'Error', value: 'error' },
-          ],
-        },
-        defaultValue: 'mcp_auth',
-      },
-      {
-        name: 'reason',
-        description: 'Custom reason message',
-        control: { type: 'string', placeholder: 'Optional custom reason' },
-        defaultValue: '',
-      },
-    ],
-    variants: [
-      { name: 'MCP Auth', props: { state: 'mcp_auth' } },
-      { name: 'API Auth', props: { state: 'api_auth' } },
-      { name: 'Custom Reason', props: { state: 'api_auth', reason: 'Your OAuth token has expired. Please re-authenticate to continue.' } },
-      { name: 'Error', props: { state: 'error' } },
-      { name: 'Hidden', props: { state: 'hidden' } },
-    ],
-    mockData: () => ({
-      onAction: () => console.log('[Playground] Setup/Auth action clicked'),
     }),
   },
   {

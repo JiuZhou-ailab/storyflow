@@ -160,12 +160,8 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
       ? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId)
       : undefined
     const workspaceId = windowWorkspaceId ?? ctx.workspaceId
-    try {
-      // Scoped to the workspace actually read below (ADR 0013).
-      await sessionManager.waitForInit(workspaceId)
-    } catch (error) {
-      log.error('GET_SESSIONS continuing after initialization failure:', error)
-    }
+    // Scoped failures are surfaced instead of presenting partial history as empty.
+    await sessionManager.waitForInit(workspaceId)
     const end = perf.start('rpc.getSessions')
     const sessions = sessionManager.getSessions(workspaceId ?? undefined)
     end()
@@ -192,25 +188,15 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     if (!workspaceId) {
       throw new Error('sessions:listByWorkspace requires a workspaceId')
     }
-    try {
-      // Scoped to the requested workspace, which is not necessarily the caller's
-      // own runtime domain (e.g. the rail listing Free Conversations).
-      await sessionManager.waitForInit(workspaceId)
-    } catch (error) {
-      log.error('LIST_SESSIONS_BY_WORKSPACE continuing after initialization failure:', error)
-    }
+    await sessionManager.waitForInit(workspaceId)
     return sessionManager.getSessions(workspaceId)
   })
 
   // Get unread summary across all workspaces
   server.handle(RPC_CHANNELS.sessions.GET_UNREAD_SUMMARY, async () => {
-    try {
-      // Cross-workspace aggregate: must wait for global discovery, not one shard,
-      // or the summary would silently omit not-yet-indexed workspaces.
-      await sessionManager.waitForInit()
-    } catch (error) {
-      log.error('GET_UNREAD_SUMMARY continuing after initialization failure:', error)
-    }
+    // Cross-workspace aggregate waits for discovery; failed Projects are logged
+    // individually while healthy Project shards remain available.
+    await sessionManager.waitForInit()
     return sessionManager.getUnreadSummary()
   })
 
@@ -634,9 +620,9 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // targetWorkspaceId is passed explicitly (not from context) so the renderer
   // can import into any workspace the server manages, not just the active one.
   const importHandler = async (_ctx: any, targetWorkspaceId: string, bundle: unknown, mode: string) => {
-    await sessionManager.waitForInit()
     if (!targetWorkspaceId || typeof targetWorkspaceId !== 'string') throw new Error('targetWorkspaceId is required')
     if (mode !== 'move' && mode !== 'fork') throw new Error(`Invalid dispatch mode: ${mode}`)
+    await sessionManager.waitForInit(targetWorkspaceId)
 
     return sessionManager.importSession(targetWorkspaceId, bundle as import('@craft-agent/shared/sessions').SessionBundle, mode)
   }
@@ -657,8 +643,8 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
 
   // Import a summarized remote-transfer payload into a target workspace.
   server.handle(RPC_CHANNELS.sessions.IMPORT_REMOTE_TRANSFER, async (_ctx, targetWorkspaceId: string, payload: import('@craft-agent/shared/protocol').RemoteSessionTransferPayload) => {
-    await sessionManager.waitForInit()
     if (!targetWorkspaceId || typeof targetWorkspaceId !== 'string') throw new Error('targetWorkspaceId is required')
+    await sessionManager.waitForInit(targetWorkspaceId)
     return sessionManager.importRemoteSessionTransfer(targetWorkspaceId, payload)
   })
 }

@@ -1218,6 +1218,8 @@
   "settings.tools.title": "Herram.",
   "settings.workspace.advanced": "Avanzado",
   "settings.workspace.atLeast2Modes": "Se requieren al menos 2 modos",
+  "settings.workspace.automations": "Automatizaciones del proyecto",
+  "settings.workspace.automationsDesc": "Permitir que este proyecto ejecute acciones programadas, prompts y webhooks",
   "settings.workspace.defaultMode": "Modo predeterminado",
   "settings.workspace.defaultModeDesc": "Controla lo que puede hacer la IA",
   "settings.workspace.defaultSources": "Fuentes predeterminadas",

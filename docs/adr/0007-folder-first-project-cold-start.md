@@ -2,6 +2,7 @@
 
 状态：Accepted
 日期：2026-07-24
+修订：2026-08-26
 
 ## 背景
 
@@ -15,6 +16,13 @@
 ## 决策
 
 - 新项目创建只建立运行所需的隐藏宿主状态，`workingDirectory` 指向项目根。
+- 全局注册记录的 `id` 是稳定 Project ID；`rootPath` 只是可变 locator。目录内旧
+  `WorkspaceConfig.id` 是兼容元数据，不能覆盖 Host 身份。目录移动后只允许用户显式 relink，
+  不自动重建旧路径或合并两个 Project。
+- Project catalog 读取必须无副作用；没有目录 fingerprint 的旧 Host 记录只能在用户显式重新选择其
+  原 locator 后绑定，不能因路径或目录名相同自动采纳当前内容。
+- 所有本地 Project 创建入口都必须经过同一 Project registry；低层 Host 注册持久化只写注册记录，
+  不得隐式初始化、重建或修复 Project 根目录。
 - 不自动创建领域目录、模板文件、`.pi/skills`、写作 manifest、pack lock、Git 仓库或起始对话。
 - 空白项目提供四个平级入口：描述目标、导入已有内容、新建文件、选择 Skill。
 - 项目侧边栏始终展示真实文件树；文件名和目录名不决定项目能力。

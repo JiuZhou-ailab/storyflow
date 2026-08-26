@@ -32,14 +32,34 @@ export class InitGate {
    */
   waitFor(scopeId: string | null | undefined): Promise<void> {
     if (!scopeId) return this.wait()
+    const existing = this.shards.get(scopeId)
+    if (existing) return existing.wait()
     if (this.settled) return this.promise
     return this.shard(scopeId).wait()
   }
 
   /** Opens one workspace's shard as soon as its sessions are indexed. */
   markScopeReady(scopeId: string): void {
-    if (this.settled) return
-    this.shard(scopeId).markReady()
+    const existing = this.shards.get(scopeId)
+    if (!existing || existing.settled) {
+      const ready = new InitGate()
+      ready.markReady()
+      this.shards.set(scopeId, ready)
+      return
+    }
+    existing.markReady()
+  }
+
+  /** Fail one workspace shard without blocking unrelated workspace initialization. */
+  markScopeFailed(scopeId: string, error: unknown): void {
+    const existing = this.shards.get(scopeId)
+    if (!existing || existing.settled) {
+      const failed = new InitGate()
+      failed.markFailed(error)
+      this.shards.set(scopeId, failed)
+      return
+    }
+    existing.markFailed(error)
   }
 
   markReady(): void {

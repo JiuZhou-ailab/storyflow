@@ -84,6 +84,7 @@ export interface ActivityRailProps {
   onCreateConversationInProject?: (workspaceId: string) => void | Promise<void>
   onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onOpenProjectInNewWindow?: (workspaceId: string) => void
+  onRelinkProject?: (workspaceId: string) => void | Promise<void>
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
   onSetProjectArchived?: (workspaceId: string, archived: boolean) => void | Promise<void>
   onRemoveProject?: (workspaceId: string) => void | Promise<void>
@@ -151,6 +152,7 @@ export function ActivityRail({
   onCreateConversationInProject,
   onWorkspaceCreated,
   onOpenProjectInNewWindow,
+  onRelinkProject,
   onRenameProject,
   onSetProjectArchived,
   onRemoveProject,
@@ -560,15 +562,16 @@ export function ActivityRail({
                   <div className="space-y-0.5 pb-1" data-testid="activity-projects">
                     {visibleProjectWorkspaces.map((workspace) => {
                       const expanded = expandedProjectIds.has(workspace.id)
+                      const rootAvailable = workspace.rootAvailable !== false
                       return (
                         <ProjectFolderRow
                           key={workspace.id}
                           workspace={workspace}
-                          active={selectedWorkspaceId === workspace.id && !selectedProjectSessionId}
+                          active={rootAvailable && selectedWorkspaceId === workspace.id && !selectedProjectSessionId}
                           hasUnread={unreadByWorkspace?.[workspace.id] === true}
                           hasActiveSession={activeWorkspaceIds.has(workspace.id)}
-                          disabled={!onSelectSession}
-                          expandable={Boolean(onSelectSession)}
+                          disabled={!onSelectSession || !rootAvailable}
+                          expandable={Boolean(onSelectSession && rootAvailable)}
                           expanded={expanded}
                           onToggleExpanded={() => toggleProjectExpanded(workspace.id)}
                           sessions={[...resolveActivityWorkspaceSessionMetas(
@@ -582,10 +585,10 @@ export function ActivityRail({
                             .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))}
                           loadingSessions={loadingProjectIds.has(workspace.id)}
                           activeSessionId={selectedWorkspaceId === workspace.id ? selectedProjectSessionId : null}
-                          onSelectSession={onSelectSession
+                          onSelectSession={onSelectSession && rootAvailable
                             ? (sessionId) => { void onSelectSession(sessionId, workspace.id) }
                             : undefined}
-                          onCreateConversation={onCreateConversationInProject
+                          onCreateConversation={onCreateConversationInProject && rootAvailable
                             ? () => onCreateConversationInProject(workspace.id)
                             : undefined}
                           sessionActions={sessionActions}
@@ -593,10 +596,13 @@ export function ActivityRail({
                             setRenameTarget({ kind: 'session', id: meta.id, name: getSessionTitle(meta) })
                             setRenameValue(getSessionTitle(meta))
                           }}
-                          onOpenInNewWindow={onOpenProjectInNewWindow
+                          onOpenInNewWindow={onOpenProjectInNewWindow && rootAvailable
                             ? () => onOpenProjectInNewWindow(workspace.id)
                             : undefined}
-                          onRename={onRenameProject
+                          onRelink={!rootAvailable && onRelinkProject
+                            ? () => onRelinkProject(workspace.id)
+                            : undefined}
+                          onRename={onRenameProject && rootAvailable
                             ? () => {
                               setRenameTarget({ kind: 'project', id: workspace.id, name: workspace.name })
                               setRenameValue(workspace.name)

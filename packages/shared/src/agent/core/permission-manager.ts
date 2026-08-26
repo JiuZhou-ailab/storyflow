@@ -79,6 +79,7 @@ export class PermissionManager {
     // PermissionsContext expects workspaceRootPath (absolute path to workspace)
     this.permissionsContext = {
       workspaceRootPath: config.workingDirectory ?? '',
+      allowProjectGrants: config.allowProjectGrants,
     };
   }
 

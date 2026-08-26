@@ -36,6 +36,7 @@ describe('SourceServerBuilder.buildApiConfig', () => {
       folderPath: '/test/sources/test-source',
       workspaceRootPath: '/test',
       workspaceId: 'test-workspace',
+      definitionIdentity: 'test-definition',
       origin: 'workspace',
     };
   }

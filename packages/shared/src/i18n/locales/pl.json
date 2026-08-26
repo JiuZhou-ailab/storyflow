@@ -1218,6 +1218,8 @@
   "settings.tools.title": "Narzędzia",
   "settings.workspace.advanced": "Zaawansowane",
   "settings.workspace.atLeast2Modes": "Wymagane co najmniej 2 tryby",
+  "settings.workspace.automations": "Automatyzacje projektu",
+  "settings.workspace.automationsDesc": "Zezwalaj projektowi na uruchamianie zaplanowanych działań, promptów i webhooków",
   "settings.workspace.defaultMode": "Domyślny tryb",
   "settings.workspace.defaultModeDesc": "Kontroluj, co AI może robić",
   "settings.workspace.defaultSources": "Domyślne źródła",

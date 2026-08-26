@@ -1,27 +1,30 @@
 // input: Workspace/config RPC requests plus host window and SessionManager services
-// output: Shell-safe workspace navigation, creation, media, theme, and view handlers
+// output: Shell-safe workspace navigation, registration, relinking, media, theme, and view handlers
 // pos: Keeps workspace/file access available before the deferred Agent runtime is ready
 
 import { join, resolve } from 'path'
 import { homedir } from 'os'
 import type { RemoteServerConnectionInput } from '@craft-agent/core/types'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, updateWorkspaceRemoteServer, getWorkspaces } from '@craft-agent/shared/config'
-import { resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
+import { getWorkspaceByNameOrId, setActiveWorkspace, getWorkspaces } from '@craft-agent/shared/config'
+import {
+  isWorkspaceRootAvailable,
+  resolveRuntimeWorkspace,
+} from '@craft-agent/shared/workspaces'
 import { perf } from '@craft-agent/shared/utils'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
-import { isValidWorkspaceRootPath } from '../../utils/path-validation'
+import { isValidWorkingDirectory, isValidWorkspaceRootPath } from '../../utils/path-validation'
 import {
   normalizeRemoteServerConnectionInput,
   normalizeCreateWorkspaceOptions,
-  resetStaleDefaultWorkspaceRoot,
   type CreateWorkspaceOptions,
 } from './workspace-creation'
 
 export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.workspaces.GET,
   RPC_CHANNELS.workspaces.CREATE,
+  RPC_CHANNELS.workspaces.RELINK,
   RPC_CHANNELS.workspaces.CHECK_SLUG,
   RPC_CHANNELS.workspaces.UPDATE_REMOTE,
   RPC_CHANNELS.window.GET_WORKSPACE,
@@ -52,7 +55,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
 
   // Get workspaces (LOCAL_ONLY — includes rootPath for local Electron renderer)
   server.handle(RPC_CHANNELS.workspaces.GET, async () => {
-    return sessionManager.getWorkspaces()
+    return sessionManager.getWorkspaces().map(workspace => ({
+      ...workspace,
+      rootAvailable: isWorkspaceRootAvailable(workspace),
+    }))
   })
 
   // Create a new workspace at a folder path (Obsidian-style: folder IS the workspace)
@@ -71,20 +77,28 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
 
     const options = normalizeCreateWorkspaceOptions(input, legacyProjectType)
     await sessionManager.waitForInit()
-    const trackedRootPaths = getWorkspaces().map((workspace) => workspace.rootPath)
-    if (resetStaleDefaultWorkspaceRoot(rootPath, trackedRootPaths)) {
-      deps.platform.logger.info(`Reinitialized stale default workspace root at ${rootPath}`)
-    }
-    const workspace = addWorkspace({ name, rootPath })
-    if (options.remoteServer) {
-      workspace.remoteServer = await updateWorkspaceRemoteServer(workspace.id, options.remoteServer)
-    }
-    sessionManager.reloadSessions()
-    sessionManager.setupConfigWatcher(workspace.rootPath, workspace.id)
-    // Make it active
-    setActiveWorkspace(workspace.id)
+    const workspace = await sessionManager.registerProject(name, rootPath, options.remoteServer)
     deps.platform.logger.info(`Created workspace "${name}" at ${rootPath}${options.remoteServer ? ` (remote: ${options.remoteServer.url})` : ''}`)
-    return workspace
+    return { ...workspace, rootAvailable: isWorkspaceRootAvailable(workspace) }
+  })
+
+  // Explicitly move one stable Host Project identity to its new local locator.
+  server.handle(RPC_CHANNELS.workspaces.RELINK, async (_ctx, projectId: string, folderPath: string) => {
+    const rootPath = folderPath.trim()
+    const validation = isValidWorkingDirectory(rootPath)
+    if (!validation.valid) throw new Error(validation.reason!)
+
+    await sessionManager.waitForInit(projectId)
+    const project = sessionManager.getWorkspaces().find(workspace => workspace.id === projectId)
+    if (!project) throw new Error(`Project not found: ${projectId}`)
+    if (sessionManager.getActiveSessionCount(projectId) > 0) {
+      throw new Error('Stop all running sessions before relinking this Project.')
+    }
+
+    const updated = await sessionManager.rebindWorkspaceRoot(projectId, rootPath)
+    setActiveWorkspace(projectId)
+    deps.platform.logger.info(`Relinked Project ${projectId} to ${updated.rootPath}`)
+    return updated
   })
 
   // Check if a workspace slug already exists (for validation before creation)
@@ -99,7 +113,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   // Update remote server config for an existing workspace (reconnect flow)
   server.handle(RPC_CHANNELS.workspaces.UPDATE_REMOTE, async (_ctx, workspaceId: string, remoteServer: RemoteServerConnectionInput) => {
     const normalized = normalizeRemoteServerConnectionInput(remoteServer)
-    await updateWorkspaceRemoteServer(workspaceId, normalized)
+    await sessionManager.updateRemoteProject(workspaceId, normalized)
     deps.platform.logger.info(`Updated remote server for workspace ${workspaceId}: ${normalized.url}`)
     return { success: true }
   })
@@ -123,13 +137,13 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   // Switch workspace in current window (in-window switching)
   server.handle(RPC_CHANNELS.window.SWITCH_WORKSPACE, async (ctx, workspaceId: string) => {
     const end = perf.start('ipc.switchWorkspace', { workspaceId })
-    const workspace = resolveRuntimeWorkspace(workspaceId)
-    if (!workspace) {
+    let workspace
+    try {
+      workspace = await sessionManager.activateProject(workspaceId)
+    } catch (error) {
       end()
-      throw new Error(`Workspace not found: ${workspaceId}`)
+      throw error
     }
-
-    sessionManager.setupConfigWatcher(workspace.rootPath, workspace.id)
 
     // Keep WS push routing in sync (works for both GUI and headless)
     server.updateClientWorkspace?.(ctx.clientId, workspaceId)

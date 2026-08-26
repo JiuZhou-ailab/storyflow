@@ -14,6 +14,11 @@ import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { requestClientOpenFileDialog } from '@craft-agent/server-core/transport'
 import { isValidWorkingDirectory } from '../../utils/path-validation'
+import { isPathWithinProjectRoot } from '@craft-agent/shared/workspaces'
+import {
+  loadWorkspaceSources,
+  resolveHostGrantedSourceSlugs,
+} from '@craft-agent/shared/sources'
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.workspace.SETTINGS_GET,
@@ -126,15 +131,19 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
     const config = loadWorkspaceConfig(workspace.rootPath)
 
     return {
-      name: config?.name,
+      name: config?.name ?? workspace.name,
       model: config?.defaults?.model,
-      permissionMode: config?.defaults?.permissionMode,
+      permissionMode: workspace.defaultPermissionMode,
       cyclablePermissionModes: config?.defaults?.cyclablePermissionModes,
       thinkingLevel: normalizeThinkingLevel(config?.defaults?.thinkingLevel),
       workingDirectory: config?.defaults?.workingDirectory,
-      localMcpEnabled: config?.localMcpServers?.enabled ?? true,
+      localMcpEnabled: workspace.localMcpEnabled ?? false,
+      automationsEnabled: workspace.automationsEnabled ?? false,
       defaultLlmConnection: config?.defaults?.defaultLlmConnection,
-      enabledSourceSlugs: config?.defaults?.enabledSourceSlugs ?? [],
+      enabledSourceSlugs: resolveHostGrantedSourceSlugs(
+        workspace.defaultEnabledSourceRefs,
+        loadWorkspaceSources(workspace.rootPath, workspace.id),
+      ),
     }
   })
 
@@ -146,7 +155,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
       : value
 
     // Validate key is a known workspace setting
-    const validKeys = ['name', 'model', 'enabledSourceSlugs', 'permissionMode', 'cyclablePermissionModes', 'thinkingLevel', 'workingDirectory', 'localMcpEnabled', 'defaultLlmConnection']
+    const validKeys = ['name', 'model', 'enabledSourceSlugs', 'permissionMode', 'cyclablePermissionModes', 'thinkingLevel', 'workingDirectory', 'localMcpEnabled', 'automationsEnabled', 'defaultLlmConnection']
     if (!validKeys.includes(key)) {
       throw new Error(`Invalid workspace setting key: ${key}. Valid keys: ${validKeys.join(', ')}`)
     }
@@ -164,6 +173,17 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
       if (!validation.valid) {
         throw new Error(validation.reason!)
       }
+      if (!isPathWithinProjectRoot(workspace.rootPath, String(normalizedValue))) {
+        throw new Error('Project working directory must stay inside the Project root.')
+      }
+    }
+
+    // Executable defaults live in the Host registry. Project files cannot grant
+    // themselves execute mode, automatic Sources, local subprocesses, or Automations.
+    if (key === 'permissionMode' || key === 'enabledSourceSlugs' || key === 'localMcpEnabled' || key === 'automationsEnabled') {
+      await deps.sessionManager.updateProjectHostSetting(workspaceId, key, normalizedValue)
+      deps.platform.logger.info(`Host-owned Project setting updated: ${key}`)
+      return { success: true }
     }
 
     const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
@@ -175,10 +195,6 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
     // Handle 'name' specially - it's a top-level config property, not in defaults
     if (key === 'name') {
       config.name = String(normalizedValue).trim()
-    } else if (key === 'localMcpEnabled') {
-      // Store in localMcpServers.enabled (top-level, not in defaults)
-      config.localMcpServers = config.localMcpServers || { enabled: true }
-      config.localMcpServers.enabled = Boolean(normalizedValue)
     } else {
       // Update the setting in defaults
       config.defaults = config.defaults || {}

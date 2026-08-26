@@ -159,6 +159,9 @@ export interface SessionToolContext {
   /** Absolute path to workspace folder (~/.craft-agent/workspaces/{id}) */
   workspacePath: string;
 
+  /** Stable Host workspace identity; never derive this from the directory basename. */
+  workspaceId: string;
+
   /** Path to sources folder within workspace */
   get sourcesPath(): string;
 
@@ -213,6 +216,9 @@ export interface SessionToolContext {
   /** Whether the visible definition is externally owned and immutable. */
   isSourceDefinitionReadOnly?(sourceSlug: string): boolean;
 
+  /** Whether the Host grants this exact Source definition permission to execute. */
+  isSourceExecutionAllowed(sourceSlug: string): boolean;
+
   /**
    * Save a source config to the workspace.
    */
@@ -247,27 +253,6 @@ export interface SessionToolContext {
    */
   isIconUrl?(value: string): boolean;
 
-  /**
-   * Download an icon from URL to the source folder.
-   * Returns the path to the cached icon, or null if download failed.
-   */
-  downloadSourceIcon?(sourceSlug: string, iconUrl: string): Promise<string | null>;
-
-  /**
-   * Derive a service URL from a source config (for favicon fetching).
-   */
-  deriveServiceUrl?(source: SourceConfig): string | null;
-
-  /**
-   * Get a high-quality logo URL from a service URL.
-   */
-  getHighQualityLogoUrl?(serviceUrl: string, slug: string): Promise<string | null>;
-
-  /**
-   * Download an icon to a specific destination path.
-   */
-  downloadIcon?(destPath: string, url: string, tag: string): Promise<string | null>;
-
   // ============================================================
   // MCP Connection Validation (for source_test)
   // ============================================================
@@ -276,6 +261,9 @@ export interface SessionToolContext {
    * Validate a stdio MCP connection by spawning the command.
    */
   validateStdioMcpConnection?(config: StdioMcpConfig): Promise<StdioValidationResult>;
+
+  /** Whether the owning Host permits this Source to spawn a stdio process. */
+  isStdioMcpExecutionAllowed?(sourceSlug: string): boolean;
 
   /**
    * Validate an HTTP/SSE MCP connection.

@@ -7,10 +7,9 @@ import { join, dirname, basename } from 'path';
 import { isDeepStrictEqual } from 'node:util';
 import { credentialIdToAccount, getCredentialManager } from '../credentials/index.ts';
 import {
+  inspectWorkspaceConfig,
   loadWorkspaceConfig,
   saveWorkspaceConfig,
-  createWorkspaceAtPath,
-  isValidWorkspace,
 } from '../workspaces/storage.ts';
 import { findIconFile } from '../utils/icon.ts';
 import { extractWorkspaceSlugFromPath } from '../utils/workspace-slug.ts';
@@ -861,12 +860,25 @@ export async function migrateRemoteServerCredentialsOnStartup(): Promise<boolean
 export function getWorkspaces(): Workspace[] {
   const config = loadStoredConfig();
   const workspaces = config?.workspaces || [];
+  let hostCacheChanged = false;
 
-  // Resolve workspace names from folder config and local icons
-  return workspaces.map(w => {
-    // Read name from workspace folder config (single source of truth)
-    const wsConfig = loadWorkspaceConfig(w.rootPath);
-    const name = wsConfig?.name || basename(w.rootPath) || 'Untitled';
+  // Resolve workspace names from verified folder config and local icons.
+  // Reading the Project catalog must never migrate an unverified locator.
+  const resolved = workspaces.map(w => {
+    const wsConfig = inspectWorkspaceConfig(w.rootPath);
+    const configMatchesHost = Boolean(
+      wsConfig && w.directoryConfigId === wsConfig.id,
+    );
+    if (wsConfig && configMatchesHost && !w.remoteServer) {
+      if (wsConfig.name && w.name !== wsConfig.name) {
+        w.name = wsConfig.name;
+        hostCacheChanged = true;
+      }
+    }
+    const name = (configMatchesHost ? wsConfig?.name : undefined)
+      || w.name
+      || basename(w.rootPath)
+      || 'Untitled';
 
     // If workspace has a stored iconUrl that's a remote URL, use it
     // Otherwise check for local icon file
@@ -891,8 +903,11 @@ export function getWorkspaces(): Workspace[] {
       name,
       slug,
       iconUrl,
+      rootAvailable: Boolean(w.remoteServer || configMatchesHost),
     };
   });
+  if (hostCacheChanged && config) saveConfig(config);
+  return resolved;
 }
 
 export function getActiveWorkspace(): Workspace | null {
@@ -915,6 +930,8 @@ export function getWorkspaceByNameOrId(nameOrId: string): Workspace | null {
   );
   if (!workspace) return null;
 
+  if (workspace.rootAvailable === false) return null;
+
   // The configured root is a reference, not an instruction to recreate user data.
   // Remote workspaces resolve on their own server; local workspaces must still exist.
   if (!workspace.remoteServer && !existsSync(workspace.rootPath)) return null;
@@ -930,6 +947,12 @@ export async function updateWorkspaceRemoteServer(
   if (!config) throw new Error('Config not found');
   const ws = config.workspaces.find(w => w.id === workspaceId);
   if (!ws) throw new Error('Workspace not found');
+  if (!ws.remoteServer) {
+    const directoryConfig = inspectWorkspaceConfig(ws.rootPath);
+    if (!ws.directoryConfigId || directoryConfig?.id !== ws.directoryConfigId) {
+      throw new Error('Relink this Project before connecting it to a remote server.');
+    }
+  }
   const credentialManager = getCredentialManager();
   const previousToken = await credentialManager.getRemoteServerToken(workspaceId);
   await credentialManager.setRemoteServerToken(workspaceId, remoteServer.token);
@@ -991,10 +1014,7 @@ export function setWorkspaceArchived(workspaceId: string, archived: boolean): bo
 }
 
 
-/**
- * Add a workspace to the global config.
- * @param workspace - Workspace data (must include rootPath)
- */
+/** Persist one Host Project registration without initializing or mutating its root directory. */
 export function addWorkspace(workspace: Omit<Workspace, 'id' | 'createdAt' | 'slug'>): Workspace {
   const config = loadStoredConfig();
   if (!config) {
@@ -1026,11 +1046,6 @@ export function addWorkspace(workspace: Omit<Workspace, 'id' | 'createdAt' | 'sl
     id: generateWorkspaceId(),
     createdAt: Date.now(),
   };
-
-  // Create workspace folder structure if it doesn't exist
-  if (!isValidWorkspace(newWorkspace.rootPath)) {
-    createWorkspaceAtPath(newWorkspace.rootPath, newWorkspace.name);
-  }
 
   config.workspaces.push(newWorkspace);
 
@@ -1064,7 +1079,13 @@ export async function removeWorkspace(workspaceId: string): Promise<boolean> {
 
   // Clean up credential store credentials for this workspace
   const manager = getCredentialManager();
-  await manager.deleteWorkspaceCredentials(workspaceId);
+  try {
+    await manager.deleteWorkspaceCredentials(workspaceId);
+  } catch (error) {
+    // Host removal is already committed. Orphaned credentials are scoped to the
+    // retired projectId and cleanup failure must not report a false rollback.
+    console.error(`[storage] Failed to delete credentials for removed Project ${workspaceId}`, error);
+  }
 
   // Delete workspace data directory (sessions, plans, etc.)
   const workspaceDataDir = join(WORKSPACES_DIR, workspaceId);

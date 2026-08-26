@@ -30,7 +30,6 @@ import type {
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ApiOperationPermission } from '@craft-agent/shared/sources/types';
-import { isLocalMcpEnabled } from '@craft-agent/shared/workspaces';
 import { guardLargeResult } from '@craft-agent/shared/utils';
 import {
   saveBinaryResponse,
@@ -58,9 +57,6 @@ export class McpClientPool {
   /** Optional debug logger */
   private debugFn: ((msg: string) => void) | undefined;
 
-  /** Workspace root path for local MCP filtering */
-  private workspaceRootPath?: string;
-
   /** Session storage path for saving large responses */
   private sessionPath?: string;
 
@@ -70,9 +66,8 @@ export class McpClientPool {
   /** Called after sync() connects/disconnects sources, so clients can be notified */
   onToolsChanged?: () => void;
 
-  constructor(options?: { debug?: (msg: string) => void; workspaceRootPath?: string; sessionPath?: string }) {
+  constructor(options?: { debug?: (msg: string) => void; sessionPath?: string }) {
     this.debugFn = options?.debug;
-    this.workspaceRootPath = options?.workspaceRootPath;
     this.sessionPath = options?.sessionPath;
   }
 
@@ -188,17 +183,6 @@ export class McpClientPool {
     mcpServers: Record<string, SdkMcpServerConfig>,
     apiServers: Record<string, ApiServerConfig> = {}
   ): Promise<string[]> {
-    // Filter out stdio sources when local MCP is disabled for this workspace.
-    const localEnabled = !this.workspaceRootPath || isLocalMcpEnabled(this.workspaceRootPath);
-    const filteredMcp: Record<string, SdkMcpServerConfig> = {};
-    for (const [slug, config] of Object.entries(mcpServers)) {
-      if (config.type === 'stdio' && !localEnabled) {
-        this.debug(`Filtering out stdio source "${slug}" (local MCP disabled)`);
-        continue;
-      }
-      filteredMcp[slug] = config;
-    }
-
     // Extract McpServer instances from API configs
     const apiSlugs = new Map<string, ApiServerConfig>();
     for (const [slug, config] of Object.entries(apiServers)) {
@@ -207,7 +191,7 @@ export class McpClientPool {
       }
     }
 
-    const desiredSlugs = new Set([...Object.keys(filteredMcp), ...apiSlugs.keys()]);
+    const desiredSlugs = new Set([...Object.keys(mcpServers), ...apiSlugs.keys()]);
     const currentSlugs = new Set(this.clients.keys());
     const failures: string[] = [];
 
@@ -219,7 +203,7 @@ export class McpClientPool {
     }
 
     // Connect new MCP sources + reconnect existing ones whose config changed (e.g. refreshed token)
-    for (const [slug, config] of Object.entries(filteredMcp)) {
+    for (const [slug, config] of Object.entries(mcpServers)) {
       if (!currentSlugs.has(slug)) {
         try {
           await this.connect(slug, config);

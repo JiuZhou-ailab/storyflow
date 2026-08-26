@@ -18,7 +18,8 @@ import {
   getWorkspaceSkillsPath,
   getWorkspaceSourcesPath,
 } from '../workspaces/storage.ts'
-import { loadSourceConfig, getSourcePath } from '../sources/storage.ts'
+import { ensureProjectOwnedDirectory, resolveProjectOwnedPath } from '../workspaces/paths.ts'
+import { assertSafeSourceSlug, loadSourceConfig, getSourcePath } from '../sources/storage.ts'
 import { validateSourceConfig } from '../config/validators.ts'
 import { AUTOMATIONS_CONFIG_FILE, AUTOMATIONS_HISTORY_FILE, AUTOMATIONS_RETRY_QUEUE_FILE } from '../automations/constants.ts'
 import { validateAutomationsConfig } from '../automations/validation.ts'
@@ -686,17 +687,21 @@ async function importSources(
   deps: ResourceImportDeps,
 ): Promise<ImportBucketResult> {
   const result = emptyBucketResult()
-  const sourcesDir = getWorkspaceSourcesPath(workspaceRootPath)
-
-  if (!existsSync(sourcesDir)) {
-    mkdirSync(sourcesDir, { recursive: true })
-  }
+  const sourcesDir = ensureProjectOwnedDirectory(
+    workspaceRootPath,
+    getWorkspaceSourcesPath(workspaceRootPath),
+  )
 
   for (const entry of entries) {
     try {
+      assertSafeSourceSlug(entry.slug)
       const targetDir = join(sourcesDir, entry.slug)
       const legacyTargetDir = join(getLegacyWorkspaceSourcesPath(workspaceRootPath), entry.slug)
-      const exists = existsSync(targetDir) || existsSync(legacyTargetDir)
+      const targetExists = existsSync(targetDir)
+      const legacyTargetExists = existsSync(legacyTargetDir)
+      if (targetExists) resolveProjectOwnedPath(workspaceRootPath, targetDir)
+      if (legacyTargetExists) resolveProjectOwnedPath(workspaceRootPath, legacyTargetDir)
+      const exists = targetExists || legacyTargetExists
 
       if (exists && mode === 'skip') {
         result.skipped.push(entry.slug)
@@ -705,7 +710,7 @@ async function importSources(
 
       // Stage: build in temp dir
       const tmpDir = join(sourcesDir, `.tmp-${entry.slug}-${randomUUID().slice(0, 8)}`)
-      mkdirSync(tmpDir, { recursive: true })
+      ensureProjectOwnedDirectory(workspaceRootPath, tmpDir)
 
       try {
         // Write sanitized config.json
@@ -731,8 +736,8 @@ async function importSources(
           } catch (err) {
             result.warnings.push(`Source '${entry.slug}': failed to clear credentials: ${err}`)
           }
-          rmSync(targetDir, { recursive: true, force: true })
-          rmSync(legacyTargetDir, { recursive: true, force: true })
+          if (targetExists) rmSync(resolveProjectOwnedPath(workspaceRootPath, targetDir), { recursive: true, force: true })
+          if (legacyTargetExists) rmSync(resolveProjectOwnedPath(workspaceRootPath, legacyTargetDir), { recursive: true, force: true })
         }
 
         // Atomic replace: rename temp → target

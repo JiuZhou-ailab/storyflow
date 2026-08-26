@@ -721,6 +721,7 @@ export const mockSources: LoadedSource[] = [
     folderPath: '/mock/sources/github-api',
     workspaceRootPath: '/mock/workspaces/playground-workspace',
     workspaceId: 'playground-workspace',
+    definitionIdentity: 'github-api-definition',
     origin: 'workspace',
   },
   {
@@ -744,6 +745,7 @@ export const mockSources: LoadedSource[] = [
     folderPath: '/mock/sources/linear-api',
     workspaceRootPath: '/mock/workspaces/playground-workspace',
     workspaceId: 'playground-workspace',
+    definitionIdentity: 'linear-api-definition',
     origin: 'workspace',
   },
   {
@@ -764,6 +766,7 @@ export const mockSources: LoadedSource[] = [
     folderPath: '/mock/sources/local-files',
     workspaceRootPath: '/mock/workspaces/playground-workspace',
     workspaceId: 'playground-workspace',
+    definitionIdentity: 'local-files-definition',
     origin: 'workspace',
   },
 ]

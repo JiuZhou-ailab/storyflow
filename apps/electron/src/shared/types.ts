@@ -395,6 +395,7 @@ export interface ElectronAPI {
   // Workspace management
   getWorkspaces(): Promise<Workspace[]>
   createWorkspace(folderPath: string, name: string, options?: CreateWorkspaceOptions): Promise<Workspace>
+  relinkWorkspace(projectId: string, folderPath: string): Promise<Workspace>
   checkWorkspaceSlug(slug: string): Promise<{ exists: boolean; path: string }>
   updateWorkspaceRemoteServer(workspaceId: string, remoteServer: CoreRemoteServerConnectionInput): Promise<{ success: boolean }>
 

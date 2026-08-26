@@ -32,6 +32,7 @@ function createMockSource(
     folderPath: '/test/path',
     workspaceRootPath: '/test/workspace',
     workspaceId: 'test-workspace',
+    definitionIdentity: 'test-definition',
     origin: 'workspace',
   };
 }

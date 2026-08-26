@@ -60,8 +60,10 @@ export {
   SHARED_AGENTS_SOURCES_DIR,
   SHARED_SOURCE_RUNTIME_STATE_DIR,
   ReadOnlySourceDefinitionError,
+  assertSafeSourceSlug,
   ensureSourcesDir,
   getSourcePath,
+  getSourceDefinitionIdentity,
   // Config operations
   loadSourceConfig,
   saveSourceConfig,
@@ -107,6 +109,7 @@ export type {
 export {
   SourceServerBuilder,
   getSourceServerBuilder,
+  isProjectStdioExecutionAllowed,
   normalizeMcpUrl,
   SERVER_BUILD_ERRORS,
 } from './server-builder.ts';
@@ -115,6 +118,12 @@ export type {
   SourceWithCredential,
   BuiltServers,
 } from './server-builder.ts';
+export {
+  createSourceGrantRefs,
+  getSourceGrantRef,
+  isSourceHostGranted,
+  resolveHostGrantedSourceSlugs,
+} from './grants.ts';
 
 // API Tools (types)
 export type { SummarizeCallback } from './api-tools.ts';

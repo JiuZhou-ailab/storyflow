@@ -429,7 +429,7 @@ if (webuiHandler) {
     sessionManager: instance.sessionManager,
     pushSourcesChanged: (workspaceId: string) => {
       const ws = getWorkspaceByNameOrId(workspaceId)
-      const sources = ws ? loadWorkspaceSources(ws.rootPath) : []
+      const sources = ws ? loadWorkspaceSources(ws.rootPath, ws.id) : []
       pushTyped(instance.wsServer, RPC_CHANNELS.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, sources)
     },
   })

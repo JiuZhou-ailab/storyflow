@@ -8,7 +8,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from 'fs';
-import { join, basename } from 'path';
+import { join } from 'path';
 import { CONFIG_DIR } from '../config/paths.ts';
 import { getWorkspaceSourcesPath } from '../workspaces/paths.ts';
 import type {
@@ -50,8 +50,7 @@ import {
   saveSourceConfig as saveSourceConfigImpl,
   updateSourceConnectionState,
   getSourcePath,
-  GLOBAL_AGENT_ROOT_DIR,
-  SHARED_AGENTS_ROOT_DIR,
+  getSourceDefinitionIdentity,
 } from '../sources/storage.ts';
 import type {
   FolderSourceConfig,
@@ -61,6 +60,8 @@ import type {
 import { getSourceCredentialManager } from '../sources/credential-manager.ts';
 import { createStoryflowManagedTokenGetter } from '../sources/managed-access.ts';
 import { getTrustedManagedSourcePolicy } from '../sources/managed-source-policy.ts';
+import { isProjectStdioExecutionAllowed } from '../sources/server-builder.ts';
+import { isSourceHostGranted } from '../sources/grants.ts';
 import {
   inferGoogleServiceFromUrl,
   inferSlackServiceFromUrl,
@@ -92,6 +93,9 @@ export interface SessionToolContextOptions {
   onPlanSubmitted: (planPath: string) => void | Promise<void>;
   onAuthRequest: (request: unknown) => void;
   onAskUserQuestion?: (request: UserQuestionRequest) => Promise<UserQuestionResponse>;
+  allowProjectStdio?: boolean;
+  /** null only for the Host-owned Free Conversations application context. */
+  getHostGrantedSourceRefs: () => readonly string[] | null;
 }
 
 /**
@@ -106,7 +110,16 @@ export interface SessionToolContextOptions {
  */
 export function createSessionToolContext(options: SessionToolContextOptions): SessionToolContext {
   const { sessionId, workspacePath, workspaceId, onPlanSubmitted, onAuthRequest, onAskUserQuestion } = options;
-  void workspaceId;
+
+  const loadVisibleSource = (sourceSlug: string) =>
+    loadSourceImpl(workspacePath, sourceSlug, workspaceId);
+
+  const isSourceExecutionAllowed = (sourceSlug: string): boolean => {
+    const source = loadVisibleSource(sourceSlug);
+    if (!source) return false;
+    const refs = options.getHostGrantedSourceRefs();
+    return refs === null || isSourceHostGranted(refs, source);
+  };
 
   // File system implementation
   const fs: FileSystemInterface = {
@@ -151,18 +164,16 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
   };
 
   // Credential manager adapter
-  const toSharedLoadedSource = (source: LoadedSource): SharedLoadedSource => ({
-    config: source.config as unknown as FolderSourceConfig,
-    guide: null,
-    folderPath: source.folderPath,
-    workspaceRootPath: source.workspaceRootPath,
-    workspaceId: source.workspaceId,
-    origin: source.workspaceRootPath === SHARED_AGENTS_ROOT_DIR
-      ? 'shared-global'
-      : source.workspaceRootPath === GLOBAL_AGENT_ROOT_DIR
-        ? 'craft-global'
-        : 'workspace',
-  });
+  const toSharedLoadedSource = (source: LoadedSource): SharedLoadedSource => {
+    const resolved = loadVisibleSource(source.config.slug);
+    if (!resolved) throw new Error(`Source not found: ${source.config.slug}`);
+    return {
+      ...resolved,
+      config: source.config as unknown as FolderSourceConfig,
+      guide: null,
+      definitionIdentity: getSourceDefinitionIdentity(source.config as unknown as FolderSourceConfig),
+    };
+  };
 
   const normalizeConnectionStatus = (
     status: SourceConfig['connectionStatus'],
@@ -234,6 +245,7 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
   const context: SessionToolContext = {
     sessionId,
     workspacePath,
+    workspaceId,
     get sourcesPath() { return getWorkspaceSourcesPath(workspacePath); },
     get skillsPath() { return getPiUserSkillsDir(); },
     plansFolderPath: getSessionPlansPath(workspacePath, sessionId),
@@ -255,7 +267,7 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
     },
     // Source management
     loadSourceConfig: (sourceSlug: string): SourceConfig | null => {
-      const source = loadSourceImpl(workspacePath, sourceSlug);
+      const source = loadVisibleSource(sourceSlug);
       return source?.config as unknown as SourceConfig | null;
     },
     createSkillDocument: (skillSlug: string, content: string) => {
@@ -268,10 +280,11 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
       return { path: skill.filePath, content: readFileSync(skill.filePath, 'utf-8') };
     },
     isSourceDefinitionReadOnly: (sourceSlug: string): boolean => {
-      return loadSourceImpl(workspacePath, sourceSlug)?.origin === 'shared-global';
+      return loadVisibleSource(sourceSlug)?.origin === 'shared-global';
     },
+    isSourceExecutionAllowed,
     saveSourceConfig: (source: SourceConfig) => {
-      const loaded = loadSourceImpl(workspacePath, source.slug);
+      const loaded = loadVisibleSource(source.slug);
       if (!loaded) return;
 
       const connectionStatus = normalizeConnectionStatus(source.connectionStatus);
@@ -307,13 +320,19 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
     },
 
     // MCP validation
+    isStdioMcpExecutionAllowed: (sourceSlug: string): boolean => {
+      const source = loadVisibleSource(sourceSlug);
+      return !!source
+        && isSourceExecutionAllowed(sourceSlug)
+        && isProjectStdioExecutionAllowed(source, options.allowProjectStdio === true);
+    },
     validateStdioMcpConnection,
     validateMcpConnection,
     getManagedApiAccessToken: async (source: SourceConfig): Promise<string> => {
       if (source.type !== 'api' || source.api?.authType !== 'managed' || !source.api.baseUrl) {
         throw new Error('Source does not use Storyflow managed API access');
       }
-      const loaded = loadSourceImpl(workspacePath, source.slug);
+      const loaded = loadVisibleSource(source.slug);
       if (!loaded) throw new Error(`Source not found: ${source.slug}`);
       const policy = getTrustedManagedSourcePolicy(loaded);
       return createStoryflowManagedTokenGetter({
@@ -321,7 +340,7 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
       })();
     },
 
-    // Icon helpers (simplified - full implementation would use logo.ts)
+    // Icon URL validation for source_test reporting.
     isIconUrl: (value: string): boolean => {
       try {
         const url = new URL(value);
@@ -329,26 +348,6 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
       } catch {
         return false;
       }
-    },
-
-    deriveServiceUrl: (source: SourceConfig): string | null => {
-      if (source.type === 'api' && source.api?.baseUrl) {
-        try {
-          const url = new URL(source.api.baseUrl);
-          return `${url.protocol}//${url.hostname}`;
-        } catch {
-          return null;
-        }
-      }
-      if (source.type === 'mcp' && source.mcp?.url) {
-        try {
-          const url = new URL(source.mcp.url);
-          return `${url.protocol}//${url.hostname}`;
-        } catch {
-          return null;
-        }
-      }
-      return null;
     },
 
     // Session self-management bindings are attached externally via

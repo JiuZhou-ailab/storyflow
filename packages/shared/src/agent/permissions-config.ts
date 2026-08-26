@@ -281,6 +281,8 @@ export interface PermissionsContext {
   workspaceRootPath: string;
   /** Active source slugs for source-specific rules */
   activeSourceSlugs?: string[];
+  /** Host-owned consent to apply permission expansions stored in this Project. */
+  allowProjectGrants?: boolean;
 }
 
 // ============================================================
@@ -648,21 +650,10 @@ class PermissionsConfigCache {
   invalidateSource(workspaceRootPath: string, sourceSlug: string): void {
     debug(`[Permissions] Invalidating source config: ${workspaceRootPath}/${sourceSlug}`);
     this.sourceConfigs.delete(`${workspaceRootPath}::${sourceSlug}`);
-    // Clear merged configs that include this source
-    // Cache key format: "{workspaceRootPath}::{source1},{source2},..."
-    // Use precise matching to avoid false positives (e.g., "linear" matching "linear-triage")
+    // Source changes are rare; clearing this workspace avoids coupling invalidation
+    // to the cache-key representation of Host trust.
     for (const key of this.mergedConfigs.keys()) {
-      if (!key.startsWith(`${workspaceRootPath}::`)) continue;
-
-      // Extract sources portion after the ::
-      const sourcesStr = key.slice(workspaceRootPath.length + 2);
-      if (!sourcesStr) continue;
-
-      // Check for exact match: at start, end, or between commas
-      const sources = sourcesStr.split(',');
-      if (sources.includes(sourceSlug)) {
-        this.mergedConfigs.delete(key);
-      }
+      if (key.startsWith(`${workspaceRootPath}::`)) this.mergedConfigs.delete(key);
     }
   }
 
@@ -712,19 +703,19 @@ class PermissionsConfigCache {
       this.applyDefaultConfig(merged, defaultConfig);
     }
 
-    // Add workspace-level customizations
-    const wsConfig = this.getWorkspaceConfig(context.workspaceRootPath);
-    if (wsConfig) {
-      this.applyCustomConfig(merged, wsConfig);
-    }
+    if (context.allowProjectGrants) {
+      const wsConfig = this.getWorkspaceConfig(context.workspaceRootPath);
+      if (wsConfig) {
+        this.applyCustomConfig(merged, wsConfig);
+      }
 
-    // Add source-level customizations (additive, with auto-scoped MCP patterns)
-    if (context.activeSourceSlugs) {
-      for (const sourceSlug of context.activeSourceSlugs) {
-        const srcConfig = this.getSourceConfig(context.workspaceRootPath, sourceSlug);
-        if (srcConfig) {
-          // Use applySourceConfig which auto-scopes MCP patterns to this source
-          this.applySourceConfig(merged, srcConfig, sourceSlug);
+      // Source-level customizations are also Project-owned permission grants.
+      if (context.activeSourceSlugs) {
+        for (const sourceSlug of context.activeSourceSlugs) {
+          const srcConfig = this.getSourceConfig(context.workspaceRootPath, sourceSlug);
+          if (srcConfig) {
+            this.applySourceConfig(merged, srcConfig, sourceSlug);
+          }
         }
       }
     }
@@ -921,8 +912,8 @@ class PermissionsConfigCache {
   }
 
   private buildCacheKey(context: PermissionsContext): string {
-    const sources = context.activeSourceSlugs?.sort().join(',') ?? '';
-    return `${context.workspaceRootPath}::${sources}`;
+    const sources = [...(context.activeSourceSlugs ?? [])].sort().join(',');
+    return `${context.workspaceRootPath}::${context.allowProjectGrants ? 'granted' : 'host-only'}::${sources}`;
   }
 
   /**

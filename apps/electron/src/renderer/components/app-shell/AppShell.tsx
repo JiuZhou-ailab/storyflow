@@ -250,6 +250,7 @@ interface AppShellProps {
     detail?: string
   }
   onOpenProjectInNewWindow?: (workspaceId: string) => void
+  onRelinkProject?: (workspaceId: string) => void | Promise<void>
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
   onSetProjectArchived?: (workspaceId: string, archived: boolean) => void | Promise<void>
   onRemoveProject?: (workspaceId: string) => void | Promise<void>
@@ -858,6 +859,7 @@ function AppShellContent({
   onReleaseNotesSeen,
   profile,
   onOpenProjectInNewWindow,
+  onRelinkProject,
   onRenameProject,
   onSetProjectArchived,
   onRemoveProject,
@@ -1283,7 +1285,7 @@ function AppShellContent({
   } = useAutomations(projectWorkspaceId)
 
   // Whether local MCP servers are enabled (affects stdio source status)
-  const [localMcpEnabled, setLocalMcpEnabled] = React.useState(true)
+  const [localMcpEnabled, setLocalMcpEnabled] = React.useState(false)
 
   const enabledModes = PERMISSION_MODE_ORDER
 
@@ -1296,7 +1298,7 @@ function AppShellContent({
     let cancelled = false
     window.electronAPI.getWorkspaceSettings(projectWorkspaceId).then((settings) => {
       if (!cancelled && settings) {
-        setLocalMcpEnabled(settings.localMcpEnabled ?? true)
+        setLocalMcpEnabled(settings.localMcpEnabled ?? false)
       }
     }).catch((err) => {
       console.error('[Chat] Failed to load workspace settings:', err)
@@ -4655,6 +4657,7 @@ function AppShellContent({
                   : null}
                 onWorkspaceCreated={onWorkspaceCreatedFromRail ?? onWorkspaceCreated}
                 onOpenProjectInNewWindow={onOpenProjectInNewWindow}
+                onRelinkProject={onRelinkProject}
                 onRenameProject={onRenameProject}
                 onSetProjectArchived={onSetProjectArchived}
                 onRemoveProject={onRemoveProject}

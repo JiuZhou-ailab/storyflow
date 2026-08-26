@@ -129,11 +129,14 @@ export class PromptBuilder {
     const capabilities: string[] = [];
 
     // Check local MCP server capability
-    const localMcpEnabled = isLocalMcpEnabled(this.workspaceRootPath);
+    const localMcpEnabled = isLocalMcpEnabled(
+      this.workspaceRootPath,
+      this.config.workspace.localMcpEnabled,
+    );
     if (localMcpEnabled) {
-      capabilities.push('local-mcp: enabled (stdio subprocess servers supported)');
+      capabilities.push('project-local-mcp: enabled (project-owned stdio subprocess Sources supported)');
     } else {
-      capabilities.push('local-mcp: disabled (only HTTP/SSE servers)');
+      capabilities.push('project-local-mcp: disabled (project-owned stdio subprocess Sources blocked; global Sources unaffected)');
     }
     capabilities.push(
       'workspace-files: use filesystem tools for writes; only report success after the tool confirms it'

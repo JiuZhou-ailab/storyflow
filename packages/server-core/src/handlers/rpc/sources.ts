@@ -3,14 +3,20 @@
 // pos: Server trust boundary mapping runtime ownership to the shared Source store
 
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { CONFIG_DIR } from '@craft-agent/shared/config'
+import { CONFIG_DIR, loadStoredConfig, saveConfig } from '@craft-agent/shared/config'
 import {
   isFreeConversationWorkspaceId,
+  isLocalMcpEnabled,
   resolveRuntimeWorkspace,
 } from '@craft-agent/shared/workspaces'
-import { loadWorkspaceSources } from '@craft-agent/shared/sources'
+import {
+  getSourceCredentialManager,
+  getSourceGrantRef,
+  isSourceHostGranted,
+  isProjectStdioExecutionAllowed,
+  loadWorkspaceSources,
+} from '@craft-agent/shared/sources'
 import { safeJsonParse } from '@craft-agent/shared/utils/files'
-import { getCredentialManager } from '@craft-agent/shared/credentials'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -47,7 +53,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
       log.error(`SOURCES_GET: Workspace not found: ${workspaceId}`)
       return []
     }
-    return loadWorkspaceSources(projectRoot)
+    return loadWorkspaceSources(projectRoot, workspace.id)
   })
 
   // Create a new source
@@ -68,20 +74,39 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Delete a source
   server.handle(RPC_CHANNELS.sources.DELETE, async (_ctx, workspaceId: string, sourceSlug: string) => {
-    const { workspace, projectRoot, mutationRoot } = resolveSourceScope(workspaceId)
+    const { workspace, projectRoot } = resolveSourceScope(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { deleteSource } = await import('@craft-agent/shared/sources')
-    deleteSource(mutationRoot, sourceSlug)
+    const source = loadWorkspaceSources(projectRoot, workspace.id)
+      .find(candidate => candidate.config.slug === sourceSlug)
+    if (!source) throw new Error(`Source not found: ${sourceSlug}`)
 
-    // Clean up stale slug from workspace default sources
-    if (projectRoot) {
-      const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
-      const config = loadWorkspaceConfig(projectRoot)
-      if (config?.defaults?.enabledSourceSlugs?.includes(sourceSlug)) {
-        config.defaults.enabledSourceSlugs = config.defaults.enabledSourceSlugs.filter(s => s !== sourceSlug)
-        saveWorkspaceConfig(projectRoot, config)
+    deleteSource(source.workspaceRootPath, sourceSlug)
+    try {
+      await getSourceCredentialManager().deleteAll(source)
+    } catch (error) {
+      log.error(`Failed to clean credentials for deleted Source ${sourceSlug}:`, error)
+    }
+
+    // Remove the exact Host grant. Recreating the same slug is a new capability.
+    const hostConfig = loadStoredConfig()
+    const deletedRef = getSourceGrantRef(source)
+    const deletedGrantPrefix = `${source.origin}:${sourceSlug}:`
+    const legacyDeletedRef = `${source.origin}:${sourceSlug}`
+    let changed = false
+    for (const candidate of hostConfig?.workspaces ?? []) {
+      if (source.origin === 'workspace' && candidate.id !== workspace.id) continue
+      const next = candidate.defaultEnabledSourceRefs?.filter(ref =>
+        ref !== deletedRef
+        && ref !== legacyDeletedRef
+        && !ref.startsWith(deletedGrantPrefix)
+      )
+      if (next?.length !== candidate.defaultEnabledSourceRefs?.length) {
+        candidate.defaultEnabledSourceRefs = next
+        changed = true
       }
     }
+    if (changed && hostConfig) saveConfig(hostConfig)
   })
 
   // Start OAuth flow for a source (DEPRECATED — use oauth:start + performOAuth client-side)
@@ -99,7 +124,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { loadSource, getSourceCredentialManager } = await import('@craft-agent/shared/sources')
 
-    const source = loadSource(projectRoot, sourceSlug)
+    const source = loadSource(projectRoot, sourceSlug, workspace.id)
     if (!source) {
       throw new Error(`Source not found: ${sourceSlug}`)
     }
@@ -176,11 +201,23 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     if (!workspace) return { success: false, error: 'Workspace not found' }
 
     try {
-      const sources = await loadWorkspaceSources(projectRoot)
+      const sources = await loadWorkspaceSources(projectRoot, workspace.id)
       const source = sources.find(s => s.config.slug === sourceSlug)
       if (!source) return { success: false, error: 'Source not found' }
       if (source.config.type !== 'mcp') return { success: false, error: 'Source is not an MCP server' }
       if (!source.config.mcp) return { success: false, error: 'MCP config not found' }
+      if (
+        !isFreeConversationWorkspaceId(workspace.id)
+        && !isSourceHostGranted(workspace.defaultEnabledSourceRefs, source)
+      ) {
+        return { success: false, error: 'Source is not enabled by Host settings' }
+      }
+      if (!isProjectStdioExecutionAllowed(
+        source,
+        isLocalMcpEnabled(workspace.rootPath, workspace.localMcpEnabled),
+      )) {
+        return { success: false, error: 'Project-local MCP execution is disabled by Host settings' }
+      }
 
       if (source.config.connectionStatus === 'needs_auth') {
         return { success: false, error: 'Source requires authentication' }
@@ -213,11 +250,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
         let accessToken: string | undefined
         if (source.config.mcp.authType === 'oauth' || source.config.mcp.authType === 'bearer') {
-          const credentialManager = getCredentialManager()
-          const credentialId = source.config.mcp.authType === 'oauth'
-            ? { type: 'source_oauth' as const, workspaceId: source.workspaceId, sourceId: sourceSlug }
-            : { type: 'source_bearer' as const, workspaceId: source.workspaceId, sourceId: sourceSlug }
-          const credential = await credentialManager.get(credentialId)
+          const credential = await getSourceCredentialManager().load(source)
           accessToken = credential?.value
         }
 

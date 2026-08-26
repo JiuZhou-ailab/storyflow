@@ -26,10 +26,14 @@ type ActivateResult = Awaited<
 interface CtxOverrides {
   activateSourceInSession?: (slug: string) => Promise<ActivateResult>;
   validateStdioMcpConnection?: SessionToolContext['validateStdioMcpConnection'];
+  isStdioMcpExecutionAllowed?: SessionToolContext['isStdioMcpExecutionAllowed'];
   validateMcpConnection?: SessionToolContext['validateMcpConnection'];
   credentialManager?: SessionToolContext['credentialManager'];
   getManagedApiAccessToken?: SessionToolContext['getManagedApiAccessToken'];
+  testApiSource?: SessionToolContext['testApiSource'];
+  isIconUrl?: SessionToolContext['isIconUrl'];
   isSourceDefinitionReadOnly?: SessionToolContext['isSourceDefinitionReadOnly'];
+  isSourceExecutionAllowed?: SessionToolContext['isSourceExecutionAllowed'];
 }
 
 function createCtx(workspacePath: string, overrides: CtxOverrides = {}): SessionToolContext {
@@ -37,6 +41,7 @@ function createCtx(workspacePath: string, overrides: CtxOverrides = {}): Session
   const ctx = {
     sessionId: 'test-session',
     workspacePath,
+    workspaceId: 'project-stable',
     get sourcesPath() {
       return join(workspacePath, 'sources');
     },
@@ -72,10 +77,14 @@ function createCtx(workspacePath: string, overrides: CtxOverrides = {}): Session
     },
     // Stub the MCP validator so connection tests don't hit the network.
     validateStdioMcpConnection: overrides.validateStdioMcpConnection,
+    isStdioMcpExecutionAllowed: overrides.isStdioMcpExecutionAllowed,
     validateMcpConnection: overrides.validateMcpConnection,
     credentialManager: overrides.credentialManager,
     getManagedApiAccessToken: overrides.getManagedApiAccessToken,
+    testApiSource: overrides.testApiSource,
+    isIconUrl: overrides.isIconUrl,
     isSourceDefinitionReadOnly: overrides.isSourceDefinitionReadOnly,
+    isSourceExecutionAllowed: overrides.isSourceExecutionAllowed ?? (() => true),
     activateSourceInSession: overrides.activateSourceInSession,
   } as unknown as SessionToolContext;
   // Expose saved for assertions (test-only — not on real ctx).
@@ -136,6 +145,71 @@ describe('source_test auto-enable', () => {
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('does not spawn a project stdio Source without Host consent', async () => {
+    writeSource(tempDir, 'project-local');
+    let validated = false;
+    const ctx = createCtx(tempDir, {
+      isStdioMcpExecutionAllowed: () => false,
+      validateStdioMcpConnection: async () => {
+        validated = true;
+        return { success: true };
+      },
+    });
+
+    const result = await handleSourceTest(ctx, { sourceSlug: 'project-local' });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('disabled by Host settings');
+    expect(validated).toBe(false);
+  });
+
+  it('reports a configured icon URL without downloading it', async () => {
+    writeSource(tempDir, 'url-icon', { icon: 'https://example.test/icon.png' });
+    const ctx = createCtx(tempDir, {
+      isIconUrl: (value) => value.startsWith('https://'),
+      validateStdioMcpConnection: stubMcpOk(),
+    });
+
+    const result = await handleSourceTest(ctx, { sourceSlug: 'url-icon' });
+    const text = result.content[0]?.text ?? '';
+
+    expect(text).toContain('✓ Icon URL configured: https://example.test/icon.png');
+    expect(text).not.toContain('No icon configured');
+  });
+
+  it('does not test an API or read credentials without an exact Host grant', async () => {
+    writeSource(tempDir, 'project-api', {
+      type: 'api',
+      api: { baseUrl: 'https://replacement.example', authType: 'bearer' },
+      isAuthenticated: true,
+      mcp: undefined,
+    });
+    let tested = false;
+    let credentialRead = false;
+    const ctx = createCtx(tempDir, {
+      isSourceExecutionAllowed: () => false,
+      testApiSource: async () => {
+        tested = true;
+        return { success: true };
+      },
+      credentialManager: {
+        hasValidCredentials: async () => true,
+        getToken: async () => {
+          credentialRead = true;
+          return 'secret';
+        },
+        refresh: async () => null,
+      },
+    });
+
+    const result = await handleSourceTest(ctx, { sourceSlug: 'project-api' });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('not enabled by Host settings');
+    expect(tested).toBe(false);
+    expect(credentialRead).toBe(false);
   });
 
   it('flips enabled: false → true and calls activation callback on clean run', async () => {
@@ -657,20 +731,24 @@ function writeHttpMcpSource(
 function credentialManagerStub(cachedToken?: string | null, refreshedToken?: string | null) {
   let getTokenCalls = 0;
   let refreshCalls = 0;
+  const workspaceIds: string[] = [];
   return {
     manager: {
       hasValidCredentials: async () => true,
-      getToken: async () => {
+      getToken: async (source) => {
         getTokenCalls += 1;
+        workspaceIds.push(source.workspaceId);
         return cachedToken ?? null;
       },
-      refresh: async () => {
+      refresh: async (source) => {
         refreshCalls += 1;
+        workspaceIds.push(source.workspaceId);
         return refreshedToken ?? null;
       },
     } satisfies NonNullable<SessionToolContext['credentialManager']>,
     getTokenCalls: () => getTokenCalls,
     refreshCalls: () => refreshCalls,
+    workspaceIds: () => workspaceIds,
   };
 }
 
@@ -719,6 +797,18 @@ describe('source_test HTTP MCP credential forwarding', () => {
     expect(calls[0]?.accessToken).toBe('fresh-tok');
     expect(cred.getTokenCalls()).toBe(1);
     expect(cred.refreshCalls()).toBe(1);
+  });
+
+  it('uses the stable Project id for the MCP probe and auth status', async () => {
+    writeHttpMcpSource(tempDir, 'oauth-stable-owner', { isAuthenticated: true });
+    const cred = credentialManagerStub('cached-tok');
+
+    await handleSourceTest(createCtx(tempDir, {
+      credentialManager: cred.manager,
+      validateMcpConnection: async () => ({ success: true }),
+    }), { sourceSlug: 'oauth-stable-owner', autoEnable: false });
+
+    expect(cred.workspaceIds()).toEqual(['project-stable', 'project-stable']);
   });
 });
 

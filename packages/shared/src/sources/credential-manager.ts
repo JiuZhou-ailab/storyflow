@@ -26,7 +26,7 @@ import {
   type MicrosoftService,
 } from './types.ts';
 import { buildAuthorizationHeader } from './api-auth.ts';
-import type { CredentialId, StoredCredential } from '../credentials/types.ts';
+import { SOURCE_CREDENTIAL_TYPES, type CredentialId, type StoredCredential } from '../credentials/types.ts';
 import { getCredentialManager } from '../credentials/index.ts';
 import { CraftOAuth, getMcpBaseUrl, prepareMcpOAuth, exchangeMcpOAuth, type OAuthCallbacks, type OAuthTokens } from '../auth/oauth.ts';
 import { type OAuthSessionContext } from '../auth/types.ts';
@@ -62,6 +62,8 @@ import {
   refreshGenericOAuthToken,
 } from '../auth/generic-oauth.ts';
 import { debug } from '../utils/debug.ts';
+import { basename } from 'path';
+import { loadStoredConfig } from '../config/storage.ts';
 import {
   markSourceAuthenticated,
   loadSourceConfig,
@@ -171,8 +173,6 @@ export class SourceCredentialManager {
    * (credentials may have been stored via different auth modes)
    */
   async load(source: LoadedSource): Promise<StoredCredential | null> {
-    const manager = getCredentialManager();
-
     // For MCP sources, try both OAuth and bearer credentials
     // (stdio transport doesn't need credentials)
     if (source.config.type === 'mcp' && source.config.mcp?.transport !== 'stdio' && source.config.mcp?.authType !== 'none') {
@@ -181,7 +181,7 @@ export class SourceCredentialManager {
 
     // For other sources, use the credential ID based on authType
     const credentialId = this.getCredentialId(source);
-    const cred = await manager.get(credentialId);
+    const cred = await this.loadCredentialForDefinition(credentialId);
 
     if (cred) {
       debug(`[SourceCredentialManager] Found ${credentialId.type} for ${source.config.slug}`);
@@ -194,21 +194,24 @@ export class SourceCredentialManager {
    * Load MCP credential with fallback (OAuth -> bearer)
    */
   private async loadMcpCredential(source: LoadedSource): Promise<StoredCredential | null> {
-    const manager = getCredentialManager();
     const baseId = {
       workspaceId: source.workspaceId,
-      sourceId: source.config.slug,
+      sourceId: this.getCredentialSourceId(source),
     };
 
     // Try OAuth first
-    const oauthCreds = await manager.get({ type: 'source_oauth', ...baseId });
+    const oauthCreds = await this.loadCredentialForDefinition(
+      { type: 'source_oauth', ...baseId },
+    );
     if (oauthCreds?.value) {
       debug(`[SourceCredentialManager] Found source_oauth for ${source.config.slug}`);
       return oauthCreds;
     }
 
     // Fall back to bearer
-    const bearerCreds = await manager.get({ type: 'source_bearer', ...baseId });
+    const bearerCreds = await this.loadCredentialForDefinition(
+      { type: 'source_bearer', ...baseId },
+    );
     if (bearerCreds?.value) {
       debug(`[SourceCredentialManager] Found source_bearer for ${source.config.slug}`);
       return bearerCreds;
@@ -224,11 +227,50 @@ export class SourceCredentialManager {
   async delete(source: LoadedSource): Promise<boolean> {
     const credentialId = this.getCredentialId(source);
     const manager = getCredentialManager();
-    const deleted = await manager.delete(credentialId);
+    const legacyWorkspaceId = this.getUniqueLegacyWorkspaceId(source);
+    const results = await Promise.all([
+      manager.delete(credentialId),
+      manager.delete({
+        ...credentialId,
+        sourceId: source.config.slug,
+      }),
+      ...(legacyWorkspaceId ? [manager.delete({
+        ...credentialId,
+        workspaceId: legacyWorkspaceId,
+        sourceId: source.config.slug,
+      })] : []),
+    ]);
+    const deleted = results.some(Boolean);
     if (deleted) {
       debug(`[SourceCredentialManager] Deleted ${credentialId.type} for ${source.config.slug}`);
     }
     return deleted;
+  }
+
+  /** Remove every auth representation owned by the exact Source definition. */
+  async deleteAll(source: LoadedSource): Promise<boolean> {
+    const manager = getCredentialManager();
+    const scope = {
+      workspaceId: source.workspaceId,
+      sourceId: this.getCredentialSourceId(source),
+    };
+    const legacyWorkspaceId = this.getUniqueLegacyWorkspaceId(source);
+    const results = await Promise.all(
+      SOURCE_CREDENTIAL_TYPES.flatMap(type => [
+        manager.delete({ type, ...scope }),
+        manager.delete({
+          type,
+          workspaceId: source.workspaceId,
+          sourceId: source.config.slug,
+        }),
+        ...(legacyWorkspaceId ? [manager.delete({
+          type,
+          workspaceId: legacyWorkspaceId,
+          sourceId: source.config.slug,
+        })] : []),
+      ]),
+    );
+    return results.some(Boolean);
   }
 
   /**
@@ -333,8 +375,30 @@ export class SourceCredentialManager {
     return {
       type,
       workspaceId: source.workspaceId,
-      sourceId: source.config.slug,
+      sourceId: this.getCredentialSourceId(source),
     };
+  }
+
+  private getCredentialSourceId(source: LoadedSource): string {
+    return `${source.config.slug}:${source.definitionIdentity}`;
+  }
+
+  private async loadCredentialForDefinition(
+    credentialId: CredentialId,
+  ): Promise<StoredCredential | null> {
+    return getCredentialManager().get(credentialId);
+  }
+
+  private getUniqueLegacyWorkspaceId(source: LoadedSource): string | undefined {
+    if (source.origin !== 'workspace') return undefined;
+    const legacyWorkspaceId = basename(source.workspaceRootPath);
+    if (!legacyWorkspaceId || legacyWorkspaceId === source.workspaceId) return undefined;
+    const matchingProjects = loadStoredConfig()?.workspaces.filter(
+      workspace => basename(workspace.rootPath) === legacyWorkspaceId,
+    ) ?? [];
+    return matchingProjects.length === 1 && matchingProjects[0]?.id === source.workspaceId
+      ? legacyWorkspaceId
+      : undefined;
   }
 
   // ============================================================
@@ -907,7 +971,7 @@ export class SourceCredentialManager {
    * - Microsoft rotates refresh tokens, so concurrent refreshes could cause token invalidation
    */
   async refresh(source: LoadedSource): Promise<string | null> {
-    const key = source.config.slug;
+    const key = JSON.stringify(this.getCredentialId(source));
 
     // Return existing refresh promise if one is in progress
     const pending = this.pendingRefreshes.get(key);

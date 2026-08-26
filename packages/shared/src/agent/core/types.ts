@@ -64,6 +64,8 @@ export interface PermissionManagerConfig {
   plansFolderPath?: string;
   /** Data folder path (writes to this folder are allowed in Explore mode for transform_data output) */
   dataFolderPath?: string;
+  /** Host-owned consent to apply permission expansions stored in this Project. */
+  allowProjectGrants?: boolean;
 }
 
 /**

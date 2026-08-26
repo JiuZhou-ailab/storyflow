@@ -8,6 +8,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { getSessionFilePath, sessionPersistenceQueue } from '@craft-agent/shared/sessions/storage'
 import { clearMetrics, configurePerfTracking } from '@craft-agent/shared/utils'
+import { createWorkspaceAtPath } from '@craft-agent/shared/workspaces'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
 
 interface CapturedPerfMetric {
@@ -55,10 +56,12 @@ describe('sendMessage durability', () => {
   }
 
   function buildSession(id: string) {
+    const directoryConfig = createWorkspaceAtPath(tmpRoot, 'Test Workspace')
     const workspace = {
       id: 'ws_test',
       name: 'Test Workspace',
       rootPath: tmpRoot,
+      directoryConfigId: directoryConfig.id,
       createdAt: Date.now(),
     }
     const managed = createManagedSession(

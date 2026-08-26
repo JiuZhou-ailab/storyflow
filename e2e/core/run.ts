@@ -410,6 +410,7 @@ function createFixture(): Fixture {
       name: 'Core E2E',
       slug: WORKSPACE_SLUG,
       rootPath: workspaceRoot,
+      directoryConfigId: WORKSPACE_ID,
       createdAt: now,
     }],
     activeWorkspaceId: WORKSPACE_ID,

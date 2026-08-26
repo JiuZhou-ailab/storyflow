@@ -30,6 +30,7 @@ function createMockSource(
     folderPath: `/test/sources/${slug}`,
     workspaceRootPath: '/test/workspace',
     workspaceId: 'test-workspace',
+    definitionIdentity: `${slug}-definition`,
     origin: 'workspace',
   };
 }

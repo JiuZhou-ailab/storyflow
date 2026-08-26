@@ -684,6 +684,7 @@ export interface WorkspaceSettings {
   thinkingLevel?: ThinkingLevel
   workingDirectory?: string
   localMcpEnabled?: boolean
+  automationsEnabled?: boolean
   defaultLlmConnection?: string
   enabledSourceSlugs?: string[]
 }

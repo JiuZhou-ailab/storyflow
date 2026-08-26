@@ -124,10 +124,10 @@ interface NavigationProviderProps {
   children: ReactNode
   /** Current workspace ID */
   workspaceId: string | null
-  /** Current workspace slug (used for URL ?ws= param and localStorage) */
-  workspaceSlug: string | null
-  /** Switch to a workspace by slug (called on popstate when ?ws= changes) */
-  onSwitchWorkspaceBySlug?: (slug: string) => void
+  /** Stable Host workspace ID used for URL ?ws= and localStorage. */
+  workspaceRouteKey: string | null
+  /** Switch by stable ID; the App may also accept legacy slug URLs. */
+  onSwitchWorkspaceByRouteKey?: (routeKey: string) => boolean
   /** Session creation handler */
   onCreateSession: (workspaceId: string, options?: import('../../shared/types').CreateSessionOptions) => Promise<Session>
   /** Input change handler for pre-filling chat input */
@@ -149,8 +149,8 @@ interface NavigationProviderProps {
 export function NavigationProvider({
   children,
   workspaceId,
-  workspaceSlug,
-  onSwitchWorkspaceBySlug,
+  workspaceRouteKey,
+  onSwitchWorkspaceByRouteKey,
   onCreateSession,
   onInputChange,
   getDraft,
@@ -255,12 +255,12 @@ export function NavigationProvider({
     const focusedIdx = store.get(focusedPanelIndexAtom)
     const sidebarKey = buildRightSidebarParam(rightSidebarRef.current) ?? ''
     return buildSemanticHistoryKey({
-      workspaceSlug,
+      workspaceSlug: workspaceRouteKey,
       panelRoutes: panels.map(p => p.route),
       focusedPanelIndex: focusedIdx,
       sidebarParam: sidebarKey,
     })
-  }, [store, workspaceSlug])
+  }, [store, workspaceRouteKey])
 
   // =========================================================================
   // URL SYNC (builds URL from current state, push or replace)
@@ -282,9 +282,9 @@ export function NavigationProvider({
     const focusedPanel = panels[focusedIdx] ?? panels[0]
     const url = new URL(window.location.href)
 
-    // ?ws= workspace slug
-    if (workspaceSlug) {
-      url.searchParams.set('ws', workspaceSlug)
+    // ?ws= stable Host workspace ID
+    if (workspaceRouteKey) {
+      url.searchParams.set('ws', workspaceRouteKey)
     }
 
     // ?route= is the focused panel's route
@@ -333,10 +333,10 @@ export function NavigationProvider({
     }
 
     // Persist per-workspace URL for workspace switch restoration
-    if (workspaceSlug) {
-      storage.set(storage.KEYS.workspaceUrl, url.search, workspaceSlug)
+    if (workspaceRouteKey) {
+      storage.set(storage.KEYS.workspaceUrl, url.search, workspaceRouteKey)
     }
-  }, [store, workspaceSlug, updateCanGoBackForward])
+  }, [store, workspaceRouteKey, updateCanGoBackForward])
 
   const syncUrlRef = useRef(syncUrl)
   useEffect(() => { syncUrlRef.current = syncUrl }, [syncUrl])
@@ -1038,14 +1038,21 @@ export function NavigationProvider({
 
       // Read state from URL (the browser already navigated to it)
       const params = new URLSearchParams(window.location.search)
-      const wsSlug = params.get('ws')
+      const workspaceRouteKeyFromUrl = params.get('ws')
 
       // Check if workspace changed
-      if (wsSlug && wsSlug !== workspaceSlug && onSwitchWorkspaceBySlug) {
+      if (workspaceRouteKeyFromUrl && workspaceRouteKeyFromUrl !== workspaceRouteKey && onSwitchWorkspaceByRouteKey) {
         // Workspace boundary crossed — trigger workspace switch
         // The workspace switch effect will handle reconciliation
-        isPopstateSwitchRef.current = true
-        onSwitchWorkspaceBySlug(wsSlug)
+        if (onSwitchWorkspaceByRouteKey(workspaceRouteKeyFromUrl)) {
+          isPopstateSwitchRef.current = true
+        } else {
+          // The historical Project no longer exists. Keep runtime and URL on the
+          // current stable Project instead of poisoning the next UI switch.
+          isPopstateSwitchRef.current = false
+          syncUrlRef.current(false)
+          lastSemanticHistoryKeyRef.current = getSemanticHistoryKey()
+        }
         return
       }
 
@@ -1066,27 +1073,27 @@ export function NavigationProvider({
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [workspaceSlug, onSwitchWorkspaceBySlug, updateCanGoBackForward, getSemanticHistoryKey, isSessionsReady])
+  }, [workspaceRouteKey, onSwitchWorkspaceByRouteKey, updateCanGoBackForward, getSemanticHistoryKey, isSessionsReady])
 
   // =========================================================================
   // WORKSPACE SWITCH
   // =========================================================================
 
-  const previousWorkspaceSlugRef = useRef<string | null>(null)
+  const previousWorkspaceRouteKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!workspaceId || !workspaceSlug) return
+    if (!workspaceId || !workspaceRouteKey) return
 
-    if (previousWorkspaceSlugRef.current === null) {
+    if (previousWorkspaceRouteKeyRef.current === null) {
       // First mount — initial route restoration handles it
-      previousWorkspaceSlugRef.current = workspaceSlug
+      previousWorkspaceRouteKeyRef.current = workspaceRouteKey
       return
     }
 
-    if (previousWorkspaceSlugRef.current === workspaceSlug) return
+    if (previousWorkspaceRouteKeyRef.current === workspaceRouteKey) return
 
     if (isPopstateSwitchRef.current && !isSessionsReady) return
-    previousWorkspaceSlugRef.current = workspaceSlug
+    previousWorkspaceRouteKeyRef.current = workspaceRouteKey
 
     // Suppress pushState during reconciliation
     suppressPushRef.current = true
@@ -1105,7 +1112,7 @@ export function NavigationProvider({
       for (const key of [...url.searchParams.keys()]) {
         url.searchParams.delete(key)
       }
-      url.searchParams.set('ws', workspaceSlug)
+      url.searchParams.set('ws', workspaceRouteKey)
       url.searchParams.set('route', 'writing')
 
       // Push a new history entry for the workspace switch
@@ -1126,7 +1133,7 @@ export function NavigationProvider({
       suppressPushRef.current = false
       lastSemanticHistoryKeyRef.current = getSemanticHistoryKey()
     })
-  }, [workspaceId, workspaceSlug, store, updateCanGoBackForward, getSemanticHistoryKey, isSessionsReady])
+  }, [workspaceId, workspaceRouteKey, store, updateCanGoBackForward, getSemanticHistoryKey, isSessionsReady])
 
   // =========================================================================
   // INITIAL ROUTE RESTORATION (CMD+R reload)

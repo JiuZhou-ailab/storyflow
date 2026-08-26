@@ -1218,6 +1218,8 @@
   "settings.tools.title": "工具",
   "settings.workspace.advanced": "高级",
   "settings.workspace.atLeast2Modes": "至少需要 2 种模式",
+  "settings.workspace.automations": "项目自动化",
+  "settings.workspace.automationsDesc": "允许此项目执行定时操作、提示词和 Webhook",
   "settings.workspace.defaultMode": "默认模式",
   "settings.workspace.defaultModeDesc": "控制 AI 可执行的操作",
   "settings.workspace.defaultSources": "默认数据源",

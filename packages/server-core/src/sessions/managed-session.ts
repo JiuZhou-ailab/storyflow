@@ -17,12 +17,73 @@ import {
 import { getSourceCredentialManager, TokenRefreshManager } from '@craft-agent/shared/sources';
 import type { Message, StoredAttachment, TurnMetrics } from '@craft-agent/core/types';
 import { normalizeThinkingLevel, type ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels';
-import { isFreeConversationWorkspaceId } from '@craft-agent/shared/workspaces';
-import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces';
+import {
+  isFreeConversationWorkspaceId,
+  isPathWithinProjectRoot,
+  loadWorkspaceConfig,
+} from '@craft-agent/shared/workspaces';
+import { isSourceHostGranted, resolveHostGrantedSourceSlugs, type LoadedSource } from '@craft-agent/shared/sources';
 import { needsPiRuntimeMigrationSeed } from './runtime-config';
 import { getSessionLog } from './session-runtime';
 
 export type AgentInstance = PiAgent;
+
+const PERMISSION_MODE_RANK: Record<PermissionMode, number> = {
+  safe: 0,
+  ask: 1,
+  'allow-all': 2,
+};
+
+export function capPermissionMode(
+  requested: PermissionMode | undefined,
+  maximum: PermissionMode | undefined,
+  fallback: PermissionMode,
+): PermissionMode {
+  const allowed = maximum ?? 'ask';
+  const candidate = requested ?? fallback;
+  return PERMISSION_MODE_RANK[candidate] <= PERMISSION_MODE_RANK[allowed]
+    ? candidate
+    : allowed;
+}
+
+export function resolveWorkspaceDefaultPermissionMode(
+  workspace: Pick<Workspace, 'id' | 'defaultPermissionMode'>,
+  globalDefault: PermissionMode,
+): PermissionMode {
+  return isFreeConversationWorkspaceId(workspace.id)
+    ? workspace.defaultPermissionMode ?? globalDefault
+    : workspace.defaultPermissionMode ?? 'ask';
+}
+
+export function intersectSourceSlugs(
+  requested: readonly string[],
+  allowed: readonly string[] | undefined,
+): string[] {
+  const allowedSet = new Set(allowed ?? []);
+  return requested.filter(slug => allowedSet.has(slug));
+}
+
+export function canAutoEnableSource(
+  workspace: Pick<Workspace, 'id' | 'defaultEnabledSourceRefs'>,
+  currentlyEnabled: readonly string[],
+  source: LoadedSource,
+): boolean {
+  return currentlyEnabled.includes(source.config.slug)
+    || isFreeConversationWorkspaceId(workspace.id)
+    || isSourceHostGranted(workspace.defaultEnabledSourceRefs, source);
+}
+
+export function filterRestoredSourceSlugs(
+  workspace: Pick<Workspace, 'id' | 'defaultEnabledSourceRefs'>,
+  storedSlugs: readonly string[] | undefined,
+  sources: readonly LoadedSource[],
+): string[] | undefined {
+  if (!storedSlugs || isFreeConversationWorkspaceId(workspace.id)) return storedSlugs ? [...storedSlugs] : undefined;
+  return intersectSourceSlugs(
+    storedSlugs,
+    resolveHostGrantedSourceSlugs(workspace.defaultEnabledSourceRefs, sources),
+  );
+}
 
 export interface ManagedSession {
   id: string;
@@ -202,10 +263,29 @@ export function createManagedSessionState(
     ...overrides,
   } as ManagedSession;
 
+  if (
+    !isFreeConversationWorkspaceId(workspace.id)
+    && managed.permissionMode === 'allow-all'
+    && workspace.defaultPermissionMode !== 'allow-all'
+    && overrides?.permissionMode !== 'allow-all'
+  ) {
+    // ponytail: execute consent is process-scoped until durable per-Session
+    // capability grants have a Host-owned persistence contract.
+    managed.permissionMode = 'ask';
+    managed.previousPermissionMode = undefined;
+  }
+
   if (!managed.workingDirectory) {
     managed.workingDirectory = isFreeConversationWorkspaceId(workspace.id)
       ? getSessionStoragePath(workspace.rootPath, managed.id)
       : workspace.rootPath;
+  } else if (
+    !isFreeConversationWorkspaceId(workspace.id)
+    && !isPathWithinProjectRoot(workspace.rootPath, managed.workingDirectory)
+  ) {
+    log(`Session ${managed.id}: rejected Project-owned cwd outside ${workspace.rootPath}`);
+    managed.workingDirectory = workspace.rootPath;
+    managed.sdkCwd = undefined;
   }
   if (managed.branchFromMessageId && !managed.branchContextStrategy) {
     managed.branchContextStrategy = managed.branchFromSdkSessionId

@@ -32,6 +32,7 @@ function createApiSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSou
     folderPath: '/tmp/test/sources/gmail-test',
     workspaceRootPath: '/tmp/test',
     workspaceId: 'test-workspace',
+    definitionIdentity: 'test-definition',
     origin: 'workspace',
   };
 }
@@ -54,6 +55,7 @@ function createMcpSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSou
     folderPath: '/tmp/test/sources/mcp-test',
     workspaceRootPath: '/tmp/test',
     workspaceId: 'test-workspace',
+    definitionIdentity: 'test-definition',
     origin: 'workspace',
   };
 }

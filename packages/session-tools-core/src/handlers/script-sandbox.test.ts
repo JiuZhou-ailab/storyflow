@@ -33,6 +33,7 @@ describe('script_sandbox', () => {
     return {
       sessionId: 'sandbox-session',
       workspacePath: rootDir,
+      workspaceId: 'test-workspace',
       sourcesPath: join(rootDir, 'sources'),
       skillsPath: join(rootDir, 'skills'),
       plansFolderPath: join(sessionDir, 'plans'),
@@ -50,6 +51,7 @@ describe('script_sandbox', () => {
         stat: () => ({ size: 0, isDirectory: () => false }),
       },
       loadSourceConfig: () => null,
+      isSourceExecutionAllowed: () => false,
       sessionPath: sessionDir,
       dataPath: dataDir,
     };

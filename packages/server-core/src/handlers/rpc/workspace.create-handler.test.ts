@@ -1,6 +1,6 @@
-// input: Workspace CREATE and SWITCH RPC requests
-// output: Regression coverage for blank roots, remote options, stale default reuse, and runtime activation
-// pos: Guards the server boundary between workspace storage, active runtimes, and in-memory sessions
+// input: Local/headless Project CREATE plus RELINK and SWITCH RPC requests
+// output: Regression coverage for canonical registration, stable relinking, root preservation, and runtime activation
+// pos: Guards the server boundary between Project storage, active runtimes, and in-memory Sessions
 
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
@@ -29,45 +29,73 @@ interface CreatedWorkspace {
 }
 
 const createdWorkspaces: CreatedWorkspace[] = []
+const registeredProjectCalls: Array<[string, string]> = []
+const activeWorkspaceIds: string[] = []
+let defaultWorkspacesDir = join(CONFIG_DIR, 'workspaces')
 
-mock.module('@craft-agent/shared/config', () => ({
-  addWorkspace: ({
+function registerProjectForTest(name: string, rootPath: string): CreatedWorkspace {
+  registeredProjectCalls.push([name, rootPath])
+  if (!isValidWorkspace(rootPath)) createWorkspaceAtPath(rootPath, name)
+  const workspace = {
+    id: `workspace-${createdWorkspaces.length + 1}`,
     name,
     rootPath,
-    remoteServer,
-  }: Pick<CreatedWorkspace, 'name' | 'rootPath' | 'remoteServer'>) => {
-    if (!isValidWorkspace(rootPath)) {
-      createWorkspaceAtPath(rootPath, name)
-    }
-    const workspace = {
-      id: `workspace-${createdWorkspaces.length + 1}`,
-      name,
-      rootPath,
-      slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'workspace',
-      ...(remoteServer && { remoteServer }),
-    }
-    createdWorkspaces.push(workspace)
-    return workspace
-  },
+    slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'workspace',
+  }
+  createdWorkspaces.push(workspace)
+  return workspace
+}
+
+async function connectRemoteForTest(
+  workspaceId: string,
+  remoteServer: { url: string; token: string; remoteWorkspaceId: string },
+) {
+  const stored = {
+    url: remoteServer.url,
+    credentialRef: `remote_server_token::${workspaceId}`,
+    remoteWorkspaceId: remoteServer.remoteWorkspaceId,
+  }
+  const workspace = createdWorkspaces.find(candidate => candidate.id === workspaceId)
+  if (workspace) workspace.remoteServer = stored
+  return stored
+}
+
+mock.module('@craft-agent/shared/config', () => ({
   getWorkspaceByNameOrId: (id: string) => createdWorkspaces.find(workspace => workspace.id === id) ?? null,
   getWorkspaces: () => createdWorkspaces,
-  setActiveWorkspace: () => {},
-  updateWorkspaceRemoteServer: async (
-    workspaceId: string,
-    remoteServer: { url: string; token: string; remoteWorkspaceId: string },
-  ) => {
-    const stored = {
-      url: remoteServer.url,
-      credentialRef: `remote_server_token::${workspaceId}`,
-      remoteWorkspaceId: remoteServer.remoteWorkspaceId,
-    }
-    const workspace = createdWorkspaces.find(candidate => candidate.id === workspaceId)
-    if (workspace) workspace.remoteServer = stored
-    return stored
+  setActiveWorkspace: (workspaceId: string) => { activeWorkspaceIds.push(workspaceId) },
+  updateWorkspaceRemoteServer: connectRemoteForTest,
+}))
+
+mock.module('@craft-agent/shared/workspaces', () => ({
+  createWorkspaceAtPath,
+  ensureDefaultWorkspacesDir: () => { mkdirSync(defaultWorkspacesDir, { recursive: true }) },
+  getDefaultWorkspacesDir: () => defaultWorkspacesDir,
+  isValidWorkspace,
+  loadWorkspaceConfig,
+  isWorkspaceRootAvailable: (workspace: CreatedWorkspace) => (
+    Boolean(workspace.remoteServer || loadWorkspaceConfig(workspace.rootPath))
+  ),
+  registerLocalProject: registerProjectForTest,
+  relinkWorkspaceRoot: (projectId: string, rootPath: string) => {
+    const workspace = createdWorkspaces.find(candidate => candidate.id === projectId)
+    if (!workspace) throw new Error('Project not found')
+    workspace.rootPath = rootPath
+    return { ...workspace, rootAvailable: true }
   },
+  resolveRuntimeWorkspace: (workspaceId: string) => workspaceId === FREE_CONVERSATION_WORKSPACE_ID
+    ? {
+        id: workspaceId,
+        name: 'Free',
+        slug: 'free',
+        rootPath: join(CONFIG_DIR, 'runtime', 'free'),
+        createdAt: 0,
+      }
+    : createdWorkspaces.find(workspace => workspace.id === workspaceId) ?? null,
 }))
 
 const { registerWorkspaceCoreHandlers } = await import('./workspace')
+const { registerServerHandlers } = await import('./server')
 
 beforeAll(() => {
   mkdirSync(CONFIG_DIR, { recursive: true })
@@ -77,7 +105,9 @@ beforeAll(() => {
 function createWorkspaceHarness() {
   const handlers = new Map<string, HandlerFn>()
   let reloadSessionsCount = 0
+  const reloadSessionScopes: Array<string | undefined> = []
   const setupConfigWatcherCalls: Array<[string, string]> = []
+  const rebindWorkspaceRootCalls: Array<[string, string]> = []
 
   const server: RpcServer = {
     handle(channel, handler) {
@@ -93,9 +123,49 @@ function createWorkspaceHarness() {
     sessionManager: {
       getWorkspaces: () => createdWorkspaces,
       waitForInit: async () => {},
-      reloadSessions: () => {
+      registerProject: async (name: string, rootPath: string, remoteServer?: {
+        url: string
+        token: string
+        remoteWorkspaceId: string
+      }) => {
+        const workspace = registerProjectForTest(name, rootPath)
+        if (remoteServer) workspace.remoteServer = await connectRemoteForTest(workspace.id, remoteServer)
         reloadSessionsCount += 1
+        reloadSessionScopes.push(workspace.id)
+        setupConfigWatcherCalls.push([workspace.rootPath, workspace.id])
+        activeWorkspaceIds.push(workspace.id)
+        return workspace
       },
+      activateProject: async (workspaceId: string) => {
+        const workspace = workspaceId === FREE_CONVERSATION_WORKSPACE_ID
+          ? {
+              id: workspaceId,
+              name: 'Free',
+              slug: 'free',
+              rootPath: join(CONFIG_DIR, 'runtime', 'free'),
+            }
+          : createdWorkspaces.find(candidate => candidate.id === workspaceId)
+        if (!workspace) throw new Error(`Project not found: ${workspaceId}`)
+        setupConfigWatcherCalls.push([workspace.rootPath, workspace.id])
+        return workspace
+      },
+      updateRemoteProject: async (workspaceId: string, remoteServer: {
+        url: string
+        token: string
+        remoteWorkspaceId: string
+      }) => { await connectRemoteForTest(workspaceId, remoteServer) },
+      reloadSessions: async (workspaceId?: string) => {
+        reloadSessionsCount += 1
+        reloadSessionScopes.push(workspaceId)
+      },
+      rebindWorkspaceRoot: async (projectId: string, currentRoot: string) => {
+        rebindWorkspaceRootCalls.push([projectId, currentRoot])
+        const workspace = createdWorkspaces.find(candidate => candidate.id === projectId)!
+        workspace.rootPath = currentRoot
+        return workspace
+      },
+      getActiveSessionCount: () => 0,
+      getSessions: () => [],
       setupConfigWatcher: (rootPath: string, workspaceId: string) => {
         setupConfigWatcherCalls.push([rootPath, workspaceId])
       },
@@ -134,6 +204,10 @@ function createWorkspaceHarness() {
   if (!switchWorkspace) {
     throw new Error('workspace switch handler not registered')
   }
+  const relinkWorkspace = handlers.get(RPC_CHANNELS.workspaces.RELINK)
+  if (!relinkWorkspace) {
+    throw new Error('workspace relink handler not registered')
+  }
 
   const ctx: RequestContext = {
     clientId: 'client-1',
@@ -143,15 +217,144 @@ function createWorkspaceHarness() {
 
   return {
     createWorkspace,
+    relinkWorkspace,
     checkWorkspaceSlug,
     switchWorkspace,
     ctx,
     getReloadSessionsCount: () => reloadSessionsCount,
+    getReloadSessionScopes: () => reloadSessionScopes,
     getSetupConfigWatcherCalls: () => setupConfigWatcherCalls,
+    getRebindWorkspaceRootCalls: () => rebindWorkspaceRootCalls,
+  }
+}
+
+function createServerWorkspaceHarness() {
+  const handlers = new Map<string, HandlerFn>()
+  const waitForInitScopes: Array<string | null | undefined> = []
+  const reloadSessionScopes: Array<string | undefined> = []
+  const setupConfigWatcherCalls: Array<[string, string]> = []
+
+  const server: RpcServer = {
+    handle(channel, handler) {
+      handlers.set(channel, handler)
+    },
+    push() {},
+    async invokeClient() {
+      return undefined
+    },
+  }
+
+  const deps: HandlerDeps = {
+    sessionManager: {
+      waitForInit: async (workspaceId?: string | null) => { waitForInitScopes.push(workspaceId) },
+      registerProject: async (name: string, rootPath: string) => {
+        const workspace = registerProjectForTest(name, rootPath)
+        reloadSessionScopes.push(workspace.id)
+        setupConfigWatcherCalls.push([workspace.rootPath, workspace.id])
+        activeWorkspaceIds.push(workspace.id)
+        return workspace
+      },
+      reloadSessions: async (workspaceId?: string) => { reloadSessionScopes.push(workspaceId) },
+      setupConfigWatcher: (rootPath: string, workspaceId: string) => {
+        setupConfigWatcherCalls.push([rootPath, workspaceId])
+      },
+    } as unknown as HandlerDeps['sessionManager'],
+    oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
+    platform: {
+      appRootPath: '/',
+      resourcesPath: '/',
+      isPackaged: false,
+      appVersion: '0.0.0-test',
+      isDebugMode: true,
+      logger: {
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        debug: () => {},
+      },
+      imageProcessor: {
+        getMetadata: async () => null,
+        process: async () => Buffer.from(''),
+      },
+    },
+  }
+
+  registerServerHandlers(server, deps, {
+    getConnectedClientCount: () => 0,
+    serverId: 'server-test',
+    startedAt: Date.now(),
+  })
+
+  const createWorkspace = handlers.get(RPC_CHANNELS.server.CREATE_WORKSPACE)
+  if (!createWorkspace) throw new Error('server workspace create handler not registered')
+
+  return {
+    createWorkspace,
+    waitForInitScopes,
+    reloadSessionScopes,
+    setupConfigWatcherCalls,
   }
 }
 
 describe('workspace core RPC registration', () => {
+  it('routes headless Project creation through canonical registration and activation', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'craft-server-workspace-create-handler-'))
+    defaultWorkspacesDir = join(parent, 'managed-projects')
+    createdWorkspaces.length = 0
+    registeredProjectCalls.length = 0
+    activeWorkspaceIds.length = 0
+    const {
+      createWorkspace,
+      waitForInitScopes,
+      reloadSessionScopes,
+      setupConfigWatcherCalls,
+    } = createServerWorkspaceHarness()
+
+    try {
+      const workspace = await createWorkspace({
+        clientId: 'client-1',
+        workspaceId: null,
+        webContentsId: null,
+      }, 'Headless Project') as CreatedWorkspace
+      const rootPath = join(defaultWorkspacesDir, 'headless-project')
+
+      expect(registeredProjectCalls).toEqual([['Headless Project', rootPath]])
+      expect(waitForInitScopes).toEqual([undefined])
+      expect(reloadSessionScopes).toEqual([workspace.id])
+      expect(setupConfigWatcherCalls).toEqual([[rootPath, workspace.id]])
+      expect(activeWorkspaceIds).toEqual([workspace.id])
+      expect(loadWorkspaceConfig(rootPath)?.name).toBe('Headless Project')
+      expect(workspace).not.toHaveProperty('rootPath')
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('relinks the same Project identity to an explicitly selected existing directory', async () => {
+    createdWorkspaces.length = 0
+    const parent = mkdtempSync(join(tmpdir(), 'craft-workspace-relink-handler-'))
+    const missingRoot = join(parent, 'moved-from')
+    const currentRoot = join(parent, 'moved-to')
+    createWorkspaceAtPath(currentRoot, 'Moved Project')
+    createdWorkspaces.push({
+      id: 'project-stable',
+      name: 'Moved Project',
+      rootPath: missingRoot,
+      slug: 'moved-project',
+    })
+    const { relinkWorkspace, ctx, getRebindWorkspaceRootCalls } = createWorkspaceHarness()
+
+    try {
+      const workspace = await relinkWorkspace(ctx, 'project-stable', currentRoot) as CreatedWorkspace
+
+      expect(workspace.id).toBe('project-stable')
+      expect(workspace.rootPath).toBe(currentRoot)
+      expect(getRebindWorkspaceRootCalls()).toEqual([['project-stable', currentRoot]])
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
   it('activates the config watcher when switching to the Free Conversation runtime', async () => {
     createdWorkspaces.length = 0
     const { switchWorkspace, ctx, getSetupConfigWatcherCalls } = createWorkspaceHarness()
@@ -167,7 +370,13 @@ describe('workspace core RPC registration', () => {
   it('creates a blank workspace while tolerating legacy method fields', async () => {
     createdWorkspaces.length = 0
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-workspace-create-handler-'))
-    const { createWorkspace, ctx, getReloadSessionsCount, getSetupConfigWatcherCalls } = createWorkspaceHarness()
+    const {
+      createWorkspace,
+      ctx,
+      getReloadSessionsCount,
+      getReloadSessionScopes,
+      getSetupConfigWatcherCalls,
+    } = createWorkspaceHarness()
 
     try {
       await createWorkspace(
@@ -179,6 +388,7 @@ describe('workspace core RPC registration', () => {
       )
 
       expect(getReloadSessionsCount()).toBe(1)
+      expect(getReloadSessionScopes()).toEqual(['workspace-1'])
       expect(getSetupConfigWatcherCalls()).toEqual([[rootPath, 'workspace-1']])
       expect(loadWorkspaceConfig(rootPath)?.defaults?.workingDirectory).toBe(rootPath)
       expect(readdirSync(rootPath).filter(entry => !entry.startsWith('.'))).toEqual([])
@@ -215,21 +425,21 @@ describe('workspace core RPC registration', () => {
     }
   })
 
-  it('reinitializes an untracked stale default workspace folder as a blank workspace', async () => {
+  it('preserves an untracked existing workspace folder in the default directory', async () => {
     createdWorkspaces.length = 0
     const slug = `craft-stale-default-${Date.now()}-${Math.random().toString(36).slice(2)}`
     const rootPath = join(homedir(), '.craft-agent', 'workspaces', slug)
     rmSync(rootPath, { recursive: true, force: true })
     createWorkspaceAtPath(rootPath, 'Old Project')
+    writeFileSync(join(rootPath, 'keep.md'), '# Keep\n')
     const { createWorkspace, ctx } = createWorkspaceHarness()
 
     try {
       await createWorkspace(ctx, rootPath, 'Book', { projectType: 'novel', methodPackId: 'novel.claude-book' })
 
-      expect(loadWorkspaceConfig(rootPath)?.name).toBe('Book')
-      expect(readdirSync(rootPath).filter(entry => !entry.startsWith('.'))).toEqual([])
-      expect(existsSync(join(rootPath, '.craft-agent', 'craft-writing.json'))).toBe(false)
-      expect(existsSync(join(rootPath, '.craft-agent', 'craft-pack-lock.json'))).toBe(false)
+      expect(loadWorkspaceConfig(rootPath)?.name).toBe('Old Project')
+      expect(existsSync(join(rootPath, '.craft-agent', 'config.json'))).toBe(true)
+      expect(existsSync(join(rootPath, 'keep.md'))).toBe(true)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }

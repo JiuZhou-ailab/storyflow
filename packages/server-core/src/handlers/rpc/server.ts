@@ -1,9 +1,15 @@
-import { existsSync } from 'node:fs'
+// input: Server-scoped RPC requests, Host services, and the managed Project root
+// output: Project discovery/creation plus server status, health, and runtime information
+// pos: Headless server boundary independent from window-scoped Project selection
+
+import { mkdirSync } from 'node:fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { addWorkspace, setActiveWorkspace } from '@craft-agent/shared/config'
-import { getDefaultWorkspacesDir, ensureDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
+import {
+  ensureDefaultWorkspacesDir,
+  getDefaultWorkspacesDir,
+} from '@craft-agent/shared/workspaces'
 import type { ServerStatus, ServerHealth } from '@craft-agent/core/types'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -26,7 +32,7 @@ export function registerServerHandlers(
   const { sessionManager } = deps
 
   // -----------------------------------------------------------------------
-  // Workspace discovery (moved from workspace.ts — server-level, no workspace context)
+  // Project discovery (server-level, no active Project context)
   // -----------------------------------------------------------------------
 
   server.handle(RPC_CHANNELS.server.GET_WORKSPACES, async () => {
@@ -45,18 +51,24 @@ export function registerServerHandlers(
       .replace(/^-|-$/g, '')
       || 'workspace'
 
+    await sessionManager.waitForInit()
     ensureDefaultWorkspacesDir()
     const baseDir = getDefaultWorkspacesDir()
     let rootPath = join(baseDir, slug)
     let uniqueSlug = slug
     let counter = 1
-    while (existsSync(rootPath)) {
-      uniqueSlug = `${slug}-${counter++}`
-      rootPath = join(baseDir, uniqueSlug)
+    while (true) {
+      try {
+        mkdirSync(rootPath)
+        break
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        uniqueSlug = `${slug}-${counter++}`
+        rootPath = join(baseDir, uniqueSlug)
+      }
     }
 
-    const workspace = addWorkspace({ name: trimmed, rootPath })
-    setActiveWorkspace(workspace.id)
+    const workspace = await sessionManager.registerProject(trimmed, rootPath)
     deps.platform.logger.info(`Created workspace "${trimmed}" at ${rootPath} (server:createWorkspace)`)
 
     const { rootPath: _rp, createdAt: _ca, ...info } = workspace

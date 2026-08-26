@@ -905,8 +905,7 @@ app.whenReady().then(async () => {
       })
 
       ipcMain.handle('workspace:remove', async (_event, workspaceId: string) => {
-        const { removeWorkspace: remove } = await import('@craft-agent/shared/config')
-        return remove(workspaceId)
+        return instance.sessionManager.removeWorkspace(workspaceId)
       })
 
       // Cross-server RPC — invoke a channel on an arbitrary remote server

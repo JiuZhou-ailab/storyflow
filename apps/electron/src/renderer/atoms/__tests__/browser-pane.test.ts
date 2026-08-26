@@ -4,7 +4,6 @@ import type { BrowserInstanceInfo } from '../../../shared/types'
 import {
   browserInstanceForSessionAtomFamily,
   browserInstancesMapAtom,
-  browserInstancesAtom,
   removeBrowserInstanceAtom,
   setBrowserInstancesAtom,
   updateBrowserInstanceAtom,
@@ -34,27 +33,27 @@ describe('browser pane atoms', () => {
     const store = createStore()
 
     store.set(updateBrowserInstanceAtom, makeInstance('browser-1'))
-    expect(store.get(browserInstancesAtom).map((i) => i.id)).toEqual(['browser-1'])
+    expect([...store.get(browserInstancesMapAtom).keys()]).toEqual(['browser-1'])
 
     store.set(removeBrowserInstanceAtom, 'browser-1')
-    expect(store.get(browserInstancesAtom)).toHaveLength(0)
+    expect(store.get(browserInstancesMapAtom)).toHaveLength(0)
 
     // Simulate late out-of-order state event arriving after removal
     store.set(updateBrowserInstanceAtom, makeInstance('browser-1'))
 
-    expect(store.get(browserInstancesAtom)).toHaveLength(0)
+    expect(store.get(browserInstancesMapAtom)).toHaveLength(0)
   })
 
   it('authoritative list refresh can restore an instance after prior remove', () => {
     const store = createStore()
 
     store.set(removeBrowserInstanceAtom, 'browser-2')
-    expect(store.get(browserInstancesAtom)).toHaveLength(0)
+    expect(store.get(browserInstancesMapAtom)).toHaveLength(0)
 
     // Simulate full list() reconciliation from main process
     store.set(setBrowserInstancesAtom, [makeInstance('browser-2')])
 
-    expect(store.get(browserInstancesAtom).map((i) => i.id)).toEqual(['browser-2'])
+    expect([...store.get(browserInstancesMapAtom).keys()]).toEqual(['browser-2'])
   })
 
   it('exposes a visible active browser instance per session without notifying on unrelated instances', () => {

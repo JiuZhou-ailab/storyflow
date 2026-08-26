@@ -18,6 +18,9 @@ import {
   TooltipTrigger,
 } from '@craft-agent/ui'
 import type { SourceConnectionStatus } from '../../../shared/types'
+import { isProjectStdioSourceDisabled } from '@/lib/source-execution'
+
+export { isProjectStdioSourceDisabled } from '@/lib/source-execution'
 
 export interface SourceStatusIndicatorProps {
   /** Connection status */
@@ -138,6 +141,7 @@ export function SourceStatusIndicator({
  * @param localMcpEnabled - Whether local MCP servers are enabled (default: true)
  */
 export function deriveConnectionStatus(source: {
+  origin?: string
   config: {
     isAuthenticated?: boolean
     connectionStatus?: SourceConnectionStatus
@@ -148,7 +152,7 @@ export function deriveConnectionStatus(source: {
 }, localMcpEnabled = true): SourceConnectionStatus {
   // Check if this is a stdio source and local MCP is disabled
   const mcp = source.config.mcp
-  if (mcp?.transport === 'stdio' && !localMcpEnabled) {
+  if (isProjectStdioSourceDisabled(source, localMcpEnabled)) {
     return 'local_disabled'
   }
 

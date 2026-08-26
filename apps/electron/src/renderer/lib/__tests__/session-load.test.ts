@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test'
-import type { Session, TransportConnectionState } from '../../../shared/types'
-import { deriveSessionMessagesLoadState, formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallback } from '../session-load'
+import { FREE_CONVERSATION_WORKSPACE_ID, type Session, type TransportConnectionState } from '../../../shared/types'
+import {
+  deriveSessionMessagesLoadState,
+  formatSessionLoadFailure,
+  shouldAutoCreateBaseSession,
+  shouldTreatSessionLoadFailureAsTransportFallback,
+} from '../session-load'
 
 function createState(overrides?: Partial<TransportConnectionState>): TransportConnectionState {
   return {
@@ -101,6 +106,20 @@ describe('deriveSessionMessagesLoadState', () => {
 
     expect(state.messagesReady).toBe(true)
     expect(state.error).toBe(null)
+  })
+})
+
+describe('shouldAutoCreateBaseSession', () => {
+  it('keeps Free Conversation immediately usable', () => {
+    expect(shouldAutoCreateBaseSession(FREE_CONVERSATION_WORKSPACE_ID, [])).toBe(true)
+  })
+
+  it('allows Projects to exist without a Session', () => {
+    expect(shouldAutoCreateBaseSession('project-1', [])).toBe(false)
+  })
+
+  it('does not duplicate an existing renderable Session', () => {
+    expect(shouldAutoCreateBaseSession(FREE_CONVERSATION_WORKSPACE_ID, [{ hidden: false, isArchived: false }])).toBe(false)
   })
 })
 

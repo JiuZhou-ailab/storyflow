@@ -734,35 +734,6 @@ export function tryPatchTurnsForStreamingContentChange(
 }
 
 /**
- * Get the primary intent for a turn (first available intent from activities)
- */
-export function getTurnIntent(turn: AssistantTurn): string | undefined {
-  // First check explicit turn intent
-  if (turn.intent) return turn.intent
-
-  // Then look for activity intents
-  for (const activity of turn.activities) {
-    if (activity.intent) return activity.intent
-  }
-
-  return undefined
-}
-
-/**
- * Check if any activity in the turn is still running
- */
-export function hasPendingActivities(turn: AssistantTurn): boolean {
-  return turn.activities.some(a => a.status === 'running' || a.status === 'pending' || a.status === 'backgrounded')
-}
-
-/**
- * Check if any activity in the turn has an error
- */
-export function hasErrorActivities(turn: AssistantTurn): boolean {
-  return turn.activities.some(a => a.status === 'error')
-}
-
-/**
  * Get a summary of completed activities
  */
 export function getActivitySummary(turn: AssistantTurn): string {
@@ -887,86 +858,8 @@ export function formatTurnAsMarkdown(turn: AssistantTurn): string {
   return lines.join('\n')
 }
 
-/**
- * Format a single ActivityItem as markdown for detailed viewing in Monaco
- */
-export function formatActivityAsMarkdown(activity: ActivityItem): string {
-  const lines: string[] = []
-
-  if (activity.type === 'intermediate') {
-    // Commentary/thinking
-    lines.push('# Commentary')
-    lines.push('')
-    if (activity.content) {
-      lines.push(activity.content)
-    }
-    return lines.join('\n')
-  }
-
-  // Tool activity
-  const statusEmoji = activity.status === 'completed' ? '✅' :
-                     activity.status === 'error' ? '❌' :
-                     activity.status === 'running' ? '⏳' : '⏸️'
-
-  lines.push(`# ${statusEmoji} ${activity.toolName || 'Tool'}`)
-  lines.push('')
-
-  // Intent if available
-  if (activity.intent) {
-    lines.push(`> ${activity.intent}`)
-    lines.push('')
-  }
-
-  // Input
-  if (activity.toolInput && Object.keys(activity.toolInput).length > 0) {
-    lines.push('## Input')
-    lines.push('')
-    lines.push('```json')
-    lines.push(JSON.stringify(activity.toolInput, null, 2))
-    lines.push('```')
-    lines.push('')
-  }
-
-  // Result/Output
-  if (activity.content) {
-    lines.push('## Result')
-    lines.push('')
-    // Check if result looks like JSON
-    const trimmed = activity.content.trim()
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(trimmed)
-        lines.push('```json')
-        lines.push(JSON.stringify(parsed, null, 2))
-        lines.push('```')
-      } catch {
-        // Not valid JSON, show as text
-        lines.push('```')
-        lines.push(activity.content)
-        lines.push('```')
-      }
-    } else {
-      lines.push('```')
-      lines.push(activity.content)
-      lines.push('```')
-    }
-    lines.push('')
-  }
-
-  // Error if present
-  if (activity.error) {
-    lines.push('## Error')
-    lines.push('')
-    lines.push('```')
-    lines.push(activity.error)
-    lines.push('```')
-  }
-
-  return lines.join('\n')
-}
-
 // ============================================================================
-// Last Turn/Message Utilities
+// Last Turn Utilities
 // ============================================================================
 
 /**
@@ -981,28 +874,6 @@ export function getLastAssistantTurn(turns: Turn[]): AssistantTurn | undefined {
     }
   }
   return undefined
-}
-
-/**
- * Get the timestamp of the last user message from turns.
- * Useful for calculating elapsed time since user sent their message.
- */
-export function getLastUserMessageTime(turns: Turn[]): number | undefined {
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const turn = turns[i]
-    if (turn?.type === 'user') {
-      return (turn as UserTurn).timestamp
-    }
-  }
-  return undefined
-}
-
-/**
- * Check if the last assistant turn is still streaming/processing.
- */
-export function isLastTurnStreaming(turns: Turn[]): boolean {
-  const lastAssistant = getLastAssistantTurn(turns)
-  return lastAssistant?.isStreaming ?? false
 }
 
 /**
@@ -1257,19 +1128,4 @@ export function groupActivitiesByParent(
   }
 
   return result
-}
-
-/**
- * Counts the total number of activities including those inside groups
- */
-export function countTotalActivities(items: (ActivityItem | ActivityGroup)[]): number {
-  let count = 0
-  for (const item of items) {
-    if (isActivityGroup(item)) {
-      count += 1 + item.children.length // Parent + children
-    } else {
-      count += 1
-    }
-  }
-  return count
 }

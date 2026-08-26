@@ -13,11 +13,6 @@ import type { BrowserInstanceInfo } from '../../shared/types'
 /** Map of all browser instances by ID */
 export const browserInstancesMapAtom = atom<Map<string, BrowserInstanceInfo>>(new Map())
 
-/** Derived: array of all browser instances (for iteration) */
-export const browserInstancesAtom = atom<BrowserInstanceInfo[]>(
-  (get) => Array.from(get(browserInstancesMapAtom).values())
-)
-
 export const browserInstanceForSessionAtomFamily = atomFamily(
   (sessionId: string | undefined) => selectAtom(
     browserInstancesMapAtom,
@@ -35,9 +30,6 @@ export const browserInstanceForSessionAtomFamily = atomFamily(
   ),
   (a, b) => a === b,
 )
-
-/** Currently active browser instance ID (selected/focused by user interactions) */
-export const activeBrowserInstanceIdAtom = atom<string | null>(null)
 
 /** Tombstones for instances removed from renderer state (guards against late out-of-order updates) */
 export const removedBrowserInstanceIdsAtom = atom<Set<string>>(new Set<string>())

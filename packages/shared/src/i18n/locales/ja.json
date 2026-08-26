@@ -1218,6 +1218,8 @@
   "settings.tools.title": "ツール",
   "settings.workspace.advanced": "詳細設定",
   "settings.workspace.atLeast2Modes": "少なくとも2つのモードが必要です",
+  "settings.workspace.automations": "プロジェクトオートメーション",
+  "settings.workspace.automationsDesc": "このプロジェクトのスケジュール、プロンプト、Webhook の実行を許可します",
   "settings.workspace.defaultMode": "デフォルトモード",
   "settings.workspace.defaultModeDesc": "AIができることを制御",
   "settings.workspace.defaultSources": "デフォルトソース",

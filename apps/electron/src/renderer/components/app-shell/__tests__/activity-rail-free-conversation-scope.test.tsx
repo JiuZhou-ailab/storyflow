@@ -170,6 +170,38 @@ describe('ActivityRail free-conversation scope', () => {
     expect(html).toContain('九州')
   })
 
+  it('renders a missing Project root as relink-only instead of recreating or opening it', () => {
+    installElectronApi()
+    const html = renderToStaticMarkup(
+      <Provider store={createStore()}>
+        <FocusProvider>
+          <ActivityRail
+            activeItem="recent"
+            workspaces={[{
+              id: PROJECT_WORKSPACE_ID,
+              name: '已移动项目',
+              slug: 'moved-project',
+              rootPath: '/tmp/missing-project',
+              rootAvailable: false,
+              createdAt: 0,
+            }]}
+            onSelectSession={() => {}}
+            onCreateConversationInProject={() => {}}
+            onRelinkProject={() => {}}
+          />
+        </FocusProvider>
+      </Provider>
+    )
+
+    const projectRowStart = html.indexOf('aria-label="项目：已移动项目"')
+    const projectRow = html.slice(projectRowStart, html.indexOf('</div></div>', projectRowStart))
+    expect(projectRow).toContain('disabled=""')
+    expect(projectRow).toContain('aria-label="workspace.reconnect"')
+    expect(projectRow).not.toContain('lucide-chevron-right')
+    expect(activityRailSource).toContain('onRelinkProject(workspace.id)')
+    expect(appSource).toContain('window.electronAPI.relinkWorkspace(workspaceId, rootPath)')
+  })
+
   it('labels the section by its domain rather than as a global recent list', () => {
     installElectronApi()
     const html = renderToStaticMarkup(

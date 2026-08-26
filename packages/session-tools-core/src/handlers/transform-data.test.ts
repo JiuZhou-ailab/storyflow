@@ -37,6 +37,7 @@ describe('transform_data path containment', () => {
     return {
       sessionId: 'test-session',
       workspacePath: rootDir,
+      workspaceId: 'test-workspace',
       sourcesPath: join(rootDir, 'sources'),
       skillsPath: join(rootDir, 'skills'),
       plansFolderPath: join(sessionDir, 'plans'),
@@ -54,6 +55,7 @@ describe('transform_data path containment', () => {
         stat: () => ({ size: 0, isDirectory: () => false }),
       },
       loadSourceConfig: () => null,
+      isSourceExecutionAllowed: () => false,
       sessionPath: sessionDir,
       dataPath: dataDir,
     };

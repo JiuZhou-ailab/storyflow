@@ -9,6 +9,7 @@ import { AlertCircle } from 'lucide-react'
 import { getEditConfig, type EditContextKey } from '@/components/ui/EditPopover'
 import { ResourceEditActions } from '@/components/ui/resource-edit-actions'
 import { SourceAvatar } from '@/components/ui/source-avatar'
+import { isProjectStdioSourceDisabled } from '@/lib/source-execution'
 import { SourceMenu } from '@/components/app-shell/SourceMenu'
 import { useNavigationActions } from '@/contexts/NavigationContext'
 import { toast } from 'sonner'
@@ -174,7 +175,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
   const [mcpTools, setMcpTools] = useState<McpToolWithPermission[] | null>(null)
   const [mcpToolsLoading, setMcpToolsLoading] = useState(false)
   const [mcpToolsError, setMcpToolsError] = useState<string | null>(null)
-  const [localMcpEnabled, setLocalMcpEnabled] = useState(true)
+  const [localMcpEnabled, setLocalMcpEnabled] = useState(false)
 
 
   // Load source data
@@ -257,7 +258,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     if (!workspaceId) return
     window.electronAPI.getWorkspaceSettings(workspaceId).then((settings) => {
       if (settings) {
-        setLocalMcpEnabled(settings.localMcpEnabled ?? true)
+        setLocalMcpEnabled(settings.localMcpEnabled ?? false)
       }
     }).catch((err) => {
       console.error('[SourceInfoPage] Failed to load workspace settings:', err)
@@ -401,7 +402,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
           )}
 
           {/* Disabled Warning */}
-          {source.config.mcp?.transport === 'stdio' && !localMcpEnabled && (
+          {isProjectStdioSourceDisabled(source, localMcpEnabled) && (
             <Info_Alert variant="warning" icon={<AlertCircle className="h-4 w-4" />}>
               <Info_Alert.Title>{t('sourceInfo.sourceDisabled')}</Info_Alert.Title>
               <Info_Alert.Description>

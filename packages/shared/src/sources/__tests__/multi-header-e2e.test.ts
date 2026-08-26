@@ -37,6 +37,7 @@ function createMockSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSo
     folderPath: '/tmp/test/sources/test-source',
     workspaceRootPath: '/tmp/test',
     workspaceId: 'test-workspace',
+    definitionIdentity: 'test-definition',
     origin: 'workspace',
   };
 }

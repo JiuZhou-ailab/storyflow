@@ -26,15 +26,28 @@ import {
   getWorkspaces,
   getWorkspaceByNameOrId,
   loadConfigDefaults,
+  loadStoredConfig,
   MODEL_REGISTRY,
+  removeWorkspace as removeStoredWorkspace,
+  saveConfig,
+  setActiveWorkspace,
+  updateWorkspaceRemoteServer,
   type Workspace,
   type WorkspaceInfo,
 } from '@craft-agent/shared/config'
-import type { ActiveSessionInfo, SessionProcessingStatus } from '@craft-agent/core/types'
-import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
+import type { ActiveSessionInfo, RemoteServerConnectionInput, SessionProcessingStatus } from '@craft-agent/core/types'
 import {
+  canonicalizeProjectRoot,
   isFreeConversationWorkspaceId,
+  commitWorkspaceRootRelink,
+  isWorkspaceRootAvailable,
+  isPathWithinProjectRoot,
   listSessionWorkspaces,
+  loadWorkspaceConfig,
+  prepareWorkspaceRootRelink,
+  rebaseWorkspaceDefaultWorkingDirectory,
+  rebasePathWithinProjectRoot,
+  registerLocalProject as registerStoredLocalProject,
   resolveRuntimeWorkspace,
 } from '@craft-agent/shared/workspaces'
 import {
@@ -59,7 +72,7 @@ import {
   type SessionStatus,
   type SessionHeader,
 } from '@craft-agent/shared/sessions'
-import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, TokenRefreshManager } from '@craft-agent/shared/sources'
+import { createSourceGrantRefs, loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, resolveHostGrantedSourceSlugs, type LoadedSource, TokenRefreshManager } from '@craft-agent/shared/sources'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { getLastApiError } from '@craft-agent/shared/provider-diagnostics'
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
@@ -79,6 +92,8 @@ import { AutomationSystem, canonicalizeSkillReferences, createPromptHistoryEntry
 import { filterAttachmentsForModelInput } from './runtime-config'
 import { captureWriteOriginalContent } from './write-original-content'
 import {
+  canAutoEnableSource,
+  capPermissionMode,
   consumePendingSdkFork,
   createManagedSession,
   hasPersistedAssistantBranchability,
@@ -86,6 +101,7 @@ import {
   resolveLiveAssistantBranchability,
   resolveManagedConnectionSlug,
   resolveSupportsBranching,
+  resolveWorkspaceDefaultPermissionMode,
   type AgentInstance,
   type ManagedSession,
 } from './managed-session'
@@ -242,6 +258,7 @@ export class SessionManager implements ISessionManager {
   private persistence = new SessionPersistence({
     getSession: id => this.sessions.get(id),
     setSession: (id, managed) => this.sessions.set(id, managed),
+    deleteSession: id => { this.sessions.delete(id) },
     onQueuedRecovery: sessionId => this.processNextQueuedMessage(sessionId),
     prepareBootServices: async () => {
       await this.reinitializeAuth()
@@ -251,7 +268,10 @@ export class SessionManager implements ISessionManager {
       // ever connect, yet scheduled/event-driven automations must still fire.
       const workspaces = getWorkspaces()
       for (const workspace of workspaces) {
-        this.setupConfigWatcher(workspace.rootPath, workspace.id)
+        await this.withProjectLifecycleLock(workspace.id, async () => {
+          const current = resolveRuntimeWorkspace(workspace.id)
+          if (current) this.setupConfigWatcher(current.rootPath, current.id)
+        })
       }
       getSessionLog().info('Initialized workspace runtime services', { workspaceCount: workspaces.length })
     },
@@ -262,6 +282,8 @@ export class SessionManager implements ISessionManager {
   private configWatchers: Map<string, ConfigWatcher> = new Map()
   // Automation systems for workspace event automations - one per workspace (includes scheduler, diffing, and handlers)
   private automationSystems: Map<string, AutomationSystem> = new Map()
+  /** Serializes Project identity changes with every operation that creates durable Sessions. */
+  private projectLifecycleTails = new Map<string, Promise<void>>()
   // Pending credential request resolvers (keyed by requestId)
   private pendingCredentialResolvers: Map<string, (response: import('@craft-agent/shared/protocol').CredentialResponse) => void> = new Map()
   // Permission request metadata tracking (keyed by requestId)
@@ -355,6 +377,49 @@ export class SessionManager implements ISessionManager {
     } else if (was && !processing) {
       getSessionRuntimeHooks().onSessionStopped()
     }
+  }
+
+  private async withLifecycleLockKey<T>(
+    key: string,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.projectLifecycleTails.get(key) ?? Promise.resolve()
+    let release!: () => void
+    const current = new Promise<void>(resolve => { release = resolve })
+    const tail = previous.then(() => current)
+    this.projectLifecycleTails.set(key, tail)
+    await previous
+
+    try {
+      return await work()
+    } finally {
+      release()
+      if (this.projectLifecycleTails.get(key) === tail) {
+        this.projectLifecycleTails.delete(key)
+      }
+    }
+  }
+
+  private projectRootLifecycleKey(rootPath: string): string {
+    const canonicalRoot = canonicalizeProjectRoot(rootPath, true)
+    return `root:${process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot}`
+  }
+
+  private async withProjectLifecycleLock<T>(
+    workspaceId: string,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    if (isFreeConversationWorkspaceId(workspaceId)) return work()
+
+    const projectKey = `project:${workspaceId}`
+    const workspace = loadStoredConfig()?.workspaces.find(candidate => candidate.id === workspaceId)
+    if (!workspace || workspace.remoteServer) {
+      return this.withLifecycleLockKey(projectKey, work)
+    }
+    return this.withLifecycleLockKey(
+      this.projectRootLifecycleKey(workspace.rootPath),
+      () => this.withLifecycleLockKey(projectKey, work),
+    )
   }
 
   private handleTurnWatchdogTimeout(sessionId: string, generation: number, timeout: TurnWatchdogTimeout): void {
@@ -553,6 +618,22 @@ export class SessionManager implements ISessionManager {
    * workspaceId must be the global config ID (what the renderer knows).
    */
   setupConfigWatcher(workspaceRootPath: string, workspaceId: string): void {
+    // Project roots are user-owned locators. Runtime observers must never recreate
+    // a missing or invalid Project before the user explicitly relinks it.
+    const registeredWorkspace = resolveRuntimeWorkspace(workspaceId)
+      ?? getWorkspaces().find(candidate => candidate.id === workspaceId)
+    if (
+      !isFreeConversationWorkspaceId(workspaceId)
+      && (
+        !registeredWorkspace
+        || registeredWorkspace.remoteServer
+        || !isWorkspaceRootAvailable(registeredWorkspace)
+      )
+    ) {
+      getSessionLog().warn(`Skipping runtime services for unavailable workspace: ${workspaceId} (${workspaceRootPath})`)
+      return
+    }
+
     // Check if already watching this workspace
     if (this.configWatchers.has(workspaceRootPath)) {
       return // Already watching this workspace
@@ -565,14 +646,14 @@ export class SessionManager implements ISessionManager {
 
     const callbacks: ConfigWatcherCallbacks = {
       onSourcesListChange: async () => {
-        const sources = loadWorkspaceSources(resourceProjectRoot)
+        const sources = loadWorkspaceSources(resourceProjectRoot, workspaceId)
         getSessionLog().info(`Sources list changed in ${workspaceRootPath} (${sources.length} sources)`)
         this.broadcastSourcesChanged(workspaceId, sources)
         await this.reloadSourcesForWorkspace(workspaceRootPath)
       },
       onSourceChange: async (slug: string, source: LoadedSource | null) => {
         getSessionLog().info(`Source '${slug}' changed:`, source ? 'updated' : 'deleted')
-        const sources = loadWorkspaceSources(resourceProjectRoot)
+        const sources = loadWorkspaceSources(resourceProjectRoot, workspaceId)
         this.broadcastSourcesChanged(workspaceId, sources)
         await this.reloadSourcesForWorkspace(workspaceRootPath)
       },
@@ -580,7 +661,7 @@ export class SessionManager implements ISessionManager {
         getSessionLog().info(`Source guide changed: ${sourceSlug}`)
         // Broadcast the updated sources list so sidebar picks up guide changes
         // Note: Guide changes don't require session source reload (no server changes)
-        const sources = loadWorkspaceSources(resourceProjectRoot)
+        const sources = loadWorkspaceSources(resourceProjectRoot, workspaceId)
         this.broadcastSourcesChanged(workspaceId, sources)
       },
       onStatusConfigChange: () => {
@@ -690,61 +771,64 @@ export class SessionManager implements ISessionManager {
     watcher.start()
     this.configWatchers.set(workspaceRootPath, watcher)
 
-    // Initialize AutomationSystem for this workspace (includes scheduler, handlers, and event logging)
-    if (!this.automationSystems.has(workspaceRootPath)) {
-      const automationSystem = new AutomationSystem({
-        workspaceRootPath,
-        workspaceId,
-        enableScheduler: true,
-        onPromptsReady: async (prompts) => {
-          // Execute prompt automations by creating new sessions
-          const settled = await Promise.allSettled(
-            prompts.map((pending) =>
-              this.executePromptAutomation({
-                workspaceId,
-                workspaceRootPath,
-                prompt: pending.prompt,
-                labels: pending.labels,
-                permissionMode: pending.permissionMode,
-                mentions: pending.mentions,
-                llmConnection: pending.llmConnection,
-                model: pending.model,
-                thinkingLevel: pending.thinkingLevel,
-                automationName: pending.automationName,
-                telegramTopic: pending.telegramTopic,
-              })
-            )
-          )
-
-          // Write enriched history entries (with session IDs and prompt summaries)
-          for (const [idx, result] of settled.entries()) {
-            const pending = prompts[idx]
-            if (!pending.matcherId) continue
-
-            const entry = createPromptHistoryEntry({
-              matcherId: pending.matcherId,
-              ok: result.status === 'fulfilled',
-              sessionId: result.status === 'fulfilled' ? result.value.sessionId : undefined,
-              prompt: pending.prompt,
-              error: result.status === 'rejected' ? String(result.reason) : undefined,
-            })
-
-            appendAutomationHistoryEntry(workspaceRootPath, entry).catch(e => getSessionLog().warn('[Automations] Failed to write history:', e))
-
-            if (result.status === 'rejected') {
-              getSessionLog().error(`[Automations] Failed to execute prompt action ${idx + 1}:`, result.reason)
-            } else {
-              getSessionLog().info(`[Automations] Created session ${result.value.sessionId} from prompt action`)
-            }
-          }
-        },
-        onError: (event, error) => {
-          getSessionLog().error(`Automation failed for ${event}:`, error.message)
-        },
-      })
-      this.automationSystems.set(workspaceRootPath, automationSystem)
-      getSessionLog().debug(`Initialized AutomationSystem for workspace ${workspaceId}`)
+    if (registeredWorkspace?.automationsEnabled) {
+      this.setupAutomationSystem(workspaceRootPath, workspaceId)
     }
+  }
+
+  private setupAutomationSystem(workspaceRootPath: string, workspaceId: string): void {
+    if (this.automationSystems.has(workspaceRootPath)) return
+
+    const automationSystem = new AutomationSystem({
+      workspaceRootPath,
+      workspaceId,
+      enableScheduler: true,
+      onPromptsReady: async (prompts) => {
+        const settled = await Promise.allSettled(
+          prompts.map((pending) =>
+            this.executePromptAutomation({
+              workspaceId,
+              workspaceRootPath,
+              prompt: pending.prompt,
+              labels: pending.labels,
+              permissionMode: pending.permissionMode,
+              mentions: pending.mentions,
+              llmConnection: pending.llmConnection,
+              model: pending.model,
+              thinkingLevel: pending.thinkingLevel,
+              automationName: pending.automationName,
+              telegramTopic: pending.telegramTopic,
+            })
+          )
+        )
+
+        for (const [idx, result] of settled.entries()) {
+          const pending = prompts[idx]
+          if (!pending.matcherId) continue
+
+          const entry = createPromptHistoryEntry({
+            matcherId: pending.matcherId,
+            ok: result.status === 'fulfilled',
+            sessionId: result.status === 'fulfilled' ? result.value.sessionId : undefined,
+            prompt: pending.prompt,
+            error: result.status === 'rejected' ? String(result.reason) : undefined,
+          })
+
+          appendAutomationHistoryEntry(workspaceRootPath, entry).catch(e => getSessionLog().warn('[Automations] Failed to write history:', e))
+
+          if (result.status === 'rejected') {
+            getSessionLog().error(`[Automations] Failed to execute prompt action ${idx + 1}:`, result.reason)
+          } else {
+            getSessionLog().info(`[Automations] Created session ${result.value.sessionId} from prompt action`)
+          }
+        }
+      },
+      onError: (event, error) => {
+        getSessionLog().error(`Automation failed for ${event}:`, error.message)
+      },
+    })
+    this.automationSystems.set(workspaceRootPath, automationSystem)
+    getSessionLog().debug(`Initialized AutomationSystem for workspace ${workspaceId}`)
   }
 
   /**
@@ -818,7 +902,7 @@ export class SessionManager implements ISessionManager {
       getSessionLog().info(`Reloading sources for session ${managed.id}`)
 
       // Reload all sources from disk (craft-agents-docs is always available as MCP server)
-      const allSources = loadAllSources(projectRoot)
+      const allSources = loadAllSources(projectRoot, managed.workspace.id)
       agent.setAllSources(allSources)
 
       // Rebuild MCP and API servers for session's enabled sources
@@ -828,11 +912,17 @@ export class SessionManager implements ISessionManager {
       )
       // Pass session path so large API responses can be saved to session folder
       const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
-      const { mcpServers, apiServers } = await buildServersFromSources(enabledSources, sessionPath, managed.tokenRefreshManager, agent.getSummarizeCallback())
-      const intendedSlugs = enabledSources.map(s => s.config.slug)
+      const { mcpServers, apiServers, resolvedSources } = await buildServersFromSources(
+        enabledSources,
+        sessionPath,
+        managed.tokenRefreshManager,
+        agent.getSummarizeCallback(),
+        managed.workspace,
+      )
+      const intendedSlugs = resolvedSources.map(s => s.config.slug)
 
       // Update source runtime config/credentials for backends that need it
-      await agent.applyBridgeUpdates({ sessionPath, enabledSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source reload' })
+      await agent.applyBridgeUpdates({ sessionPath, enabledSources: resolvedSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source reload' })
       await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
 
       getSessionLog().info(`Sources reloaded for session ${managed.id}: ${Object.keys(mcpServers).length} MCP, ${Object.keys(apiServers).length} API`)
@@ -1044,6 +1134,329 @@ export class SessionManager implements ISessionManager {
     return getWorkspaces().map(({ rootPath, createdAt, ...info }) => info)
   }
 
+  async registerProject(
+    name: string,
+    rootPath: string,
+    remoteServer?: RemoteServerConnectionInput,
+  ): Promise<Workspace> {
+    const rootKey = this.projectRootLifecycleKey(rootPath)
+    return this.withLifecycleLockKey(rootKey, async () => {
+      const existing = loadStoredConfig()?.workspaces.find(candidate => (
+        this.projectRootLifecycleKey(candidate.rootPath) === rootKey
+      ))
+      if (remoteServer && existing) {
+        if (existing.remoteServer) {
+          throw new Error('Use remote Project reconnect instead of creating it again.')
+        }
+        throw new Error('An existing local Project cannot be converted into a remote Project.')
+      }
+      const workspace = registerStoredLocalProject(name, rootPath)
+      return this.withLifecycleLockKey(`project:${workspace.id}`, async () => {
+        if (remoteServer) {
+          workspace.remoteServer = await updateWorkspaceRemoteServer(workspace.id, remoteServer)
+        }
+        await this.reloadSessions(workspace.id)
+        this.setupConfigWatcher(workspace.rootPath, workspace.id)
+        setActiveWorkspace(workspace.id)
+        return workspace
+      })
+    })
+  }
+
+  async activateProject(projectId: string): Promise<Workspace> {
+    return this.withProjectLifecycleLock(projectId, async () => {
+      const workspace = resolveRuntimeWorkspace(projectId)
+      if (!workspace) throw new Error(`Project not found: ${projectId}`)
+      this.setupConfigWatcher(workspace.rootPath, workspace.id)
+      return workspace
+    })
+  }
+
+  async updateRemoteProject(
+    projectId: string,
+    remoteServer: RemoteServerConnectionInput,
+  ): Promise<void> {
+    return this.withProjectLifecycleLock(
+      projectId,
+      () => this.updateRemoteProjectLocked(projectId, remoteServer),
+    )
+  }
+
+  private async updateRemoteProjectLocked(
+    projectId: string,
+    remoteServer: RemoteServerConnectionInput,
+  ): Promise<void> {
+    const workspace = loadStoredConfig()?.workspaces.find(candidate => candidate.id === projectId)
+    if (!workspace?.remoteServer) {
+      throw new Error('Only an existing remote Project can be reconnected here.')
+    }
+    await updateWorkspaceRemoteServer(projectId, remoteServer)
+  }
+
+  async removeWorkspace(projectId: string): Promise<boolean> {
+    return this.withProjectLifecycleLock(projectId, () => this.removeWorkspaceLocked(projectId))
+  }
+
+  private async removeWorkspaceLocked(projectId: string): Promise<boolean> {
+    const workspace = getWorkspaces().find(candidate => candidate.id === projectId)
+    if (!workspace) return false
+    if (this.getActiveSessionCount(projectId) > 0) {
+      throw new Error('Stop all running sessions before removing this Project.')
+    }
+
+    const ownedSessions = [...this.sessions.values()]
+      .filter(managed => managed.workspace.id === projectId)
+    for (const managed of ownedSessions) {
+      managed.runtimeState = 'deleting'
+      managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
+    }
+
+    try {
+      if (!workspace.remoteServer && isWorkspaceRootAvailable(workspace)) {
+        await Promise.all(ownedSessions.map(async managed => {
+          // A recovered locator may still have a rejected write tail from when
+          // it was offline. Retire that tail, then durably save the current
+          // in-memory snapshot before detaching the Project.
+          await sessionPersistenceQueue.retire(managed.id)
+          this.persistSession(managed)
+          await this.flushSession(managed.id)
+        }))
+        for (const managed of ownedSessions) sessionPersistenceQueue.cancel(managed.id)
+      } else {
+        await Promise.all(ownedSessions.map(managed => sessionPersistenceQueue.retire(managed.id)))
+      }
+      for (const managed of ownedSessions) {
+        await this.withAgentRuntimeLock(
+          managed,
+          () => this.disposeManagedAgentRuntime(managed, 'workspace removal'),
+          true,
+        )
+      }
+
+      const watcher = this.configWatchers.get(workspace.rootPath)
+      watcher?.stop()
+      this.configWatchers.delete(workspace.rootPath)
+      const automationSystem = this.automationSystems.get(workspace.rootPath)
+      this.automationSystems.delete(workspace.rootPath)
+      if (automationSystem) await automationSystem.dispose()
+
+      const removed = await removeStoredWorkspace(projectId)
+      if (!removed) throw new Error(`Project not found: ${projectId}`)
+
+      for (const managed of ownedSessions) {
+        try {
+          this.broadcaster.clearSessionDeltas(managed.id)
+          this.clearAdminRememberApprovalsForSession(managed.id)
+          this.clearPendingPermissionRequestsForSession(managed.id)
+          this.cancelPendingUserQuestionsForSession(managed.id)
+          unregisterSessionScopedToolCallbacks(managed.id)
+          this.browserPaneManager?.destroyForSession(managed.id)
+        } catch (error) {
+          getSessionLog().warn(`Project removed; failed to release Session ${managed.id} metadata:`, error)
+        } finally {
+          this.sessions.delete(managed.id)
+        }
+      }
+      return true
+    } catch (error) {
+      for (const managed of ownedSessions) {
+        if (this.sessions.get(managed.id) === managed) managed.runtimeState = undefined
+      }
+      try {
+        this.setupConfigWatcher(workspace.rootPath, projectId)
+      } catch (watcherError) {
+        getSessionLog().error('Failed to restore Project watcher after removal error:', watcherError)
+      }
+      throw error
+    }
+  }
+
+  async rebindWorkspaceRoot(projectId: string, currentRoot: string): Promise<Workspace> {
+    return this.withProjectLifecycleLock(
+      projectId,
+      () => this.rebindWorkspaceRootLocked(projectId, currentRoot),
+    )
+  }
+
+  private async rebindWorkspaceRootLocked(projectId: string, currentRoot: string): Promise<Workspace> {
+    if (this.getActiveSessionCount(projectId) > 0) {
+      throw new Error('Stop all running sessions before relinking this Project.')
+    }
+
+    const reboundSessions = [...this.sessions.values()]
+      .filter(managed => managed.workspace.id === projectId)
+    const plan = prepareWorkspaceRootRelink(
+      projectId,
+      currentRoot,
+      reboundSessions.map(managed => managed.id),
+    )
+    const previousRoot = plan.previousRoot
+    for (const managed of reboundSessions) {
+      managed.runtimeState = 'invalidating'
+      managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
+    }
+
+    const staged = new Map<string, ManagedSession>()
+    let hostCommitted = false
+    try {
+      // Settle every old-root write before staging durable snapshots at the target.
+      await Promise.all(reboundSessions.map(managed => sessionPersistenceQueue.retire(managed.id)))
+
+      const watcher = this.configWatchers.get(previousRoot)
+      watcher?.stop()
+      this.configWatchers.delete(previousRoot)
+
+      const automationSystem = this.automationSystems.get(previousRoot)
+      this.automationSystems.delete(previousRoot)
+      if (automationSystem) await automationSystem.dispose()
+
+      for (const managed of reboundSessions) {
+        await this.withAgentRuntimeLock(
+          managed,
+          () => this.disposeManagedAgentRuntime(managed, 'workspace root relink'),
+          true,
+        )
+        if (!managed.messagesLoaded) {
+          this.persistence.hydrateMessagesFromRoot(managed, currentRoot)
+        }
+        const rebound = {
+          ...managed,
+          workspace: plan.workspace,
+          workingDirectory: rebasePathWithinProjectRoot(
+            managed.workingDirectory,
+            previousRoot,
+            currentRoot,
+          ) ?? currentRoot,
+          sdkCwd: rebasePathWithinProjectRoot(managed.sdkCwd, previousRoot, currentRoot),
+          branchFromSessionPath: rebasePathWithinProjectRoot(
+            managed.branchFromSessionPath,
+            previousRoot,
+            currentRoot,
+          ),
+          branchFromSdkCwd: rebasePathWithinProjectRoot(
+            managed.branchFromSdkCwd,
+            previousRoot,
+            currentRoot,
+          ),
+        }
+        staged.set(managed.id, rebound)
+        this.persistence.enqueuePersistStrict(rebound)
+      }
+      await Promise.all(reboundSessions.map(managed => this.flushSession(managed.id)))
+
+      // Host identity moves only after every target Session snapshot is durable.
+      const updated = commitWorkspaceRootRelink(plan)
+      hostCommitted = true
+      try {
+        rebaseWorkspaceDefaultWorkingDirectory(plan)
+      } catch (error) {
+        getSessionLog().warn('Relink committed; default working directory will fall back to the Project root:', error)
+      }
+      for (const managed of reboundSessions) {
+        const rebound = staged.get(managed.id)!
+        managed.workspace = updated
+        managed.workingDirectory = rebound.workingDirectory
+        managed.sdkCwd = rebound.sdkCwd
+        managed.branchFromSessionPath = rebound.branchFromSessionPath
+        managed.branchFromSdkCwd = rebound.branchFromSdkCwd
+        managed.runtimeState = undefined
+      }
+      try {
+        await this.persistence.loadSessionsFromDisk(projectId)
+      } catch (error) {
+        getSessionLog().error('Project relink committed, but its Session index is unavailable:', error)
+      }
+      try {
+        this.setupConfigWatcher(currentRoot, projectId)
+      } catch (error) {
+        getSessionLog().error('Project relink committed, but runtime observers are unavailable:', error)
+      }
+      return updated
+    } catch (error) {
+      for (const managed of reboundSessions) {
+        if (this.sessions.get(managed.id) === managed) managed.runtimeState = undefined
+      }
+      try {
+        this.setupConfigWatcher(hostCommitted ? currentRoot : previousRoot, projectId)
+      } catch (watcherError) {
+        getSessionLog().error('Failed to restore Project watcher after relink error:', watcherError)
+      }
+      throw error
+    }
+  }
+
+  async updateProjectHostSetting(
+    projectId: string,
+    key: 'permissionMode' | 'enabledSourceSlugs' | 'localMcpEnabled' | 'automationsEnabled',
+    value: unknown,
+  ): Promise<void> {
+    return this.withProjectLifecycleLock(
+      projectId,
+      () => this.updateProjectHostSettingLocked(projectId, key, value),
+    )
+  }
+
+  private async updateProjectHostSettingLocked(
+    projectId: string,
+    key: 'permissionMode' | 'enabledSourceSlugs' | 'localMcpEnabled' | 'automationsEnabled',
+    value: unknown,
+  ): Promise<void> {
+    const workspace = resolveRuntimeWorkspace(projectId)
+    if (!workspace || workspace.remoteServer) throw new Error(`Project not found: ${projectId}`)
+
+    const hostConfig = loadStoredConfig()
+    const hostWorkspace = hostConfig?.workspaces.find(candidate => candidate.id === projectId)
+    if (!hostConfig || !hostWorkspace) throw new Error(`Project not found: ${projectId}`)
+
+    if (key === 'permissionMode') {
+      if (value !== 'safe' && value !== 'ask' && value !== 'allow-all') {
+        throw new Error(`Invalid permission mode: ${String(value)}`)
+      }
+      hostWorkspace.defaultPermissionMode = value
+    } else if (key === 'enabledSourceSlugs') {
+      if (!Array.isArray(value) || value.some(candidate => typeof candidate !== 'string')) {
+        throw new Error('enabledSourceSlugs must be an array of strings')
+      }
+      const sourceSlugs = value as string[]
+      const refs = createSourceGrantRefs(
+        sourceSlugs,
+        loadWorkspaceSources(workspace.rootPath, workspace.id),
+      )
+      if (refs.length !== new Set(sourceSlugs).size) {
+        throw new Error('One or more Sources no longer resolve to the selected Project.')
+      }
+      hostWorkspace.defaultEnabledSourceRefs = refs
+    } else if (key === 'localMcpEnabled') {
+      if (typeof value !== 'boolean') throw new Error('localMcpEnabled must be a boolean')
+      hostWorkspace.localMcpEnabled = value
+    } else {
+      if (typeof value !== 'boolean') throw new Error('automationsEnabled must be a boolean')
+      hostWorkspace.automationsEnabled = value
+    }
+    saveConfig(hostConfig)
+
+    if (key === 'localMcpEnabled') {
+      for (const managed of this.sessions.values()) {
+        if (managed.workspace.id !== projectId) continue
+        managed.workspace.localMcpEnabled = value as boolean
+        await this.reloadSessionSources(managed)
+      }
+      return
+    }
+    if (key !== 'automationsEnabled') return
+
+    for (const managed of this.sessions.values()) {
+      if (managed.workspace.id === projectId) managed.workspace.automationsEnabled = value as boolean
+    }
+    if (value) {
+      this.setupAutomationSystem(workspace.rootPath, projectId)
+      return
+    }
+    const automationSystem = this.automationSystems.get(workspace.rootPath)
+    this.automationSystems.delete(workspace.rootPath)
+    if (automationSystem) await automationSystem.dispose()
+  }
+
   getActiveSessionCount(workspaceId?: string): number {
     let count = 0
     for (const managed of this.sessions.values()) {
@@ -1101,10 +1514,8 @@ export class SessionManager implements ISessionManager {
    * Reload all sessions from disk.
    * Used after importing sessions to refresh the in-memory session list.
    */
-  reloadSessions(): void {
-    void this.persistence.loadSessionsFromDisk().catch(error => {
-      getSessionLog().error('Failed to reload sessions from disk:', error)
-    })
+  async reloadSessions(workspaceId?: string): Promise<void> {
+    await this.persistence.loadSessionsFromDisk(workspaceId)
   }
 
   getSessions(workspaceId?: string): Session[] {
@@ -1276,9 +1687,20 @@ export class SessionManager implements ISessionManager {
   }
 
   async createSession(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
+    return this.withProjectLifecycleLock(
+      workspaceId,
+      () => this.createSessionLocked(workspaceId, options),
+    )
+  }
+
+  private async createSessionLocked(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
     const workspace = resolveRuntimeWorkspace(workspaceId)
+      ?? getWorkspaces().find(candidate => candidate.id === workspaceId)
     if (!workspace) {
       throw new Error(`Workspace ${workspaceId} not found`)
+    }
+    if (!isFreeConversationWorkspaceId(workspace.id) && !isWorkspaceRootAvailable(workspace)) {
+      throw new Error(`Project directory is unavailable; relink Project ${workspace.id} before creating a Session`)
     }
 
     // Get new session defaults from workspace config (with global fallback)
@@ -1287,10 +1709,12 @@ export class SessionManager implements ISessionManager {
     const wsConfig = loadWorkspaceConfig(workspaceRootPath)
     const globalDefaults = loadConfigDefaults()
 
-    // Read permission mode from workspace config, fallback to global defaults
+    // Executable defaults are Host-owned; Project files cannot self-grant them.
     const defaultPermissionMode = options?.permissionMode
-      ?? wsConfig?.defaults?.permissionMode
-      ?? globalDefaults.workspaceDefaults.permissionMode
+      ?? resolveWorkspaceDefaultPermissionMode(
+        workspace,
+        globalDefaults.workspaceDefaults.permissionMode,
+      )
 
     const userDefaultWorkingDir = wsConfig?.defaults?.workingDirectory || workspaceRootPath
     // Resolve thinking level with caller-first precedence, matching permissionMode above:
@@ -1302,8 +1726,11 @@ export class SessionManager implements ISessionManager {
       ?? getDefaultThinkingLevel()
     // Get default model from workspace config (used when no session-specific model is set)
     const defaultModel = wsConfig?.defaults?.model
-    // Get default enabled sources from workspace config
-    const defaultEnabledSourceSlugs = options?.enabledSourceSlugs ?? wsConfig?.defaults?.enabledSourceSlugs
+    const projectRoot = isFreeConversationWorkspaceId(workspace.id) ? undefined : workspaceRootPath
+    const defaultEnabledSourceSlugs = options?.enabledSourceSlugs ?? resolveHostGrantedSourceSlugs(
+      workspace.defaultEnabledSourceRefs,
+      loadAllSources(projectRoot, workspace.id),
+    )
 
     // Resolve model tier hints ('fast' / 'default') to actual model IDs.
     // EditPopover uses tier hints instead of hardcoded Anthropic model names
@@ -1348,6 +1775,17 @@ export class SessionManager implements ISessionManager {
       resolvedWorkingDir = userDefaultWorkingDir
     } else {
       resolvedWorkingDir = options.workingDirectory
+    }
+    if (
+      resolvedWorkingDir
+      && !isFreeConversationWorkspaceId(workspace.id)
+      && !isPathWithinProjectRoot(workspaceRootPath, resolvedWorkingDir)
+    ) {
+      if (options?.workingDirectory && options.workingDirectory !== 'user_default') {
+        throw new Error('Working directory must stay inside the Project root.')
+      }
+      getSessionLog().warn('Ignoring Project-owned default cwd outside the Project root')
+      resolvedWorkingDir = workspaceRootPath
     }
 
     // Validate branch request up-front so branch metadata is only set for valid branches.
@@ -2077,19 +2515,20 @@ export class SessionManager implements ISessionManager {
 
       const agent = managed.agent
       if (agent) {
-        const sources = getSourcesBySlugs(projectRoot, sourceSlugs)
+        const sources = getSourcesBySlugs(projectRoot, sourceSlugs, managed.workspace.id)
         const sessionPath = getSessionStoragePath(workspaceRootPath, sessionId)
-        const { mcpServers, apiServers, errors } = await buildServersFromSources(
+        const { mcpServers, apiServers, errors, resolvedSources } = await buildServersFromSources(
           sources,
           sessionPath,
           managed.tokenRefreshManager,
           agent.getSummarizeCallback(),
+          managed.workspace,
         )
         if (errors.length > 0) getSessionLog().warn('Source build errors:', errors)
 
-        const allSources = loadAllSources(projectRoot)
+        const allSources = loadAllSources(projectRoot, managed.workspace.id)
         agent.setAllSources(allSources)
-        const usableSources = sources.filter(isSourceUsable)
+        const usableSources = resolvedSources.filter(isSourceUsable)
         const intendedSlugs = usableSources.map(source => source.config.slug)
         await agent.applyBridgeUpdates({ sessionPath, enabledSources: usableSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source config change' })
         await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
@@ -2279,6 +2718,22 @@ export class SessionManager implements ISessionManager {
     }
     if (managed.runtimeState === 'deleting') return
 
+    return this.withProjectLifecycleLock(
+      managed.workspace.id,
+      () => this.deleteSessionLocked(sessionId),
+    )
+  }
+
+  private async deleteSessionLocked(sessionId: string): Promise<void> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed || managed.runtimeState === 'deleting') return
+    if (
+      !isFreeConversationWorkspaceId(managed.workspace.id)
+      && !isWorkspaceRootAvailable(managed.workspace)
+    ) {
+      throw new Error(`Project directory is unavailable; relink Project ${managed.workspace.id} before deleting a Session`)
+    }
+
     // Tombstone synchronously so queued title/query work cannot recreate or
     // persist this session while deletion waits for the active runtime lease.
     managed.runtimeState = 'deleting'
@@ -2295,7 +2750,28 @@ export class SessionManager implements ISessionManager {
       await new Promise(resolve => setTimeout(resolve, 100))
     }
 
-    // Revoke share if session was shared (prevent orphaned viewer copies)
+    // Cancel any pending persistence write (session is being deleted, no need to save)
+    sessionPersistenceQueue.cancel(sessionId)
+
+    // Dispose only after any model-free runtime transaction (for example rewind) settles.
+    await this.withAgentRuntimeLock(
+      managed,
+      () => this.disposeManagedAgentRuntime(managed, 'session deletion'),
+      true,
+    )
+
+    // A send that linearized before the tombstone may have queued a final
+    // debounced snapshot while deletion waited for its operation lease.
+    sessionPersistenceQueue.cancel(sessionId)
+    await sessionPersistenceQueue.flush(sessionId)
+
+    if (!deleteStoredSession(workspaceRootPath, sessionId)) {
+      managed.runtimeState = undefined
+      throw new Error(`Could not delete Session ${sessionId} from its Project-owned storage`)
+    }
+
+    // Durable deletion is committed. External and in-memory cleanup is now
+    // best-effort and must not make a failed filesystem mutation look successful.
     if (managed.sharedId) {
       try {
         const { VIEWER_URL } = await import('@craft-agent/shared/branding')
@@ -2313,34 +2789,12 @@ export class SessionManager implements ISessionManager {
       }
     }
 
-    // Clean up delta flush timers to prevent orphaned timers
     this.broadcaster.clearSessionDeltas(sessionId)
     this.clearAdminRememberApprovalsForSession(sessionId)
     this.clearPendingPermissionRequestsForSession(sessionId)
     this.cancelPendingUserQuestionsForSession(sessionId)
-
-    // Cancel any pending persistence write (session is being deleted, no need to save)
-    sessionPersistenceQueue.cancel(sessionId)
-
-    // Clean up session-scoped tool callbacks to prevent memory accumulation
     unregisterSessionScopedToolCallbacks(sessionId)
-
-    // Destroy browser instances bound to this session
-    if (this.browserPaneManager) {
-      this.browserPaneManager.destroyForSession(sessionId)
-    }
-
-    // Dispose only after any model-free runtime transaction (for example rewind) settles.
-    await this.withAgentRuntimeLock(
-      managed,
-      () => this.disposeManagedAgentRuntime(managed, 'session deletion'),
-      true,
-    )
-
-    // A send that linearized before the tombstone may have queued a final
-    // debounced snapshot while deletion waited for its operation lease.
-    sessionPersistenceQueue.cancel(sessionId)
-    await sessionPersistenceQueue.flush(sessionId)
+    this.browserPaneManager?.destroyForSession(sessionId)
 
     this.sessions.delete(sessionId)
 
@@ -2349,9 +2803,6 @@ export class SessionManager implements ISessionManager {
     if (automationSystem) {
       automationSystem.removeSessionMetadata(sessionId)
     }
-
-    // Delete from disk too
-    deleteStoredSession(workspaceRootPath, sessionId)
 
     // Notify all windows for this workspace that the session was deleted
     this.sendEvent({ type: 'session_deleted', sessionId }, managed.workspace.id)
@@ -2662,7 +3113,14 @@ export class SessionManager implements ISessionManager {
           const toEnable: string[] = []
           const skipped: string[] = []
           const candidateSlugs = Array.from(requiredSources)
-          const loadedSources = getSourcesBySlugs(projectRoot, candidateSlugs)
+          const loadedSources = getSourcesBySlugs(projectRoot, candidateSlugs, managed.workspace.id)
+          const hostGrantedSlugs = loadedSources
+            .filter(source => canAutoEnableSource(
+              managed.workspace,
+              managed.enabledSourceSlugs ?? [],
+              source,
+            ))
+            .map(source => source.config.slug)
           const usableSources = new Set(
             loadedSources
               .filter(isSourceUsable)
@@ -2671,7 +3129,7 @@ export class SessionManager implements ISessionManager {
 
           for (const srcSlug of candidateSlugs) {
             if (currentSlugs.has(srcSlug)) continue
-            if (usableSources.has(srcSlug)) {
+            if (usableSources.has(srcSlug) && hostGrantedSlugs.includes(srcSlug)) {
               toEnable.push(srcSlug)
             } else {
               skipped.push(srcSlug)
@@ -2679,7 +3137,7 @@ export class SessionManager implements ISessionManager {
           }
 
           if (skipped.length > 0) {
-            getSessionLog().warn(`Skill requires sources that are not usable (missing or unauthenticated): ${skipped.join(', ')}`)
+            getSessionLog().warn(`Skill requires sources that are unusable or not Host-granted: ${skipped.join(', ')}`)
           }
 
           if (toEnable.length > 0) {
@@ -2712,7 +3170,7 @@ export class SessionManager implements ISessionManager {
     // and emits AUTH_REQUIRED, causing a brief "needs_auth" UI flicker before the
     // post-build refresh restores state (#710).
     const sources: LoadedSource[] = hasSources
-      ? getSourcesBySlugs(projectRoot, enabledSlugs)
+      ? getSourcesBySlugs(projectRoot, enabledSlugs, managed.workspace.id)
       : []
 
     if (hasSources && managed.tokenRefreshManager) {
@@ -2734,7 +3192,7 @@ export class SessionManager implements ISessionManager {
     sendSpan.mark('agent.facade.ready')
 
     // Always set all sources for context (even if none are enabled), including built-ins
-    const allSources = loadAllSources(projectRoot)
+    const allSources = loadAllSources(projectRoot, managed.workspace.id)
     agent.setAllSources(allSources)
     sendSpan.mark('sources.loaded')
 
@@ -2742,7 +3200,13 @@ export class SessionManager implements ISessionManager {
     if (hasSources) {
       const sessionPath = getSessionStoragePath(workspaceRootPath, sessionId)
       // Single fresh build — tokens already refreshed above.
-      const { mcpServers, apiServers, errors } = await buildServersFromSources(sources, sessionPath, managed.tokenRefreshManager, agent.getSummarizeCallback())
+      const { mcpServers, apiServers, errors, resolvedSources } = await buildServersFromSources(
+        sources,
+        sessionPath,
+        managed.tokenRefreshManager,
+        agent.getSummarizeCallback(),
+        managed.workspace,
+      )
       if (errors.length > 0) {
         getSessionLog().warn(`Source build errors:`, errors)
       }
@@ -2750,7 +3214,7 @@ export class SessionManager implements ISessionManager {
       const mcpCount = Object.keys(mcpServers).length
       const apiCount = Object.keys(apiServers).length
       if (mcpCount > 0 || apiCount > 0 || enabledSlugs.length > 0) {
-        const usableSources = sources.filter(isSourceUsable)
+        const usableSources = resolvedSources.filter(isSourceUsable)
         const intendedSlugs = usableSources.map(s => s.config.slug)
         await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
         await agent.applyBridgeUpdates({ sessionPath, enabledSources: usableSources, mcpServers, sessionId, workspaceRootPath, context: 'send message' })
@@ -3734,7 +4198,7 @@ export class SessionManager implements ISessionManager {
         const projectRoot = getResourceProjectRoot(managed.workspace)
         let toolDisplayMeta: ToolDisplayMeta | undefined
         if (formattedToolInput && Object.keys(formattedToolInput).length > 0) {
-          const allSources = loadAllSources(projectRoot)
+          const allSources = loadAllSources(projectRoot, managed.workspace.id)
           toolDisplayMeta = await resolveToolDisplayMeta(
             event.toolName,
             formattedToolInput,
@@ -3888,7 +4352,7 @@ export class SessionManager implements ISessionManager {
           // locate this message by toolUseId and update it with input/intent/displayMeta.
           getSessionLog().info(`RESULT WITHOUT START: toolUseId=${event.toolUseId}, toolName=${toolName} (creating message from result)`)
           const fallbackProjectRoot = getResourceProjectRoot(managed.workspace)
-          const fallbackSources = loadAllSources(fallbackProjectRoot)
+          const fallbackSources = loadAllSources(fallbackProjectRoot, managed.workspace.id)
           const fallbackToolDisplayMeta = await resolveToolDisplayMeta(
             toolName,
             undefined,
@@ -4263,6 +4727,14 @@ export class SessionManager implements ISessionManager {
       telegramTopic,
     } = input
 
+    const workspace = resolveRuntimeWorkspace(workspaceId)
+    if (!workspace || workspace.rootPath !== workspaceRootPath) {
+      throw new Error(`Automation workspace mismatch: ${workspaceId}`)
+    }
+    if (!isFreeConversationWorkspaceId(workspace.id) && workspace.automationsEnabled !== true) {
+      throw new Error('Project automations are disabled by Host settings')
+    }
+
     // Warn if llmConnection was specified but doesn't resolve
     if (llmConnection) {
       const connection = resolveSessionConnection(llmConnection)
@@ -4273,7 +4745,14 @@ export class SessionManager implements ISessionManager {
 
     // Resolve @mentions to source/skill slugs
     const resolved = mentions
-      ? await this.resolveAutomationMentions(workspaceRootPath, mentions)
+      ? await this.resolveAutomationMentions(workspaceRootPath, workspace.id, mentions)
+      : undefined
+    const automationSourceSlugs = resolved?.sourceSlugs.length
+      ? isFreeConversationWorkspaceId(workspace.id)
+        ? resolved.sourceSlugs
+        : getSourcesBySlugs(workspaceRootPath, resolved.sourceSlugs, workspace.id)
+          .filter(source => canAutoEnableSource(workspace, [], source))
+          .map(source => source.config.slug)
       : undefined
 
     // Ensure labels exist in workspace config before assigning to session
@@ -4289,8 +4768,10 @@ export class SessionManager implements ISessionManager {
     const session = await this.createSession(workspaceId, {
       name: sessionName,
       labels: resolvedLabels,
-      permissionMode: permissionMode || 'safe',
-      enabledSourceSlugs: resolved?.sourceSlugs,
+      permissionMode: isFreeConversationWorkspaceId(workspace.id)
+        ? permissionMode || 'safe'
+        : capPermissionMode(permissionMode, workspace.defaultPermissionMode, 'safe'),
+      enabledSourceSlugs: automationSourceSlugs,
       llmConnection,
       model,
       thinkingLevel,
@@ -4343,9 +4824,10 @@ export class SessionManager implements ISessionManager {
    */
   private async resolveAutomationMentions(
     workspaceRootPath: string,
+    workspaceId: string,
     mentions: string[],
   ): Promise<{ sourceSlugs: string[]; skillSlugs: string[] } | undefined> {
-    const sources = loadWorkspaceSources(workspaceRootPath)
+    const sources = loadWorkspaceSources(workspaceRootPath, workspaceId)
     const { skills } = await loadPiSkillCatalog(workspaceRootPath)
     const sourceSlugs: string[] = []
     const skillSlugs: string[] = []
@@ -4395,7 +4877,10 @@ export class SessionManager implements ISessionManager {
     bundle: SessionBundle,
     mode: DispatchMode,
   ): Promise<{ sessionId: string; warnings?: string[] }> {
-    return this.exportImport.importSession(workspaceId, bundle, mode)
+    return this.withProjectLifecycleLock(
+      workspaceId,
+      () => this.exportImport.importSession(workspaceId, bundle, mode),
+    )
   }
 
   /**

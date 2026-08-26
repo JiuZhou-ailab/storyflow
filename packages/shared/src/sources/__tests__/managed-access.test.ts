@@ -93,6 +93,7 @@ describe('Storyflow managed Source access', () => {
       folderPath: '/global/sources/storyflow-catalog',
       workspaceRootPath: '/global',
       workspaceId: 'global',
+      definitionIdentity: 'test-definition',
       origin: 'craft-global',
     };
 

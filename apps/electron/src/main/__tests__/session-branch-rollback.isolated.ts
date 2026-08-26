@@ -122,7 +122,6 @@ mock.module('@craft-agent/shared/config', () => ({
   modelSupportsImages: () => true,
   ensureConfigDir: () => {},
   ensureConfigDefaults: () => {},
-  addWorkspace: async () => null,
   getAllSessionDrafts: () => [],
   getGitBashPath: () => null,
   // Handler-required stubs: prevent SyntaxError in handler modules loaded by registration test
@@ -141,9 +140,18 @@ mock.module('@craft-agent/shared/config', () => ({
 }))
 
 mock.module('@craft-agent/shared/workspaces', () => ({
+  canonicalizeProjectRoot: (rootPath: string) => rootPath,
+  getFreeConversationWorkspace: () => workspace,
   isFreeConversationWorkspaceId: () => false,
   listSessionWorkspaces: () => [workspace],
   resolveRuntimeWorkspace: (id: string) => (id === workspace.id ? workspace : null),
+  isWorkspaceRootAvailable: () => true,
+  isPathWithinProjectRoot: () => true,
+  prepareWorkspaceRootRelink: () => ({ workspace, previousRootPath: workspace.rootPath }),
+  commitWorkspaceRootRelink: () => workspace,
+  rebaseWorkspaceDefaultWorkingDirectory: (_workspace: unknown, rootPath: string) => rootPath,
+  rebasePathWithinProjectRoot: (candidatePath: string | undefined) => candidatePath,
+  registerLocalProject: () => workspace,
   loadWorkspaceConfig: () => ({
     defaults: {
       permissionMode: 'ask',
@@ -200,6 +208,11 @@ mock.module('@craft-agent/shared/sources', () => ({
   loadWorkspaceSources: () => [],
   loadAllSources: () => [],
   getSourcesBySlugs: () => [],
+  resolveHostGrantedSourceSlugs: () => [],
+  isSourceHostGranted: () => false,
+  createSourceGrantRefs: () => [],
+  getSourceGrantRef: () => 'project:test:definition',
+  isProjectStdioExecutionAllowed: () => false,
   isSourceUsable: () => true,
   getSourcesNeedingAuth: () => [],
   getSourceCredentialManager: () => ({

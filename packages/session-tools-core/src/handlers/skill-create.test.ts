@@ -22,6 +22,7 @@ function createContext(): SessionToolContext {
   return {
     sessionId: 'session-1',
     workspacePath: '/product/runtime/free',
+    workspaceId: 'free-conversations',
     get sourcesPath() { return '/product/runtime/free/sources'; },
     get skillsPath() { return '/product/skills'; },
     plansFolderPath: '/product/runtime/free/plans',
@@ -39,6 +40,7 @@ function createContext(): SessionToolContext {
       stat: () => ({ size: 0, isDirectory: () => false }),
     },
     loadSourceConfig: () => null,
+    isSourceExecutionAllowed: () => false,
     createSkillDocument: (slug, content) => {
       if (skills.has(slug)) throw new Error(`Skill already exists: ${slug}`);
       const document = {

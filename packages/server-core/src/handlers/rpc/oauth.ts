@@ -99,7 +99,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       throw new Error(`Workspace not found: ${ctx.workspaceId}`)
     }
 
-    const source = loadSource(workspace.rootPath, sourceSlug)
+    const source = loadSource(workspace.rootPath, sourceSlug, workspace.id)
     if (!source) {
       throw new Error(`Source not found: ${sourceSlug}`)
     }
@@ -149,7 +149,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       sessionManager: deps.sessionManager,
       pushSourcesChanged: (workspaceId) => {
         const ws = getWorkspaceByNameOrId(workspaceId)
-        const sources = ws ? loadWorkspaceSources(ws.rootPath) : []
+        const sources = ws ? loadWorkspaceSources(ws.rootPath, ws.id) : []
         pushTyped(server, RPC_CHANNELS.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, sources)
       },
       logger: log,
@@ -186,7 +186,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       throw new Error(`Workspace not found: ${ctx.workspaceId}`)
     }
 
-    const source = loadSource(workspace.rootPath, sourceSlug)
+    const source = loadSource(workspace.rootPath, sourceSlug, workspace.id)
     if (!source) {
       throw new Error(`Source not found: ${sourceSlug}`)
     }
@@ -195,7 +195,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
     credManager.markSourceNeedsReauth(source, 'Signed out by user')
 
     // Push source status update
-    const revokeSources = loadWorkspaceSources(workspace.rootPath)
+    const revokeSources = loadWorkspaceSources(workspace.rootPath, workspace.id)
     pushTyped(server, RPC_CHANNELS.sources.CHANGED, { to: 'workspace', workspaceId: ctx.workspaceId }, ctx.workspaceId, revokeSources)
 
     log.info(`[OAuth] Revoked credentials for ${sourceSlug}`)

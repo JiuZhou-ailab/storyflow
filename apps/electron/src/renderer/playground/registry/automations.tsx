@@ -9,9 +9,7 @@ import { useState, type ReactNode } from 'react'
 import type { ComponentEntry } from './types'
 import { AutomationsListPanel } from '@/components/automations/AutomationsListPanel'
 import { AutomationInfoPage } from '@/components/automations/AutomationInfoPage'
-import { AutomationCard } from '@/components/automations/AutomationCard'
 import { AutomationAvatar } from '@/components/automations/AutomationAvatar'
-import { CronBuilder } from '@/components/automations/CronBuilder'
 import { AutomationTestPanel } from '@/components/automations/AutomationTestPanel'
 import { AutomationEventTimeline } from '@/components/automations/AutomationEventTimeline'
 import { getEventDisplayName, type AutomationListItem, type ExecutionEntry, type TestResult, type AutomationTrigger } from '@/components/automations/types'
@@ -89,25 +87,6 @@ function AutomationInfoPagePlayground({
   )
 }
 
-/** Stateful wrapper for CronBuilder */
-function CronBuilderPlayground({
-  initialValue,
-  timezone,
-}: {
-  initialValue?: string
-  timezone?: string
-}) {
-  const [value, setValue] = useState(initialValue ?? '0 9 * * 1-5')
-
-  return (
-    <CronBuilder
-      value={value}
-      onChange={setValue}
-      timezone={timezone}
-    />
-  )
-}
-
 /** Wrapper showing all AutomationAvatar variants in a grid */
 function AutomationAvatarGallery() {
   const events: AutomationTrigger[] = [
@@ -147,26 +126,6 @@ function AutomationAvatarGallery() {
         </div>
       </div>
     </div>
-  )
-}
-
-/** Stateful wrapper for AutomationCard */
-function AutomationCardPlayground({
-  automation,
-  defaultExpanded,
-}: {
-  automation: AutomationListItem
-  defaultExpanded?: boolean
-}) {
-  const [currentAutomation, setCurrentAutomation] = useState(automation)
-
-  return (
-    <AutomationCard
-      automation={currentAutomation}
-      defaultExpanded={defaultExpanded}
-      onToggleEnabled={(enabled) => setCurrentAutomation(prev => ({ ...prev, enabled }))}
-      onTest={() => console.log('[Playground] Test automation:', currentAutomation.id)}
-    />
   )
 }
 
@@ -473,109 +432,6 @@ export const automationComponents: ComponentEntry[] = [
     mockData: () => ({
       automation: mockAutomations[0],
       executions: mockExecutions,
-    }),
-  },
-
-  // ==========================================================================
-  // AutomationCard
-  // ==========================================================================
-  {
-    id: 'automation-card',
-    name: 'AutomationCard',
-    category: 'Automations',
-    description: 'Expandable inline row with trigger/action preview',
-    component: AutomationCardPlayground,
-    wrapper: PaddedWrapper,
-    layout: 'top',
-    props: [
-      {
-        name: 'defaultExpanded',
-        description: 'Start expanded',
-        control: { type: 'boolean' },
-        defaultValue: false,
-      },
-    ],
-    variants: [
-      {
-        name: 'Collapsed',
-        description: 'Default collapsed state',
-        props: { automation: mockAutomations[0], defaultExpanded: false },
-      },
-      {
-        name: 'Expanded',
-        description: 'Expanded with trigger and action details',
-        props: { automation: mockAutomations[0], defaultExpanded: true },
-      },
-      {
-        name: 'Disabled',
-        description: 'Disabled automation (dimmed)',
-        props: { automation: mockAutomations[2], defaultExpanded: true },
-      },
-      {
-        name: 'Event-triggered',
-        description: 'Automation triggered by an event',
-        props: { automation: mockAutomations[1], defaultExpanded: true },
-      },
-      {
-        name: 'Multiple Prompts',
-        description: 'Automation with multiple prompt actions',
-        props: { automation: mockAutomations[4], defaultExpanded: true },
-      },
-    ],
-    mockData: () => ({
-      automation: mockAutomations[0],
-    }),
-  },
-
-  // ==========================================================================
-  // CronBuilder
-  // ==========================================================================
-  {
-    id: 'cron-builder',
-    name: 'CronBuilder',
-    category: 'Automations',
-    description: 'Visual schedule builder with common presets and custom timing',
-    component: CronBuilderPlayground,
-    wrapper: PaddedWrapper,
-    layout: 'top',
-    props: [
-      {
-        name: 'timezone',
-        description: 'IANA timezone',
-        control: { type: 'string', placeholder: 'e.g., Europe/Budapest' },
-        defaultValue: 'Europe/Budapest',
-      },
-    ],
-    variants: [
-      {
-        name: 'Weekdays at 9am',
-        description: 'Common work schedule',
-        props: { initialValue: '0 9 * * 1-5', timezone: 'Europe/Budapest' },
-      },
-      {
-        name: 'Every 15 Minutes',
-        description: 'High-frequency schedule',
-        props: { initialValue: '*/15 * * * *', timezone: 'UTC' },
-      },
-      {
-        name: 'Daily at Midnight',
-        description: 'Nightly batch job',
-        props: { initialValue: '0 0 * * *', timezone: 'America/New_York' },
-      },
-      {
-        name: 'Monthly on 1st',
-        description: 'Monthly report schedule',
-        props: { initialValue: '30 14 1 * *', timezone: 'Europe/London' },
-      },
-      {
-        name: 'Every Minute',
-        description: 'Maximum frequency',
-        props: { initialValue: '* * * * *' },
-      },
-    ],
-    mockData: () => ({
-      initialValue: '0 9 * * 1-5',
-      timezone: 'Europe/Budapest',
     }),
   },
 

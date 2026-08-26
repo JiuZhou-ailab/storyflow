@@ -32,6 +32,9 @@ import { getSessionDataPath, getSessionPath, getSessionPlansPath } from '../sess
 import { runPreToolUseChecks } from './core/pre-tool-use.ts';
 import { executeBrowserToolCommand } from './browser-tool-runtime.ts';
 import { saveBinaryResponse } from '../utils/binary-detection.ts';
+import { isFreeConversationWorkspaceId } from '../workspaces/application-context.ts';
+import { isLocalMcpEnabled } from '../workspaces/storage.ts';
+import { getWorkspaceByNameOrId } from '../config/storage.ts';
 
 // ============================================================
 // PiAgent Implementation
@@ -77,6 +80,7 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
       sessionId,
       permissionMode: this.permissionManager.getPermissionMode(),
       workspaceRootPath: rootPath,
+      allowProjectGrants: isFreeConversationWorkspaceId(this.config.workspace.id),
       plansFolderPath,
       dataFolderPath,
       workingDirectory: this.config.session?.workingDirectory,
@@ -145,6 +149,7 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
           sessionId,
           permissionMode: this.permissionManager.getPermissionMode(),
           workspaceRootPath: rootPath,
+          allowProjectGrants: isFreeConversationWorkspaceId(this.config.workspace.id),
           plansFolderPath,
           dataFolderPath,
           workingDirectory: this.config.session?.workingDirectory,
@@ -321,6 +326,13 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
       sessionId,
       workspacePath,
       workspaceId,
+      getHostGrantedSourceRefs: () => isFreeConversationWorkspaceId(workspaceId)
+        ? null
+        : getWorkspaceByNameOrId(workspaceId)?.defaultEnabledSourceRefs ?? [],
+      allowProjectStdio: isLocalMcpEnabled(
+        workspacePath,
+        this.config.workspace.localMcpEnabled,
+      ),
       onPlanSubmitted: async (planPath: string) => {
         await this.onPlanSubmitted?.(planPath);
       },

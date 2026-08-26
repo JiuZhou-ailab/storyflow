@@ -3,6 +3,7 @@
 // pos: Transfer subdomain under the SessionManager facade; createSession and message hydration stay in the Facade via injected callbacks
 
 import type { SessionEvent, RemoteSessionTransferPayload } from '@craft-agent/shared/protocol'
+import { existsSync } from 'node:fs'
 import {
   setPermissionMode,
   hydratePreviousPermissionMode,
@@ -36,13 +37,15 @@ import {
   type StoredSession,
 } from '@craft-agent/shared/sessions'
 import { loadWorkspaceSources } from '@craft-agent/shared/sources'
-import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
+import { isFreeConversationWorkspaceId, loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
 import type { Workspace } from '@craft-agent/shared/config'
 import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { storedToMessage } from '@craft-agent/core/types'
 import {
+  capPermissionMode,
   createManagedSession,
   DEFAULT_TOKEN_USAGE,
+  filterRestoredSourceSlugs,
   type ManagedSession,
 } from './managed-session'
 import { resetPortableForkRuntime } from './runtime-config'
@@ -267,7 +270,13 @@ export class ExportImport {
       : generateSessionId(workspaceRootPath)
 
     // Check for ID collision on move
-    if (mode === 'move' && this.deps.hasSession(sessionId)) {
+    if (
+      mode === 'move'
+      && (
+        this.deps.hasSession(sessionId)
+        || existsSync(getSessionStoragePath(workspaceRootPath, sessionId))
+      )
+    ) {
       throw new Error(`Session ${sessionId} already exists in target workspace`)
     }
 
@@ -305,6 +314,17 @@ export class ExportImport {
       transferredSessionSummaryApplied: header.transferredSessionSummaryApplied,
       messages: bundle.session.messages,
       tokenUsage: header.tokenUsage ?? DEFAULT_TOKEN_USAGE,
+    }
+
+    if (!isFreeConversationWorkspaceId(workspace.id)) {
+      storedSession.permissionMode = capPermissionMode(
+        storedSession.permissionMode,
+        workspace.defaultPermissionMode,
+        'ask',
+      )
+      if (storedSession.permissionMode !== header.permissionMode) {
+        storedSession.previousPermissionMode = undefined
+      }
     }
 
     // Portable bundles intentionally omit hidden provider transcripts. A fork
@@ -345,12 +365,24 @@ export class ExportImport {
 
     // Check source compatibility (before writing JSONL so fixes are persisted)
     if (storedSession.enabledSourceSlugs?.length) {
-      const availableSources = loadWorkspaceSources(workspaceRootPath)
+      const requestedSourceSlugs = storedSession.enabledSourceSlugs
+      const availableSources = loadWorkspaceSources(workspaceRootPath, workspace.id)
       const availableSlugs = new Set(availableSources.map(s => s.config.slug))
-      const missingSources = storedSession.enabledSourceSlugs.filter(s => !availableSlugs.has(s))
+      const missingSources = requestedSourceSlugs.filter(s => !availableSlugs.has(s))
       if (missingSources.length > 0) {
         getSessionLog().warn(`[import] Sources not available: ${missingSources.join(', ')}`)
         warnings.push(`Sources not available in target workspace: ${missingSources.join(', ')}`)
+      }
+      storedSession.enabledSourceSlugs = filterRestoredSourceSlugs(
+        workspace,
+        requestedSourceSlugs,
+        availableSources,
+      )
+      const deniedSources = requestedSourceSlugs.filter(
+        slug => !missingSources.includes(slug) && !storedSession.enabledSourceSlugs?.includes(slug),
+      )
+      if (deniedSources.length > 0) {
+        warnings.push(`Sources not granted by the target Host: ${deniedSources.join(', ')}`)
       }
     }
 

@@ -48,6 +48,7 @@ function createRenewSource(overrides: Partial<FolderSourceConfig> = {}) {
     folderPath: '/mock/path',
     workspaceRootPath: '/mock/workspace',
     workspaceId: 'mock-workspace',
+    definitionIdentity: 'test-definition',
     origin: 'workspace' as const,
   };
 }

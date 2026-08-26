@@ -1,27 +1,22 @@
-/**
- * ToolbarStatusSlot
- *
- * Priority-based overlay slot for the input toolbar bottom row.
- * Shows contextual status indicators — escape-to-interrupt hint (highest priority),
- * browser session state, or future status types.
- *
- * Positioned absolute inset-0 over the toolbar's relative container.
- * Uses AnimatePresence for smooth fade transitions between states.
- *
- * Browser state is consumed directly from Jotai atoms (same pattern as BrowserTabStrip)
- * to avoid threading props through 4 component levels.
- */
+// input: Toolbar priority state, session ID, and browser-pane IPC events
+// output: Escape or active-session browser status overlay
+// pos: Input-toolbar status owner and renderer-side browser-pane state sync
 
 import * as React from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Globe } from 'lucide-react'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { useTranslation, Trans } from 'react-i18next'
 import { Spinner } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/ui/kbd'
 import { getHostname, getThemeLuminance } from '@/components/browser/utils'
-import { browserInstanceForSessionAtomFamily } from '@/atoms/browser-pane'
+import {
+  browserInstanceForSessionAtomFamily,
+  removeBrowserInstanceAtom,
+  setBrowserInstancesAtom,
+  updateBrowserInstanceAtom,
+} from '@/atoms/browser-pane'
 import type { BrowserInstanceInfo } from '../../../../shared/types'
 
 interface ToolbarStatusSlotProps {
@@ -36,6 +31,26 @@ export function ToolbarStatusSlot({
   sessionId,
 }: ToolbarStatusSlotProps) {
   const browserInstance = useAtomValue(browserInstanceForSessionAtomFamily(sessionId))
+  const setBrowserInstances = useSetAtom(setBrowserInstancesAtom)
+  const updateBrowserInstance = useSetAtom(updateBrowserInstanceAtom)
+  const removeBrowserInstance = useSetAtom(removeBrowserInstanceAtom)
+
+  React.useEffect(() => {
+    const browserPane = window.electronAPI?.browserPane
+    if (!browserPane || !window.electronAPI.isChannelAvailable('browser-pane:list')) return
+
+    void browserPane.list()
+      .then(setBrowserInstances)
+      .catch((error) => console.warn('[ToolbarStatusSlot] Failed to list browser panes:', error))
+
+    const stopStateChanges = browserPane.onStateChanged(updateBrowserInstance)
+    const stopRemovals = browserPane.onRemoved(removeBrowserInstance)
+
+    return () => {
+      stopStateChanges()
+      stopRemovals()
+    }
+  }, [removeBrowserInstance, setBrowserInstances, updateBrowserInstance])
 
   // Priority resolution: escape interrupt > browser status
   const showBrowser = !showEscapeOverlay && browserInstance !== null

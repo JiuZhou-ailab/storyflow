@@ -17,7 +17,9 @@ import { CONFIG_DIR } from '../../config/paths.ts';
 import { getPiUserSkillsDir } from '../../skills/storage.ts';
 import {
   SHARED_AGENTS_SOURCES_DIR,
+  loadSource,
 } from '../../sources/storage.ts';
+import { getSourceGrantRef } from '../../sources/grants.ts';
 
 const TEST_PREFIX = `pi-context-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const touchedPaths = new Set<string>();
@@ -54,6 +56,7 @@ describe('Pi SessionToolContext Source ownership', () => {
       sessionId: 'test-session',
       workspaceId: 'test-workspace',
       workspacePath: workspaceRoot,
+      getHostGrantedSourceRefs: () => [],
       onPlanSubmitted: () => {},
       onAuthRequest: () => {},
     });
@@ -73,6 +76,7 @@ describe('Pi SessionToolContext Source ownership', () => {
       sessionId: 'project-session',
       workspaceId: 'project-workspace',
       workspacePath: workspaceRoot,
+      getHostGrantedSourceRefs: () => [],
       onPlanSubmitted: () => {},
       onAuthRequest: () => {},
     });
@@ -89,5 +93,56 @@ Inspect the current project evidence.
     expect(created?.path).toBe(join(globalSkillDir, 'SKILL.md'));
     expect(projectContext.loadSkillDocument?.(slug)?.content).toBe(content);
     expect(projectContext.skillsPath).toBe(getPiUserSkillsDir());
+  });
+
+  it('requires the exact Host grant and stable Project identity for Source execution', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), `${TEST_PREFIX}-grant-`));
+    const sourceSlug = `${TEST_PREFIX}-project-source`;
+    const sourceDir = join(workspaceRoot, '.craft-agent', 'sources', sourceSlug);
+    const configPath = join(sourceDir, 'config.json');
+    touchedPaths.add(workspaceRoot);
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(configPath, JSON.stringify({
+      id: 'source-id',
+      slug: sourceSlug,
+      name: 'Project Source',
+      enabled: true,
+      provider: 'test',
+      type: 'api',
+      api: { baseUrl: 'https://first.example', authType: 'bearer' },
+    }));
+
+    const loaded = loadSource(workspaceRoot, sourceSlug, 'project-stable');
+    expect(loaded?.workspaceId).toBe('project-stable');
+    const exactRef = getSourceGrantRef(loaded!);
+    let liveRefs = [exactRef];
+    const denied = createSessionToolContext({
+      sessionId: 'denied-session',
+      workspaceId: 'project-stable',
+      workspacePath: workspaceRoot,
+      getHostGrantedSourceRefs: () => [],
+      onPlanSubmitted: () => {},
+      onAuthRequest: () => {},
+    });
+    const granted = createSessionToolContext({
+      sessionId: 'granted-session',
+      workspaceId: 'project-stable',
+      workspacePath: workspaceRoot,
+      getHostGrantedSourceRefs: () => liveRefs,
+      onPlanSubmitted: () => {},
+      onAuthRequest: () => {},
+    });
+
+    expect(denied.isSourceExecutionAllowed(sourceSlug)).toBe(false);
+    expect(granted.isSourceExecutionAllowed(sourceSlug)).toBe(true);
+
+    liveRefs = [];
+    expect(granted.isSourceExecutionAllowed(sourceSlug)).toBe(false);
+    liveRefs = [exactRef];
+
+    const replacement = JSON.parse(readFileSync(configPath, 'utf-8'));
+    replacement.api.baseUrl = 'https://replacement.example';
+    writeFileSync(configPath, JSON.stringify(replacement));
+    expect(granted.isSourceExecutionAllowed(sourceSlug)).toBe(false);
   });
 });

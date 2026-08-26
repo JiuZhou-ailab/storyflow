@@ -62,7 +62,8 @@ export default function WorkspaceSettingsPage() {
   const [isUploadingIcon, setIsUploadingIcon] = useState(false)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask')
   const [workingDirectory, setWorkingDirectory] = useState('')
-  const [localMcpEnabled, setLocalMcpEnabled] = useState(true)
+  const [localMcpEnabled, setLocalMcpEnabled] = useState(false)
+  const [automationsEnabled, setAutomationsEnabled] = useState(false)
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true)
 
   // Default sources state
@@ -86,7 +87,8 @@ export default function WorkspaceSettingsPage() {
           setWsNameEditing(settings.name || '')
           setPermissionMode(settings.permissionMode || 'ask')
           setWorkingDirectory(settings.workingDirectory || '')
-          setLocalMcpEnabled(settings.localMcpEnabled ?? true)
+          setLocalMcpEnabled(settings.localMcpEnabled ?? false)
+          setAutomationsEnabled(settings.automationsEnabled ?? false)
           // Load cyclable permission modes from workspace settings
 
           // Load default source slugs
@@ -270,6 +272,14 @@ export default function WorkspaceSettingsPage() {
     async (enabled: boolean) => {
       setLocalMcpEnabled(enabled)
       await updateWorkspaceSetting('localMcpEnabled', enabled)
+    },
+    [updateWorkspaceSetting]
+  )
+
+  const handleAutomationsEnabledChange = useCallback(
+    async (enabled: boolean) => {
+      setAutomationsEnabled(enabled)
+      await updateWorkspaceSetting('automationsEnabled', enabled)
     },
     [updateWorkspaceSetting]
   )
@@ -465,6 +475,12 @@ export default function WorkspaceSettingsPage() {
                   description={t("settings.workspace.localMcpServersDesc")}
                   checked={localMcpEnabled}
                   onCheckedChange={handleLocalMcpEnabledChange}
+                />
+                <SettingsToggle
+                  label={t("settings.workspace.automations")}
+                  description={t("settings.workspace.automationsDesc")}
+                  checked={automationsEnabled}
+                  onCheckedChange={handleAutomationsEnabledChange}
                 />
               </SettingsCard>
             </SettingsSection>

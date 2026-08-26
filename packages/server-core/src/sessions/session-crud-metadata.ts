@@ -12,7 +12,7 @@ import {
 import { resolveSessionConnection } from '@craft-agent/shared/agent/backend'
 import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
 import { updateSessionMetadata, type SessionStatus } from '@craft-agent/shared/sessions'
-import { isFreeConversationWorkspaceId, loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
+import { isFreeConversationWorkspaceId, isPathWithinProjectRoot, loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
 import { invalidateSkillsCache } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
 import { canSwitchSessionModelConnection } from '@craft-agent/server-core/domain'
@@ -313,6 +313,15 @@ export class SessionCrudMetadata {
           type: 'working_directory_error',
           sessionId,
           error: validation.reason!,
+        }, managed.workspace.id)
+        return
+      }
+      if (!isPathWithinProjectRoot(managed.workspace.rootPath, path)) {
+        getSessionLog().warn(`Session ${sessionId}: rejected working directory outside the Project root`)
+        this.deps.sendEvent({
+          type: 'working_directory_error',
+          sessionId,
+          error: 'Working directory must stay inside the Project root.',
         }, managed.workspace.id)
         return
       }

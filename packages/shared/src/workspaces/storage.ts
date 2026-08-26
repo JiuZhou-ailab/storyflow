@@ -2,10 +2,10 @@
  * Workspace Storage
  *
  * input: Workspace folders, global defaults, and persisted workspace config files
- * output: Workspace CRUD, discovery, and default-setting persistence
+ * output: Workspace configuration persistence, creation, and legacy-state migration
  * pos: Shared filesystem-backed workspace storage layer
  *
- * CRUD operations for workspaces.
+ * Filesystem persistence for workspaces.
  * Workspaces can be stored anywhere on disk via rootPath.
  * Default location: ~/.craft-agent/workspaces/
  */
@@ -14,7 +14,6 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  writeFileSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -35,7 +34,6 @@ import type {
   WorkspaceConfig,
   CreateWorkspaceInput,
   LoadedWorkspace,
-  WorkspaceSummary,
 } from './types.ts';
 import {
   getExistingWorkspaceConfigPath,
@@ -50,7 +48,6 @@ import {
   getWorkspaceLabelsPath,
   getWorkspaceNoticePath,
   getWorkspacePackLockPath,
-  getWorkspacePluginManifestPath,
   getWorkspaceReadmePath,
   getWorkspaceSessionsPath,
   getWorkspaceSkillsPath,
@@ -60,6 +57,8 @@ import {
   getWorkspaceStatusIconsPath,
   getWorkspaceViewsPath,
   getWorkspaceWritingManifestPath,
+  ensureProjectOwnedDirectory,
+  resolveProjectOwnedPath,
 } from './paths.ts';
 
 export {
@@ -89,7 +88,6 @@ export {
   getWorkspaceLabelsPath,
   getWorkspaceNoticePath,
   getWorkspacePackLockPath,
-  getWorkspacePluginManifestPath,
   getWorkspaceReadmePath,
   getWorkspaceSessionsPath,
   getWorkspaceSkillsPath,
@@ -102,8 +100,6 @@ export {
   getWorkspaceViewsPath,
   getWorkspaceWritingManifestPath,
 } from './paths.ts';
-
-export const DEFAULT_STARTER_WORKSPACE_NAME = '我的项目';
 
 const CONFIG_DIR = join(homedir(), '.craft-agent');
 const DEFAULT_WORKSPACES_DIR = join(CONFIG_DIR, 'workspaces');
@@ -305,12 +301,10 @@ function migrateLegacyWorkspaceState(rootPath: string): void {
       ['statuses/config.json', getWorkspaceStatusConfigPath(rootPath)],
       ['statuses/icons', getWorkspaceStatusIconsPath(rootPath)],
       ['views.json', getWorkspaceViewsPath(rootPath)],
-      ['.claude-plugin/plugin.json', getWorkspacePluginManifestPath(rootPath)],
     ] as const) {
       moveLegacyWorkspaceStatePath(rootPath, join(rootPath, source), target);
     }
 
-    rmSync(join(rootPath, '.claude-plugin'), { recursive: true, force: true });
     try {
       if (existsSync(join(rootPath, 'statuses')) && readdirSync(join(rootPath, 'statuses')).length === 0) {
         rmSync(join(rootPath, 'statuses'), { recursive: true, force: true });
@@ -348,14 +342,14 @@ function migrateLegacyWorkspaceState(rootPath: string): void {
  * Load workspace config.json from a workspace folder
  * @param rootPath - Absolute path to workspace root folder
  */
-export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
-  migrateLegacyWorkspaceState(rootPath);
-
+function readWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
   const configPath = getExistingWorkspaceConfigPath(rootPath);
   if (!existsSync(configPath)) return null;
 
   try {
+    resolveProjectOwnedPath(rootPath, configPath);
     const config = readJsonFileSync<WorkspaceConfig>(configPath);
+    if (!isWorkspaceConfigLike(config)) return null;
     // Expand path variables in defaults for portability
     if (config.defaults?.workingDirectory) {
       config.defaults.workingDirectory = expandPath(config.defaults.workingDirectory);
@@ -399,15 +393,46 @@ export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
   }
 }
 
+/** Read Project metadata without performing legacy-state migration. */
+export function inspectWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
+  return readWorkspaceConfig(rootPath);
+}
+
+/** Read only canonical hidden Project state; ordinary root files are not Project metadata. */
+export function inspectWorkspaceStateConfig(rootPath: string): WorkspaceConfig | null {
+  const legacyConfigPath = getLegacyWorkspaceConfigPath(rootPath);
+  const canonicalConfigPath = getWorkspaceConfigPath(rootPath);
+  if (!existsSync(canonicalConfigPath)) return null;
+  if (canonicalConfigPath === legacyConfigPath) return readWorkspaceConfig(rootPath);
+
+  try {
+    resolveProjectOwnedPath(rootPath, canonicalConfigPath);
+    const config = readJsonFileSync<WorkspaceConfig>(canonicalConfigPath);
+    return isWorkspaceConfigLike(config) ? config : null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
+  try {
+    const statePath = getWorkspaceStatePath(rootPath);
+    if (existsSync(statePath)) resolveProjectOwnedPath(rootPath, statePath);
+    // Legacy migration is only eligible before canonical Project state exists.
+    // A newly registered ordinary directory may legitimately contain root-level
+    // config.json/sources/sessions that Storyflow must never claim or move.
+    if (!existsSync(getWorkspaceConfigPath(rootPath))) migrateLegacyWorkspaceState(rootPath);
+    return readWorkspaceConfig(rootPath);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Save workspace config.json to a workspace folder
  * @param rootPath - Absolute path to workspace root folder
  */
 export function saveWorkspaceConfig(rootPath: string, config: WorkspaceConfig): void {
-  if (!existsSync(rootPath)) {
-    mkdirSync(rootPath, { recursive: true });
-  }
-
   // Convert paths to portable form for cross-machine compatibility
   const storageConfig: WorkspaceConfig = {
     ...config,
@@ -423,7 +448,7 @@ export function saveWorkspaceConfig(rootPath: string, config: WorkspaceConfig): 
 
   // Use atomic write to prevent corruption on crash/interrupt
   const configPath = getWorkspaceConfigPath(rootPath);
-  mkdirSync(dirname(configPath), { recursive: true });
+  ensureProjectOwnedDirectory(rootPath, dirname(configPath));
   atomicWriteFileSync(configPath, JSON.stringify(storageConfig, null, 2));
 }
 
@@ -465,9 +490,6 @@ export function loadWorkspace(rootPath: string): LoadedWorkspace | null {
   const config = loadWorkspaceConfig(rootPath);
   if (!config) return null;
 
-  // Ensure plugin manifest exists (migration for existing workspaces)
-  ensurePluginManifest(rootPath, config.name);
-
   return {
     config,
     sourceSlugs: listSubdirNames(getExistingWorkspaceSourcesPath(rootPath)),
@@ -475,26 +497,8 @@ export function loadWorkspace(rootPath: string): LoadedWorkspace | null {
   };
 }
 
-/**
- * Get workspace summary from a rootPath
- * @param rootPath - Absolute path to workspace root folder
- */
-export function getWorkspaceSummary(rootPath: string): WorkspaceSummary | null {
-  const config = loadWorkspaceConfig(rootPath);
-  if (!config) return null;
-
-  return {
-    slug: config.slug,
-    name: config.name,
-    sourceCount: countSubdirs(getExistingWorkspaceSourcesPath(rootPath)),
-    sessionCount: countSubdirs(getExistingWorkspaceSessionsPath(rootPath)),
-    createdAt: config.createdAt,
-    updatedAt: config.updatedAt,
-  };
-}
-
 // ============================================================
-// Create/Delete Operations
+// Creation and Validation
 // ============================================================
 
 /**
@@ -518,32 +522,6 @@ export function generateSlug(name: string): string {
   }
 
   return slug;
-}
-
-/**
- * Generate a unique folder path for a workspace by appending a numeric suffix
- * if the slug-based folder already exists.
- * E.g., "my-workspace", "my-workspace-2", "my-workspace-3", ...
- *
- * @param name - Display name to derive the slug from
- * @param baseDir - Parent directory where workspace folders live (e.g., ~/.craft-agent/workspaces/)
- * @returns Full path to a unique, non-existing folder
- */
-export function generateUniqueWorkspacePath(name: string, baseDir: string): string {
-  const slug = generateSlug(name);
-  let candidate = join(baseDir, slug);
-
-  if (!existsSync(candidate)) {
-    return candidate;
-  }
-
-  // Append numeric suffix until we find a non-existing path
-  let counter = 2;
-  while (existsSync(join(baseDir, `${slug}-${counter}`))) {
-    counter++;
-  }
-
-  return join(baseDir, `${slug}-${counter}`);
 }
 
 /**
@@ -603,29 +581,7 @@ export function createWorkspaceAtPath(
   // Initialize label configuration with defaults (two nested groups + valued labels)
   saveLabelConfig(rootPath, getDefaultLabelConfig());
 
-  // Initialize plugin manifest for SDK integration (enables skills, commands, agents)
-  ensurePluginManifest(rootPath, name);
-
   return config;
-}
-
-export function createDefaultWorkspaceAtPath(rootPath: string): WorkspaceConfig {
-  return createWorkspaceAtPath(rootPath, DEFAULT_STARTER_WORKSPACE_NAME);
-}
-
-/**
- * Delete a workspace folder and all its contents
- * @param rootPath - Absolute path to workspace root folder
- */
-export function deleteWorkspaceFolder(rootPath: string): boolean {
-  if (!existsSync(rootPath)) return false;
-
-  try {
-    rmSync(rootPath, { recursive: true });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -633,53 +589,7 @@ export function deleteWorkspaceFolder(rootPath: string): boolean {
  * @param rootPath - Absolute path to check
  */
 export function isValidWorkspace(rootPath: string): boolean {
-  return existsSync(getExistingWorkspaceConfigPath(rootPath));
-}
-
-/**
- * Rename a workspace (updates config.json in the workspace folder)
- * @param rootPath - Absolute path to workspace root folder
- * @param newName - New display name
- */
-export function renameWorkspaceFolder(rootPath: string, newName: string): boolean {
-  const config = loadWorkspaceConfig(rootPath);
-  if (!config) return false;
-
-  config.name = newName.trim();
-  saveWorkspaceConfig(rootPath, config);
-  return true;
-}
-
-// ============================================================
-// Auto-Discovery (for default workspace location)
-// ============================================================
-
-/**
- * Discover workspace folders in the default location that have valid config.json
- * Returns paths to valid workspaces found in ~/.craft-agent/workspaces/
- */
-export function discoverWorkspacesInDefaultLocation(): string[] {
-  const discovered: string[] = [];
-
-  if (!existsSync(DEFAULT_WORKSPACES_DIR)) {
-    return discovered;
-  }
-
-  try {
-    const entries = readdirSync(DEFAULT_WORKSPACES_DIR, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-
-      const rootPath = join(DEFAULT_WORKSPACES_DIR, entry.name);
-      if (isValidWorkspace(rootPath)) {
-        discovered.push(rootPath);
-      }
-    }
-  } catch {
-    // Ignore errors scanning directory
-  }
-
-  return discovered;
+  return inspectWorkspaceConfig(rootPath) !== null;
 }
 
 // ============================================================
@@ -738,62 +648,19 @@ export function setWorkspaceColorTheme(rootPath: string, themeId: string | undef
 
 /**
  * Check if local (stdio) MCP servers are enabled for a workspace.
- * Resolution order: ENV (CRAFT_LOCAL_MCP_ENABLED) > workspace config > default (true)
+ * Resolution order: ENV (CRAFT_LOCAL_MCP_ENABLED) > Host-owned Project setting > false
  *
  * @param rootPath - Absolute path to workspace root folder
  * @returns true if local MCP servers should be enabled
  */
-export function isLocalMcpEnabled(rootPath: string): boolean {
+export function isLocalMcpEnabled(_rootPath: string, hostEnabled = false): boolean {
   // 1. Environment variable override (highest priority)
   const envValue = process.env.CRAFT_LOCAL_MCP_ENABLED;
   if (envValue !== undefined) {
     return envValue.toLowerCase() === 'true';
   }
 
-  // 2. Workspace config
-  const config = loadWorkspaceConfig(rootPath);
-  if (config?.localMcpServers?.enabled !== undefined) {
-    return config.localMcpServers.enabled;
-  }
-
-  // 3. Default: enabled
-  return true;
-}
-
-// ============================================================
-// Exports
-// ============================================================
-
-// ============================================================
-// Plugin Manifest (for SDK plugin integration)
-// ============================================================
-
-/**
- * Ensure workspace has a .claude-plugin/plugin.json manifest.
- * This allows the workspace to be loaded as an SDK plugin,
- * enabling skills, commands, and agents from the workspace.
- *
- * @param rootPath - Absolute path to workspace root folder
- * @param workspaceName - Display name for the workspace (used in plugin name)
- */
-export function ensurePluginManifest(rootPath: string, workspaceName: string): void {
-  const manifestPath = getWorkspacePluginManifestPath(rootPath);
-  const pluginDir = dirname(manifestPath);
-
-  if (existsSync(manifestPath)) return;
-
-  // Create .claude-plugin directory
-  if (!existsSync(pluginDir)) {
-    mkdirSync(pluginDir, { recursive: true });
-  }
-
-  // Create minimal plugin manifest
-  const manifest = {
-    name: `craft-workspace-${workspaceName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-    version: '1.0.0',
-  };
-
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  return hostEnabled;
 }
 
 export { CONFIG_DIR, DEFAULT_WORKSPACES_DIR };

@@ -1,5 +1,5 @@
 // input: Workspace paths, persisted session JSONL candidates, and session mutations
-// output: Workspace-scoped session CRUD with crash-safe JSONL candidate recovery
+// output: Workspace-scoped session CRUD with crash-safe recovery and root-locator rebasing
 // pos: Shared storage boundary for durable session state and session-owned files
 
 /**
@@ -29,11 +29,14 @@ import {
 } from 'fs';
 import { readdir } from 'fs/promises';
 import { join } from 'path';
+import { randomUUID } from 'node:crypto';
 import {
   getLegacyWorkspaceSessionsPath,
   getWorkspaceSessionsPath,
+  ensureProjectOwnedDirectory,
+  rebasePathWithinProjectRoot,
+  resolveProjectOwnedPath,
 } from '../workspaces/paths.ts';
-import { generateUniqueSessionId } from './slug-generator.ts';
 import { toPortablePath, expandPath } from '../utils/paths.ts';
 import { sanitizeSessionId } from './validation.ts';
 import { perf } from '../utils/perf.ts';
@@ -63,10 +66,7 @@ export type { SessionConfig } from './types.ts';
  */
 export function ensureSessionsDir(workspaceRootPath: string): string {
   const dir = getWorkspaceSessionsPath(workspaceRootPath);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  return dir;
+  return ensureProjectOwnedDirectory(workspaceRootPath, dir);
 }
 
 /**
@@ -79,10 +79,10 @@ export function getSessionPath(workspaceRootPath: string, sessionId: string): st
   // Defense-in-depth: strip any path components from sessionId
   const safeSessionId = sanitizeSessionId(sessionId);
   const sessionPath = join(getWorkspaceSessionsPath(workspaceRootPath), safeSessionId);
-  if (existsSync(sessionPath)) return sessionPath;
+  if (existsSync(sessionPath)) return resolveProjectOwnedPath(workspaceRootPath, sessionPath);
 
   const legacySessionPath = join(getLegacyWorkspaceSessionsPath(workspaceRootPath), safeSessionId);
-  if (existsSync(legacySessionPath)) return legacySessionPath;
+  if (existsSync(legacySessionPath)) return resolveProjectOwnedPath(workspaceRootPath, legacySessionPath);
 
   return sessionPath;
 }
@@ -176,33 +176,23 @@ export function recoverSessionFile(sessionFile: string): string | null {
  * Ensure session directory exists with all subdirectories
  */
 export function ensureSessionDir(workspaceRootPath: string, sessionId: string): string {
-  const sessionDir = getSessionPath(workspaceRootPath, sessionId);
-  if (!existsSync(sessionDir)) {
-    mkdirSync(sessionDir, { recursive: true });
-  }
+  const sessionDir = ensureProjectOwnedDirectory(
+    workspaceRootPath,
+    join(getWorkspaceSessionsPath(workspaceRootPath), sanitizeSessionId(sessionId)),
+  );
   // Also create plans, attachments, long_responses, and downloads directories
   const plansDir = join(sessionDir, 'plans');
-  if (!existsSync(plansDir)) {
-    mkdirSync(plansDir, { recursive: true });
-  }
+  ensureProjectOwnedDirectory(workspaceRootPath, plansDir);
   const attachmentsDir = join(sessionDir, 'attachments');
-  if (!existsSync(attachmentsDir)) {
-    mkdirSync(attachmentsDir, { recursive: true });
-  }
+  ensureProjectOwnedDirectory(workspaceRootPath, attachmentsDir);
   const longResponsesDir = join(sessionDir, 'long_responses');
-  if (!existsSync(longResponsesDir)) {
-    mkdirSync(longResponsesDir, { recursive: true });
-  }
+  ensureProjectOwnedDirectory(workspaceRootPath, longResponsesDir);
   // Data directory for transform_data tool output (JSON files for datatable/spreadsheet)
   const dataDir = join(sessionDir, 'data');
-  if (!existsSync(dataDir)) {
-    mkdirSync(dataDir, { recursive: true });
-  }
+  ensureProjectOwnedDirectory(workspaceRootPath, dataDir);
   // Downloads directory for binary files from API responses (PDFs, images, etc.)
   const downloadsDir = join(sessionDir, 'downloads');
-  if (!existsSync(downloadsDir)) {
-    mkdirSync(downloadsDir, { recursive: true });
-  }
+  ensureProjectOwnedDirectory(workspaceRootPath, downloadsDir);
   return sessionDir;
 }
 
@@ -239,32 +229,11 @@ export function getSessionDownloadsPath(workspaceRootPath: string, sessionId: st
 // ============================================================
 
 /**
- * Get existing session IDs for collision detection
+ * Generate an opaque Host-wide Session ID. Display names remain human-readable;
+ * identity must not collide merely because two Projects have different roots.
  */
-function getExistingSessionIds(workspaceRootPath: string): Set<string> {
-  const existingIds = new Set<string>();
-  for (const sessionsDir of [
-    getLegacyWorkspaceSessionsPath(workspaceRootPath),
-    getWorkspaceSessionsPath(workspaceRootPath),
-  ]) {
-    if (!existsSync(sessionsDir)) continue;
-    const entries = readdirSync(sessionsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        existingIds.add(entry.name);
-      }
-    }
-  }
-  return existingIds;
-}
-
-/**
- * Generate a human-readable session ID
- * Format: YYMMDD-adjective-noun (e.g., 260111-swift-river)
- */
-export function generateSessionId(workspaceRootPath: string): string {
-  const existingIds = getExistingSessionIds(workspaceRootPath);
-  return generateUniqueSessionId(existingIds);
+export function generateSessionId(_workspaceRootPath: string): string {
+  return `session_${randomUUID()}`;
 }
 
 // ============================================================
@@ -426,6 +395,24 @@ export function loadSession(workspaceRootPath: string, sessionId: string): Store
   if (readablePath) {
     const session = readSessionJsonl(readablePath);
     if (session) {
+      const previousRoot = session.workspaceRootPath;
+      session.workspaceRootPath = workspaceRootPath;
+      session.workingDirectory = rebasePathWithinProjectRoot(
+        session.workingDirectory,
+        previousRoot,
+        workspaceRootPath,
+      );
+      session.sdkCwd = rebasePathWithinProjectRoot(session.sdkCwd, previousRoot, workspaceRootPath);
+      session.branchFromSessionPath = rebasePathWithinProjectRoot(
+        session.branchFromSessionPath,
+        previousRoot,
+        workspaceRootPath,
+      );
+      session.branchFromSdkCwd = rebasePathWithinProjectRoot(
+        session.branchFromSdkCwd,
+        previousRoot,
+        workspaceRootPath,
+      );
       end();
       return session;
     }
@@ -451,7 +438,9 @@ export function listSessions(workspaceRootPath: string): SessionMetadata[] {
   const sessionDirs = [
     getLegacyWorkspaceSessionsPath(workspaceRootPath),
     getWorkspaceSessionsPath(workspaceRootPath),
-  ].filter((sessionsDir, index, dirs) => existsSync(sessionsDir) && dirs.indexOf(sessionsDir) === index);
+  ]
+    .filter((sessionsDir, index, dirs) => existsSync(sessionsDir) && dirs.indexOf(sessionsDir) === index)
+    .map(sessionsDir => resolveProjectOwnedPath(workspaceRootPath, sessionsDir));
   span.mark('readdir');
   const sessionsById = new Map<string, SessionMetadata>();
 
@@ -493,7 +482,9 @@ export async function listSessionsAsync(workspaceRootPath: string): Promise<Sess
   const sessionDirs = [
     getLegacyWorkspaceSessionsPath(workspaceRootPath),
     getWorkspaceSessionsPath(workspaceRootPath),
-  ].filter((sessionsDir, index, dirs) => existsSync(sessionsDir) && dirs.indexOf(sessionsDir) === index);
+  ]
+    .filter((sessionsDir, index, dirs) => existsSync(sessionsDir) && dirs.indexOf(sessionsDir) === index)
+    .map(sessionsDir => resolveProjectOwnedPath(workspaceRootPath, sessionsDir));
   span.mark('readdir');
   const sessionsById = new Map<string, SessionMetadata>();
 
@@ -541,8 +532,27 @@ function headerToMetadata(header: SessionHeader, workspaceRootPath: string): Ses
     const planCount = countPlanFiles(workspaceRootPath, header.id);
 
     // Migration: For sessions created before sdkCwd was added, use workingDirectory as fallback.
-    const workingDir = header.workingDirectory ? expandPath(header.workingDirectory) : undefined;
-    const sdkCwd = header.sdkCwd ? expandPath(header.sdkCwd) : workingDir;
+    const previousRoot = expandPath(header.workspaceRootPath);
+    const workingDir = rebasePathWithinProjectRoot(
+      header.workingDirectory ? expandPath(header.workingDirectory) : undefined,
+      previousRoot,
+      workspaceRootPath,
+    );
+    const sdkCwd = rebasePathWithinProjectRoot(
+      header.sdkCwd ? expandPath(header.sdkCwd) : workingDir,
+      previousRoot,
+      workspaceRootPath,
+    );
+    const branchFromSessionPath = rebasePathWithinProjectRoot(
+      header.branchFromSessionPath ? expandPath(header.branchFromSessionPath) : undefined,
+      previousRoot,
+      workspaceRootPath,
+    );
+    const branchFromSdkCwd = rebasePathWithinProjectRoot(
+      header.branchFromSdkCwd ? expandPath(header.branchFromSdkCwd) : undefined,
+      previousRoot,
+      workspaceRootPath,
+    );
 
     // Destructure fields that don't exist on SessionMetadata or need overrides
     const {
@@ -558,6 +568,8 @@ function headerToMetadata(header: SessionHeader, workspaceRootPath: string): Ses
       planCount: planCount > 0 ? planCount : undefined,
       workingDirectory: workingDir,
       sdkCwd,
+      branchFromSessionPath,
+      branchFromSdkCwd,
       legacyAgentRuntime,
     } as SessionMetadata;
   } catch (error) {
@@ -579,7 +591,7 @@ export function deleteSession(workspaceRootPath: string, sessionId: string): boo
       join(getLegacyWorkspaceSessionsPath(workspaceRootPath), safeSessionId),
     ]) {
       if (existsSync(sessionDir)) {
-        rmSync(sessionDir, { recursive: true });
+        rmSync(resolveProjectOwnedPath(workspaceRootPath, sessionDir), { recursive: true });
       }
     }
 

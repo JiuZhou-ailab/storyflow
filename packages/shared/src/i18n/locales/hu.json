@@ -1218,6 +1218,8 @@
   "settings.tools.title": "Eszközök",
   "settings.workspace.advanced": "Speciális",
   "settings.workspace.atLeast2Modes": "Legalább 2 mód szükséges",
+  "settings.workspace.automations": "Projekt-automatizálások",
+  "settings.workspace.automationsDesc": "A projekt ütemezett műveleteinek, promptjainak és webhookjainak futtatása",
   "settings.workspace.defaultMode": "Alapértelmezett mód",
   "settings.workspace.defaultModeDesc": "Az AI lehetőségeinek szabályozása",
   "settings.workspace.defaultSources": "Alapértelmezett források",

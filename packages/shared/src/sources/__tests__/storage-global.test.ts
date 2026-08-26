@@ -3,11 +3,12 @@
 // pos: Source storage boundary excluding implicit third-party agent directories
 
 import { afterEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir, homedir } from 'os';
 import { join } from 'path';
 import {
   createSource,
+  deleteSource,
   GLOBAL_AGENT_ROOT_DIR,
   loadSource,
   loadWorkspaceSources,
@@ -124,7 +125,7 @@ describe('global source storage', () => {
     writeSource(workspaceRoot, sharedSlug, 'Workspace Shared');
     writeSource(workspaceRoot, workspaceOnlySlug, 'Workspace Only');
 
-    const sources = loadWorkspaceSources(workspaceRoot)
+    const sources = loadWorkspaceSources(workspaceRoot, 'project-stable')
       .filter(source => source.config.slug.startsWith(TEST_PREFIX));
 
     expect(sources.map(source => source.config.slug).sort()).toEqual([
@@ -133,7 +134,10 @@ describe('global source storage', () => {
       workspaceOnlySlug,
     ].sort());
     expect(sources.find(source => source.config.slug === sharedSlug)?.config.name).toBe('Workspace Shared');
+    expect(sources.find(source => source.config.slug === sharedSlug)?.workspaceId).toBe('project-stable');
+    expect(sources.find(source => source.config.slug === sharedSlug)?.definitionIdentity).toMatch(/^[a-f0-9]{64}$/);
     expect(sources.find(source => source.config.slug === craftGlobalOnlySlug)?.origin).toBe('craft-global');
+    expect(sources.find(source => source.config.slug === craftGlobalOnlySlug)?.workspaceId).toBe('global');
     expect(sources.find(source => source.config.slug === sharedAgentsOnlySlug)).toBeUndefined();
     expect(sources.find(source => source.config.slug === workspaceOnlySlug)?.origin).toBe('workspace');
   });
@@ -168,5 +172,59 @@ describe('global source storage', () => {
     expect(loadSource(workspaceRoot, globalSlug)?.config.connectionStatus).toBe('connected');
     expect(loadSource(workspaceRoot, workspaceSlug)?.origin).toBe('workspace');
     expect(loadSource(workspaceRoot, globalSlug)?.origin).toBe('craft-global');
+  });
+
+  it('rejects Source slug traversal before deleting Project state', () => {
+    const workspaceRoot = makeWorkspaceRoot('delete-boundary');
+    const stateDir = join(workspaceRoot, '.craft-agent');
+    const configPath = join(stateDir, 'config.json');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(configPath, '{"id":"keep"}');
+
+    expect(() => deleteSource(workspaceRoot, '..')).toThrow('Invalid Source slug');
+    expect(existsSync(configPath)).toBe(true);
+  });
+
+  it('ignores folder/config slug mismatches and never falls through to global deletion', () => {
+    const workspaceRoot = makeWorkspaceRoot('owner-boundary');
+    const globalSlug = `${TEST_PREFIX}-global-owner`;
+    const attackerFolder = `${TEST_PREFIX}-attacker-folder`;
+    writeSource(GLOBAL_AGENT_ROOT_DIR, globalSlug, 'Global Owner');
+    touchedGlobalSlugs.add(globalSlug);
+
+    const attackerDir = join(workspaceRoot, '.craft-agent', 'sources', attackerFolder);
+    mkdirSync(attackerDir, { recursive: true });
+    writeFileSync(join(attackerDir, 'config.json'), JSON.stringify({
+      id: 'attacker',
+      slug: globalSlug,
+      name: 'Mismatched Project Source',
+      enabled: true,
+      provider: 'test',
+      type: 'api',
+      api: { baseUrl: 'https://attacker.example', authType: 'none' },
+    }));
+
+    const visible = loadWorkspaceSources(workspaceRoot, 'project-stable')
+      .find(source => source.config.slug === globalSlug);
+    expect(visible?.origin).toBe('craft-global');
+
+    deleteSource(workspaceRoot, globalSlug);
+    expect(existsSync(join(attackerDir, 'config.json'))).toBe(true);
+    expect(existsSync(join(GLOBAL_SOURCES_DIR, globalSlug, 'config.json'))).toBe(true);
+  });
+
+  it('rejects Project Source symlinks without touching the external target', () => {
+    const workspaceRoot = makeWorkspaceRoot('symlink-boundary');
+    const outsideRoot = makeWorkspaceRoot('symlink-outside');
+    const outsideSource = join(outsideRoot, 'outside-source');
+    const outsideConfig = join(outsideSource, 'config.json');
+    mkdirSync(outsideSource, { recursive: true });
+    writeFileSync(outsideConfig, '{"id":"keep"}');
+    mkdirSync(join(workspaceRoot, '.craft-agent'), { recursive: true });
+    symlinkSync(outsideRoot, join(workspaceRoot, '.craft-agent', 'sources'));
+
+    expect(() => loadWorkspaceSources(workspaceRoot, 'project-symlink')).toThrow('symbolic link');
+    expect(() => deleteSource(workspaceRoot, 'outside-source')).toThrow('symbolic link');
+    expect(existsSync(outsideConfig)).toBe(true);
   });
 });

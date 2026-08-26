@@ -563,6 +563,9 @@ export interface LoadedSource {
    */
   workspaceId: string;
 
+  /** Hash of the executable definition used to bind Host grants and credentials. */
+  definitionIdentity: string;
+
   /**
    * Filesystem owner of this source definition.
    * Shared-global definitions are externally owned and must remain read-only.

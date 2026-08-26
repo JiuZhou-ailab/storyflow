@@ -32,6 +32,7 @@ function createBaseContext(sessionId: string): SessionToolContext {
     sessionId,
     workspacePath: '/tmp/test-workspace',
     workspaceId: 'test-ws',
+    getHostGrantedSourceRefs: () => [],
     onPlanSubmitted: noopPlan,
     onAuthRequest: noopAuth,
   });

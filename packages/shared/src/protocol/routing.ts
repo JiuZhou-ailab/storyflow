@@ -28,6 +28,7 @@ export const CHANNEL_ROUTING = {
 
   'workspaces:get': 'LOCAL_ONLY',
   'workspaces:create': 'LOCAL_ONLY',
+  'workspaces:relink': 'LOCAL_ONLY',
   'workspaces:checkSlug': 'LOCAL_ONLY',
   'workspaces:updateRemote': 'LOCAL_ONLY',
 

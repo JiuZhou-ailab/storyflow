@@ -1,5 +1,5 @@
 // input: Workspace root paths
-// output: Canonical Storyflow paths plus project-owned path and symlink boundary guards
+// output: Canonical Storyflow paths plus project-owned path, rebasing, and symlink boundary guards
 // pos: Shared path contract separating app metadata from safe Pi-native project resources
 
 import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync } from 'fs';
@@ -180,10 +180,6 @@ export function getWorkspaceNoticePath(rootPath: string, fileName: string): stri
   return join(getWorkspaceStatePath(rootPath), fileName);
 }
 
-export function getWorkspacePluginManifestPath(rootPath: string): string {
-  return join(getWorkspaceStatePath(rootPath), 'claude-plugin', 'plugin.json');
-}
-
 export class UnsafeProjectPathError extends Error {
   constructor(message: string) {
     super(message);
@@ -207,6 +203,24 @@ function isWithinPath(rootPath: string, candidatePath: string): boolean {
     && !relativePath.startsWith(`..${sep}`)
     && !isAbsolute(relativePath)
   );
+}
+
+/**
+ * Move an absolute locator with its Project root while leaving external paths unchanged.
+ * This is a lexical migration helper; access checks still use the canonical boundary guards below.
+ */
+export function rebasePathWithinProjectRoot(
+  candidatePath: string | undefined,
+  previousRoot: string,
+  currentRoot: string,
+): string | undefined {
+  if (!candidatePath || !isAbsolute(candidatePath)) return candidatePath;
+
+  const previous = resolve(previousRoot);
+  const candidate = resolve(candidatePath);
+  if (!isWithinPath(previous, candidate)) return candidatePath;
+
+  return resolve(currentRoot, relative(previous, candidate));
 }
 
 function getProjectBoundary(projectRoot: string): {
@@ -304,7 +318,9 @@ export function resolveProjectOwnedPath(projectRoot: string, targetPath: string)
 /** Create a project-owned directory one component at a time, rejecting symlink ancestors. */
 export function ensureProjectOwnedDirectory(projectRoot: string, targetPath: string): string {
   const lexicalRoot = resolve(projectRoot);
-  if (!lstatIfPresent(lexicalRoot)) mkdirSync(lexicalRoot, { recursive: true });
+  if (!lstatIfPresent(lexicalRoot)) {
+    throw new UnsafeProjectPathError(`Project root does not exist: ${lexicalRoot}`);
+  }
 
   const boundary = getProjectBoundary(lexicalRoot);
   const segments = getProjectRelativeSegments(boundary.lexicalRoot, targetPath);

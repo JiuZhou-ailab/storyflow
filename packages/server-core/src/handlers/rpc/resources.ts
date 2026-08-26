@@ -3,7 +3,7 @@
 // pos: Server-side trust boundary for portable source, Skill, and automation bundles
 
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { getCredentialManager, SOURCE_CREDENTIAL_TYPES } from '@craft-agent/shared/credentials'
+import { getSourceCredentialManager, loadSource } from '@craft-agent/shared/sources'
 import { isFreeConversationWorkspaceId, resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -68,25 +68,15 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       const { importResources } = await import('@craft-agent/shared/resources')
       const { getPiUserSkillsDir } = await import('@craft-agent/shared/skills')
       const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
-      const credManager = getCredentialManager()
       const skillsRootPath = skillScope === 'project'
         ? getWorkspaceSkillsPath(workspace.rootPath)
         : getPiUserSkillsDir()
 
       const result = await importResources(workspace.rootPath, bundle, mode, {
         // Clear all credential types for a source slug on overwrite
-        clearSourceCredentials: async (wsId: string, sourceSlug: string) => {
-          for (const credType of SOURCE_CREDENTIAL_TYPES) {
-            try {
-              await credManager.delete({
-                type: credType,
-                workspaceId: wsId,
-                sourceId: sourceSlug,
-              })
-            } catch {
-              // Ignore errors for credential types that don't exist
-            }
-          }
+        clearSourceCredentials: async (_wsId: string, sourceSlug: string) => {
+          const source = loadSource(workspace.rootPath, sourceSlug, workspace.id)
+          if (source) await getSourceCredentialManager().deleteAll(source)
         },
       }, skillsRootPath)
 

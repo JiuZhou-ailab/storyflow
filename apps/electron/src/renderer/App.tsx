@@ -41,7 +41,11 @@ import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
 import { stripMarkdown } from './utils/text'
 import { coerceInputText } from './lib/input-text'
 import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recovery'
-import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallback } from './lib/session-load'
+import {
+  formatSessionLoadFailure,
+  shouldAutoCreateBaseSession,
+  shouldTreatSessionLoadFailureAsTransportFallback,
+} from './lib/session-load'
 import { resolvePostSetupAppState, selectStartupWorkspaceId } from './lib/startup-flow'
 
 import { isProjectShellReady } from './lib/app-readiness'
@@ -93,6 +97,7 @@ import { rendererLog } from '@/lib/logger'
 import { ActionRegistryProvider } from '@/actions'
 import { toast } from 'sonner'
 import * as storage from '@/lib/local-storage'
+import { findWorkspaceByRouteKey } from '@/lib/workspace-route'
 
 let workspaceSurfaceModulePromise: Promise<typeof import('@/components/workspace/WorkspaceSurface')> | null = null
 
@@ -316,7 +321,6 @@ function AppContent() {
   } = useProjectHubReturnLocation(activeProjectId, focusedProjectRoute)
   const pendingCreatedWorkspaceRef = useRef<Workspace | null>(null)
 
-  const windowWorkspaceSlug = runtimeWorkspace?.slug ?? null
 
   // Get initial sessionId from URL params (for "Open in New Window" feature)
   const initialSessionId = useMemo(() => {
@@ -459,7 +463,7 @@ function AppContent() {
     return session
   }, [addSession, createSessionOnServer, syncSessionOptionsFromSession])
 
-  // A usable runtime always owns one renderable conversation. Deduplicate
+  // Free Conversation always owns one renderable conversation. Deduplicate
   // replacement creation across optimistic deletion and session lifecycle events.
   const ensureBaseSessionId = useCallback((
     workspaceId: string,
@@ -504,11 +508,20 @@ function AppContent() {
     const workspaceAliases = windowRemoteWorkspaceId ? [windowRemoteWorkspaceId] : []
     if (sessionWorkspaceId !== activeWorkspaceId && !workspaceAliases.includes(sessionWorkspaceId)) return
 
-    const replacementId = await ensureBaseSessionId(activeWorkspaceId, workspaceAliases)
+    const acceptedWorkspaceIds = new Set([activeWorkspaceId, ...workspaceAliases])
+    const replacementId = [...store.get(sessionMetaMapAtom).values()].find(meta => (
+      acceptedWorkspaceIds.has(meta.workspaceId ?? '')
+      && !meta.hidden
+      && !meta.isArchived
+    ))?.id ?? (
+      activeWorkspaceId === FREE_CONVERSATION_WORKSPACE_ID
+        ? await ensureBaseSessionId(activeWorkspaceId, workspaceAliases)
+        : null
+    )
     if (focusReplacement) {
-      navigate(routes.view.allSessions(replacementId))
+      navigate(replacementId ? routes.view.allSessions(replacementId) : routes.view.writing())
     }
-  }, [ensureBaseSessionId, removeSession, windowRemoteWorkspaceId, windowWorkspaceId])
+  }, [ensureBaseSessionId, removeSession, store, windowRemoteWorkspaceId, windowWorkspaceId])
 
   const refreshSessionFromServer = useCallback(async (sessionId: string): Promise<SessionRefreshResult> => {
     const inFlight = sessionRefreshInFlightRef.current.get(sessionId)
@@ -561,11 +574,9 @@ function AppContent() {
 
       if (selectionGeneration !== workspaceSelectionGenerationRef.current) return []
 
-      // The absence of a conversation is not a product state. Create the base
-      // session before exposing session readiness so the first committed chat
-      // surface is already editable.
-      const hasRenderableSession = loadedSessions.some(session => !session.hidden && !session.isArchived)
-      if (!hasRenderableSession && loadingWorkspaceId) {
+      // Free Conversation is app-owned and immediately usable. Projects remain
+      // valid at zero Sessions until the user explicitly starts one.
+      if (loadingWorkspaceId && shouldAutoCreateBaseSession(loadingWorkspaceId, loadedSessions)) {
         const baseSession = await createSessionOnServer(loadingWorkspaceId)
         if (selectionGeneration !== workspaceSelectionGenerationRef.current) return []
         loadedSessions = [...loadedSessions, baseSession]
@@ -1937,22 +1948,41 @@ function AppContent() {
     await activateRuntimeWorkspace(workspaceId, routes.view.allSessions(sessionId))
   }, [activateRuntimeWorkspace])
 
-  // Handle workspace switch by slug (called by NavigationContext on popstate when ?ws= changes)
-  const handleSwitchWorkspaceBySlug = useCallback((slug: string) => {
-    if (slug === FREE_CONVERSATION_WORKSPACE_SLUG) {
+  // New URLs use stable Host IDs; legacy slug URLs remain readable.
+  const handleSwitchWorkspaceByRouteKey = useCallback((routeKey: string) => {
+    if (routeKey === FREE_CONVERSATION_WORKSPACE_ID || routeKey === FREE_CONVERSATION_WORKSPACE_SLUG) {
       void activateRuntimeWorkspace(FREE_CONVERSATION_WORKSPACE_ID)
-      return
+      return true
     }
-    const target = workspaces.find(w => w.slug === slug)
-    if (target) {
-      void activateRuntimeWorkspace(target.id)
-    }
+    const target = findWorkspaceByRouteKey(workspaces, routeKey)
+    if (!target) return false
+    void activateRuntimeWorkspace(target.id)
+    return true
   }, [workspaces, activateRuntimeWorkspace])
 
   // Handle workspace refresh (e.g., after icon upload)
   const handleRefreshWorkspaces = useCallback(() => {
     window.electronAPI.getWorkspaces().then(setWorkspaces)
-  }, [])
+  }, [setWorkspaces])
+
+  const handleRelinkProjectFromHub = useCallback(async (workspaceId: string) => {
+    try {
+      const rootPath = await window.electronAPI.openFolderDialog()
+      if (!rootPath) return
+
+      await window.electronAPI.relinkWorkspace(workspaceId, rootPath)
+      const refreshed = await window.electronAPI.getWorkspaces()
+      setWorkspaces(refreshed)
+      toast.success(t('toast.workspaceReconnected'))
+      await handleSelectWorkspace(workspaceId)
+    } catch (error) {
+      console.error('[App] Failed to relink project:', error)
+      toast.error(t('toast.reconnectFailed'), {
+        description: error instanceof Error ? error.message : t('toast.unknownError'),
+      })
+      handleRefreshWorkspaces()
+    }
+  }, [handleRefreshWorkspaces, handleSelectWorkspace, setWorkspaces, t])
 
   const handleRenameProjectFromHub = useCallback(async (workspaceId: string, name: string) => {
     const nextName = name.trim()
@@ -1972,7 +2002,7 @@ function AppContent() {
       toast.error('重命名项目失败')
       handleRefreshWorkspaces()
     }
-  }, [handleRefreshWorkspaces])
+  }, [handleRefreshWorkspaces, setWorkspaces])
 
   const handleRemoveProjectFromHub = useCallback(async (workspaceId: string) => {
     const project = workspaces.find(workspace => workspace.id === workspaceId)
@@ -2002,7 +2032,7 @@ function AppContent() {
       toast.error('移除项目失败')
       handleRefreshWorkspaces()
     }
-  }, [activeProjectId, handleRefreshWorkspaces, runtimeWorkspace, setRuntimeWorkspace, setWindowWorkspaceId, workspaces])
+  }, [activeProjectId, handleRefreshWorkspaces, runtimeWorkspace, setRuntimeWorkspace, setWindowWorkspaceId, setWorkspaces, workspaces])
 
   const handleSetProjectArchived = useCallback(async (workspaceId: string, archived: boolean) => {
     const project = workspaces.find(workspace => workspace.id === workspaceId)
@@ -2058,7 +2088,7 @@ function AppContent() {
     } catch (error) {
       console.error('[App] Failed to refresh workspaces after creation:', error)
     }
-  }, [])
+  }, [setWorkspaces])
 
   const handleProjectHubWorkspaceCreated = useCallback(async (workspace: Workspace) => {
     await handleWorkspaceCreated(workspace)
@@ -2067,12 +2097,8 @@ function AppContent() {
     }
     clearReturnLocation()
     await handleSelectWorkspace(workspace.id)
-    const session = await handleCreateSession(workspace.id)
-    await handleSelectProjectSession(workspace.id, session.id)
   }, [
     clearReturnLocation,
-    handleCreateSession,
-    handleSelectProjectSession,
     handleSelectWorkspace,
     handleWorkspaceCreated,
   ])
@@ -2182,6 +2208,9 @@ function AppContent() {
     onOpenProjectInNewWindow: (workspaceId: string) => {
       void window.electronAPI.openWorkspace(workspaceId)
     },
+    onRelinkProject: (workspaceId: string) => {
+      void handleRelinkProjectFromHub(workspaceId)
+    },
     onRenameProject: (workspaceId: string, name: string) => {
       void handleRenameProjectFromHub(workspaceId, name)
     },
@@ -2193,6 +2222,7 @@ function AppContent() {
     },
   }), [
     handleProjectHubWorkspaceCreated,
+    handleRelinkProjectFromHub,
     handleRemoveProjectFromHub,
     handleRenameProjectFromHub,
     handleSetProjectArchived,
@@ -2469,8 +2499,8 @@ function AppContent() {
         <TooltipProvider delayDuration={0}>
         <NavigationProvider
           workspaceId={windowWorkspaceId}
-          workspaceSlug={windowWorkspaceSlug}
-          onSwitchWorkspaceBySlug={handleSwitchWorkspaceBySlug}
+          workspaceRouteKey={windowWorkspaceId}
+          onSwitchWorkspaceByRouteKey={handleSwitchWorkspaceByRouteKey}
           onCreateSession={handleCreateSession}
           onInputChange={handleInputChange}
           getDraft={getDraft}
@@ -2527,6 +2557,7 @@ function AppContent() {
                   profile={activityRailProfile}
                   onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}
                   onOpenProjectInNewWindow={projectManagerActions.onOpenProjectInNewWindow}
+                  onRelinkProject={projectManagerActions.onRelinkProject}
                   onRenameProject={projectManagerActions.onRenameProject}
                   onSetProjectArchived={projectManagerActions.onSetProjectArchived}
                   onRemoveProject={projectManagerActions.onRemoveProject}

@@ -25,9 +25,21 @@ export {
 } from './application-context.ts';
 export {
   isPathWithinProjectRoot,
+  rebasePathWithinProjectRoot,
   getExistingWorkspaceLabelConfigPath,
   getExistingWorkspaceViewsPath,
 } from './paths.ts';
+
+export {
+  canonicalizeProjectRoot,
+  isWorkspaceRootAvailable,
+  commitWorkspaceRootRelink,
+  prepareWorkspaceRootRelink,
+  rebaseWorkspaceDefaultWorkingDirectory,
+  registerLocalProject,
+  relinkWorkspaceRoot,
+} from './project-registry.ts';
+export type { WorkspaceRootRelinkPlan } from './project-registry.ts';
 
 // Storage functions
 export {
@@ -54,22 +66,16 @@ export {
   isLocalMcpEnabled,
   // Config operations
   loadWorkspaceConfig,
+  inspectWorkspaceConfig,
+  inspectWorkspaceStateConfig,
   saveWorkspaceConfig,
   // Load operations
   loadWorkspace,
-  getWorkspaceSummary,
-  // Create/Delete operations
+  // Creation and validation
   generateSlug,
-  generateUniqueWorkspacePath,
   createWorkspaceAtPath,
-  createDefaultWorkspaceAtPath,
-  deleteWorkspaceFolder,
   isValidWorkspace,
-  renameWorkspaceFolder,
-  // Auto-discovery
-  discoverWorkspacesInDefaultLocation,
   // Constants
   CONFIG_DIR,
   DEFAULT_WORKSPACES_DIR,
-  DEFAULT_STARTER_WORKSPACE_NAME,
 } from './storage.ts';

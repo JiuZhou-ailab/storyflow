@@ -2,7 +2,6 @@
 // output: Auth request completion, credential input handling, auth message formatting, and process env re-initialization
 // pos: Auth subdomain under the SessionManager facade; sendMessage/withAgentRuntimeLock stay in the Facade via injected callbacks
 
-import { basename } from 'path'
 import type { AuthRequest, AuthResult, CredentialAuthRequest } from '@craft-agent/shared/agent'
 import {
   getDefaultLlmConnection,
@@ -11,7 +10,12 @@ import {
   resolveAuthEnvVars,
 } from '@craft-agent/shared/config'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
-import { loadAllSources, isSourceUsable } from '@craft-agent/shared/sources'
+import {
+  getSourceCredentialManager,
+  isSourceUsable,
+  loadAllSources,
+  loadSource,
+} from '@craft-agent/shared/sources'
 import { getSessionPath as getSessionStoragePath } from '@craft-agent/shared/sessions'
 import type { SessionEvent } from '@craft-agent/shared/protocol'
 import { buildServersFromSources } from './source-bridge'
@@ -183,16 +187,23 @@ export class AuthFlow {
       const workspaceRootPath = managed.workspace.rootPath
       const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
       const enabledSlugs = managed.enabledSourceSlugs || []
-      const allSources = loadAllSources(getResourceProjectRoot(managed.workspace))
+      const allSources = loadAllSources(
+        getResourceProjectRoot(managed.workspace),
+        managed.workspace.id,
+      )
       const enabledSources = allSources.filter(s =>
         enabledSlugs.includes(s.config.slug) && isSourceUsable(s)
       )
-      const { mcpServers } = await buildServersFromSources(
-        enabledSources, sessionPath, managed.tokenRefreshManager
+      const { mcpServers, resolvedSources } = await buildServersFromSources(
+        enabledSources,
+        sessionPath,
+        managed.tokenRefreshManager,
+        undefined,
+        managed.workspace,
       )
       await this.deps.withAgentRuntimeLock(managed, async () => {
         if (!managed.agent) return
-        await managed.agent.applyBridgeUpdates({ sessionPath, enabledSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source auth' })
+        await managed.agent.applyBridgeUpdates({ sessionPath, enabledSources: resolvedSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source auth' })
       })
     }
 
@@ -235,39 +246,23 @@ export class AuthFlow {
     }
 
     try {
-      // Store credentials using existing workspace ID extraction pattern
-      const credManager = getCredentialManager()
-      // Extract workspace ID from root path (last segment of path)
-      const wsId = basename(managed.workspace.rootPath) || managed.workspace.id
+      const source = loadSource(
+        getResourceProjectRoot(managed.workspace),
+        request.sourceSlug,
+        managed.workspace.id,
+      )
+      if (!source) throw new Error(`Source not found: ${request.sourceSlug}`)
 
-      if (request.mode === 'basic') {
-        // Store value as JSON string {username, password} - credential-manager.ts parses it for basic auth
-        await credManager.set(
-          { type: 'source_basic', workspaceId: wsId, sourceId: request.sourceSlug },
-          { value: JSON.stringify({ username: response.username, password: response.password }) }
-        )
-      } else if (request.mode === 'bearer') {
-        await credManager.set(
-          { type: 'source_bearer', workspaceId: wsId, sourceId: request.sourceSlug },
-          { value: response.value! }
-        )
-      } else if (request.mode === 'multi-header') {
-        // Store multi-header credentials as JSON { "DD-API-KEY": "...", "DD-APPLICATION-KEY": "..." }
-        await credManager.set(
-          { type: 'source_apikey', workspaceId: wsId, sourceId: request.sourceSlug },
-          { value: JSON.stringify(response.headers) }
-        )
-      } else {
-        // header or query - both use API key storage
-        await credManager.set(
-          { type: 'source_apikey', workspaceId: wsId, sourceId: request.sourceSlug },
-          { value: response.value! }
-        )
-      }
+      const value = request.mode === 'basic'
+        ? JSON.stringify({ username: response.username, password: response.password })
+        : request.mode === 'multi-header'
+          ? JSON.stringify(response.headers)
+          : response.value!
+      await getSourceCredentialManager().save(source, { value })
 
       // Update source config to mark as authenticated
       const { markSourceAuthenticated } = await import('@craft-agent/shared/sources')
-      markSourceAuthenticated(managed.workspace.rootPath, request.sourceSlug)
+      markSourceAuthenticated(source.workspaceRootPath, request.sourceSlug)
 
       // Mark source as unseen so fresh guide is injected on next message
       if (managed.agent) {

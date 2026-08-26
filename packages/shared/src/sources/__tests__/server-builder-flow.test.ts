@@ -34,6 +34,7 @@ function createMockSource(overrides: Partial<FolderSourceConfig> = {}): LoadedSo
     folderPath: '/tmp/test/sources/test-source',
     workspaceRootPath: '/tmp/test',
     workspaceId: 'test-workspace',
+    definitionIdentity: 'test-definition',
     origin: 'workspace',
   };
 }
@@ -174,6 +175,41 @@ describe('SourceServerBuilder.buildApiConfig', () => {
 
     expect(config.auth).toEqual({ type: 'bearer', authScheme: 'Bearer' });
     expect(config.operations).toEqual(operations);
+  });
+});
+
+describe('SourceServerBuilder project execution grants', () => {
+  test('blocks only project-owned stdio Sources without Host consent', async () => {
+    const projectSource = createMockSource({
+      slug: 'project-local',
+      type: 'mcp',
+      mcp: { transport: 'stdio', command: 'project-command', authType: 'none' },
+    });
+    const globalSource: LoadedSource = {
+      ...projectSource,
+      origin: 'craft-global',
+      config: { ...projectSource.config, slug: 'global-local' },
+    };
+
+    const result = await new SourceServerBuilder().buildAll(
+      [{ source: projectSource }, { source: globalSource }],
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    expect(result.mcpServers).toEqual({
+      'global-local': { type: 'stdio', command: 'project-command' },
+    });
+
+    const granted = await new SourceServerBuilder().buildAll(
+      [{ source: projectSource }, { source: globalSource }],
+      undefined,
+      undefined,
+      undefined,
+      { allowProjectStdio: true },
+    );
+    expect(Object.keys(granted.mcpServers).sort()).toEqual(['global-local', 'project-local']);
   });
 });
 

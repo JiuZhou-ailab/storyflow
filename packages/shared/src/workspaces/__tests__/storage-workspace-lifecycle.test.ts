@@ -8,7 +8,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_DIR, ensureConfigDefaults } from '../../config/storage.ts'
 import {
-  createDefaultWorkspaceAtPath,
   createWorkspaceAtPath,
   generateSlug,
   loadWorkspaceConfig,
@@ -35,24 +34,10 @@ describe('blank workspace creation', () => {
       expect(readdirSync(rootPath).filter(entry => !entry.startsWith('.'))).toEqual([])
       expect(existsSync(join(rootPath, '.git'))).toBe(false)
       expect(existsSync(join(rootPath, '.pi'))).toBe(false)
+      expect(existsSync(join(rootPath, '.claude-plugin'))).toBe(false)
       expect(existsSync(statePath(rootPath, 'craft-writing.json'))).toBe(false)
       expect(existsSync(statePath(rootPath, 'craft-pack-lock.json'))).toBe(false)
       expect(existsSync(statePath(rootPath, 'migrations/project-skills.json'))).toBe(false)
-    } finally {
-      rmSync(rootPath, { recursive: true, force: true })
-    }
-  })
-
-  it('uses the same blank contract for the product default workspace', () => {
-    const rootPath = mkdtempSync(join(tmpdir(), 'craft-default-workspace-'))
-
-    try {
-      const config = createDefaultWorkspaceAtPath(rootPath)
-
-      expect(config.name).toBe('我的项目')
-      expect(config.defaults?.workingDirectory).toBe(rootPath)
-      expect(readdirSync(rootPath).filter(entry => !entry.startsWith('.'))).toEqual([])
-      expect(existsSync(join(rootPath, '.pi'))).toBe(false)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
     }
@@ -64,7 +49,7 @@ describe('blank workspace creation', () => {
 })
 
 describe('legacy workspace host-state migration', () => {
-  it('moves old host files under .craft-agent without moving project content', () => {
+  it('moves old host files without claiming project-owned plugin data', () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-legacy-state-workspace-'))
     const now = Date.now()
 
@@ -110,7 +95,8 @@ describe('legacy workspace host-state migration', () => {
       expect(existsSync(statePath(rootPath, 'sessions/260703-current/session.jsonl'))).toBe(true)
       expect(readFileSync(join(rootPath, 'skills/legacy-custom-skill/SKILL.md'), 'utf8')).toBe('# Skill\n')
       expect(existsSync(getWorkspaceSkillsPath(rootPath))).toBe(false)
-      expect(existsSync(statePath(rootPath, 'claude-plugin/plugin.json'))).toBe(true)
+      expect(readFileSync(join(rootPath, '.claude-plugin/plugin.json'), 'utf8')).toBe('{"name":"craft-workspace-legacy"}\n')
+      expect(existsSync(statePath(rootPath, 'claude-plugin/plugin.json'))).toBe(false)
       expect(readFileSync(join(rootPath, '全局', '简报.md'), 'utf8')).toBe('# 简报\n')
     } finally {
       rmSync(rootPath, { recursive: true, force: true })

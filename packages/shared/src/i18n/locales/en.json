@@ -1218,6 +1218,8 @@
   "settings.tools.title": "Tools",
   "settings.workspace.advanced": "Advanced",
   "settings.workspace.atLeast2Modes": "At least 2 modes required",
+  "settings.workspace.automations": "Project Automations",
+  "settings.workspace.automationsDesc": "Allow this project to run scheduled actions, prompts, and webhooks",
   "settings.workspace.defaultMode": "Default mode",
   "settings.workspace.defaultModeDesc": "Control what AI can do",
   "settings.workspace.defaultSources": "Default Sources",

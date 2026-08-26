@@ -1,4 +1,4 @@
-import type { Session, TransportConnectionState } from '../../shared/types'
+import { FREE_CONVERSATION_WORKSPACE_ID, type Session, type TransportConnectionState } from '../../shared/types'
 
 interface MessageLoadMeta {
   messageCount?: number
@@ -21,6 +21,14 @@ export interface SessionMessagesLoadState {
   messagesReady: boolean
   messagesLoading: boolean
   error: string | null
+}
+
+export function shouldAutoCreateBaseSession(
+  workspaceId: string | null | undefined,
+  sessions: readonly Pick<Session, 'hidden' | 'isArchived'>[],
+): boolean {
+  return workspaceId === FREE_CONVERSATION_WORKSPACE_ID
+    && !sessions.some(session => !session.hidden && !session.isArchived)
 }
 
 /**

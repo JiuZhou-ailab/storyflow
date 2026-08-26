@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
+import { isFreeConversationWorkspaceId } from '@craft-agent/shared/workspaces'
 import { appendAutomationHistoryEntry } from '@craft-agent/shared/automations/history-store'
 import { AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER } from '@craft-agent/shared/automations/constants'
 import type { RpcServer } from '@craft-agent/server-core/transport'
@@ -10,6 +11,12 @@ import type { HandlerDeps } from '../handler-deps'
 // History file name — matches AUTOMATIONS_HISTORY_FILE from @craft-agent/shared/automations/constants
 const HISTORY_FILE = 'automations-history.jsonl'
 interface HistoryEntry { id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string; webhook?: { method: string; url: string; statusCode: number; durationMs: number; attempts?: number; error?: string; responseBody?: string } }
+
+function requireAutomationExecutionGrant(workspace: NonNullable<ReturnType<typeof getWorkspaceByNameOrId>>): void {
+  if (!isFreeConversationWorkspaceId(workspace.id) && workspace.automationsEnabled !== true) {
+    throw new Error('Project automations are disabled by Host settings')
+  }
+}
 
 // Per-workspace config mutex: serializes read-modify-write cycles on automations.json
 // to prevent concurrent IPC calls from clobbering each other's changes.
@@ -98,6 +105,7 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
   server.handle(RPC_CHANNELS.automations.TEST, async (_ctx, payload: import('@craft-agent/shared/protocol').TestAutomationPayload) => {
     const workspace = getWorkspaceByNameOrId(payload.workspaceId)
     if (!workspace) throw new Error('Workspace not found')
+    requireAutomationExecutionGrant(workspace)
 
     const results: import('@craft-agent/shared/protocol').TestAutomationActionResult[] = []
     const { parsePromptReferences } = await import('@craft-agent/shared/automations')
@@ -251,6 +259,7 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
   server.handle(RPC_CHANNELS.automations.REPLAY, async (_ctx, workspaceId: string, automationId: string, eventName: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
+    requireAutomationExecutionGrant(workspace)
 
     const { resolveAutomationsConfigPath } = await import('@craft-agent/shared/automations/resolve-config-path')
     const configPath = resolveAutomationsConfigPath(workspace.rootPath)

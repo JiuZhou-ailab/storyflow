@@ -20,6 +20,8 @@ export function getFreeConversationWorkspace(): Workspace {
     slug: FREE_CONVERSATION_WORKSPACE_SLUG,
     rootPath: join(CONFIG_DIR, 'runtime', 'free'),
     createdAt: 0,
+    localMcpEnabled: true,
+    automationsEnabled: true,
   }
 }
 
@@ -31,9 +33,13 @@ export function resolveRuntimeWorkspace(workspaceId: string): Workspace | null {
   if (isFreeConversationWorkspaceId(workspaceId)) {
     return getFreeConversationWorkspace()
   }
-  return getWorkspaceByNameOrId(workspaceId)
+  const workspace = getWorkspaceByNameOrId(workspaceId)
+  return workspace?.rootAvailable === false ? null : workspace
 }
 
 export function listSessionWorkspaces(): Workspace[] {
-  return [getFreeConversationWorkspace(), ...getWorkspaces()]
+  return [
+    getFreeConversationWorkspace(),
+    ...getWorkspaces().filter(workspace => !workspace.remoteServer && workspace.rootAvailable !== false),
+  ]
 }

@@ -48,7 +48,6 @@
     "./utils/mask": "./src/utils/mask.ts",
     "./utils/toolNames": "./src/utils/toolNames.ts",
     "./utils/logo": "./src/utils/logo.ts",
-    "./utils/service-url": "./src/utils/service-url.ts",
     "./utils/icon": "./src/utils/icon.ts",
     "./icons": "./src/icons/index.ts",
     "./colors": "./src/colors/index.ts",

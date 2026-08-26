@@ -10,7 +10,7 @@
  * satisfy it at runtime.
  */
 
-import type { Workspace, WorkspaceInfo, ActiveSessionInfo } from '@craft-agent/core/types'
+import type { Workspace, WorkspaceInfo, ActiveSessionInfo, RemoteServerConnectionInput } from '@craft-agent/core/types'
 import type { StoredAttachment, AnnotationV1 } from '@craft-agent/core/types'
 import type { PermissionMode } from '@craft-agent/shared/agent/mode-types'
 import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
@@ -208,7 +208,7 @@ export interface ISessionManager {
   // ---------------------------------------------------------------------------
 
   getSessionPath(sessionId: string): string | null
-  reloadSessions(): void
+  reloadSessions(workspaceId?: string): Promise<void>
   refreshTitle(sessionId: string): Promise<{ success: boolean; title?: string; error?: string }>
   refreshBadge(): void
   getUnreadSummary(): UnreadSummary
@@ -220,6 +220,26 @@ export interface ISessionManager {
   getWorkspaces(): Workspace[]
   /** Return client-safe workspace list (no rootPath) for remote clients. */
   getWorkspacesInfo(): WorkspaceInfo[]
+  /** Register, index, observe, and activate one Project under its lifecycle lock. */
+  registerProject(
+    name: string,
+    rootPath: string,
+    remoteServer?: RemoteServerConnectionInput,
+  ): Promise<Workspace>
+  /** Resolve and start local observers atomically with Project removal/relink. */
+  activateProject(projectId: string): Promise<Workspace>
+  /** Reconnect an existing remote Project without racing Host lifecycle commits. */
+  updateRemoteProject(projectId: string, remoteServer: RemoteServerConnectionInput): Promise<void>
+  /** Dispose runtime state, then remove only the Host registration and private cache. */
+  removeWorkspace(projectId: string): Promise<boolean>
+  /** Stage idle Sessions at a validated target, then atomically commit the Host locator. */
+  rebindWorkspaceRoot(projectId: string, currentRoot: string): Promise<Workspace>
+  /** Serialize Host-owned executable settings with Project remove/relink/create. */
+  updateProjectHostSetting(
+    projectId: string,
+    key: 'permissionMode' | 'enabledSourceSlugs' | 'localMcpEnabled' | 'automationsEnabled',
+    value: unknown,
+  ): Promise<void>
   setupConfigWatcher(workspaceRootPath: string, workspaceId: string): void
   /**
    * Manually notify the ConfigWatcher of a file change.

@@ -15,7 +15,7 @@ import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { SessionPersistenceQueue } from '../src/sessions/persistence-queue.ts';
-import { listSessions, loadSession } from '../src/sessions/storage.ts';
+import { getSessionFilePath, listSessions, loadSession } from '../src/sessions/storage.ts';
 import type { StoredSession } from '../src/sessions/types.ts';
 
 // Create a minimal stored session for testing
@@ -52,8 +52,6 @@ describe('SessionPersistenceQueue', () => {
     // Create a unique test directory
     testDir = join(tmpdir(), `persistence-queue-test-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
-    // Create sessions subdirectory structure
-    mkdirSync(join(testDir, 'sessions', 'test-session'), { recursive: true });
     // Use 0ms debounce for immediate writes in tests
     queue = new SessionPersistenceQueue(0);
   });
@@ -70,7 +68,7 @@ describe('SessionPersistenceQueue', () => {
     queue.enqueue(session);
     await queue.flush('test-session');
 
-    const filePath = join(testDir, 'sessions', 'test-session', 'session.jsonl');
+    const filePath = getSessionFilePath(testDir, 'test-session');
     expect(existsSync(filePath)).toBe(true);
 
     const content = readFileSync(filePath, 'utf-8');
@@ -98,7 +96,7 @@ describe('SessionPersistenceQueue', () => {
     await Promise.all([flush1, flush2]);
 
     // The final file should have the NEWER data (new-thread-id)
-    const filePath = join(testDir, 'sessions', 'test-session', 'session.jsonl');
+    const filePath = getSessionFilePath(testDir, 'test-session');
     const content = readFileSync(filePath, 'utf-8');
     const header = JSON.parse(content.split('\n')[0]);
 
@@ -138,7 +136,7 @@ describe('SessionPersistenceQueue', () => {
     releaseFirstWrite();
     await flush;
 
-    const filePath = join(testDir, 'sessions', 'test-session', 'session.jsonl');
+    const filePath = getSessionFilePath(testDir, 'test-session');
     const header = JSON.parse(readFileSync(filePath, 'utf-8').split('\n')[0]);
     expect(header.sdkSessionId).toBe('flush-write');
   });
@@ -175,9 +173,6 @@ describe('SessionPersistenceQueue', () => {
 
   it('allows parallel writes to different sessions', async () => {
     // Different sessions should write in parallel without blocking each other
-    mkdirSync(join(testDir, 'sessions', 'session-a'), { recursive: true });
-    mkdirSync(join(testDir, 'sessions', 'session-b'), { recursive: true });
-
     const sessionA = createTestSession('session-a', testDir, 'id-a');
     const sessionB = createTestSession('session-b', testDir, 'id-b');
 
@@ -192,11 +187,11 @@ describe('SessionPersistenceQueue', () => {
 
     // Both should be written correctly
     const contentA = readFileSync(
-      join(testDir, 'sessions', 'session-a', 'session.jsonl'),
+      getSessionFilePath(testDir, 'session-a'),
       'utf-8'
     );
     const contentB = readFileSync(
-      join(testDir, 'sessions', 'session-b', 'session.jsonl'),
+      getSessionFilePath(testDir, 'session-b'),
       'utf-8'
     );
 
@@ -208,7 +203,7 @@ describe('SessionPersistenceQueue', () => {
     queue.enqueue(createTestSession('test-session', testDir, 'last-valid'));
     await queue.flush('test-session');
 
-    const filePath = join(testDir, 'sessions', 'test-session', 'session.jsonl');
+    const filePath = getSessionFilePath(testDir, 'test-session');
     mkdirSync(filePath + '.bak');
 
     queue.enqueue(createTestSession('test-session', testDir, 'replacement'));
@@ -222,7 +217,7 @@ describe('SessionPersistenceQueue', () => {
     queue.enqueue(createTestSession('test-session', testDir, 'committed'));
     await queue.flush('test-session');
 
-    const filePath = join(testDir, 'sessions', 'test-session', 'session.jsonl');
+    const filePath = getSessionFilePath(testDir, 'test-session');
     const committed = readFileSync(filePath, 'utf-8');
     writeFileSync(filePath + '.bak', replaceSdkSessionId(committed, 'backup'));
     writeFileSync(filePath + '.tmp', replaceSdkSessionId(committed, 'temporary'));
@@ -243,7 +238,7 @@ describe('SessionPersistenceQueue', () => {
     queue.enqueue(createTestSession('test-session', testDir, 'committed'));
     await queue.flush('test-session');
 
-    const filePath = join(testDir, 'sessions', 'test-session', 'session.jsonl');
+    const filePath = getSessionFilePath(testDir, 'test-session');
     const committed = readFileSync(filePath, 'utf-8');
     writeFileSync(filePath + '.bak', replaceSdkSessionId(committed, 'backup'));
     writeFileSync(filePath + '.tmp', '{"id":"truncated"');
@@ -274,6 +269,24 @@ describe('SessionPersistenceQueue', () => {
     await Bun.sleep(0);
 
     await expect(queue.flush('test-session')).rejects.toBe(failure);
+  });
+
+  it('retires a failed locator before persisting the Session elsewhere', async () => {
+    let failWrite = true;
+    queue = new SessionPersistenceQueue(0, async (path, data, encoding) => {
+      if (failWrite) throw new Error('old locator unavailable');
+      await writeFile(path, data, encoding);
+    });
+
+    queue.enqueue(createTestSession('test-session', testDir, 'old-locator'));
+    await expect(queue.flush('test-session')).rejects.toThrow('old locator unavailable');
+
+    await queue.retire('test-session');
+    failWrite = false;
+    queue.enqueue(createTestSession('test-session', testDir, 'new-locator'));
+    await queue.flush('test-session');
+
+    expect(loadSession(testDir, 'test-session')?.sdkSessionId).toBe('new-locator');
   });
 
   it('flushAll waits for timer writes and propagates terminal failures', async () => {

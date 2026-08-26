@@ -73,6 +73,7 @@ export function createMockSource(overrides: Partial<LoadedSource['config']> = {}
     folderPath: '/test/source',
     workspaceRootPath: '/test/workspace',
     workspaceId: 'test-workspace-id',
+    definitionIdentity: 'test-definition',
     origin: 'workspace',
   };
 }

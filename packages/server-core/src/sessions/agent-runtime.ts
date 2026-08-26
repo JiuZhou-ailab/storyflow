@@ -481,16 +481,28 @@ export class AgentRuntime {
       }
 
       const enabledSlugs = managed.enabledSourceSlugs || []
-      const allSources = loadAllSources(getResourceProjectRoot(managed.workspace))
+      const allSources = loadAllSources(
+        getResourceProjectRoot(managed.workspace),
+        managed.workspace.id,
+      )
       const enabledSources = allSources.filter(s =>
         enabledSlugs.includes(s.config.slug) && isSourceUsable(s)
       )
 
       // Build server configs for enabled sources
-      const { mcpServers, apiServers } = await buildServersFromSources(enabledSources, sessionPath, managed.tokenRefreshManager)
+      const { mcpServers, apiServers, resolvedSources } = await buildServersFromSources(
+        enabledSources,
+        sessionPath,
+        managed.tokenRefreshManager,
+        undefined,
+        managed.workspace,
+      )
 
       // Create centralized MCP client pool (all backends use it)
-      managed.mcpPool = new McpClientPool({ debug: (msg) => getSessionLog().debug(msg), workspaceRootPath: managed.workspace.rootPath, sessionPath })
+      managed.mcpPool = new McpClientPool({
+        debug: (msg) => getSessionLog().debug(msg),
+        sessionPath,
+      })
 
       // Per-session env overrides
       const miniModel = connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined
@@ -681,10 +693,10 @@ export class AgentRuntime {
           },
           // Source configs for postInit() — backends set up their own runtime state
           initialSources: {
-            enabledSources,
+            enabledSources: resolvedSources,
             mcpServers,
             apiServers,
-            enabledSlugs,
+            enabledSlugs: resolvedSources.map(source => source.config.slug),
           },
         },
       }))

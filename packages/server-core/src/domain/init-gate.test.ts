@@ -60,6 +60,33 @@ describe('InitGate workspace scoping', () => {
     await expect(scoped).rejects.toThrow('discovery failed')
   })
 
+  it('isolates one failed workspace from healthy workspace shards', async () => {
+    const gate = new InitGate()
+    const broken = gate.waitFor('workspace-broken')
+    const healthy = gate.waitFor('workspace-healthy')
+
+    gate.markScopeFailed('workspace-broken', new Error('unsafe session store'))
+    gate.markScopeReady('workspace-healthy')
+
+    await expect(broken).rejects.toThrow('unsafe session store')
+    expect(await settled(healthy)).toBe('resolved')
+    expect(await settled(gate.wait())).toBe('pending')
+
+    gate.markReady()
+    await expect(gate.waitFor('workspace-broken')).rejects.toThrow('unsafe session store')
+  })
+
+  it('records a scoped reload failure after global discovery and clears it on retry', async () => {
+    const gate = new InitGate()
+    gate.markReady()
+
+    gate.markScopeFailed('workspace-late', new Error('late store failure'))
+    await expect(gate.waitFor('workspace-late')).rejects.toThrow('late store failure')
+
+    gate.markScopeReady('workspace-late')
+    expect(await settled(gate.waitFor('workspace-late'))).toBe('resolved')
+  })
+
   it('treats a missing scope as the global gate', async () => {
     const gate = new InitGate()
     const unscoped = gate.waitFor(null)

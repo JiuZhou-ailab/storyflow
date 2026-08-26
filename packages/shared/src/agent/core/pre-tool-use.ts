@@ -505,6 +505,8 @@ export interface PreToolUseInput {
   permissionMode: PermissionMode;
   /** Absolute path to workspace root */
   workspaceRootPath: string;
+  /** Host-owned consent to apply permission expansions stored in this Project. */
+  allowProjectGrants?: boolean;
   /** Plans folder path for the session (writes allowed in explore mode) */
   plansFolderPath?: string;
   /** Data folder path (writes allowed in explore mode for transform_data output) */
@@ -648,6 +650,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     sessionId,
     permissionMode,
     workspaceRootPath,
+    allowProjectGrants,
     plansFolderPath,
     dataFolderPath,
     workingDirectory,
@@ -678,6 +681,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
   const permissionsContext: PermissionsContext = {
     workspaceRootPath,
     activeSourceSlugs,
+    allowProjectGrants,
   };
 
   // Canonical mode source of truth for this session.

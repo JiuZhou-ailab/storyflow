@@ -1,7 +1,7 @@
 /**
  * Shared automation utilities.
  *
- * Cron helpers used by CronBuilder (visual editor) and AutomationInfoPage (info display).
+ * Cron helpers used by AutomationInfoPage.
  * Time formatting shared by AutomationsListPanel and AutomationEventTimeline.
  */
 

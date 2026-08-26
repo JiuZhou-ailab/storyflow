@@ -9,13 +9,12 @@
  * Craft-owned global sources: {CONFIG_DIR}/sources/{sourceSlug}/
  * Workspace sources: {workspaceRootPath}/.craft-agent/sources/{sourceSlug}/
  *
- * Note: All functions take `workspaceRootPath` (absolute path to workspace folder),
- * NOT a workspace slug. The `LoadedSource.workspaceId` is derived via basename().
+ * Project callers pass the Host-owned projectId separately from the mutable root path.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'fs';
 import { homedir } from 'os';
-import { join, basename } from 'path';
+import { join, basename, dirname } from 'path';
 import { createHash, randomUUID } from 'crypto';
 import type {
   FolderSourceConfig,
@@ -31,8 +30,10 @@ import { debug } from '../utils/debug.ts';
 import { atomicWriteFileSync, readJsonFileSync } from '../utils/files.ts';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
 import {
+  ensureProjectOwnedDirectory,
   getLegacyWorkspaceSourcesPath,
   getWorkspaceSourcesPath,
+  resolveProjectOwnedPath,
 } from '../workspaces/paths.ts';
 import { resolveResourceRoots } from '../resources/resolver.ts';
 import {
@@ -168,6 +169,25 @@ function isGlobalSourcesRoot(rootPath: string): boolean {
   return rootPath === GLOBAL_AGENT_ROOT_DIR || rootPath === SHARED_AGENTS_ROOT_DIR;
 }
 
+function resolveOwnedSourcePath(rootPath: string, targetPath: string): string {
+  return isGlobalSourcesRoot(rootPath)
+    ? targetPath
+    : resolveProjectOwnedPath(rootPath, targetPath);
+}
+
+function ensureOwnedSourceDirectory(rootPath: string, targetPath: string): string {
+  if (!isGlobalSourcesRoot(rootPath)) {
+    return ensureProjectOwnedDirectory(rootPath, targetPath);
+  }
+  mkdirSync(targetPath, { recursive: true });
+  return targetPath;
+}
+
+function ensureOwnedSourceWriteTarget(rootPath: string, targetPath: string): void {
+  ensureOwnedSourceDirectory(rootPath, dirname(targetPath));
+  if (existsSync(targetPath)) resolveOwnedSourcePath(rootPath, targetPath);
+}
+
 function getSourcesPathForRoot(rootPath: string): string {
   if (rootPath === GLOBAL_AGENT_ROOT_DIR) return GLOBAL_AGENT_SOURCES_DIR;
   if (rootPath === SHARED_AGENTS_ROOT_DIR) return SHARED_AGENTS_SOURCES_DIR;
@@ -179,7 +199,37 @@ function getLegacySourcesPathForRoot(rootPath: string): string {
   return getLegacyWorkspaceSourcesPath(rootPath);
 }
 
+export function assertSafeSourceSlug(sourceSlug: string): void {
+  if (
+    !sourceSlug
+    || sourceSlug === '.'
+    || sourceSlug === '..'
+    || basename(sourceSlug) !== sourceSlug
+    || sourceSlug.includes('\\')
+    || sourceSlug.includes('\0')
+  ) {
+    throw new Error(`Invalid Source slug: ${sourceSlug}`);
+  }
+}
+
+/** Bind executable authority to the current definition, not its reusable slug. */
+export function getSourceDefinitionIdentity(config: FolderSourceConfig): string {
+  const executableDefinition = {
+    id: config.id,
+    slug: config.slug,
+    provider: config.provider,
+    type: config.type,
+    mcp: config.mcp,
+    api: config.api,
+    local: config.local,
+  };
+  return createHash('sha256')
+    .update(JSON.stringify(executableDefinition))
+    .digest('hex');
+}
+
 function getSourceWritePath(workspaceRootPath: string, sourceSlug: string): string {
+  assertSafeSourceSlug(sourceSlug);
   return join(getSourcesPathForRoot(workspaceRootPath), sourceSlug);
 }
 
@@ -199,11 +249,20 @@ function resolveVisibleSourceRoot(workspaceRootPath: string, sourceSlug: string)
  * Get path to a source folder within a workspace or global agents root.
  */
 export function getSourcePath(workspaceRootPath: string, sourceSlug: string): string {
+  assertSafeSourceSlug(sourceSlug);
   const sourcePath = join(getSourcesPathForRoot(workspaceRootPath), sourceSlug);
-  if (existsSync(join(sourcePath, 'config.json'))) return sourcePath;
+  const configPath = join(sourcePath, 'config.json');
+  if (existsSync(configPath)) {
+    resolveOwnedSourcePath(workspaceRootPath, configPath);
+    return sourcePath;
+  }
 
   const legacySourcePath = join(getLegacySourcesPathForRoot(workspaceRootPath), sourceSlug);
-  if (existsSync(join(legacySourcePath, 'config.json'))) return legacySourcePath;
+  const legacyConfigPath = join(legacySourcePath, 'config.json');
+  if (existsSync(legacyConfigPath)) {
+    resolveOwnedSourcePath(workspaceRootPath, legacyConfigPath);
+    return legacySourcePath;
+  }
 
   return sourcePath;
 }
@@ -214,9 +273,7 @@ export function getSourcePath(workspaceRootPath: string, sourceSlug: string): st
 export function ensureSourcesDir(workspaceRootPath: string): void {
   assertMutableSourceRoot(workspaceRootPath, 'sources');
   const dir = getSourcesPathForRoot(workspaceRootPath);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
+  ensureOwnedSourceDirectory(workspaceRootPath, dir);
 }
 
 // ============================================================
@@ -342,9 +399,8 @@ export function saveSourceConfig(
     : workspaceRootPath;
 
   const dir = getSourceWritePath(targetRootPath, config.slug);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
+  const configPath = join(dir, 'config.json');
+  ensureOwnedSourceWriteTarget(targetRootPath, configPath);
 
   // Convert local source paths to portable form
   const storageConfig: FolderSourceConfig = { ...config, updatedAt: Date.now() };
@@ -355,7 +411,7 @@ export function saveSourceConfig(
     };
   }
 
-  writeFileSync(join(dir, 'config.json'), JSON.stringify(storageConfig, null, 2));
+  writeFileSync(configPath, JSON.stringify(storageConfig, null, 2));
 }
 
 // ============================================================
@@ -414,6 +470,7 @@ export function loadSourceGuide(workspaceRootPath: string, sourceSlug: string): 
   if (!existsSync(guidePath)) return null;
 
   try {
+    resolveOwnedSourcePath(workspaceRootPath, guidePath);
     const raw = readFileSync(guidePath, 'utf-8');
     return parseGuideMarkdown(raw);
   } catch {
@@ -463,11 +520,9 @@ export function saveSourceGuide(
 ): void {
   assertMutableSourceRoot(workspaceRootPath, sourceSlug);
   const dir = getSourcePath(workspaceRootPath, sourceSlug);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-
-  writeFileSync(join(dir, 'guide.md'), guide.raw);
+  const guidePath = join(dir, 'guide.md');
+  ensureOwnedSourceWriteTarget(workspaceRootPath, guidePath);
+  writeFileSync(guidePath, guide.raw);
 }
 
 // ============================================================
@@ -493,6 +548,7 @@ export async function downloadSourceIcon(
 ): Promise<string | null> {
   assertMutableSourceRoot(workspaceRootPath, sourceSlug);
   const sourceDir = getSourceWritePath(workspaceRootPath, sourceSlug);
+  ensureOwnedSourceDirectory(workspaceRootPath, sourceDir);
   return downloadIcon(sourceDir, iconUrl, 'Sources');
 }
 
@@ -524,6 +580,7 @@ export { isIconUrl } from '../utils/icon.ts';
 export function loadSource(
   projectRoot: string | undefined,
   sourceSlug: string,
+  projectId?: string,
 ): LoadedSource | null {
   const consumerRoot = projectRoot ?? GLOBAL_AGENT_ROOT_DIR;
   for (const root of resolveResourceRoots({ projectRoot }).sources) {
@@ -533,6 +590,7 @@ export function loadSource(
       sourceSlug,
       origin,
       consumerRoot,
+      projectId,
     );
     if (source) return source;
   }
@@ -544,14 +602,20 @@ function loadSourceFromRoot(
   sourceRootPath: string,
   sourceSlug: string,
   origin: Exclude<SourceDefinitionOrigin, 'builtin'>,
-  consumerWorkspaceRootPath = sourceRootPath
+  consumerWorkspaceRootPath = sourceRootPath,
+  consumerProjectId?: string,
 ): LoadedSource | null {
   const folderPath = getSourcePath(sourceRootPath, sourceSlug);
   const config = loadSourceConfig(sourceRootPath, sourceSlug);
   if (!config) return null;
+  if (config.slug !== sourceSlug) {
+    debug(`[sources] Ignoring folder/config slug mismatch: ${sourceSlug} != ${String(config.slug)}`);
+    return null;
+  }
 
+  const legacyWorkspaceId = basename(consumerWorkspaceRootPath);
   const workspaceId = origin === 'workspace'
-    ? basename(consumerWorkspaceRootPath)
+    ? consumerProjectId ?? legacyWorkspaceId
     : 'global';
 
   // Pre-compute icon path for renderer (avoids fs access in browser)
@@ -563,6 +627,7 @@ function loadSourceFromRoot(
     folderPath,
     workspaceRootPath: sourceRootPath,
     workspaceId,
+    definitionIdentity: getSourceDefinitionIdentity(config),
     iconPath,
     origin,
   };
@@ -573,7 +638,7 @@ function loadSourceFromRoot(
  * Resolver roots are consumed from highest to lowest precedence, with the first
  * definition for a slug winning.
  */
-export function loadWorkspaceSources(projectRoot?: string): LoadedSource[] {
+export function loadWorkspaceSources(projectRoot?: string, projectId?: string): LoadedSource[] {
   if (projectRoot) {
     ensureSourcesDir(projectRoot);
   }
@@ -594,6 +659,7 @@ export function loadWorkspaceSources(projectRoot?: string): LoadedSource[] {
         origin,
         consumerRoot,
         sourceDir,
+        projectId,
       )) {
         if (!sourcesBySlug.has(source.config.slug)) {
           sourcesBySlug.set(source.config.slug, source);
@@ -609,17 +675,24 @@ function loadSourcesFromRoot(
   sourceRootPath: string,
   origin: Exclude<SourceDefinitionOrigin, 'builtin'>,
   consumerWorkspaceRootPath = sourceRootPath,
-  explicitSourcesDir?: string
+  explicitSourcesDir?: string,
+  consumerProjectId?: string,
 ): LoadedSource[] {
   const sources: LoadedSource[] = [];
   const sourcesDir = explicitSourcesDir ?? getSourcesPathForRoot(sourceRootPath);
   if (!existsSync(sourcesDir)) return sources;
 
-  const entries = readdirSync(sourcesDir, { withFileTypes: true });
+  const entries = readdirSync(resolveOwnedSourcePath(sourceRootPath, sourcesDir), { withFileTypes: true });
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const loadedSource = loadSourceFromRoot(sourceRootPath, entry.name, origin, consumerWorkspaceRootPath);
+      const loadedSource = loadSourceFromRoot(
+        sourceRootPath,
+        entry.name,
+        origin,
+        consumerWorkspaceRootPath,
+        consumerProjectId,
+      );
       if (loadedSource) {
         sources.push(loadedSource);
       }
@@ -632,8 +705,8 @@ function loadSourcesFromRoot(
 /**
  * Get enabled sources for a workspace
  */
-export function getEnabledSources(projectRoot?: string): LoadedSource[] {
-  return loadWorkspaceSources(projectRoot).filter((s) => s.config.enabled);
+export function getEnabledSources(projectRoot?: string, projectId?: string): LoadedSource[] {
+  return loadWorkspaceSources(projectRoot, projectId).filter((s) => s.config.enabled);
 }
 
 /**
@@ -663,10 +736,11 @@ export function isSourceUsable(source: LoadedSource): boolean {
 export function getSourcesBySlugs(
   projectRoot: string | undefined,
   slugs: string[],
+  projectId?: string,
 ): LoadedSource[] {
   const sources: LoadedSource[] = [];
   for (const slug of slugs) {
-    const source = loadSource(projectRoot, slug);
+    const source = loadSource(projectRoot, slug, projectId);
     if (source) {
       sources.push(source);
     }
@@ -677,8 +751,8 @@ export function getSourcesBySlugs(
 /**
  * Load all configured sources for a workspace.
  */
-export function loadAllSources(projectRoot?: string): LoadedSource[] {
-  return loadWorkspaceSources(projectRoot);
+export function loadAllSources(projectRoot?: string, projectId?: string): LoadedSource[] {
+  return loadWorkspaceSources(projectRoot, projectId);
 }
 
 // ============================================================
@@ -803,21 +877,18 @@ export async function createSource(
   return config;
 }
 
-/** Delete the visible Craft-owned definition; shared definitions are immutable. */
-export function deleteSource(workspaceRootPath: string, sourceSlug: string): void {
-  const sourceRootPath = resolveVisibleSourceRoot(workspaceRootPath, sourceSlug);
-  assertMutableSourceRoot(sourceRootPath, sourceSlug);
+/** Delete only from the already-resolved owning root; callers must not pass a consumer overlay root. */
+export function deleteSource(ownerRootPath: string, sourceSlug: string): void {
+  assertMutableSourceRoot(ownerRootPath, sourceSlug);
 
-  const sourceDirs = sourceRootPath === workspaceRootPath
-    ? [
-      getSourceWritePath(workspaceRootPath, sourceSlug),
-      join(getLegacySourcesPathForRoot(workspaceRootPath), sourceSlug),
-    ]
-    : [getSourcePath(sourceRootPath, sourceSlug)];
+  const sourceDirs = new Set([
+    getSourceWritePath(ownerRootPath, sourceSlug),
+    join(getLegacySourcesPathForRoot(ownerRootPath), sourceSlug),
+  ]);
 
   for (const sourceDir of sourceDirs) {
     if (existsSync(sourceDir)) {
-      rmSync(sourceDir, { recursive: true });
+      rmSync(resolveOwnedSourcePath(ownerRootPath, sourceDir), { recursive: true });
       return;
     }
   }

@@ -1,8 +1,10 @@
-// input: Loaded sources, credential managers, and the host server builder
+// input: Loaded sources, credential managers, Host workspace grants, and the server builder
 // output: MCP/API server construction from sources (buildServersFromSources)
 // pos: Shared leaf under the SessionManager facade; used by source reload (Facade) and auth flow
 
 import { perf } from '@craft-agent/shared/utils'
+import type { Workspace } from '@craft-agent/shared/config'
+import { isFreeConversationWorkspaceId, isLocalMcpEnabled } from '@craft-agent/shared/workspaces'
 import {
   getSourceCredentialManager,
   getSourceServerBuilder,
@@ -16,6 +18,7 @@ import {
   createTokenGetter,
   createStoryflowManagedTokenGetter,
   getTrustedManagedSourcePolicy,
+  isSourceHostGranted,
 } from '@craft-agent/shared/sources'
 import { getSessionLog } from './session-runtime'
 
@@ -23,15 +26,19 @@ export async function buildServersFromSources(
   sources: LoadedSource[],
   sessionPath?: string,
   tokenRefreshManager?: TokenRefreshManager,
-  summarize?: SummarizeCallback
+  summarize?: SummarizeCallback,
+  workspace?: Pick<Workspace, 'id' | 'rootPath' | 'localMcpEnabled' | 'defaultEnabledSourceRefs'>,
 ) {
-  const span = perf.span('sources.buildServers', { count: sources.length })
+  const resolvedSources = workspace && !isFreeConversationWorkspaceId(workspace.id)
+    ? sources.filter(source => isSourceHostGranted(workspace.defaultEnabledSourceRefs, source))
+    : sources
+  const span = perf.span('sources.buildServers', { count: resolvedSources.length })
   const credManager = getSourceCredentialManager()
   const serverBuilder = getSourceServerBuilder()
 
   // Load credentials for all sources
   const sourcesWithCreds: SourceWithCredential[] = await Promise.all(
-    sources.map(async (source) => source.config.api?.authType === 'managed'
+    resolvedSources.map(async (source) => source.config.api?.authType === 'managed'
       ? { source, token: null, credential: null }
       : {
           source,
@@ -69,7 +76,16 @@ export async function buildServersFromSources(
   }
 
   // Pass sessionPath to enable saving large API responses to session folder
-  const result = await serverBuilder.buildAll(sourcesWithCreds, getTokenForSource, sessionPath, summarize)
+  const allowProjectStdio = workspace
+    ? isLocalMcpEnabled(workspace.rootPath, workspace.localMcpEnabled)
+    : false
+  const result = await serverBuilder.buildAll(
+    sourcesWithCreds,
+    getTokenForSource,
+    sessionPath,
+    summarize,
+    { allowProjectStdio },
+  )
   span.mark('servers.built')
   span.setMetadata('mcpCount', Object.keys(result.mcpServers).length)
   span.setMetadata('apiCount', Object.keys(result.apiServers).length)
@@ -80,7 +96,7 @@ export async function buildServersFromSources(
   // and we must NOT prematurely mark the source as needing re-auth (#710).
   for (const error of result.errors) {
     if (error.error !== SERVER_BUILD_ERRORS.AUTH_REQUIRED) continue
-    const source = sources.find(s => s.config.slug === error.sourceSlug)
+    const source = resolvedSources.find(s => s.config.slug === error.sourceSlug)
     if (!source) continue
 
     const cred = await credManager.load(source)
@@ -100,5 +116,5 @@ export async function buildServersFromSources(
   }
 
   span.end()
-  return result
+  return { ...result, resolvedSources }
 }

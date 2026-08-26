@@ -8,6 +8,7 @@ function createCtx(workspacePath: string) {
   return {
     sessionId: 'test-session',
     workspacePath,
+    workspaceId: 'test-workspace',
     get sourcesPath() { return join(workspacePath, 'sources'); },
     get skillsPath() { return join(workspacePath, 'skills'); },
     plansFolderPath: join(workspacePath, 'plans'),
@@ -29,6 +30,7 @@ function createCtx(workspacePath: string) {
     },
     validators: undefined,
     loadSourceConfig: () => null,
+    isSourceExecutionAllowed: () => false,
   } as const;
 }
 

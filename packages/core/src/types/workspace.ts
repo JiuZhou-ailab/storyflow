@@ -1,5 +1,5 @@
 // input: Workspace identity, catalog metadata, and optional remote connection details
-// output: Shared workspace DTOs for local, renderer, and remote boundaries
+// output: Shared workspace DTOs with stable identity and derived local-root availability
 // pos: Canonical workspace type definitions
 
 /**
@@ -51,6 +51,16 @@ export interface WorkspaceInfo {
 export interface Workspace extends WorkspaceInfo {
   rootPath: string;        // Absolute path to local workspace folder (metadata, config). Auto-created for remote workspaces.
   createdAt: number;
+  /** Host-owned executable defaults; Project files cannot self-grant these values. */
+  defaultPermissionMode?: 'safe' | 'ask' | 'allow-all';
+  /** Exact Source capabilities (`origin:slug`); legacy bare slugs fail closed. */
+  defaultEnabledSourceRefs?: string[];
+  /** Directory metadata fingerprint used only to verify explicit relink targets. */
+  directoryConfigId?: string;
+  localMcpEnabled?: boolean;
+  automationsEnabled?: boolean;
+  /** Derived local runtime state. Never persisted and always available for remote workspaces. */
+  rootAvailable?: boolean;
 }
 
 /**

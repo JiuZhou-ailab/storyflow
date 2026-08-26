@@ -298,6 +298,11 @@ export interface SessionHeader {
   archivedAt?: number;
   /** Runtime context source for the next turn after branching or portable import. */
   branchContextStrategy?: 'sdk-fork' | 'seeded-fresh-session';
+  branchFromMessageId?: string;
+  branchFromSdkSessionId?: string;
+  branchFromSessionPath?: string;
+  branchFromSdkCwd?: string;
+  branchFromSdkTurnId?: string;
   /** One-shot hidden summary injected on the first turn after a remote transfer. */
   transferredSessionSummary?: string;
   /** Whether the transferred-session summary has already been injected. */
@@ -386,4 +391,8 @@ export interface SessionMetadata {
   branchFromMessageId?: string;
   /** Runtime context source for the next turn after branching or portable import. */
   branchContextStrategy?: 'sdk-fork' | 'seeded-fresh-session';
+  branchFromSdkSessionId?: string;
+  branchFromSessionPath?: string;
+  branchFromSdkCwd?: string;
+  branchFromSdkTurnId?: string;
 }
