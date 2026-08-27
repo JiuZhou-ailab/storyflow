@@ -1,5 +1,5 @@
-// input: Built Electron app, a temporary local workspace, and a deterministic OpenAI-compatible HTTP stub
-// output: Assertions for lock migration, local startup, a real Pi edit turn, version restore, and restart recovery
+// input: Built Electron app, a v0.17-style local Project, and a deterministic OpenAI-compatible HTTP stub
+// output: Assertions for identity/lock upgrades, a real Pi edit turn, version restore, and restart recovery
 // pos: Release-gate smoke test for the desktop product's durable core loop
 
 import { spawnSync } from 'node:child_process'
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
     await assertRootViewportCannotScroll(app)
     await smokeFreeConversationSkillImport(app)
 
-    const workspace = await callOn<{ id: string; rootPath: string } | undefined>(
+    const workspace = await callOn<{ id: string; rootPath: string; directoryConfigId?: string } | undefined>(
       app,
       `async function (id) {
         return (await window.electronAPI.getWorkspaces()).find(workspace => workspace.id === id)
@@ -76,6 +76,7 @@ async function main(): Promise<void> {
       [WORKSPACE_ID],
     )
     assert.equal(workspace?.rootPath, fixture.workspaceRoot)
+    assert.equal(workspace?.directoryConfigId, WORKSPACE_ID, 'v0.17 Project identity was not upgraded')
     assert.equal(readFileSync(fixture.targetFile, 'utf8'), ORIGINAL, 'workspace changed during app startup')
 
     const userHeadBefore = git(fixture.workspaceRoot, 'rev-parse', 'HEAD')
@@ -417,7 +418,6 @@ function createFixture(): Fixture {
       name: 'Core E2E',
       slug: WORKSPACE_SLUG,
       rootPath: workspaceRoot,
-      directoryConfigId: WORKSPACE_ID,
       createdAt: now,
     }],
     activeWorkspaceId: WORKSPACE_ID,

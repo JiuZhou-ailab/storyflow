@@ -1,5 +1,5 @@
-// input: Server transport options plus host-provided SessionManager and RPC dependencies
-// output: A transport-ready server instance with an explicitly startable Agent runtime
+// input: Server transport options, Host Project registrations, and host-provided SessionManager/RPC dependencies
+// output: A compatibility-upgraded, transport-ready server with an explicitly startable Agent runtime
 // pos: Owns the two-stage server lifecycle shared by Electron and headless hosts
 
 import { lstatSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -12,6 +12,7 @@ import { seedDefaultAgentResources } from '@craft-agent/shared/agent-defaults'
 import { ensureConfigDir, loadStoredConfig, saveConfig } from '@craft-agent/shared/config'
 import { CONFIG_DIR } from '@craft-agent/shared/config/paths'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
+import { registerLocalProject } from '@craft-agent/shared/workspaces'
 import { WsRpcServer, type WsRpcTlsOptions } from '../transport/server'
 import type { EventSink, RpcServer } from '../transport/types'
 import { createHeadlessPlatform } from '../runtime/platform-headless'
@@ -389,6 +390,21 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
   try {
   seedDefaultAgentResources()
   ensureGlobalConfigExists(platform)
+
+  // v0.17 already trusted each stored locator. Pin that existing content ID
+  // before the RPC catalog can expose v0.18's fail-closed availability state.
+  for (const project of loadStoredConfig()?.workspaces ?? []) {
+    if (project.remoteServer || project.directoryConfigId) continue
+    try {
+      const restored = registerLocalProject(project.name, project.rootPath)
+      if (restored.id !== project.id) {
+        throw new Error(`The stored directory belongs to Project ${restored.id}.`)
+      }
+      platform.logger.info(`Restored directory identity for Project ${project.id}`)
+    } catch (error) {
+      platform.logger.warn(`Project ${project.id} still requires relinking:`, error)
+    }
+  }
 
   const modelRefreshService = options.initModelRefreshService()
   const sessionManager = options.createSessionManager()
