@@ -34,8 +34,11 @@ describe('cold-session metadata persistence', () => {
     sm = new SessionManager()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     jest.useRealTimers()
+    const sessionIds = (sm as unknown as { sessions: Map<string, unknown> }).sessions.keys()
+    for (const sessionId of sessionIds) await sm.flushSession(sessionId)
+    sm.cleanup()
     rmSync(tmpRoot, { recursive: true, force: true })
   })
 

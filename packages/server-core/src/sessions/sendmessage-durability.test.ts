@@ -3,12 +3,11 @@
 // pos: Guards send acceptance and runtime ownership across concurrent session operations
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { getSessionFilePath, sessionPersistenceQueue } from '@craft-agent/shared/sessions/storage'
 import { clearMetrics, configurePerfTracking } from '@craft-agent/shared/utils'
-import { createWorkspaceAtPath } from '@craft-agent/shared/workspaces'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
 
 interface CapturedPerfMetric {
@@ -34,11 +33,18 @@ describe('sendMessage durability', () => {
 
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-durability-'))
+    mkdirSync(join(tmpRoot, '.craft-agent'))
+    writeFileSync(join(tmpRoot, '.craft-agent', 'config.json'), JSON.stringify({
+      id: 'directory-test', name: 'Test Workspace', slug: 'test-workspace', createdAt: 1, updatedAt: 1,
+    }))
     sm = new SessionManager()
     clearMetrics()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    const sessionIds = (sm as unknown as { sessions: Map<string, unknown> }).sessions.keys()
+    for (const sessionId of sessionIds) await sm.flushSession(sessionId)
+    sm.cleanup()
     configurePerfTracking({ enabled: false, onMetric: undefined })
     clearMetrics()
     rmSync(tmpRoot, { recursive: true, force: true })
@@ -56,12 +62,11 @@ describe('sendMessage durability', () => {
   }
 
   function buildSession(id: string) {
-    const directoryConfig = createWorkspaceAtPath(tmpRoot, 'Test Workspace')
     const workspace = {
       id: 'ws_test',
       name: 'Test Workspace',
       rootPath: tmpRoot,
-      directoryConfigId: directoryConfig.id,
+      directoryConfigId: 'directory-test',
       createdAt: Date.now(),
     }
     const managed = createManagedSession(

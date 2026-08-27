@@ -1,6 +1,6 @@
 // input: Session content search RPC requests and mocked workspace/session services
 // output: Regression coverage for workspace-scoped hidden-session filtering
-// pos: Guards session content search from scanning all workspace metadata after path-scoped search
+// pos: Isolated guard preventing content search from scanning all workspace metadata after path-scoped search
 
 import { describe, expect, it, mock } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'

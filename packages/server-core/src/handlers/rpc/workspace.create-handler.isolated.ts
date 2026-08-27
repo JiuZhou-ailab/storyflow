@@ -1,6 +1,6 @@
 // input: Local/headless Project CREATE plus RELINK and SWITCH RPC requests
 // output: Regression coverage for canonical registration, stable relinking, root preservation, and runtime activation
-// pos: Guards the server boundary between Project storage, active runtimes, and in-memory Sessions
+// pos: Isolated guard for the server boundary between Project storage, active runtimes, and in-memory Sessions
 
 import {
   existsSync,
@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import { FREE_CONVERSATION_WORKSPACE_ID, RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { CONFIG_DIR, ensureConfigDefaults } from '../../../../shared/src/config/storage.ts'
+import { getFreeConversationWorkspace } from '../../../../shared/src/workspaces/application-context.ts'
 import {
   createWorkspaceAtPath,
   ensureProjectOwnedDirectory,
@@ -105,13 +106,7 @@ mock.module('@craft-agent/shared/workspaces', () => ({
     return { ...workspace, rootAvailable: true }
   },
   resolveRuntimeWorkspace: (workspaceId: string) => workspaceId === FREE_CONVERSATION_WORKSPACE_ID
-    ? {
-        id: workspaceId,
-        name: 'Free',
-        slug: 'free',
-        rootPath: join(CONFIG_DIR, 'runtime', 'free'),
-        createdAt: 0,
-      }
+    ? getFreeConversationWorkspace()
     : createdWorkspaces.find(workspace => workspace.id === workspaceId) ?? null,
   resolveProjectOwnedPath,
 }))
@@ -162,12 +157,7 @@ function createWorkspaceHarness() {
       },
       activateProject: async (workspaceId: string) => {
         const workspace = workspaceId === FREE_CONVERSATION_WORKSPACE_ID
-          ? {
-              id: workspaceId,
-              name: 'Free',
-              slug: 'free',
-              rootPath: join(CONFIG_DIR, 'runtime', 'free'),
-            }
+          ? getFreeConversationWorkspace()
           : createdWorkspaces.find(candidate => candidate.id === workspaceId)
         if (!workspace) throw new Error(`Project not found: ${workspaceId}`)
         setupConfigWatcherCalls.push([workspace.rootPath, workspace.id])

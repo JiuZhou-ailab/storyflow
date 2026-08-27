@@ -2,7 +2,7 @@
 // output: Regression coverage for restored state, immutable Free cwd, and non-materializing Project observers
 // pos: Guards ManagedSession construction and its Project runtime-service boundary
 
-import { describe, expect, it } from 'bun:test'
+import { afterAll, describe, expect, it } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,12 +25,15 @@ const source = (slug: string, origin: 'workspace' | 'craft-global') => ({
 }) as any
 
 describe('createManagedSession', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'storyflow-managed-session-'))
   const workspace = {
     id: 'ws_test',
     name: 'Test Workspace',
-    rootPath: '/tmp/test-workspace',
+    rootPath: workspaceRoot,
     createdAt: Date.now(),
   }
+
+  afterAll(() => rmSync(workspaceRoot, { recursive: true, force: true }))
 
   it('does not let delegated work exceed its permission authority', () => {
     expect(capPermissionMode('allow-all', 'ask', 'safe')).toBe('ask')
@@ -209,7 +212,7 @@ describe('createManagedSession', () => {
 
   it('keeps the Pi run cwd immutable after the conversation has started', () => {
     const sessionManager = new SessionManager()
-    const initialWorkingDirectory = '/tmp/test-workspace'
+    const initialWorkingDirectory = workspace.rootPath
     const managed = createManagedSession({
       id: 'session_started',
       workingDirectory: initialWorkingDirectory,
@@ -234,8 +237,8 @@ describe('createManagedSession', () => {
     const sessionManager = new SessionManager()
     const managed = createManagedSession({
       id: 'session_empty',
-      workingDirectory: '/tmp/test-workspace',
-      sdkCwd: '/tmp/test-workspace',
+      workingDirectory: workspace.rootPath,
+      sdkCwd: workspace.rootPath,
     }, workspace as any)
     ;(sessionManager as unknown as { sessions: Map<string, unknown> })
       .sessions.set(managed.id, managed)

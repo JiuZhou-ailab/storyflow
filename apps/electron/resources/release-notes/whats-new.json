@@ -1,7 +1,7 @@
 {
   "version": "0.18.0",
   "digest": "134ced1780e2b8d4bf0f9556ba6e3853d81e010b708cb57267c13fac716ef68d",
-  "generatedAt": "2026-08-27T04:30:46.057Z",
+  "generatedAt": "2026-08-27T05:00:25.816Z",
   "title": "Storyflow v0.18.0 更新说明",
   "summary": "Storyflow 0.18.0 让项目管理、长对话和日常输入更顺手，也收紧了项目能力的授权边界。",
   "highlights": [
@@ -13,7 +13,7 @@
   "accentColor": "#7b7214",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 2,
+    "commitCount": 3,
     "userVisibleCommitCount": 0
   }
 }
