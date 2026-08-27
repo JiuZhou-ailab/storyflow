@@ -17,6 +17,10 @@ describe('local Project registration request', () => {
     expect(end).toBeGreaterThan(start)
 
     const handler = appSource.slice(start, end)
+    expect(handler).toContain('addLocalProjectInFlightRef.current = true')
+    expect(handler.indexOf('addLocalProjectInFlightRef.current = true')).toBeLessThan(
+      handler.indexOf('await window.electronAPI.openFolderDialog()')
+    )
     expect(handler).toContain('await window.electronAPI.openFolderDialog()')
     expect(handler).toContain('if (!rootPath) return')
     expect(handler).toContain('getPathBasename(rootPath)')
@@ -25,6 +29,7 @@ describe('local Project registration request', () => {
     expect(handler).not.toContain('routes.action.newSession()')
     expect(handler).not.toContain('handleCreateSession')
     expect(handler).not.toContain('handleSelectProjectSession')
+    expect(handler).toContain('addLocalProjectInFlightRef.current = false')
   })
 
   it('keeps the rail trigger as a direct application action', () => {

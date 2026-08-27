@@ -314,6 +314,7 @@ function AppContent() {
   const [runtimeWorkspace, setRuntimeWorkspace] = useAtom(windowRuntimeWorkspaceAtom)
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   const [isAddingLocalProject, setIsAddingLocalProject] = useState(false)
+  const addLocalProjectInFlightRef = useRef(false)
   const focusedProjectRoute = useAtomValue(focusedPanelRouteAtom)
   const {
     clearReturnLocation,
@@ -2092,7 +2093,9 @@ function AppContent() {
   }, [setWorkspaces])
 
   const handleAddLocalProject = useCallback(async () => {
-    if (isAddingLocalProject) return
+    if (addLocalProjectInFlightRef.current) return
+    addLocalProjectInFlightRef.current = true
+    setIsAddingLocalProject(true)
 
     try {
       const rootPath = await window.electronAPI.openFolderDialog()
@@ -2101,7 +2104,6 @@ function AppContent() {
       const name = getPathBasename(rootPath)
       if (!name) throw new Error('无法从所选文件夹确定项目名称')
 
-      setIsAddingLocalProject(true)
       const workspace = await window.electronAPI.createWorkspace(rootPath, name)
       const alreadyRegistered = workspaces.some(candidate => candidate.id === workspace.id)
       await handleWorkspaceCreated(workspace)
@@ -2115,13 +2117,13 @@ function AppContent() {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     } finally {
+      addLocalProjectInFlightRef.current = false
       setIsAddingLocalProject(false)
     }
   }, [
     activateRuntimeWorkspace,
     clearReturnLocation,
     handleWorkspaceCreated,
-    isAddingLocalProject,
     workspaces,
   ])
 
