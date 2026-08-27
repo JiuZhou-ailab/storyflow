@@ -149,7 +149,6 @@ export interface AppShellContextType {
    * whole runtime (never a silent overlay). See ADR 0006.
    */
   onSelectProjectSession?: (workspaceId: string, sessionId: string) => void | Promise<void>
-  onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
   onRefreshWorkspaces?: () => void
   onOpenWritingWorkspace: () => void
   onOpenFreeConversations: (options?: { createNew?: boolean }) => void | Promise<void>

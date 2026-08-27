@@ -1,59 +1,37 @@
-// input: Renderer local workspace creation API, completion callback, and App creation navigation
-// output: Checks for option-free creation and canonical new-session navigation
-// pos: Guards folder-first creation and its default conversation handoff
+// input: Renderer App and ActivityRail source
+// output: Contract checks for native folder selection and zero-Session Project activation
+// pos: Guards the single local Project registration entry and its lifecycle boundary
 
-import { beforeAll, describe, expect, it, mock } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import type { Workspace } from '../../../../shared/types'
 
-mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }))
-mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }))
-
-let createWorkspaceAndNotify: typeof import('../WorkspaceCreationScreen').createWorkspaceAndNotify
-
-beforeAll(async () => {
-  const module = await import('../WorkspaceCreationScreen')
-  createWorkspaceAndNotify = module.createWorkspaceAndNotify
-})
-
-const workspace = { id: 'workspace-1', name: '新项目' } as Workspace
 const appSource = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf8')
+const activityRailSource = readFileSync(new URL('../../app-shell/ActivityRail.tsx', import.meta.url), 'utf8')
 
-describe('workspace creation request', () => {
-  it('creates a local workspace without options and notifies the caller', async () => {
-    const calls: unknown[][] = []
-    const created: Workspace[] = []
-
-    await createWorkspaceAndNotify(
-      {
-        createWorkspace: async (...args) => {
-          calls.push(args)
-          return workspace
-        },
-      },
-      '/projects/new-story',
-      '新项目',
-      async (result) => {
-        created.push(result)
-      },
-    )
-
-    expect(calls).toEqual([['/projects/new-story', '新项目']])
-    expect(created).toEqual([workspace])
-  })
-
-  it('opens a new project on the canonical new-session route', () => {
-    const start = appSource.indexOf('const handleProjectHubWorkspaceCreated')
+describe('local Project registration request', () => {
+  it('selects one native folder and opens the Project without creating a Session', () => {
+    const start = appSource.indexOf('const handleAddLocalProject')
     const end = appSource.indexOf('const handleClientSignedIn', start)
 
     expect(start).toBeGreaterThanOrEqual(0)
     expect(end).toBeGreaterThan(start)
 
-    const creationHandler = appSource.slice(start, end)
-    expect(creationHandler).toContain(
-      'await activateRuntimeWorkspace(workspace.id, routes.action.newSession())'
+    const handler = appSource.slice(start, end)
+    expect(handler).toContain('await window.electronAPI.openFolderDialog()')
+    expect(handler).toContain('if (!rootPath) return')
+    expect(handler).toContain('getPathBasename(rootPath)')
+    expect(handler).toContain('await window.electronAPI.createWorkspace(rootPath, name)')
+    expect(handler).toContain('await activateRuntimeWorkspace(workspace.id, routes.view.writing())')
+    expect(handler).not.toContain('routes.action.newSession()')
+    expect(handler).not.toContain('handleCreateSession')
+    expect(handler).not.toContain('handleSelectProjectSession')
+  })
+
+  it('keeps the rail trigger as a direct application action', () => {
+    expect(activityRailSource).not.toContain('ProjectSwitcherPopover')
+    expect(activityRailSource).toContain(
+      "aria-label={isAddingLocalProject ? '正在添加本地项目' : '添加本地项目'}"
     )
-    expect(creationHandler).not.toContain('handleCreateSession')
-    expect(creationHandler).not.toContain('handleSelectProjectSession')
+    expect(activityRailSource).toContain('onClick={() => { void onAddLocalProject?.() }}')
   })
 })

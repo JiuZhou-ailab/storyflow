@@ -92,7 +92,7 @@ import { useLinkInterceptor } from '@/hooks/useLinkInterceptor'
 import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
 import { useStaleSessionRecovery } from '@/hooks/useStaleSessionRecovery'
 import { TransportConnectionBanner, shouldShowTransportConnectionBanner } from '@/components/app-shell/TransportConnectionBanner'
-import { getFileManagerName } from '@/lib/platform'
+import { getFileManagerName, getPathBasename } from '@/lib/platform'
 import { rendererLog } from '@/lib/logger'
 import { ActionRegistryProvider } from '@/actions'
 import { toast } from 'sonner'
@@ -313,6 +313,7 @@ function AppContent() {
   const [windowWorkspaceId, setWindowWorkspaceId] = useAtom(windowWorkspaceIdAtom)
   const [runtimeWorkspace, setRuntimeWorkspace] = useAtom(windowRuntimeWorkspaceAtom)
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+  const [isAddingLocalProject, setIsAddingLocalProject] = useState(false)
   const focusedProjectRoute = useAtomValue(focusedPanelRouteAtom)
   const {
     clearReturnLocation,
@@ -2090,17 +2091,38 @@ function AppContent() {
     }
   }, [setWorkspaces])
 
-  const handleProjectHubWorkspaceCreated = useCallback(async (workspace: Workspace) => {
-    await handleWorkspaceCreated(workspace)
-    if (!storage.get(storage.KEYS.firstRunTourCompleted, false)) {
-      storage.set(storage.KEYS.firstRunTourPending, true)
+  const handleAddLocalProject = useCallback(async () => {
+    if (isAddingLocalProject) return
+
+    try {
+      const rootPath = await window.electronAPI.openFolderDialog()
+      if (!rootPath) return
+
+      const name = getPathBasename(rootPath)
+      if (!name) throw new Error('无法从所选文件夹确定项目名称')
+
+      setIsAddingLocalProject(true)
+      const workspace = await window.electronAPI.createWorkspace(rootPath, name)
+      const alreadyRegistered = workspaces.some(candidate => candidate.id === workspace.id)
+      await handleWorkspaceCreated(workspace)
+      if (!alreadyRegistered && !storage.get(storage.KEYS.firstRunTourCompleted, false)) {
+        storage.set(storage.KEYS.firstRunTourPending, true)
+      }
+      clearReturnLocation()
+      await activateRuntimeWorkspace(workspace.id, routes.view.writing())
+    } catch (error) {
+      toast.error('添加项目失败', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    } finally {
+      setIsAddingLocalProject(false)
     }
-    clearReturnLocation()
-    await activateRuntimeWorkspace(workspace.id, routes.action.newSession())
   }, [
     activateRuntimeWorkspace,
     clearReturnLocation,
     handleWorkspaceCreated,
+    isAddingLocalProject,
+    workspaces,
   ])
 
   const handleClientSignedIn = useCallback(async () => {
@@ -2201,10 +2223,8 @@ function AppContent() {
   }, [appState, pendingReadyRoute])
 
   const projectManagerActions = useMemo(() => ({
-    // Create/import/remote stay inside the rail's creation flow.
-    onWorkspaceCreated: (workspace: Workspace) => {
-      void handleProjectHubWorkspaceCreated(workspace)
-    },
+    onAddLocalProject: handleAddLocalProject,
+    isAddingLocalProject,
     onOpenProjectInNewWindow: (workspaceId: string) => {
       void window.electronAPI.openWorkspace(workspaceId)
     },
@@ -2221,11 +2241,12 @@ function AppContent() {
       void handleRemoveProjectFromHub(workspaceId)
     },
   }), [
-    handleProjectHubWorkspaceCreated,
+    handleAddLocalProject,
     handleRelinkProjectFromHub,
     handleRemoveProjectFromHub,
     handleRenameProjectFromHub,
     handleSetProjectArchived,
+    isAddingLocalProject,
   ])
 
   const activityRailProfile = useMemo(() => {
@@ -2318,7 +2339,6 @@ function AppContent() {
     // Workspace
     onSelectWorkspace: handleSelectWorkspace,
     onSelectProjectSession: handleSelectProjectSession,
-    onWorkspaceCreated: handleWorkspaceCreated,
     onRefreshWorkspaces: handleRefreshWorkspaces,
     onOpenWritingWorkspace: handleOpenWritingWorkspace,
     onOpenFreeConversations: handleOpenFreeConversations,
@@ -2366,7 +2386,6 @@ function AppContent() {
     handleOpenUrl,
     handleSelectWorkspace,
     handleSelectProjectSession,
-    handleWorkspaceCreated,
     handleRefreshWorkspaces,
     handleOpenWritingWorkspace,
     handleOpenFreeConversations,
@@ -2436,7 +2455,7 @@ function AppContent() {
                 {hasActiveProjects ? '从左侧展开项目并选择对话' : '还没有项目'}
               </p>
               <p className="mt-1.5 text-[12px] text-muted-foreground">
-                使用左侧“项目”旁的 + 新建、导入或连接项目
+                使用左侧“项目”旁的 + 添加本地文件夹
               </p>
               {activeProjectId && returnDestination ? (
                 <button
@@ -2555,7 +2574,8 @@ function AppContent() {
                   hasUnseenReleaseNotes={hasUnseenReleaseNotes}
                   onReleaseNotesSeen={() => setHasUnseenReleaseNotes(false)}
                   profile={activityRailProfile}
-                  onWorkspaceCreatedFromRail={projectManagerActions.onWorkspaceCreated}
+                  onAddLocalProject={projectManagerActions.onAddLocalProject}
+                  isAddingLocalProject={projectManagerActions.isAddingLocalProject}
                   onOpenProjectInNewWindow={projectManagerActions.onOpenProjectInNewWindow}
                   onRelinkProject={projectManagerActions.onRelinkProject}
                   onRenameProject={projectManagerActions.onRenameProject}

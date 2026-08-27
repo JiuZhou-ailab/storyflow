@@ -35,7 +35,6 @@ import {
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { CrossfadeAvatar } from '@/components/ui/avatar'
 import { FeedbackDialog } from './FeedbackDialog'
-import { ProjectSwitcherPopover } from './ProjectSwitcherPopover'
 import {
   ProjectFolderRow,
   RecentConversationRow,
@@ -82,7 +81,8 @@ export interface ActivityRailProps {
   /** The currently open project session, so its nested row can render as active. */
   activeProjectSessionId?: string | null
   onCreateConversationInProject?: (workspaceId: string) => void | Promise<void>
-  onWorkspaceCreated?: (workspace: Workspace) => void | Promise<void>
+  onAddLocalProject?: () => void | Promise<void>
+  isAddingLocalProject?: boolean
   onOpenProjectInNewWindow?: (workspaceId: string) => void
   onRelinkProject?: (workspaceId: string) => void | Promise<void>
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
@@ -150,7 +150,8 @@ export function ActivityRail({
   onSelectSession,
   activeProjectSessionId = null,
   onCreateConversationInProject,
-  onWorkspaceCreated,
+  onAddLocalProject,
+  isAddingLocalProject = false,
   onOpenProjectInNewWindow,
   onRelinkProject,
   onRenameProject,
@@ -198,7 +199,7 @@ export function ActivityRail({
   const [renameValue, setRenameValue] = React.useState('')
   const refreshGenerationRef = React.useRef(0)
   const activeRefreshGenerationRef = React.useRef(0)
-  const canCreateProjects = typeof onWorkspaceCreated === 'function'
+  const canCreateProjects = typeof onAddLocalProject === 'function'
   const canCreateTask = Boolean(
     (activeWorkspaceId && onCreateConversationInProject)
     || onOpenFreeConversations,
@@ -416,12 +417,19 @@ export function ActivityRail({
   const projectCreateTrigger = (
     <button
       type="button"
-      aria-label="新建本地项目"
-      title="新建本地项目"
+      aria-label={isAddingLocalProject ? '正在添加本地项目' : '添加本地项目'}
+      aria-busy={isAddingLocalProject || undefined}
+      title="添加本地项目"
+      disabled={isAddingLocalProject}
+      onClick={() => { void onAddLocalProject?.() }}
       data-tutorial="activity-project-hub"
-      className="flex h-6 w-6 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
+      className="flex h-6 w-6 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-[color,background-color,opacity] hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 disabled:cursor-wait disabled:opacity-100 focus-visible:ring-1 focus-visible:ring-ring"
     >
-      <SquarePen className="h-3.5 w-3.5" />
+      {isAddingLocalProject ? (
+        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <SquarePen className="h-3.5 w-3.5" />
+      )}
     </button>
   )
 
@@ -549,13 +557,7 @@ export function ActivityRail({
               count={projectWorkspaces.length}
               expanded={projectsExpanded}
               onToggle={() => updateProjectsExpanded(!projectsExpanded)}
-              action={canCreateProjects ? (
-                <ProjectSwitcherPopover
-                  onWorkspaceCreated={onWorkspaceCreated}
-                >
-                  {projectCreateTrigger}
-                </ProjectSwitcherPopover>
-              ) : undefined}
+              action={canCreateProjects ? projectCreateTrigger : undefined}
             />
             {projectsExpanded ? (
               projectWorkspaces.length > 0 ? (

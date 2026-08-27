@@ -254,8 +254,9 @@ interface AppShellProps {
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
   onSetProjectArchived?: (workspaceId: string, archived: boolean) => void | Promise<void>
   onRemoveProject?: (workspaceId: string) => void | Promise<void>
-  /** Inline project create/import/remote success (preferred over full-page creation). */
-  onWorkspaceCreatedFromRail?: (workspace: Workspace) => void | Promise<void>
+  /** Opens the native folder picker and registers the selected local Project. */
+  onAddLocalProject?: () => void | Promise<void>
+  isAddingLocalProject?: boolean
 }
 
 function isNovelReviewUndoShortcut(event: KeyboardEvent): boolean {
@@ -863,7 +864,8 @@ function AppShellContent({
   onRenameProject,
   onSetProjectArchived,
   onRemoveProject,
-  onWorkspaceCreatedFromRail,
+  onAddLocalProject,
+  isAddingLocalProject = false,
 }: AppShellProps) {
   // Destructure commonly used values from context
   // Note: sessions is NOT destructured here - shell leaves metadata list subscriptions to leaf views.
@@ -874,7 +876,6 @@ function AppShellContent({
     activeProjectId,
     onSelectWorkspace,
     onSelectProjectSession,
-    onWorkspaceCreated,
     onOpenWritingWorkspace,
     onOpenFreeConversations,
     onDeleteSession,
@@ -4655,7 +4656,8 @@ function AppShellContent({
                 activeProjectSessionId={projectWorkspaceId
                   ? (panelCount > 1 ? focusedSessionId : session.selected)
                   : null}
-                onWorkspaceCreated={onWorkspaceCreatedFromRail ?? onWorkspaceCreated}
+                onAddLocalProject={onAddLocalProject}
+                isAddingLocalProject={isAddingLocalProject}
                 onOpenProjectInNewWindow={onOpenProjectInNewWindow}
                 onRelinkProject={onRelinkProject}
                 onRenameProject={onRenameProject}
