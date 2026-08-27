@@ -40,6 +40,7 @@ export {
   prepareWorkspaceRootRelink,
   rebaseWorkspaceDefaultWorkingDirectory,
   registerLocalProject,
+  restoreLegacyLocalProjectDirectoryIdentity,
   relinkWorkspaceRoot,
 } from './project-registry.ts';
 export type { WorkspaceRootRelinkPlan } from './project-registry.ts';

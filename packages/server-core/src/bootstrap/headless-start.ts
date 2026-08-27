@@ -12,7 +12,7 @@ import { seedDefaultAgentResources } from '@craft-agent/shared/agent-defaults'
 import { ensureConfigDir, loadStoredConfig, saveConfig } from '@craft-agent/shared/config'
 import { CONFIG_DIR } from '@craft-agent/shared/config/paths'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
-import { registerLocalProject } from '@craft-agent/shared/workspaces'
+import { restoreLegacyLocalProjectDirectoryIdentity } from '@craft-agent/shared/workspaces'
 import { WsRpcServer, type WsRpcTlsOptions } from '../transport/server'
 import type { EventSink, RpcServer } from '../transport/types'
 import { createHeadlessPlatform } from '../runtime/platform-headless'
@@ -396,10 +396,7 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
   for (const project of loadStoredConfig()?.workspaces ?? []) {
     if (project.remoteServer || project.directoryConfigId) continue
     try {
-      const restored = registerLocalProject(project.name, project.rootPath)
-      if (restored.id !== project.id) {
-        throw new Error(`The stored directory belongs to Project ${restored.id}.`)
-      }
+      restoreLegacyLocalProjectDirectoryIdentity(project.id)
       platform.logger.info(`Restored directory identity for Project ${project.id}`)
     } catch (error) {
       platform.logger.warn(`Project ${project.id} still requires relinking:`, error)

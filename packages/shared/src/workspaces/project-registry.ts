@@ -1,5 +1,5 @@
 // input: Host Project registrations, selected local roots, and project-owned Session metadata
-// output: Canonical local Project registration, availability, and explicit root relinking
+// output: Canonical local Project registration, compatibility identity restoration, availability, and explicit root relinking
 // pos: Product Host boundary that keeps stable Project identity separate from its filesystem locator
 
 import { existsSync, realpathSync, statSync } from 'node:fs'
@@ -41,13 +41,10 @@ function sameRoot(left: string, right: string): boolean {
     === normalizePathForComparison(canonicalizeProjectRoot(right, true))
 }
 
-function assertProjectContentIsUnclaimed(
-  candidateRoot: string,
+function assertProjectDirectoryIsUnclaimed(
   candidateConfigId: string,
   excludedProjectId?: string,
 ): void {
-  const candidateSessionIds = new Set(listSessions(candidateRoot).map(session => session.id))
-
   for (const workspace of getWorkspaces()) {
     if (workspace.id === excludedProjectId || workspace.remoteServer) continue
 
@@ -61,6 +58,19 @@ function assertProjectContentIsUnclaimed(
     if (registeredConfig.id === candidateConfigId) {
       throw new Error(`This Project content is already registered as "${workspace.name}".`)
     }
+  }
+}
+
+function assertProjectContentIsUnclaimed(
+  candidateRoot: string,
+  candidateConfigId: string,
+  excludedProjectId?: string,
+): void {
+  assertProjectDirectoryIsUnclaimed(candidateConfigId, excludedProjectId)
+  const candidateSessionIds = new Set(listSessions(candidateRoot).map(session => session.id))
+
+  for (const workspace of getWorkspaces()) {
+    if (workspace.id === excludedProjectId || workspace.remoteServer) continue
 
     if (candidateSessionIds.size === 0) continue
     const duplicateSession = listSessions(workspace.rootPath)
@@ -77,6 +87,41 @@ export function isWorkspaceRootAvailable(workspace: Workspace): boolean {
   if (workspace.remoteServer) return true
   const config = inspectWorkspaceStateConfig(workspace.rootPath)
   return Boolean(config && workspace.directoryConfigId === config.id)
+}
+
+/** Pin a pre-fingerprint Project to its already trusted locator without inspecting Session content. */
+export function restoreLegacyLocalProjectDirectoryIdentity(projectId: string): Workspace {
+  const config = loadStoredConfig()
+  const project = config?.workspaces.find(workspace => workspace.id === projectId)
+  if (!config || !project) throw new Error(`Project not found: ${projectId}`)
+  if (project.remoteServer) throw new Error('Remote Projects do not have local directory identity.')
+  if (project.directoryConfigId) throw new Error(`Project ${projectId} already has directory identity.`)
+
+  const canonicalRoot = canonicalizeProjectRoot(project.rootPath)
+  const inspectedConfig = inspectWorkspaceConfig(canonicalRoot)
+  if (!inspectedConfig) throw new Error(`Failed to verify Storyflow Project: ${canonicalRoot}`)
+  assertProjectDirectoryIsUnclaimed(inspectedConfig.id, project.id)
+
+  const directoryConfig = loadWorkspaceConfig(canonicalRoot)
+  if (!directoryConfig || directoryConfig.id !== inspectedConfig.id) {
+    throw new Error(`Failed to verify Storyflow Project: ${canonicalRoot}`)
+  }
+
+  const currentConfig = loadStoredConfig()
+  const currentProject = currentConfig?.workspaces.find(workspace => workspace.id === projectId)
+  if (
+    !currentConfig
+    || !currentProject
+    || currentProject.remoteServer
+    || currentProject.directoryConfigId
+    || !sameRoot(currentProject.rootPath, canonicalRoot)
+  ) {
+    throw new Error('The Project registration changed while the directory was being verified.')
+  }
+  assertProjectDirectoryIsUnclaimed(directoryConfig.id, currentProject.id)
+  currentProject.directoryConfigId = directoryConfig.id
+  saveConfig(currentConfig)
+  return { ...currentProject, rootAvailable: true }
 }
 
 /** Register a selected local directory without copying directory-owned identity into the Host identity. */
