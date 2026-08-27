@@ -30,7 +30,7 @@
  *   │       └── {children}
  *   └── Header (absolute top-0, z-10, floating on top of scroll content)
  *
- * Used by: PreviewOverlay, DocumentFormattedMarkdownOverlay, WorkspaceCreationScreen
+ * Used by: PreviewOverlay, DocumentFormattedMarkdownOverlay
  */
 
 import { useEffect, useRef, type ReactNode } from 'react'

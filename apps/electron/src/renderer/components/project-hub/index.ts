@@ -1,6 +1,6 @@
 // input: Project cold-start navigation helpers
-// output: Return-route hooks/actions for project manager shell
-// pos: Thin barrel; project UI lives in app-shell/ProjectManagerPanel
+// output: Return-route hooks/actions for the application shell
+// pos: Thin barrel for Project catalog return navigation
 
 export {
   getProjectHubReturnDestination,
