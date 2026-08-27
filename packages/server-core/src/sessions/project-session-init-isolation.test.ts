@@ -3,7 +3,7 @@
 // pos: Regression coverage for sharded Session discovery health
 
 import { describe, expect, it } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -82,6 +82,7 @@ describe('Project Session initialization isolation', () => {
     const configDir = join(parent, 'host')
     const stateBadRoot = join(parent, 'state-bad')
     const sessionBadRoot = join(parent, 'session-bad')
+    const rootConfigOnlyRoot = join(parent, 'root-config-only')
     const goodRoot = join(parent, 'good')
     const outsideState = join(parent, 'outside-state')
     const outsideSessions = join(parent, 'outside-sessions')
@@ -95,6 +96,10 @@ describe('Project Session initialization isolation', () => {
     mkdirSync(outsideSessions)
     writeFileSync(join(outsideSessions, 'keep.txt'), 'keep')
     symlinkSync(outsideSessions, join(sessionBadRoot, '.craft-agent', 'sessions'), 'dir')
+    mkdirSync(rootConfigOnlyRoot)
+    writeFileSync(join(rootConfigOnlyRoot, 'config.json'), JSON.stringify({
+      id: 'directory-root-only', name: 'Root Only', slug: 'root-only', createdAt: 1, updatedAt: 1,
+    }))
     writeProjectConfig(goodRoot, 'directory-good')
     const goodSessionDir = join(goodRoot, '.craft-agent', 'sessions', 'session-good')
     mkdirSync(goodSessionDir, { recursive: true })
@@ -107,6 +112,7 @@ describe('Project Session initialization isolation', () => {
       workspaces: [
         { id: 'project-state-bad', name: 'State Bad', slug: 'state-bad', rootPath: stateBadRoot, createdAt: 1 },
         { id: 'project-session-bad', name: 'Session Bad', slug: 'session-bad', rootPath: sessionBadRoot, createdAt: 1 },
+        { id: 'project-root-only', name: 'Root Only', slug: 'root-only', rootPath: rootConfigOnlyRoot, createdAt: 1 },
         { id: 'project-good', name: 'Good', slug: 'good', rootPath: goodRoot, createdAt: 1 },
       ],
       activeWorkspaceId: 'project-session-bad', activeSessionId: null,
@@ -141,6 +147,7 @@ describe('Project Session initialization isolation', () => {
           console.log('STATE_RESULT=' + JSON.stringify({
             stateBad: workspaces.find(workspace => workspace.id === 'project-state-bad'),
             sessionBad: workspaces.find(workspace => workspace.id === 'project-session-bad'),
+            rootOnly: workspaces.find(workspace => workspace.id === 'project-root-only'),
             sessionBadError,
             good: workspaces.find(workspace => workspace.id === 'project-good'),
             goodIds: manager.getSessions('project-good').map(session => session.id),
@@ -158,6 +165,7 @@ describe('Project Session initialization isolation', () => {
       expect(result).toMatchObject({
         stateBad: { rootAvailable: false },
         sessionBad: { directoryConfigId: 'directory-session-bad', rootAvailable: true },
+        rootOnly: { rootAvailable: false },
         good: { directoryConfigId: 'directory-good', rootAvailable: true },
         goodIds: ['session-good'],
       })
@@ -168,10 +176,13 @@ describe('Project Session initialization isolation', () => {
         .toBeUndefined()
       expect(stored.workspaces.find((workspace: { id: string }) => workspace.id === 'project-session-bad').directoryConfigId)
         .toBe('directory-session-bad')
+      expect(stored.workspaces.find((workspace: { id: string }) => workspace.id === 'project-root-only').directoryConfigId)
+        .toBeUndefined()
       expect(stored.workspaces.find((workspace: { id: string }) => workspace.id === 'project-good').directoryConfigId)
         .toBe('directory-good')
       expect(readFileSync(join(outsideState, 'config.json'), 'utf8')).toContain('directory-state-bad')
       expect(readFileSync(join(outsideSessions, 'keep.txt'), 'utf8')).toBe('keep')
+      expect(existsSync(join(rootConfigOnlyRoot, '.craft-agent'))).toBeFalse()
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }

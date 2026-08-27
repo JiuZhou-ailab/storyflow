@@ -98,11 +98,11 @@ export function restoreLegacyLocalProjectDirectoryIdentity(projectId: string): W
   if (project.directoryConfigId) throw new Error(`Project ${projectId} already has directory identity.`)
 
   const canonicalRoot = canonicalizeProjectRoot(project.rootPath)
-  const inspectedConfig = inspectWorkspaceConfig(canonicalRoot)
+  const inspectedConfig = inspectWorkspaceStateConfig(canonicalRoot)
   if (!inspectedConfig) throw new Error(`Failed to verify Storyflow Project: ${canonicalRoot}`)
   assertProjectDirectoryIsUnclaimed(inspectedConfig.id, project.id)
 
-  const directoryConfig = loadWorkspaceConfig(canonicalRoot)
+  const directoryConfig = inspectWorkspaceStateConfig(canonicalRoot)
   if (!directoryConfig || directoryConfig.id !== inspectedConfig.id) {
     throw new Error(`Failed to verify Storyflow Project: ${canonicalRoot}`)
   }
