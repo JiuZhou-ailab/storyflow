@@ -12,11 +12,13 @@ import {
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import {
   getSourceCredentialManager,
+  isSourceHostGranted,
   isSourceUsable,
   loadAllSources,
   loadSource,
 } from '@craft-agent/shared/sources'
 import { getSessionPath as getSessionStoragePath } from '@craft-agent/shared/sessions'
+import { isFreeConversationWorkspaceId } from '@craft-agent/shared/workspaces'
 import type { SessionEvent } from '@craft-agent/shared/protocol'
 import { buildServersFromSources } from './source-bridge'
 import { getResourceProjectRoot, getSessionLog } from './session-runtime'
@@ -252,17 +254,21 @@ export class AuthFlow {
         managed.workspace.id,
       )
       if (!source) throw new Error(`Source not found: ${request.sourceSlug}`)
+      if (
+        !isFreeConversationWorkspaceId(managed.workspace.id)
+        && !isSourceHostGranted(managed.workspace.defaultEnabledSourceRefs, source)
+      ) {
+        throw new Error(`Source '${request.sourceSlug}' is not enabled by Host settings.`)
+      }
 
       const value = request.mode === 'basic'
         ? JSON.stringify({ username: response.username, password: response.password })
         : request.mode === 'multi-header'
           ? JSON.stringify(response.headers)
           : response.value!
-      await getSourceCredentialManager().save(source, { value })
-
-      // Update source config to mark as authenticated
-      const { markSourceAuthenticated } = await import('@craft-agent/shared/sources')
-      markSourceAuthenticated(source.workspaceRootPath, request.sourceSlug)
+      const credentialManager = getSourceCredentialManager()
+      await credentialManager.save(source, { value })
+      credentialManager.markSourceAuthenticated(source)
 
       // Mark source as unseen so fresh guide is injected on next message
       if (managed.agent) {

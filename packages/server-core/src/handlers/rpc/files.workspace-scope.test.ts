@@ -3,7 +3,7 @@
 // pos: Guards file CRUD/search from escaping the active workspace id
 
 import { existsSync, rmSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { describe, expect, it, mock } from 'bun:test'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { StoreAttachmentResult } from '@craft-agent/shared/protocol'
+import { resolveProjectOwnedFilePath } from '@craft-agent/shared/workspaces'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -45,10 +46,13 @@ mock.module('fs/promises', () => ({
 }))
 
 const { registerFilesHandlers } = await import('./files')
+const { storeAttachmentFiles } = await import('../../services/attachment-storage')
 
 function createFileHarness(options: {
   contextWorkspaceId?: string
   windowWorkspaceId?: string
+  getWindowWorkspaceId?: () => string | undefined
+  withProjectLifecycle?: HandlerDeps['sessionManager']['withProjectLifecycle']
 } = {}) {
   const handlers = new Map<string, HandlerFn>()
   const server: RpcServer = {
@@ -62,7 +66,16 @@ function createFileHarness(options: {
   }
   const deps: HandlerDeps = {
     sessionManager: {
+      withProjectLifecycle: options.withProjectLifecycle
+        ?? (async <T>(_projectId: string, work: () => Promise<T>): Promise<T> => work()),
       getSessionPath: () => attachmentSessionPath || null,
+      withSessionPathOperation: async <T>(
+        _sessionId: string,
+        work: (sessionPath: string) => Promise<T> | T,
+      ): Promise<T> => {
+        if (!attachmentSessionPath) throw new Error('Session not found')
+        return work(attachmentSessionPath)
+      },
     } as unknown as HandlerDeps['sessionManager'],
     resolveRuntimeWorkspace: (id: string) => {
       const rootPath = id === 'workspace-1'
@@ -80,9 +93,9 @@ function createFileHarness(options: {
           }
         : null
     },
-    windowManager: options.windowWorkspaceId
+    windowManager: options.windowWorkspaceId || options.getWindowWorkspaceId
       ? {
-          getWorkspaceForWindow: () => options.windowWorkspaceId,
+          getWorkspaceForWindow: () => options.getWindowWorkspaceId?.() ?? options.windowWorkspaceId,
         } as unknown as HandlerDeps['windowManager']
       : undefined,
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
@@ -143,6 +156,41 @@ describe('workspace-scoped file RPCs', () => {
 
       await expect(readTextFile(ctx, currentFile)).resolves.toBe('current')
       await expect(readTextFile(ctx, staleFile)).rejects.toThrow('outside current workspace')
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      rmSync(staleWorkspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
+      staleWorkspaceRootPath = ''
+    }
+  })
+
+  it('freezes the window workspace before waiting for its mutation lifecycle', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-frozen-'))
+    staleWorkspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-switched-'))
+    const targetPath = join(workspaceRootPath, 'screenplay.txt')
+    let windowWorkspaceId = 'workspace-1'
+    let releaseLifecycle!: () => void
+    const lifecycleGate = new Promise<void>(resolve => { releaseLifecycle = resolve })
+    let markLifecycleEntered!: () => void
+    const lifecycleEntered = new Promise<void>(resolve => { markLifecycleEntered = resolve })
+    const { writeTextFile, ctx } = createFileHarness({
+      contextWorkspaceId: 'stale-workspace',
+      getWindowWorkspaceId: () => windowWorkspaceId,
+      withProjectLifecycle: async (_projectId, work) => {
+        markLifecycleEntered()
+        await lifecycleGate
+        return work({ id: 'workspace-1', rootPath: workspaceRootPath } as never)
+      },
+    })
+
+    try {
+      const writing = writeTextFile(ctx, targetPath, 'frozen')
+      await lifecycleEntered
+      windowWorkspaceId = 'stale-workspace'
+      releaseLifecycle()
+
+      await expect(writing).resolves.toBeUndefined()
+      expect(await readFile(targetPath, 'utf8')).toBe('frozen')
     } finally {
       rmSync(workspaceRootPath, { recursive: true, force: true })
       rmSync(staleWorkspaceRootPath, { recursive: true, force: true })
@@ -219,6 +267,103 @@ describe('workspace-scoped file RPCs', () => {
       rmSync(outsideRoot, { recursive: true, force: true })
       workspaceRootPath = ''
       attachmentSessionPath = ''
+    }
+  })
+
+  it('rejects an attachment directory symlink that escapes the Project', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-attachment-link-root-'))
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'craft-workspace-attachment-link-outside-'))
+    attachmentSessionPath = join(workspaceRootPath, '.craft-agent', 'sessions', 'session-1')
+    const { storeAttachment, ctx } = createFileHarness()
+
+    try {
+      await mkdir(attachmentSessionPath, { recursive: true })
+      await symlink(outsideRoot, join(attachmentSessionPath, 'attachments'), 'dir')
+
+      await expect(storeAttachment(ctx, 'session-1', {
+        type: 'text',
+        path: '/tmp/note.txt',
+        name: 'note.txt',
+        mimeType: 'text/plain',
+        text: 'outside write',
+        size: 13,
+      })).rejects.toThrow('outside current workspace')
+      expect(await readdir(outsideRoot)).toEqual([])
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      rmSync(outsideRoot, { recursive: true, force: true })
+      workspaceRootPath = ''
+      attachmentSessionPath = ''
+    }
+  })
+
+  it('rejects invalid attachment sizes before writing bytes', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'craft-workspace-attachment-size-'))
+    attachmentSessionPath = join(workspaceRootPath, '.craft-agent', 'sessions', 'session-1')
+    const { storeAttachment, ctx } = createFileHarness()
+
+    try {
+      await mkdir(attachmentSessionPath, { recursive: true })
+      await expect(storeAttachment(ctx, 'session-1', {
+        type: 'text', path: 'large.txt', name: 'large.txt', mimeType: 'text/plain',
+        base64: Buffer.from('x').toString('base64'), size: 20 * 1024 * 1024 + 1,
+      })).rejects.toThrow('20MB limit')
+      await expect(storeAttachment(ctx, 'session-1', {
+        type: 'text', path: 'negative.txt', name: 'negative.txt', mimeType: 'text/plain',
+        text: 'x', size: -1,
+      })).rejects.toThrow('positive integer')
+      await expect(storeAttachment(ctx, 'session-1', {
+        type: 'text', path: 'mismatch.txt', name: 'mismatch.txt', mimeType: 'text/plain',
+        text: 'é', size: 1,
+      })).rejects.toThrow('size mismatch')
+      expect(await readdir(join(attachmentSessionPath, 'attachments'))).toEqual([])
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
+      attachmentSessionPath = ''
+    }
+  })
+
+  it('validates the final attachment file immediately before the service writes it', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'craft-attachment-service-root-'))
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'craft-attachment-service-outside-'))
+    const attachmentsDir = join(projectRoot, '.craft-agent', 'sessions', 'session-1', 'attachments')
+    const outsideFile = join(outsideRoot, 'outside.txt')
+    const storedPath = join(attachmentsDir, 'fixed_note.txt')
+
+    try {
+      await mkdir(attachmentsDir, { recursive: true })
+      await writeFile(outsideFile, 'sentinel')
+      await symlink(outsideFile, storedPath)
+
+      await expect(storeAttachmentFiles({
+        attachment: {
+          type: 'text',
+          path: '/tmp/note.txt',
+          name: 'note.txt',
+          mimeType: 'text/plain',
+          text: 'outside write',
+          size: 13,
+        },
+        attachmentsDir,
+        id: 'fixed',
+        safeName: 'note.txt',
+        validateWritePath: async path => resolveProjectOwnedFilePath(projectRoot, path),
+        imageProcessor: {
+          getMetadata: async () => null,
+          process: async () => { throw new Error('not an image') },
+        },
+        logger: {
+          info: () => {},
+          warn: () => {},
+          error: () => {},
+          debug: () => {},
+        },
+      })).rejects.toThrow('symbolic link')
+      expect(await readFile(outsideFile, 'utf8')).toBe('sentinel')
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true })
+      rmSync(outsideRoot, { recursive: true, force: true })
     }
   })
 

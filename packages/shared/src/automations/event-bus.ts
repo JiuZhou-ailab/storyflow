@@ -151,8 +151,8 @@ export interface EventBus {
   /** Unregister an all-events handler */
   offAny(handler: AnyEventHandler): void;
 
-  /** Clean up all handlers */
-  dispose(): void;
+  /** Stop accepting events, then clean up after in-flight handlers finish */
+  dispose(): Promise<void>;
 }
 
 // ============================================================================
@@ -164,6 +164,7 @@ export class WorkspaceEventBus implements EventBus {
   private readonly handlers: Map<AutomationEvent, Set<EventHandler<AutomationEvent>>> = new Map();
   private readonly anyHandlers: Set<AnyEventHandler> = new Set();
   private readonly rateCounts: Map<AutomationEvent, RateWindow> = new Map();
+  private readonly inFlightEmits = new Set<Promise<void>>();
   private disposed = false;
 
   constructor(workspaceId: string) {
@@ -222,8 +223,14 @@ export class WorkspaceEventBus implements EventBus {
       }
     });
 
-    // Wait for all handlers to complete
-    await Promise.all([...eventPromises, ...anyPromises]);
+    // Track the whole emit so disposal can drain work already accepted.
+    const completion = Promise.all([...eventPromises, ...anyPromises]).then(() => undefined);
+    this.inFlightEmits.add(completion);
+    try {
+      await completion;
+    } finally {
+      this.inFlightEmits.delete(completion);
+    }
 
     log.debug(`[EventBus] Emitted: ${event} (${eventHandlers.size} handlers, ${anyHandlersCopy.size} any-handlers)`);
   }
@@ -278,16 +285,18 @@ export class WorkspaceEventBus implements EventBus {
   }
 
   /**
-   * Clean up all handlers and mark as disposed.
+   * Stop accepting new work, then wait for already-running handlers.
    */
-  dispose(): void {
-    if (this.disposed) return;
+  async dispose(): Promise<void> {
+    if (!this.disposed) {
+      this.disposed = true;
+      log.debug(`[EventBus] Disposing for workspace: ${this.workspaceId}`);
+      this.handlers.clear();
+      this.anyHandlers.clear();
+      this.rateCounts.clear();
+    }
 
-    log.debug(`[EventBus] Disposing for workspace: ${this.workspaceId}`);
-    this.handlers.clear();
-    this.anyHandlers.clear();
-    this.rateCounts.clear();
-    this.disposed = true;
+    await Promise.all(this.inFlightEmits);
   }
 
   /**

@@ -1,3 +1,7 @@
+// input: System, shell, release-note, and Project Git RPC requests
+// output: Platform responses plus lifecycle-scoped Project version mutations
+// pos: Core RPC boundary for host capabilities and Project version control
+
 import { resolve } from 'path'
 import { join } from 'path'
 import { homedir } from 'os'
@@ -7,6 +11,8 @@ import {
   type CreateWorkspaceVersionOptions,
 } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId, getGitBashPath, setGitBashPath, clearGitBashPath } from '@craft-agent/shared/config'
+import { canonicalizeProjectRoot } from '@craft-agent/shared/workspaces'
+import { normalizePathForComparison } from '@craft-agent/shared/utils'
 import { isDeepLinkWithinLimits, isSafeExternalUrl } from '@craft-agent/shared/utils/url-safety'
 import {
   compareWorkspaceVersions,
@@ -19,8 +25,9 @@ import {
   validateGitBashPath,
 } from '@craft-agent/server-core/services'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
-import type { RpcServer } from '@craft-agent/server-core/transport'
+import type { RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
+import { resolveContextWorkspaceId } from './file-workspace-scope'
 import {
   requestClientOpenExternal,
   requestClientOpenPath,
@@ -228,9 +235,21 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
     }
   })
 
-  async function validateWorkspaceRoot(ctx: { workspaceId?: string | null; webContentsId?: number | null }, rootPath: string): Promise<string> {
-    const workspaceId = ctx.workspaceId ?? (ctx.webContentsId != null ? windowManager?.getWorkspaceForWindow(ctx.webContentsId) : undefined)
+  async function validateWorkspaceRoot(ctx: RequestContext, rootPath: string): Promise<string> {
+    const workspaceId = resolveContextWorkspaceId(ctx, deps)
     return validateFilePath(rootPath, getWorkspaceAllowedDirs(workspaceId))
+  }
+
+  function resolveVersionProjectId(ctx: RequestContext, rootPath: string): string | null | undefined {
+    const localWindowWorkspaceId = ctx.webContentsId == null
+      ? null
+      : deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId)
+    if (!localWindowWorkspaceId) return ctx.workspaceId
+    const requestedRoot = normalizePathForComparison(canonicalizeProjectRoot(rootPath, true))
+    return deps.sessionManager.getWorkspaces().find(workspace => (
+      !workspace.remoteServer
+      && normalizePathForComparison(canonicalizeProjectRoot(workspace.rootPath, true)) === requestedRoot
+    ))?.id
   }
 
   server.handle(RPC_CHANNELS.git.GET_VERSION_STATUS, async (ctx, rootPath: string) => {
@@ -249,8 +268,11 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
   })
 
   server.handle(RPC_CHANNELS.git.CREATE_VERSION, async (ctx, rootPath: string, options: CreateWorkspaceVersionOptions) => {
-    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
-    return createWorkspaceVersion(safeRoot, options)
+    const workspaceId = resolveVersionProjectId(ctx, rootPath)
+    if (!workspaceId) throw new Error('Workspace not found')
+    return deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
+      return createWorkspaceVersion(workspace.rootPath, options)
+    })
   })
 
   server.handle(RPC_CHANNELS.git.LIST_VERSIONS, async (ctx, rootPath: string, limit?: number) => {
@@ -259,8 +281,11 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
   })
 
   server.handle(RPC_CHANNELS.git.RESTORE_VERSION, async (ctx, rootPath: string, commitHash: string) => {
-    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
-    return restoreWorkspaceVersion(safeRoot, commitHash)
+    const workspaceId = resolveVersionProjectId(ctx, rootPath)
+    if (!workspaceId) throw new Error('Workspace not found')
+    return deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
+      return restoreWorkspaceVersion(workspace.rootPath, commitHash)
+    })
   })
 
   // Git Bash detection and configuration (Windows only)

@@ -13,6 +13,7 @@ import {
   setSessionFileReplacementActive,
 } from './storage.js'
 import { toPortablePath } from '../utils/paths.js'
+import { resolveProjectOwnedFilePath } from '../workspaces/paths.js'
 import { createSessionHeader, makeSessionPathPortable, readSessionHeader } from './jsonl.js'
 import { debug } from '../utils/debug.js'
 import { perf } from '../utils/perf.js'
@@ -161,7 +162,7 @@ class SessionPersistenceQueue {
       ensureSessionDir(data.workspaceRootPath, sessionId)
 
       const filePath = getSessionFilePath(data.workspaceRootPath, sessionId)
-      const recoveredFile = recoverSessionFile(filePath)
+      const recoveredFile = recoverSessionFile(filePath, data.workspaceRootPath)
       if (recoveredFile && recoveredFile !== filePath) {
         throw new Error(`Could not promote recovered session file: ${recoveredFile}`)
       }
@@ -243,19 +244,20 @@ class SessionPersistenceQueue {
       this.lastWrittenHeaderSignature.set(sessionId, finalSignature)
 
       const writeEnd = perf.start('session.persist.diskWrite', { sessionId })
-      const tmpFile = filePath + '.tmp'
-      const backupFile = filePath + '.bak'
+      const safeFilePath = resolveProjectOwnedFilePath(data.workspaceRootPath, filePath)
+      const tmpFile = resolveProjectOwnedFilePath(data.workspaceRootPath, filePath + '.tmp')
+      const backupFile = resolveProjectOwnedFilePath(data.workspaceRootPath, filePath + '.bak')
       let hasBackup = false
       setSessionFileReplacementActive(filePath, true)
       try {
         await this.writeFile(tmpFile, jsonl, 'utf-8')
         try {
-          await rename(filePath, backupFile)
+          await rename(safeFilePath, backupFile)
           hasBackup = true
         } catch (error) {
           if (!isMissingFileError(error)) throw error
         }
-        await rename(tmpFile, filePath)
+        await rename(tmpFile, safeFilePath)
       } catch (error) {
         if (previousWrittenSignature === undefined) {
           this.lastWrittenHeaderSignature.delete(sessionId)
@@ -265,7 +267,7 @@ class SessionPersistenceQueue {
 
         if (hasBackup) {
           try {
-            await rename(backupFile, filePath)
+            await rename(backupFile, safeFilePath)
           } catch (restoreError) {
             throw new AggregateError(
               [error, restoreError],

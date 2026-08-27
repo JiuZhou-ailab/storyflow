@@ -10,7 +10,7 @@ import {
   ensureDefaultWorkspacesDir,
   getDefaultWorkspacesDir,
 } from '@craft-agent/shared/workspaces'
-import type { ServerStatus, ServerHealth } from '@craft-agent/core/types'
+import { toWorkspaceInfo, type ServerStatus, type ServerHealth } from '@craft-agent/core/types'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import type { ServerHandlerContext } from '../../bootstrap/headless-start'
@@ -71,8 +71,7 @@ export function registerServerHandlers(
     const workspace = await sessionManager.registerProject(trimmed, rootPath)
     deps.platform.logger.info(`Created workspace "${trimmed}" at ${rootPath} (server:createWorkspace)`)
 
-    const { rootPath: _rp, createdAt: _ca, ...info } = workspace
-    return info
+    return toWorkspaceInfo(workspace)
   })
 
   // -----------------------------------------------------------------------

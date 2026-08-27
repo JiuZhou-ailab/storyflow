@@ -58,7 +58,7 @@ function setupSessionDir(workspaceRoot: string, session: StoredSession): string 
 
   // Write JSONL
   const jsonlPath = join(sessionsDir, 'session.jsonl')
-  writeSessionJsonl(jsonlPath, session)
+  writeSessionJsonl(jsonlPath, session, workspaceRoot)
 
   return sessionsDir
 }

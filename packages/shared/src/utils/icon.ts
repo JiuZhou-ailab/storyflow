@@ -128,12 +128,14 @@ function getExtensionFromUrl(url: string): string | null {
  * @param iconUrl - URL to download the icon from
  * @param context - Context for debug logging
  * @param filenameBase - Custom filename base (default: 'icon'). Saved as {filenameBase}.{ext}
+ * @param beforeWrite - Optional storage-boundary validation immediately before writing
  */
 export async function downloadIcon(
   targetDir: string,
   iconUrl: string,
   context: string = 'Icon',
-  filenameBase: string = 'icon'
+  filenameBase: string = 'icon',
+  beforeWrite?: (targetPath: string) => void,
 ): Promise<string | null> {
   debug(`[${context}] Downloading icon from:`, iconUrl);
 
@@ -167,6 +169,7 @@ export async function downloadIcon(
     // Read the response body and write to file
     const buffer = await response.arrayBuffer();
     const iconPath = join(targetDir, `${filenameBase}${ext}`);
+    beforeWrite?.(iconPath);
     writeFileSync(iconPath, Buffer.from(buffer));
 
     debug(`[${context}] Icon downloaded successfully:`, iconPath);

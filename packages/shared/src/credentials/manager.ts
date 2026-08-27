@@ -168,6 +168,46 @@ export class CredentialManager {
   }
 
   /**
+   * Delete a credential from every available backend and verify it is gone.
+   * Unlike delete(), this is reserved for explicit revocation and fails closed.
+   */
+  async deleteStrict(id: CredentialId): Promise<void> {
+    await this.ensureInitialized();
+    const account = credentialIdToAccount(id);
+    this.pendingReads.delete(account);
+
+    if (this.backends.length === 0) {
+      throw new Error(`Credential deletion could not be confirmed: no backend available for ${id.type}`);
+    }
+
+    const failures: unknown[] = [];
+    for (const backend of this.backends) {
+      try {
+        const existing = await backend.get(id);
+        if (!existing) continue;
+
+        if (!await backend.delete(id)) {
+          throw new Error(`${backend.name} did not delete ${id.type}`);
+        }
+        if (await backend.get(id)) {
+          throw new Error(`${backend.name} still contains ${id.type}`);
+        }
+        debug(`[CredentialManager] Strictly deleted ${id.type} from ${backend.name}`);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+
+    this.pendingReads.delete(account);
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        `Credential deletion could not be confirmed for ${id.type}`,
+      );
+    }
+  }
+
+  /**
    * List credentials matching a filter.
    * Automatically initializes if needed.
    */

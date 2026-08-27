@@ -12,7 +12,7 @@
  * Project callers pass the Host-owned projectId separately from the mutable root path.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'fs';
 import { homedir } from 'os';
 import { join, basename, dirname } from 'path';
 import { createHash, randomUUID } from 'crypto';
@@ -40,6 +40,7 @@ import {
   validateIconValue,
   findIconFile,
   downloadIcon,
+  ICON_EXTENSIONS,
   needsIconDownload,
   isIconUrl,
 } from '../utils/icon.ts';
@@ -185,7 +186,9 @@ function ensureOwnedSourceDirectory(rootPath: string, targetPath: string): strin
 
 function ensureOwnedSourceWriteTarget(rootPath: string, targetPath: string): void {
   ensureOwnedSourceDirectory(rootPath, dirname(targetPath));
-  if (existsSync(targetPath)) resolveOwnedSourcePath(rootPath, targetPath);
+  if (lstatSync(targetPath, { throwIfNoEntry: false })) {
+    resolveOwnedSourcePath(rootPath, targetPath);
+  }
 }
 
 function getSourcesPathForRoot(rootPath: string): string {
@@ -289,6 +292,7 @@ export function loadSourceConfig(
 ): FolderSourceConfig | null {
   const configPath = join(getSourcePath(workspaceRootPath, sourceSlug), 'config.json');
   if (!existsSync(configPath)) return null;
+  resolveOwnedSourcePath(workspaceRootPath, configPath);
 
   try {
     const config = readJsonFileSync<FolderSourceConfig>(configPath);
@@ -529,12 +533,18 @@ export function saveSourceGuide(
 // Icon Operations (uses shared utilities from utils/icon.ts)
 // ============================================================
 
+function findOwnedSourceIcon(rootPath: string, sourceDir: string): string | undefined {
+  const iconPath = findIconFile(sourceDir);
+  if (iconPath) resolveOwnedSourcePath(rootPath, iconPath);
+  return iconPath;
+}
+
 /**
  * Find icon file for a source
  * Returns absolute path to icon file or undefined
  */
 export function findSourceIcon(workspaceRootPath: string, sourceSlug: string): string | undefined {
-  return findIconFile(getSourcePath(workspaceRootPath, sourceSlug));
+  return findOwnedSourceIcon(workspaceRootPath, getSourcePath(workspaceRootPath, sourceSlug));
 }
 
 /**
@@ -549,7 +559,19 @@ export async function downloadSourceIcon(
   assertMutableSourceRoot(workspaceRootPath, sourceSlug);
   const sourceDir = getSourceWritePath(workspaceRootPath, sourceSlug);
   ensureOwnedSourceDirectory(workspaceRootPath, sourceDir);
-  return downloadIcon(sourceDir, iconUrl, 'Sources');
+  for (const ext of ICON_EXTENSIONS) {
+    const iconPath = join(sourceDir, `icon${ext}`);
+    if (lstatSync(iconPath, { throwIfNoEntry: false })) {
+      resolveOwnedSourcePath(workspaceRootPath, iconPath);
+    }
+  }
+  return downloadIcon(
+    sourceDir,
+    iconUrl,
+    'Sources',
+    'icon',
+    iconPath => ensureOwnedSourceWriteTarget(workspaceRootPath, iconPath),
+  );
 }
 
 /**
@@ -619,7 +641,7 @@ function loadSourceFromRoot(
     : 'global';
 
   // Pre-compute icon path for renderer (avoids fs access in browser)
-  const iconPath = findIconFile(folderPath);
+  const iconPath = findOwnedSourceIcon(sourceRootPath, folderPath);
 
   return {
     config,

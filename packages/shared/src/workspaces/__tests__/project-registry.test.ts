@@ -4,20 +4,25 @@
 
 import { describe, expect, it } from 'bun:test'
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { listSessions, loadSession } from '../../sessions/storage.ts'
+import { loadLabelConfig } from '../../labels/storage.ts'
+import { downloadStatusIcon, loadStatusConfig } from '../../statuses/storage.ts'
 import { rebasePathWithinProjectRoot } from '../paths.ts'
+import { getLegacyConflictRelativePath, loadWorkspaceConfig } from '../storage.ts'
 
 const REGISTRY_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'project-registry.ts')).href
 const CONFIG_STORAGE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'config', 'storage.ts')).href
@@ -101,6 +106,19 @@ function writeSessionHeader(rootPath: string, sessionId: string, header: Record<
 }
 
 describe('Project registry identity and locator', () => {
+  it('derives a legal Windows fallback path for legacy conflicts', () => {
+    expect(getLegacyConflictRelativePath(
+      String.raw`C:\project`,
+      String.raw`C:\project\sessions\conflict.txt`,
+      win32,
+    )).toBe(String.raw`sessions\conflict.txt`)
+    expect(() => getLegacyConflictRelativePath(
+      String.raw`C:\project`,
+      String.raw`C:\outside\conflict.txt`,
+      win32,
+    )).toThrow('outside the Project')
+  })
+
   it('keeps low-level Host registration free of filesystem initialization', () => {
     const parent = mkdtempSync(join(tmpdir(), 'storyflow-host-project-register-'))
     const configDir = join(parent, 'host')
@@ -428,6 +446,83 @@ describe('Project registry identity and locator', () => {
     }
   })
 
+  it('does not merge a legacy Session symlink into existing Project state', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-legacy-session-symlink-'))
+    const projectRoot = join(parent, 'project')
+    const outsideSessions = join(parent, 'outside-sessions')
+    mkdirSync(join(projectRoot, '.craft-agent', 'sessions'), { recursive: true })
+    mkdirSync(outsideSessions)
+    writeFileSync(join(projectRoot, 'config.json'), JSON.stringify({
+      id: 'directory-legacy', name: 'Legacy', slug: 'legacy', createdAt: 1, updatedAt: 1,
+    }))
+    writeFileSync(join(outsideSessions, 'keep.txt'), 'keep')
+    symlinkSync(outsideSessions, join(projectRoot, 'sessions'), 'dir')
+
+    try {
+      expect(loadWorkspaceConfig(projectRoot)).toBeNull()
+      expect(existsSync(join(projectRoot, 'config.json'))).toBeTrue()
+      expect(existsSync(join(projectRoot, '.craft-agent', 'config.json'))).toBeFalse()
+      expect(loadWorkspaceConfig(projectRoot)).toBeNull()
+      expect(readFileSync(join(outsideSessions, 'keep.txt'), 'utf8')).toBe('keep')
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('does not move legacy conflicts through a symlinked migration fallback', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-legacy-fallback-symlink-'))
+    const projectRoot = join(parent, 'project')
+    const outsideFallback = join(parent, 'outside-fallback')
+    mkdirSync(join(projectRoot, '.craft-agent', 'sessions'), { recursive: true })
+    mkdirSync(join(projectRoot, 'sessions'), { recursive: true })
+    mkdirSync(outsideFallback)
+    writeFileSync(join(projectRoot, 'config.json'), JSON.stringify({
+      id: 'directory-legacy', name: 'Legacy', slug: 'legacy', createdAt: 1, updatedAt: 1,
+    }))
+    writeFileSync(join(projectRoot, '.craft-agent', 'sessions', 'conflict.txt'), 'canonical')
+    writeFileSync(join(projectRoot, 'sessions', 'conflict.txt'), 'legacy')
+    symlinkSync(outsideFallback, join(projectRoot, '.craft-agent', 'legacy-root'), 'dir')
+
+    try {
+      expect(loadWorkspaceConfig(projectRoot)).toBeNull()
+      expect(existsSync(join(projectRoot, 'config.json'))).toBeTrue()
+      expect(readFileSync(join(projectRoot, 'sessions', 'conflict.txt'), 'utf8')).toBe('legacy')
+      expect(readdirSync(outsideFallback)).toEqual([])
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the legacy config until every state move succeeds', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-legacy-commit-marker-'))
+    const projectRoot = join(parent, 'project')
+    const fallbackRoot = join(projectRoot, '.craft-agent', 'legacy-root')
+    mkdirSync(join(projectRoot, '.craft-agent', 'sessions'), { recursive: true })
+    mkdirSync(join(projectRoot, 'sessions'), { recursive: true })
+    mkdirSync(fallbackRoot)
+    writeFileSync(join(projectRoot, 'config.json'), JSON.stringify({
+      id: 'directory-legacy', name: 'Legacy', slug: 'legacy', createdAt: 1, updatedAt: 1,
+    }))
+    writeFileSync(join(projectRoot, '.craft-agent', 'sessions', 'conflict.txt'), 'canonical')
+    writeFileSync(join(projectRoot, 'sessions', 'conflict.txt'), 'legacy')
+
+    chmodSync(fallbackRoot, 0o555)
+    try {
+      expect(loadWorkspaceConfig(projectRoot)).toBeNull()
+      expect(existsSync(join(projectRoot, 'config.json'))).toBeTrue()
+      expect(existsSync(join(projectRoot, '.craft-agent', 'config.json'))).toBeFalse()
+      expect(readFileSync(join(projectRoot, 'sessions', 'conflict.txt'), 'utf8')).toBe('legacy')
+    } finally {
+      chmodSync(fallbackRoot, 0o755)
+    }
+
+    try {
+      expect(loadWorkspaceConfig(projectRoot)?.id).toBe('directory-legacy')
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
   it('lets the unavailable-project relink flow verify a legacy same-path registration', () => {
     const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-relink-legacy-root-'))
     const configDir = join(parent, 'host')
@@ -536,6 +631,223 @@ describe('Project registry identity and locator', () => {
       )
       expect(response.error).toBeDefined()
       expect(readFileSync(join(outsideState, 'config.json'), 'utf8')).toBe(outsideConfig)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('does not initialize a new Project through a state-directory symlink', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-create-state-symlink-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const outsideState = join(parent, 'outside-state')
+    mkdirSync(projectRoot)
+    mkdirSync(outsideState)
+    symlinkSync(outsideState, join(projectRoot, '.craft-agent'), 'dir')
+    writeHostConfig(configDir, [])
+
+    try {
+      const response = runRegistry(
+        configDir,
+        `registry.registerLocalProject('Project', ${JSON.stringify(projectRoot)})`,
+      )
+      expect(response.error).toContain('symbolic link')
+      expect(readdirSync(outsideState)).toEqual([])
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a Project statuses directory symlink without touching its target', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-statuses-symlink-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const outsideStatuses = join(parent, 'outside-statuses')
+    const outsideConfigPath = join(outsideStatuses, 'config.json')
+    mkdirSync(join(projectRoot, '.craft-agent'), { recursive: true })
+    mkdirSync(outsideStatuses)
+    writeFileSync(outsideConfigPath, '{"keep":true}\n')
+    symlinkSync(outsideStatuses, join(projectRoot, '.craft-agent', 'statuses'), 'dir')
+    writeHostConfig(configDir, [])
+
+    try {
+      const response = runRegistry(
+        configDir,
+        `registry.registerLocalProject('Project', ${JSON.stringify(projectRoot)})`,
+      )
+      expect(response.error).toContain('symbolic link')
+      expect(existsSync(join(projectRoot, '.craft-agent', 'config.json'))).toBe(false)
+      const retry = runRegistry(
+        configDir,
+        `registry.registerLocalProject('Project', ${JSON.stringify(projectRoot)})`,
+      )
+      expect(retry.error).toContain('symbolic link')
+      expect(JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8')).workspaces).toEqual([])
+      expect(readFileSync(outsideConfigPath, 'utf8')).toBe('{"keep":true}\n')
+      expect(existsSync(join(outsideStatuses, 'icons'))).toBe(false)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a Project status-icons directory symlink without touching its target', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-status-icons-symlink-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const outsideIcons = join(parent, 'outside-icons')
+    const outsideIconPath = join(outsideIcons, 'keep.svg')
+    mkdirSync(join(projectRoot, '.craft-agent', 'statuses'), { recursive: true })
+    mkdirSync(outsideIcons)
+    writeFileSync(outsideIconPath, '<svg>keep</svg>')
+    symlinkSync(outsideIcons, join(projectRoot, '.craft-agent', 'statuses', 'icons'), 'dir')
+    writeHostConfig(configDir, [])
+
+    try {
+      const response = runRegistry(
+        configDir,
+        `registry.registerLocalProject('Project', ${JSON.stringify(projectRoot)})`,
+      )
+      expect(response.error).toContain('symbolic link')
+      expect(readFileSync(outsideIconPath, 'utf8')).toBe('<svg>keep</svg>')
+      expect(existsSync(join(outsideIcons, 'backlog.svg'))).toBe(false)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a broken Project status-config symlink without creating its target', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-status-config-symlink-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const outsideConfigPath = join(parent, 'outside', 'status-config.json')
+    mkdirSync(join(projectRoot, '.craft-agent', 'statuses'), { recursive: true })
+    mkdirSync(join(parent, 'outside'))
+    symlinkSync(outsideConfigPath, join(projectRoot, '.craft-agent', 'statuses', 'config.json'))
+    writeHostConfig(configDir, [])
+
+    try {
+      const response = runRegistry(
+        configDir,
+        `registry.registerLocalProject('Project', ${JSON.stringify(projectRoot)})`,
+      )
+      expect(response.error).toContain('symbolic link')
+      expect(existsSync(outsideConfigPath)).toBe(false)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a valid Project status-config symlink without reading outside the Project', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-status-config-read-symlink-'))
+    const projectRoot = join(parent, 'project')
+    const outsideConfigPath = join(parent, 'outside-status-config.json')
+    const outsideConfig = JSON.stringify({
+      version: 1,
+      statuses: [
+        { id: 'todo', label: 'Todo', category: 'open', isFixed: true, isDefault: true, order: 0 },
+        { id: 'done', label: 'Done', category: 'closed', isFixed: true, isDefault: false, order: 1 },
+        { id: 'cancelled', label: 'Cancelled', category: 'closed', isFixed: true, isDefault: false, order: 2 },
+        { id: 'outside-only', label: 'Outside only', category: 'open', isFixed: false, isDefault: false, order: 3 },
+      ],
+      defaultStatusId: 'todo',
+    })
+    mkdirSync(join(projectRoot, '.craft-agent', 'statuses'), { recursive: true })
+    writeFileSync(outsideConfigPath, outsideConfig)
+    symlinkSync(outsideConfigPath, join(projectRoot, '.craft-agent', 'statuses', 'config.json'))
+
+    try {
+      expect(loadStatusConfig(projectRoot).statuses.some(status => status.id === 'outside-only')).toBe(false)
+      expect(readFileSync(outsideConfigPath, 'utf8')).toBe(outsideConfig)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a status icon ID that would write outside the Project', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-status-icon-traversal-'))
+    const projectRoot = join(parent, 'project')
+    const outsideDir = join(parent, 'outside')
+    const outsideIconPath = join(outsideDir, 'escaped.svg')
+    mkdirSync(projectRoot)
+    mkdirSync(outsideDir)
+
+    try {
+      await expect(downloadStatusIcon(
+        projectRoot,
+        '../../../../outside/escaped',
+        'data:image/svg+xml,%3Csvg%2F%3E',
+      )).rejects.toThrow('status ID')
+      expect(existsSync(outsideIconPath)).toBe(false)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a Project labels directory symlink without touching its target', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-labels-symlink-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const outsideLabels = join(parent, 'outside-labels')
+    const outsideConfigPath = join(outsideLabels, 'config.json')
+    mkdirSync(join(projectRoot, '.craft-agent'), { recursive: true })
+    mkdirSync(outsideLabels)
+    writeFileSync(outsideConfigPath, '{"keep":true}\n')
+    symlinkSync(outsideLabels, join(projectRoot, '.craft-agent', 'labels'), 'dir')
+    writeHostConfig(configDir, [])
+
+    try {
+      const response = runRegistry(
+        configDir,
+        `registry.registerLocalProject('Project', ${JSON.stringify(projectRoot)})`,
+      )
+      expect(response.error).toContain('symbolic link')
+      expect(readFileSync(outsideConfigPath, 'utf8')).toBe('{"keep":true}\n')
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a broken Project label-config symlink without creating its target', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-label-config-symlink-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const outsideConfigPath = join(parent, 'outside', 'label-config.json')
+    mkdirSync(join(projectRoot, '.craft-agent', 'labels'), { recursive: true })
+    mkdirSync(join(parent, 'outside'))
+    symlinkSync(outsideConfigPath, join(projectRoot, '.craft-agent', 'labels', 'config.json'))
+    writeHostConfig(configDir, [])
+
+    try {
+      const response = runRegistry(
+        configDir,
+        `registry.registerLocalProject('Project', ${JSON.stringify(projectRoot)})`,
+      )
+      expect(response.error).toContain('symbolic link')
+      expect(existsSync(outsideConfigPath)).toBe(false)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a valid Project label-config symlink without reading outside the Project', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-label-config-read-symlink-'))
+    const projectRoot = join(parent, 'project')
+    const outsideConfigPath = join(parent, 'outside-label-config.json')
+    const outsideConfig = JSON.stringify({
+      version: 1,
+      labels: [{
+        id: 'outside-only',
+        name: 'Outside only',
+        color: { light: '#000000', dark: '#ffffff' },
+      }],
+    })
+    mkdirSync(join(projectRoot, '.craft-agent', 'labels'), { recursive: true })
+    writeFileSync(outsideConfigPath, outsideConfig)
+    symlinkSync(outsideConfigPath, join(projectRoot, '.craft-agent', 'labels', 'config.json'))
+
+    try {
+      expect(loadLabelConfig(projectRoot).labels.some(label => label.id === 'outside-only')).toBe(false)
+      expect(readFileSync(outsideConfigPath, 'utf8')).toBe(outsideConfig)
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }

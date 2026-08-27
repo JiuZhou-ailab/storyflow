@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { FREE_CONVERSATION_WORKSPACE_ID, RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import type { Workspace } from '@craft-agent/core/types'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -22,6 +23,7 @@ let catalogSkill: {
   origin: 'top-level'
 } | null = null
 let invalidated = false
+let lifecycleCalls = 0
 
 mock.module('@craft-agent/shared/workspaces', () => ({
   isFreeConversationWorkspaceId: (id: string) => id === FREE_CONVERSATION_WORKSPACE_ID,
@@ -62,7 +64,18 @@ function createHarness() {
     },
   }
   const deps: HandlerDeps = {
-    sessionManager: {} as HandlerDeps['sessionManager'],
+    sessionManager: {
+      withProjectLifecycle: async <T>(_projectId: string, work: (workspace: Workspace) => Promise<T>) => {
+        lifecycleCalls++
+        return work({
+          id: 'workspace-1',
+          name: 'Workspace',
+          rootPath: workspaceRootPath,
+          slug: 'workspace',
+          createdAt: 0,
+        })
+      },
+    } as HandlerDeps['sessionManager'],
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
     platform: {
       appRootPath: '/',
@@ -102,6 +115,7 @@ afterEach(() => {
   workspaceRootPath = ''
   catalogSkill = null
   invalidated = false
+  lifecycleCalls = 0
 })
 
 describe('Skills RPC catalog identity', () => {
@@ -152,6 +166,32 @@ describe('Skills RPC catalog identity', () => {
 
     expect(existsSync(skillPath)).toBe(false)
     expect(invalidated).toBe(true)
+    expect(lifecycleCalls).toBe(0)
+  })
+
+  it('locks only a top-level Project Skill deletion', async () => {
+    workspaceRootPath = mkdtempSync(join(tmpdir(), 'storyflow-project-skill-delete-'))
+    const skillPath = join(workspaceRootPath, '.pi', 'skills', 'project-skill')
+    const filePath = join(skillPath, 'SKILL.md')
+    mkdirSync(skillPath, { recursive: true })
+    writeFileSync(filePath, '---\nname: project-skill\ndescription: test\n---\n')
+    catalogSkill = {
+      slug: 'project-skill',
+      metadata: { name: 'project-skill', description: 'test' },
+      content: '',
+      path: skillPath,
+      filePath,
+      scope: 'project',
+      source: 'auto',
+      origin: 'top-level',
+    }
+    const { deleteSkill, ctx } = createHarness()
+
+    await deleteSkill(ctx, 'workspace-1', 'project-skill')
+
+    expect(existsSync(skillPath)).toBe(false)
+    expect(invalidated).toBe(true)
+    expect(lifecycleCalls).toBe(1)
   })
 
   it('refreshes the hidden Free Conversations catalog after deletion', async () => {
@@ -179,6 +219,7 @@ describe('Skills RPC catalog identity', () => {
       channel: RPC_CHANNELS.skills.CHANGED,
       args: [FREE_CONVERSATION_WORKSPACE_ID],
     })
+    expect(lifecycleCalls).toBe(0)
   })
 
   it('exports the resolved project Skill by its real directory slug', async () => {

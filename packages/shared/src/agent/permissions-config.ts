@@ -1,6 +1,6 @@
 // input: Bundled, workspace, and Source permission JSON files.
-// output: Validated merged permission rules and canonical endpoint decisions.
-// pos: Persistent configuration authority for Product Host permission checks.
+// output: Validated merged permission rules, ownership-safe persistence, and canonical endpoint decisions.
+// pos: Persistent configuration and Project filesystem trust authority for Product Host permission checks.
 
 /**
  * Safe Mode Configuration
@@ -15,17 +15,18 @@
  * Rules are additive - custom configs extend the defaults (more permissive).
  */
 
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, mkdirSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { debug } from '../utils/debug.ts';
 import { readJsonFileSync, safeJsonParse } from '../utils/files.ts';
 import { canonicalizeApiPath } from '../sources/api-path.ts';
 import { CONFIG_DIR } from '../config/paths.ts';
 import { getBundledAssetsDir } from '../utils/paths.ts';
-import { getSourcePath } from '../sources/storage.ts';
+import { getSourcePath, SHARED_AGENTS_ROOT_DIR } from '../sources/storage.ts';
 import { isValidPermissionsFile } from '../config/validators.ts';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
+import { ensureProjectOwnedDirectory, resolveProjectOwnedPath } from '../workspaces/paths.ts';
 import {
   SAFE_MODE_CONFIG,
   PermissionsConfigSchema,
@@ -438,6 +439,39 @@ export function validatePermissionsConfig(config: PermissionsConfigFile): string
 // Storage Functions
 // ============================================================
 
+function isGlobalPermissionsRoot(rootPath: string): boolean {
+  return rootPath === CONFIG_DIR || rootPath === SHARED_AGENTS_ROOT_DIR;
+}
+
+function resolveExistingPermissionsPath(rootPath: string, filePath: string): string | null {
+  if (!existsSync(filePath)) return null;
+  return isGlobalPermissionsRoot(rootPath)
+    ? filePath
+    : resolveProjectOwnedPath(rootPath, filePath);
+}
+
+function preparePermissionsWritePath(rootPath: string, filePath: string): string {
+  if (isGlobalPermissionsRoot(rootPath)) {
+    mkdirSync(dirname(filePath), { recursive: true });
+    return filePath;
+  }
+
+  ensureProjectOwnedDirectory(rootPath, dirname(filePath));
+  try {
+    lstatSync(filePath);
+    return resolveProjectOwnedPath(rootPath, filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return filePath;
+    throw error;
+  }
+}
+
+function parseRawPermissionsFile(filePath: string): PermissionsConfigFile | null {
+  const content = readFileSync(filePath, 'utf-8');
+  const result = PermissionsConfigSchema.safeParse(safeJsonParse(content));
+  return result.success ? result.data : null;
+}
+
 /**
  * Get path to workspace permissions.json
  */
@@ -456,8 +490,11 @@ export function getSourcePermissionsPath(workspaceRootPath: string, sourceSlug: 
  * Load workspace-level permissions config
  */
 export function loadWorkspacePermissionsConfig(workspaceRootPath: string): PermissionsCustomConfig | null {
-  const path = getWorkspacePermissionsPath(workspaceRootPath);
-  if (!existsSync(path)) return null;
+  const path = resolveExistingPermissionsPath(
+    workspaceRootPath,
+    getWorkspacePermissionsPath(workspaceRootPath),
+  );
+  if (!path) return null;
 
   try {
     const content = readFileSync(path, 'utf-8');
@@ -477,8 +514,11 @@ export function loadSourcePermissionsConfig(
   workspaceRootPath: string,
   sourceSlug: string
 ): PermissionsCustomConfig | null {
-  const path = getSourcePermissionsPath(workspaceRootPath, sourceSlug);
-  if (!existsSync(path)) return null;
+  const path = resolveExistingPermissionsPath(
+    workspaceRootPath,
+    getSourcePermissionsPath(workspaceRootPath, sourceSlug),
+  );
+  if (!path) return null;
 
   try {
     const content = readFileSync(path, 'utf-8');
@@ -501,12 +541,12 @@ export function loadSourcePermissionsConfig(
  * Returns null if the file doesn't exist.
  */
 export function loadRawWorkspacePermissions(workspaceRootPath: string): PermissionsConfigFile | null {
-  const filePath = getWorkspacePermissionsPath(workspaceRootPath);
-  if (!existsSync(filePath)) return null;
-  const content = readFileSync(filePath, 'utf-8');
-  const json = safeJsonParse(content);
-  const result = PermissionsConfigSchema.safeParse(json);
-  return result.success ? result.data : null;
+  const filePath = resolveExistingPermissionsPath(
+    workspaceRootPath,
+    getWorkspacePermissionsPath(workspaceRootPath),
+  );
+  if (!filePath) return null;
+  return parseRawPermissionsFile(filePath);
 }
 
 /**
@@ -514,20 +554,22 @@ export function loadRawWorkspacePermissions(workspaceRootPath: string): Permissi
  * Returns null if the file doesn't exist.
  */
 export function loadRawSourcePermissions(workspaceRootPath: string, sourceSlug: string): PermissionsConfigFile | null {
-  const filePath = getSourcePermissionsPath(workspaceRootPath, sourceSlug);
-  if (!existsSync(filePath)) return null;
-  const content = readFileSync(filePath, 'utf-8');
-  const json = safeJsonParse(content);
-  const result = PermissionsConfigSchema.safeParse(json);
-  return result.success ? result.data : null;
+  const filePath = resolveExistingPermissionsPath(
+    workspaceRootPath,
+    getSourcePermissionsPath(workspaceRootPath, sourceSlug),
+  );
+  if (!filePath) return null;
+  return parseRawPermissionsFile(filePath);
 }
 
 /**
  * Save a PermissionsConfigFile to the workspace permissions.json.
  */
 export function saveWorkspacePermissions(workspaceRootPath: string, config: PermissionsConfigFile): void {
-  const filePath = getWorkspacePermissionsPath(workspaceRootPath);
-  mkdirSync(workspaceRootPath, { recursive: true });
+  const filePath = preparePermissionsWritePath(
+    workspaceRootPath,
+    getWorkspacePermissionsPath(workspaceRootPath),
+  );
   writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
   permissionsConfigCache.invalidateWorkspace(workspaceRootPath);
 }
@@ -536,9 +578,10 @@ export function saveWorkspacePermissions(workspaceRootPath: string, config: Perm
  * Save a PermissionsConfigFile to a source permissions.json.
  */
 export function saveSourcePermissions(workspaceRootPath: string, sourceSlug: string, config: PermissionsConfigFile): void {
-  const filePath = getSourcePermissionsPath(workspaceRootPath, sourceSlug);
-  const sourceDir = getSourcePath(workspaceRootPath, sourceSlug);
-  mkdirSync(sourceDir, { recursive: true });
+  const filePath = preparePermissionsWritePath(
+    workspaceRootPath,
+    getSourcePermissionsPath(workspaceRootPath, sourceSlug),
+  );
   writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
   permissionsConfigCache.invalidateSource(workspaceRootPath, sourceSlug);
 }

@@ -38,7 +38,9 @@ function createFileHarness() {
   }
 
   const deps: HandlerDeps = {
-    sessionManager: {} as HandlerDeps['sessionManager'],
+    sessionManager: {
+      withProjectLifecycle: async <T>(_projectId: string, work: () => Promise<T>): Promise<T> => work(),
+    } as unknown as HandlerDeps['sessionManager'],
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
     platform: {
       appRootPath: '/',

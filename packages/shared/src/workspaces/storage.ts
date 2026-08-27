@@ -19,7 +19,7 @@ import {
   rmSync,
   statSync,
 } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, isAbsolute, join, relative } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
@@ -45,6 +45,7 @@ import {
   getWorkspaceConfigPath,
   getWorkspaceAgentsPath,
   getWorkspaceClaudePath,
+  getWorkspaceLabelConfigPath,
   getWorkspaceLabelsPath,
   getWorkspaceNoticePath,
   getWorkspacePackLockPath,
@@ -57,7 +58,9 @@ import {
   getWorkspaceStatusIconsPath,
   getWorkspaceViewsPath,
   getWorkspaceWritingManifestPath,
+  assertSymlinkFreeTree,
   ensureProjectOwnedDirectory,
+  resolveProjectOwnedFilePath,
   resolveProjectOwnedPath,
 } from './paths.ts';
 
@@ -153,6 +156,7 @@ function hasLegacyWorkspaceConfig(rootPath: string): boolean {
   if (!existsSync(legacyConfigPath)) return false;
 
   try {
+    resolveProjectOwnedPath(rootPath, legacyConfigPath);
     return isWorkspaceConfigLike(JSON.parse(readFileSync(legacyConfigPath, 'utf-8')));
   } catch {
     return false;
@@ -164,6 +168,7 @@ function hasLegacyWritingManifest(rootPath: string): boolean {
   if (!existsSync(manifestPath)) return false;
 
   try {
+    resolveProjectOwnedPath(rootPath, manifestPath);
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as Record<string, unknown>;
     return manifest.schemaVersion === 1 && typeof manifest.type === 'string';
   } catch {
@@ -202,21 +207,54 @@ function uniqueLegacyStatePath(rootPath: string, name: string): string {
   return candidate;
 }
 
+export function getLegacyConflictRelativePath(
+  rootPath: string,
+  sourcePath: string,
+  pathApi: {
+    relative(from: string, to: string): string;
+    isAbsolute(path: string): boolean;
+  } = { relative, isAbsolute },
+): string {
+  const candidate = pathApi.relative(rootPath, sourcePath);
+  if (!candidate || /^\.\.(?:[\\/]|$)/.test(candidate) || pathApi.isAbsolute(candidate)) {
+    throw new Error(`Legacy conflict path is outside the Project: ${sourcePath}`);
+  }
+  return candidate;
+}
+
 function moveLegacyWorkspaceConflict(rootPath: string, sourcePath: string): void {
-  const relativePath = sourcePath.startsWith(`${rootPath}/`)
-    ? sourcePath.slice(rootPath.length + 1)
-    : sourcePath;
+  const relativePath = getLegacyConflictRelativePath(rootPath, sourcePath);
+  ensureProjectOwnedDirectory(rootPath, join(getWorkspaceStatePath(rootPath), 'legacy-root'));
   const fallbackPath = uniqueLegacyStatePath(rootPath, relativePath);
-  mkdirSync(dirname(fallbackPath), { recursive: true });
+  ensureProjectOwnedDirectory(rootPath, dirname(fallbackPath));
+  resolveProjectOwnedFilePath(rootPath, fallbackPath);
   renameSync(sourcePath, fallbackPath);
 }
 
+function assertLegacyWorkspaceMigrationSafe(
+  rootPath: string,
+  moves: ReadonlyArray<readonly [string, string]>,
+): void {
+  const paths = new Set([
+    ...moves.flat(),
+    join(getWorkspaceStatePath(rootPath), 'legacy-root'),
+  ]);
+  for (const path of paths) {
+    resolveProjectOwnedFilePath(rootPath, path);
+    if (existsSync(path)) assertSymlinkFreeTree(resolveProjectOwnedPath(rootPath, path));
+  }
+}
+
 function mergeLegacyDirectory(rootPath: string, sourceDir: string, targetDir: string): void {
-  mkdirSync(targetDir, { recursive: true });
+  sourceDir = resolveProjectOwnedPath(rootPath, sourceDir);
+  targetDir = ensureProjectOwnedDirectory(rootPath, targetDir);
 
   for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
-    const sourcePath = join(sourceDir, entry.name);
-    const targetPath = join(targetDir, entry.name);
+    const sourcePath = resolveProjectOwnedPath(rootPath, join(sourceDir, entry.name));
+    const targetCandidate = join(targetDir, entry.name);
+    const targetPath = existsSync(targetCandidate)
+      ? resolveProjectOwnedPath(rootPath, targetCandidate)
+      : targetCandidate;
 
     if (!existsSync(targetPath)) {
       renameSync(sourcePath, targetPath);
@@ -240,6 +278,9 @@ function mergeLegacyDirectory(rootPath: string, sourceDir: string, targetDir: st
 
 function moveLegacyWorkspaceStatePath(rootPath: string, sourcePath: string, targetPath: string): void {
   if (!existsSync(sourcePath)) return;
+  sourcePath = resolveProjectOwnedPath(rootPath, sourcePath);
+  if (existsSync(targetPath)) targetPath = resolveProjectOwnedPath(rootPath, targetPath);
+  else ensureProjectOwnedDirectory(rootPath, dirname(targetPath));
 
   if (existsSync(targetPath)) {
     if (isDirectoryPath(sourcePath) && isDirectoryPath(targetPath)) {
@@ -255,7 +296,6 @@ function moveLegacyWorkspaceStatePath(rootPath: string, sourcePath: string, targ
     return;
   }
 
-  mkdirSync(dirname(targetPath), { recursive: true });
   renameSync(sourcePath, targetPath);
 }
 
@@ -284,26 +324,57 @@ function restoreMergeableLegacyRootState(rootPath: string): void {
 
 function migrateLegacyWorkspaceState(rootPath: string): void {
   const hasLegacyConfig = hasLegacyWorkspaceConfig(rootPath);
-  const hasWritingManifest = hasLegacyWritingManifest(rootPath);
+  const hasWritingManifest = hasLegacyConfig && hasLegacyWritingManifest(rootPath);
+  const configMove = hasLegacyConfig
+    ? [join(rootPath, 'config.json'), getWorkspaceConfigPath(rootPath)] as const
+    : null;
+  const configMoves: Array<readonly [string, string]> = hasLegacyConfig
+    ? [
+        [join(rootPath, 'sources'), getWorkspaceSourcesPath(rootPath)],
+        [join(rootPath, 'sessions'), getWorkspaceSessionsPath(rootPath)],
+        [join(rootPath, 'labels'), getWorkspaceLabelsPath(rootPath)],
+        [join(rootPath, 'statuses/config.json'), getWorkspaceStatusConfigPath(rootPath)],
+        [join(rootPath, 'statuses/icons'), getWorkspaceStatusIconsPath(rootPath)],
+        [join(rootPath, 'views.json'), getWorkspaceViewsPath(rootPath)],
+      ]
+    : [];
+  const writingMoves: Array<readonly [string, string]> = hasWritingManifest
+    ? [
+        [join(rootPath, 'craft-writing.json'), getWorkspaceWritingManifestPath(rootPath)],
+        [join(rootPath, 'craft-pack-lock.json'), getWorkspacePackLockPath(rootPath)],
+        [join(rootPath, 'AGENTS.md'), getWorkspaceAgentsPath(rootPath)],
+        [join(rootPath, 'CLAUDE.md'), getWorkspaceClaudePath(rootPath)],
+        [join(rootPath, 'README.md'), getWorkspaceReadmePath(rootPath)],
+      ]
+    : [];
+  if (hasWritingManifest) {
+    for (const entry of readdirSync(rootPath, { withFileTypes: true })) {
+      if (entry.isFile() && /^NOTICE-.+\.md$/.test(entry.name)) {
+        writingMoves.push([join(rootPath, entry.name), getWorkspaceNoticePath(rootPath, entry.name)]);
+      }
+    }
+  }
+  const legacyRoot = join(getWorkspaceStatePath(rootPath), 'legacy-root');
+  const restoreMoves = [
+    [join(legacyRoot, 'sessions'), getWorkspaceSessionsPath(rootPath)],
+    [join(legacyRoot, 'sources'), getWorkspaceSourcesPath(rootPath)],
+  ] as const;
+
+  assertLegacyWorkspaceMigrationSafe(rootPath, [
+    ...configMoves,
+    ...writingMoves,
+    ...restoreMoves,
+    ...(configMove ? [configMove] : []),
+  ]);
   if (!hasLegacyConfig && !hasWritingManifest) {
     restoreMergeableLegacyRootState(rootPath);
     return;
   }
 
-  mkdirSync(getWorkspaceStatePath(rootPath), { recursive: true });
+  ensureProjectOwnedDirectory(rootPath, getWorkspaceStatePath(rootPath));
 
   if (hasLegacyConfig) {
-    for (const [source, target] of [
-      ['config.json', getWorkspaceConfigPath(rootPath)],
-      ['sources', getWorkspaceSourcesPath(rootPath)],
-      ['sessions', getWorkspaceSessionsPath(rootPath)],
-      ['labels', getWorkspaceLabelsPath(rootPath)],
-      ['statuses/config.json', getWorkspaceStatusConfigPath(rootPath)],
-      ['statuses/icons', getWorkspaceStatusIconsPath(rootPath)],
-      ['views.json', getWorkspaceViewsPath(rootPath)],
-    ] as const) {
-      moveLegacyWorkspaceStatePath(rootPath, join(rootPath, source), target);
-    }
+    for (const [source, target] of configMoves) moveLegacyWorkspaceStatePath(rootPath, source, target);
 
     try {
       if (existsSync(join(rootPath, 'statuses')) && readdirSync(join(rootPath, 'statuses')).length === 0) {
@@ -314,28 +385,12 @@ function migrateLegacyWorkspaceState(rootPath: string): void {
     }
   }
 
-  if (!hasWritingManifest) {
-    restoreMergeableLegacyRootState(rootPath);
-    return;
-  }
-
-  for (const [source, target] of [
-    ['craft-writing.json', getWorkspaceWritingManifestPath(rootPath)],
-    ['craft-pack-lock.json', getWorkspacePackLockPath(rootPath)],
-    ['AGENTS.md', getWorkspaceAgentsPath(rootPath)],
-    ['CLAUDE.md', getWorkspaceClaudePath(rootPath)],
-    ['README.md', getWorkspaceReadmePath(rootPath)],
-  ] as const) {
-    moveLegacyWorkspaceStatePath(rootPath, join(rootPath, source), target);
-  }
-
-  for (const entry of readdirSync(rootPath, { withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    if (!/^NOTICE-.+\.md$/.test(entry.name)) continue;
-    moveLegacyWorkspaceStatePath(rootPath, join(rootPath, entry.name), getWorkspaceNoticePath(rootPath, entry.name));
+  if (hasWritingManifest) {
+    for (const [source, target] of writingMoves) moveLegacyWorkspaceStatePath(rootPath, source, target);
   }
 
   restoreMergeableLegacyRootState(rootPath);
+  if (configMove) moveLegacyWorkspaceStatePath(rootPath, configMove[0], configMove[1]);
 }
 
 /**
@@ -568,11 +623,26 @@ export function createWorkspaceAtPath(
 
   // Create workspace directory structure
   mkdirSync(rootPath, { recursive: true });
-  mkdirSync(getWorkspaceStatePath(rootPath), { recursive: true });
-  mkdirSync(getWorkspaceSourcesPath(rootPath), { recursive: true });
-  mkdirSync(getWorkspaceSessionsPath(rootPath), { recursive: true });
-  // Save config
-  saveWorkspaceConfig(rootPath, config);
+  const statusDir = dirname(getWorkspaceStatusConfigPath(rootPath));
+  for (const targetPath of [
+    getWorkspaceStatePath(rootPath),
+    getWorkspaceConfigPath(rootPath),
+    getWorkspaceSourcesPath(rootPath),
+    getWorkspaceSessionsPath(rootPath),
+    statusDir,
+    getWorkspaceStatusConfigPath(rootPath),
+    getWorkspaceStatusIconsPath(rootPath),
+    getWorkspaceLabelsPath(rootPath),
+    getWorkspaceLabelConfigPath(rootPath),
+  ]) {
+    resolveProjectOwnedFilePath(rootPath, targetPath);
+  }
+  for (const targetDir of [statusDir, getWorkspaceLabelsPath(rootPath)]) {
+    if (existsSync(targetDir)) assertSymlinkFreeTree(resolveProjectOwnedPath(rootPath, targetDir));
+  }
+  ensureProjectOwnedDirectory(rootPath, getWorkspaceStatePath(rootPath));
+  ensureProjectOwnedDirectory(rootPath, getWorkspaceSourcesPath(rootPath));
+  ensureProjectOwnedDirectory(rootPath, getWorkspaceSessionsPath(rootPath));
 
   // Initialize status configuration with defaults
   saveStatusConfig(rootPath, getDefaultStatusConfig());
@@ -580,6 +650,9 @@ export function createWorkspaceAtPath(
 
   // Initialize label configuration with defaults (two nested groups + valued labels)
   saveLabelConfig(rootPath, getDefaultLabelConfig());
+
+  // The canonical config is the initialization commit marker, so write it last.
+  saveWorkspaceConfig(rootPath, config);
 
   return config;
 }

@@ -12,7 +12,7 @@
  * They are never persisted on sessions — purely runtime-evaluated.
  */
 
-import { existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, statSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import type { ViewConfig } from '@craft-agent/shared/views';
 import { debug, readJsonFileSync } from '@craft-agent/shared/utils';
@@ -20,6 +20,8 @@ import {
   getExistingWorkspaceLabelConfigPath,
   getExistingWorkspaceViewsPath,
   getWorkspaceViewsPath,
+  ensureProjectOwnedDirectory,
+  resolveProjectOwnedPath,
 } from '@craft-agent/shared/workspaces';
 
 /**
@@ -37,6 +39,16 @@ const MAX_VIEW_NAME_LENGTH = 256;
 const MAX_VIEW_DESCRIPTION_LENGTH = 1024;
 const MAX_VIEW_EXPRESSION_LENGTH = 4096;
 const MAX_VIEWS_FILE_BYTES = 1024 * 1024;
+
+function assertProjectOwnedEntryIfPresent(workspaceRootPath: string, path: string): void {
+  try {
+    lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  resolveProjectOwnedPath(workspaceRootPath, path);
+}
 
 function validateViews(views: unknown): asserts views is ViewConfig[] {
   if (!Array.isArray(views) || views.length > MAX_VIEWS) {
@@ -126,6 +138,7 @@ export function loadViewsConfig(workspaceRootPath: string): ViewsConfig {
   }
 
   try {
+    resolveProjectOwnedPath(workspaceRootPath, configPath);
     if (statSync(configPath).size > MAX_VIEWS_FILE_BYTES) {
       throw new Error('Views config exceeds 1 MB');
     }
@@ -148,7 +161,8 @@ export function saveViewsConfig(
   const configPath = getWorkspaceViewsPath(workspaceRootPath);
 
   try {
-    mkdirSync(dirname(configPath), { recursive: true });
+    ensureProjectOwnedDirectory(workspaceRootPath, dirname(configPath));
+    assertProjectOwnedEntryIfPresent(workspaceRootPath, configPath);
     writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
   } catch (error) {
     debug('[saveViewsConfig] Failed to save config:', error);
@@ -189,6 +203,7 @@ function migrateFromSmartLabels(workspaceRootPath: string): ViewsConfig | null {
   if (!existsSync(labelsConfigPath)) return null;
 
   try {
+    resolveProjectOwnedPath(workspaceRootPath, labelsConfigPath);
     const labelsConfig = readJsonFileSync<Record<string, any>>(labelsConfigPath);
     if (!labelsConfig.smartLabels || !Array.isArray(labelsConfig.smartLabels)) return null;
 
@@ -203,6 +218,7 @@ function migrateFromSmartLabels(workspaceRootPath: string): ViewsConfig | null {
 
     // Remove smartLabels from labels config to avoid confusion
     delete labelsConfig.smartLabels;
+    resolveProjectOwnedPath(workspaceRootPath, labelsConfigPath);
     writeFileSync(labelsConfigPath, JSON.stringify(labelsConfig, null, 2), 'utf-8');
 
     return config;

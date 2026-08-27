@@ -4,7 +4,7 @@
 
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getSourceCredentialManager, loadSource } from '@craft-agent/shared/sources'
-import { isFreeConversationWorkspaceId, resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
+import { isFreeConversationWorkspaceId } from '@craft-agent/shared/workspaces'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import type {
@@ -23,25 +23,23 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
   // Export workspace resources to a portable bundle
   server.handle(
     RPC_CHANNELS.resources.EXPORT,
-    async (_ctx, workspaceId: string, options: ExportResourcesOptions) => {
-      const workspace = resolveRuntimeWorkspace(workspaceId)
-      if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    async (_ctx, workspaceId: string, options: ExportResourcesOptions) =>
+      deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
+        const { exportResources } = await import('@craft-agent/shared/resources')
+        const { getPiUserSkillsDir } = await import('@craft-agent/shared/skills')
+        const skillsRootPath = getPiUserSkillsDir()
+        const result = exportResources(workspace.rootPath, options, skillsRootPath)
 
-      const { exportResources } = await import('@craft-agent/shared/resources')
-      const { getPiUserSkillsDir } = await import('@craft-agent/shared/skills')
-      const skillsRootPath = getPiUserSkillsDir()
-      const result = exportResources(workspace.rootPath, options, skillsRootPath)
+        deps.platform.logger?.info(
+          `RESOURCES_EXPORT: Exported from ${workspaceId}: ` +
+          `${result.bundle.resources.sources?.length ?? 0} sources, ` +
+          `${result.bundle.resources.skills?.length ?? 0} skills, ` +
+          `${result.bundle.resources.automations?.length ?? 0} automations` +
+          (result.warnings.length > 0 ? ` (${result.warnings.length} warnings)` : ''),
+        )
 
-      deps.platform.logger?.info(
-        `RESOURCES_EXPORT: Exported from ${workspaceId}: ` +
-        `${result.bundle.resources.sources?.length ?? 0} sources, ` +
-        `${result.bundle.resources.skills?.length ?? 0} skills, ` +
-        `${result.bundle.resources.automations?.length ?? 0} automations` +
-        (result.warnings.length > 0 ? ` (${result.warnings.length} warnings)` : ''),
-      )
-
-      return result
-    },
+        return result
+      }),
   )
 
   // Import a resource bundle into a workspace
@@ -53,10 +51,7 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       bundle: ResourceBundle,
       mode: ResourceImportMode,
       options: ResourceImportOptions = {},
-    ) => {
-      const workspace = resolveRuntimeWorkspace(workspaceId)
-      if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
-
+    ) => deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
       const hasSkills = Boolean(bundle.resources.skills?.length)
       if (hasSkills && options.skillScope !== 'project' && options.skillScope !== 'user') {
         throw new Error('Skill import requires an explicit project or user scope')
@@ -100,6 +95,6 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       }
 
       return result
-    },
+    }),
   )
 }

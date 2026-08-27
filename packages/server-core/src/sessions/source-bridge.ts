@@ -4,7 +4,7 @@
 
 import { perf } from '@craft-agent/shared/utils'
 import type { Workspace } from '@craft-agent/shared/config'
-import { isFreeConversationWorkspaceId, isLocalMcpEnabled } from '@craft-agent/shared/workspaces'
+import { isFreeConversationWorkspaceId, isLocalMcpEnabled, resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
 import {
   getSourceCredentialManager,
   getSourceServerBuilder,
@@ -29,8 +29,11 @@ export async function buildServersFromSources(
   summarize?: SummarizeCallback,
   workspace?: Pick<Workspace, 'id' | 'rootPath' | 'localMcpEnabled' | 'defaultEnabledSourceRefs'>,
 ) {
-  const resolvedSources = workspace && !isFreeConversationWorkspaceId(workspace.id)
-    ? sources.filter(source => isSourceHostGranted(workspace.defaultEnabledSourceRefs, source))
+  const currentWorkspace = workspace && !isFreeConversationWorkspaceId(workspace.id)
+    ? resolveRuntimeWorkspace(workspace.id) ?? workspace
+    : workspace
+  const resolvedSources = currentWorkspace && !isFreeConversationWorkspaceId(currentWorkspace.id)
+    ? sources.filter(source => isSourceHostGranted(currentWorkspace.defaultEnabledSourceRefs, source))
     : sources
   const span = perf.span('sources.buildServers', { count: resolvedSources.length })
   const credManager = getSourceCredentialManager()
@@ -76,8 +79,8 @@ export async function buildServersFromSources(
   }
 
   // Pass sessionPath to enable saving large API responses to session folder
-  const allowProjectStdio = workspace
-    ? isLocalMcpEnabled(workspace.rootPath, workspace.localMcpEnabled)
+  const allowProjectStdio = currentWorkspace
+    ? isLocalMcpEnabled(currentWorkspace.rootPath, currentWorkspace.localMcpEnabled)
     : false
   const result = await serverBuilder.buildAll(
     sourcesWithCreds,

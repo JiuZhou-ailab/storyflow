@@ -119,8 +119,15 @@ async function main(): Promise<void> {
       }`,
       [fixture.workspaceRoot],
     )
-    assert.equal(version.created, true)
     assert.ok(version.commitHash)
+    const versionedContent = await callOn<string | null>(
+      app,
+      `async function (rootPath, commitHash) {
+        return await window.electronAPI.readWorkspaceFileAtVersion(rootPath, commitHash, 'README.md')
+      }`,
+      [fixture.workspaceRoot, version.commitHash],
+    )
+    assert.equal(versionedContent, AGENT_EDIT)
     assert.equal(git(fixture.workspaceRoot, 'rev-parse', 'HEAD'), userHeadBefore)
     assert.equal(git(fixture.workspaceRoot, 'diff', '--cached', '--binary'), userIndexBefore)
     assert.match(git(fixture.workspaceRoot, 'status', '--short'), /M README\.md/)

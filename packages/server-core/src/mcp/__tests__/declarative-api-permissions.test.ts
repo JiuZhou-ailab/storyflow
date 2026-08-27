@@ -58,7 +58,10 @@ describe('declarative API permissions', () => {
     const pool = new McpClientPool()
 
     try {
-      await pool.connectInProcess('source', server)
+      await pool.connectInProcess('source', {
+        ...server,
+        capabilityRef: 'workspace:source:test-definition',
+      })
       const apiOperation = pool.getProxyToolPermission('mcp__source__mutate', { id: '..' })
       expect(apiOperation).toEqual({ method: 'POST', path: '/delete' })
       expect(pool.getProxyToolPermission('mcp__source__mutate', {})).toEqual({
@@ -101,7 +104,10 @@ describe('declarative API permissions', () => {
     const pool = new McpClientPool()
 
     try {
-      await pool.connectInProcess('source', server)
+      await pool.connectInProcess('source', {
+        ...server,
+        capabilityRef: 'workspace:source:test-definition',
+      })
       const apiOperation = pool.getProxyToolPermission('mcp__source__mutate', {})
       expect(apiOperation).toEqual({ method: 'POST', path: '/delete' })
       expect(shouldAllowToolInMode(

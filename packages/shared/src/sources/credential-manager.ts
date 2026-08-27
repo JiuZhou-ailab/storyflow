@@ -65,10 +65,11 @@ import { debug } from '../utils/debug.ts';
 import { basename } from 'path';
 import { loadStoredConfig } from '../config/storage.ts';
 import {
-  markSourceAuthenticated,
+  getSourceDefinitionIdentity,
   loadSourceConfig,
   saveSourceConfig,
   updateSourceConnectionState,
+  type SourceConnectionStateUpdate,
 } from './storage.ts';
 
 /**
@@ -100,8 +101,14 @@ export type ApiCredential = string | BasicAuthCredential | MultiHeaderCredential
 export interface SourceCredentialManagerStorage {
   loadSourceConfig: typeof loadSourceConfig;
   saveSourceConfig: typeof saveSourceConfig;
-  markSourceAuthenticated: typeof markSourceAuthenticated;
   updateSourceConnectionState: typeof updateSourceConnectionState;
+}
+
+export class StaleSourceDefinitionError extends Error {
+  constructor(sourceSlug: string) {
+    super(`Source definition is no longer current: ${sourceSlug}`);
+    this.name = 'StaleSourceDefinitionError';
+  }
 }
 
 /**
@@ -146,7 +153,6 @@ export class SourceCredentialManager {
     this.storage = {
       loadSourceConfig,
       saveSourceConfig,
-      markSourceAuthenticated,
       updateSourceConnectionState,
       ...storage,
     };
@@ -162,8 +168,55 @@ export class SourceCredentialManager {
   async save(source: LoadedSource, credential: StoredCredential): Promise<void> {
     const credentialId = this.getCredentialId(source);
     const manager = getCredentialManager();
+
+    this.assertCurrentDefinition(source);
     await manager.set(credentialId, credential);
+
+    try {
+      this.assertCurrentDefinition(source);
+    } catch (definitionError) {
+      try {
+        if (!await manager.delete(credentialId)) {
+          throw new Error(`Credential cleanup could not be confirmed: ${source.config.slug}`);
+        }
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [definitionError, cleanupError],
+          `Source definition changed while saving credentials and cleanup failed: ${source.config.slug}`,
+        );
+      }
+      throw definitionError;
+    }
+
     debug(`[SourceCredentialManager] Saved ${credentialId.type} for ${source.config.slug}`);
+  }
+
+  private assertCurrentDefinition(source: LoadedSource): void {
+    if (!this.isCurrentDefinition(source)) {
+      throw new StaleSourceDefinitionError(source.config.slug);
+    }
+  }
+
+  private isCurrentDefinition(source: LoadedSource): boolean {
+    const currentConfig = this.storage.loadSourceConfig(
+      source.workspaceRootPath,
+      source.config.slug,
+    );
+    return !!currentConfig
+      && currentConfig.slug === source.config.slug
+      && getSourceDefinitionIdentity(currentConfig) === source.definitionIdentity;
+  }
+
+  private updateConnectionStateIfCurrent(
+    source: LoadedSource,
+    update: SourceConnectionStateUpdate,
+  ): boolean {
+    if (!this.isCurrentDefinition(source)) return false;
+    return this.storage.updateSourceConnectionState(
+      source.workspaceRootPath,
+      source.config.slug,
+      update,
+    );
   }
 
   /**
@@ -250,27 +303,39 @@ export class SourceCredentialManager {
   /** Remove every auth representation owned by the exact Source definition. */
   async deleteAll(source: LoadedSource): Promise<boolean> {
     const manager = getCredentialManager();
+    const credentialIds = this.getAllCredentialIds(source);
+    const results = await Promise.all(credentialIds.map(id => manager.delete(id)));
+    return results.some(Boolean);
+  }
+
+  /** Delete and verify every current and legacy auth representation for explicit revocation. */
+  async deleteAllStrict(source: LoadedSource): Promise<void> {
+    const manager = getCredentialManager();
+    // One backend may store every credential in a single read-modify-write file.
+    for (const credentialId of this.getAllCredentialIds(source)) {
+      await manager.deleteStrict(credentialId);
+    }
+  }
+
+  private getAllCredentialIds(source: LoadedSource): CredentialId[] {
     const scope = {
       workspaceId: source.workspaceId,
       sourceId: this.getCredentialSourceId(source),
     };
     const legacyWorkspaceId = this.getUniqueLegacyWorkspaceId(source);
-    const results = await Promise.all(
-      SOURCE_CREDENTIAL_TYPES.flatMap(type => [
-        manager.delete({ type, ...scope }),
-        manager.delete({
-          type,
-          workspaceId: source.workspaceId,
-          sourceId: source.config.slug,
-        }),
-        ...(legacyWorkspaceId ? [manager.delete({
-          type,
-          workspaceId: legacyWorkspaceId,
-          sourceId: source.config.slug,
-        })] : []),
-      ]),
-    );
-    return results.some(Boolean);
+    return SOURCE_CREDENTIAL_TYPES.flatMap(type => [
+      { type, ...scope },
+      {
+        type,
+        workspaceId: source.workspaceId,
+        sourceId: source.config.slug,
+      },
+      ...(legacyWorkspaceId ? [{
+        type,
+        workspaceId: legacyWorkspaceId,
+        sourceId: source.config.slug,
+      }] : []),
+    ]);
   }
 
   /**
@@ -429,20 +494,42 @@ export class SourceCredentialManager {
    */
   markSourceNeedsReauth(source: LoadedSource, errorMessage: string): void {
     try {
-      const updated = this.storage.updateSourceConnectionState(
-        source.workspaceRootPath,
-        source.config.slug,
-        {
-          isAuthenticated: false,
-          connectionStatus: 'needs_auth',
-          connectionError: errorMessage,
-        },
-      );
-      if (updated) {
-        debug(`[SourceCredentialManager] Marked ${source.config.slug} as needing re-auth: ${errorMessage}`);
+      const updated = this.updateConnectionStateIfCurrent(source, {
+        isAuthenticated: false,
+        connectionStatus: 'needs_auth',
+        connectionError: errorMessage,
+      });
+      if (!updated) {
+        debug(`[SourceCredentialManager] Skipped stale re-auth state for ${source.config.slug}`);
+        return;
       }
+      debug(`[SourceCredentialManager] Marked ${source.config.slug} as needing re-auth: ${errorMessage}`);
     } catch (error) {
       debug(`[SourceCredentialManager] Failed to mark ${source.config.slug} as needing re-auth:`, error);
+    }
+  }
+
+  /** Persist an explicit user revocation; unlike background refresh failures, this must fail closed. */
+  markSourceRevoked(source: LoadedSource): void {
+    this.assertCurrentDefinition(source);
+    if (!this.updateConnectionStateIfCurrent(source, {
+      isAuthenticated: false,
+      connectionStatus: 'needs_auth',
+      connectionError: 'Signed out by user',
+    })) {
+      throw new Error(`Failed to mark Source revoked: ${source.config.slug}`);
+    }
+  }
+
+  /** Mark only the exact Source definition that completed authentication. */
+  markSourceAuthenticated(source: LoadedSource): void {
+    this.assertCurrentDefinition(source);
+    if (!this.updateConnectionStateIfCurrent(source, {
+      isAuthenticated: true,
+      connectionStatus: 'connected',
+      connectionError: undefined,
+    })) {
+      throw new Error(`Failed to mark Source authenticated: ${source.config.slug}`);
     }
   }
 
@@ -646,8 +733,7 @@ export class SourceCredentialManager {
       clientSecret: result.oauthClientSecret,
     });
 
-    // Mark source as authenticated in config.json
-    this.storage.markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+    this.markSourceAuthenticated(source);
 
     debug(`[SourceCredentialManager] OAuth exchange+store complete for ${source.config.slug}`);
     return { success: true, email: result.email };
@@ -735,8 +821,7 @@ export class SourceCredentialManager {
         tokenType: tokens.tokenType,
       });
 
-      // Mark source as authenticated in config.json
-      this.storage.markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+      this.markSourceAuthenticated(source);
 
       return { success: true };
     } catch (error) {
@@ -810,8 +895,7 @@ export class SourceCredentialManager {
         clientSecret: result.clientSecret,
       });
 
-      // Mark source as authenticated in config.json
-      this.storage.markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+      this.markSourceAuthenticated(source);
 
       callbacks.onStatus(`${serviceName} authentication successful`);
       return { success: true, email: result.email };
@@ -875,8 +959,7 @@ export class SourceCredentialManager {
         expiresAt: result.expiresAt,
       });
 
-      // Mark source as authenticated in config.json
-      this.storage.markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+      this.markSourceAuthenticated(source);
 
       callbacks.onStatus(`${serviceName} authentication successful`);
       // Use teamName as the identifier (similar to email for Google)
@@ -947,8 +1030,7 @@ export class SourceCredentialManager {
         expiresAt: result.expiresAt,
       });
 
-      // Mark source as authenticated in config.json
-      this.storage.markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+      this.markSourceAuthenticated(source);
 
       callbacks.onStatus(`${serviceName} authentication successful`);
       return { success: true, email: result.email };

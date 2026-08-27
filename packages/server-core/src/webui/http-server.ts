@@ -33,6 +33,7 @@ import {
 } from './auth'
 import { generateCallbackPage } from '@craft-agent/shared/auth'
 import type { PlatformServices } from '../runtime/platform'
+import type { ISessionManager } from '../handlers/session-manager-interface'
 import { FeishuLoginService, type FeishuAuthConfig } from './feishu-auth'
 import { NeonAuthService, type NeonAuthConfig, type NeonAuthIdentity } from './neon-auth'
 
@@ -134,9 +135,13 @@ function resolveRequestOrigin(req: Request): string {
 
 /** Dependencies for the /api/oauth/callback HTTP route (server-side OAuth completion). */
 export interface OAuthCallbackDeps {
-  flowStore: { getByState: (state: string) => any; remove: (state: string) => void }
+  flowStore: {
+    getByState: (state: string) => any
+    claim: (state: string) => any
+    remove: (state: string) => void
+  }
   credManager: { exchangeAndStore: (...args: any[]) => Promise<any> }
-  sessionManager: { completeAuthRequest: (...args: any[]) => Promise<void> }
+  sessionManager: Pick<ISessionManager, 'completeAuthRequest' | 'withProjectOperation'>
   pushSourcesChanged: (workspaceId: string) => void
 }
 

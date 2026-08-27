@@ -120,7 +120,7 @@ describe('PiAgentHost', () => {
 
     it('should track source servers', async () => {
       await agent.setSourceServers(
-        { 'source-1': { type: 'http', url: 'http://test' } },
+        { 'source-1': { type: 'http', capabilityRef: 'workspace:source-1:test', url: 'http://test' } },
         { 'source-2': {} },
         ['source-1', 'source-2']
       );
@@ -131,7 +131,7 @@ describe('PiAgentHost', () => {
 
     it('should check if source is active', async () => {
       await agent.setSourceServers(
-        { 'active-source': { type: 'http', url: 'http://test' } },
+        { 'active-source': { type: 'http', capabilityRef: 'workspace:active-source:test', url: 'http://test' } },
         {},
         ['active-source']
       );

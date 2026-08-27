@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { getSourceDefinitionIdentity } from '@craft-agent/shared/sources'
+import { runIsolatedJson } from './isolated-test-runner'
 
 const SESSION_MANAGER_MODULE_PATH = pathToFileURL(join(import.meta.dir, 'SessionManager.ts')).href
 const AUTOMATIONS_HANDLER_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'handlers', 'rpc', 'automations.ts')).href
@@ -106,17 +107,16 @@ function automationExecutionProbe(automationsEnabled: boolean): {
   }))
 
   try {
-    const run = Bun.spawnSync([
-      process.execPath,
-      '--eval',
-      `
+    return runIsolatedJson(configDir, 'PROBE', `
         import { SessionManager } from '${SESSION_MANAGER_MODULE_PATH}';
         import { registerAutomationsHandlers } from '${AUTOMATIONS_HANDLER_MODULE_PATH}';
         import { RPC_CHANNELS } from '@craft-agent/shared/protocol';
         const manager = new SessionManager();
         let captured;
         manager.resolveAutomationMentions = async () => ({ sourceSlugs: ['allowed', 'blocked'], skillSlugs: [] });
-        manager.createSession = async (_workspaceId, options) => { captured = options; return { id: 'session-1' }; };
+        const createSession = async (_workspaceId, options) => { captured = options; return { id: 'session-1' }; };
+        manager.createSession = createSession;
+        manager.createSessionLocked = createSession;
         manager.sendMessage = async () => {};
         let directError;
         try {
@@ -150,16 +150,76 @@ function automationExecutionProbe(automationsEnabled: boolean): {
         }
         manager.cleanup();
         console.log('PROBE=' + JSON.stringify({ directError, testError, replayError, options: captured }));
-      `,
-    ], {
-      env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (run.exitCode !== 0) throw new Error(run.stderr.toString())
-    const match = run.stdout.toString().match(/PROBE=(\{.*\})/)
-    if (!match) throw new Error(`Missing automation probe:\n${run.stdout.toString()}`)
-    return JSON.parse(match[1])
+      `)
+  } finally {
+    rmSync(parent, { recursive: true, force: true })
+  }
+}
+
+function automationDisableRaceProbe(): {
+  outcome: string
+  promptError?: string
+  sessionCount: number
+  labelConfigExists: boolean
+} {
+  const parent = mkdtempSync(join(tmpdir(), 'storyflow-automation-disable-race-'))
+  const configDir = join(parent, 'host')
+  const projectRoot = join(parent, 'project')
+  mkdirSync(join(projectRoot, '.craft-agent'), { recursive: true })
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(join(projectRoot, '.craft-agent', 'config.json'), JSON.stringify({
+    id: 'directory-metadata-id', name: 'Project', slug: 'project', createdAt: 1, updatedAt: 1,
+  }))
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({
+    workspaces: [{
+      id: 'project-1', name: 'Project', slug: 'project', rootPath: projectRoot, createdAt: 1,
+      directoryConfigId: 'directory-metadata-id', automationsEnabled: true,
+    }],
+    activeWorkspaceId: 'project-1', activeSessionId: null,
+  }))
+
+  try {
+    return runIsolatedJson(configDir, 'DISABLE_RACE', `
+        import { existsSync } from 'node:fs';
+        import { SessionManager } from '${SESSION_MANAGER_MODULE_PATH}';
+        const manager = new SessionManager();
+        let releaseMentions;
+        let markMentionsStarted;
+        const mentionsStarted = new Promise(resolve => { markMentionsStarted = resolve; });
+        manager.resolveAutomationMentions = async () => {
+          markMentionsStarted();
+          return new Promise(resolve => { releaseMentions = resolve; });
+        };
+        const prompt = manager.executePromptAutomation({
+          workspaceId: 'project-1',
+          workspaceRootPath: ${JSON.stringify(projectRoot)},
+          prompt: 'run',
+          mentions: ['delayed'],
+          labels: ['must-not-be-created'],
+        }).then(() => ({}), error => ({ error: error.message }));
+        await mentionsStarted;
+        manager.automationSystems.set(${JSON.stringify(projectRoot)}, {
+          dispose() {
+            releaseMentions({ sourceSlugs: [], skillSlugs: [] });
+            return prompt.then(() => {});
+          },
+        });
+        const outcome = await Promise.race([
+          manager.updateProjectHostSetting('project-1', 'automationsEnabled', false).then(() => 'disabled'),
+          new Promise(resolve => setTimeout(() => resolve('timeout'), 500)),
+        ]);
+        const promptResult = await Promise.race([
+          prompt,
+          new Promise(resolve => setTimeout(() => resolve({ error: 'timeout' }), 500)),
+        ]);
+        console.log('DISABLE_RACE=' + JSON.stringify({
+          outcome,
+          promptError: promptResult.error,
+          sessionCount: manager.sessions.size,
+          labelConfigExists: existsSync(${JSON.stringify(join(projectRoot, '.craft-agent', 'labels', 'config.json'))}),
+        }));
+        manager.cleanup();
+      `)
   } finally {
     rmSync(parent, { recursive: true, force: true })
   }
@@ -311,5 +371,14 @@ describe('Project Automations trust', () => {
     expect(probe.directError).toBeUndefined()
     expect(probe.options?.permissionMode).toBe('ask')
     expect(probe.options?.enabledSourceSlugs).toEqual(['allowed'])
+  })
+
+  it('drains an accepted prompt outside the Project lock and rechecks the Host grant', () => {
+    expect(automationDisableRaceProbe()).toEqual({
+      outcome: 'disabled',
+      promptError: expect.stringContaining('disabled by Host settings'),
+      sessionCount: 0,
+      labelConfigExists: false,
+    })
   })
 })

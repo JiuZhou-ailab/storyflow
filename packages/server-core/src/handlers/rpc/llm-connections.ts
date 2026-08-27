@@ -1,6 +1,6 @@
 // input: LLM connection RPC requests, credentials, and installed provider catalogs
-// output: Connection CRUD, validation, and provider-model RPC responses
-// pos: Server-side RPC boundary for LLM connection management
+// output: Connection CRUD, validation, provider models, and lifecycle-scoped Project defaults
+// pos: Server-side RPC boundary for global connections and Project-owned default selection
 
 import { RPC_CHANNELS, type LlmConnectionSetup } from '@craft-agent/shared/protocol'
 import { getLlmConnections, getLlmConnection, addLlmConnection, updateLlmConnection, deleteLlmConnection, getDefaultLlmConnection, setDefaultLlmConnection, touchLlmConnection, isCompatProvider, isAnthropicProvider, getDefaultModelsForConnection, getDefaultModelForConnection, isManagedLlmConnectionSlug, type LlmConnection, type LlmConnectionWithStatus, toBedrockNativeId, deriveBedrockRegionPrefix } from '@craft-agent/shared/config'
@@ -14,7 +14,7 @@ import {
 } from '@craft-agent/shared/agent/backend'
 import { getModelRefreshService } from '@craft-agent/server-core/model-fetchers'
 import { parseTestConnectionError, createBuiltInConnection, isAppManagedConnection, isAppManagedConnectionAvailable, validateModelList, piAuthProviderDisplayName, validateSetupTestInput, setupTestRequiresApiKey, resolveCustomEndpointSetup } from '@craft-agent/server-core/domain'
-import { getWorkspaceOrThrow, buildBackendHostRuntimeContext } from '@craft-agent/server-core/handlers'
+import { buildBackendHostRuntimeContext } from '@craft-agent/server-core/handlers'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { randomUUID } from 'node:crypto'
@@ -578,8 +578,6 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
   // Set workspace default LLM connection
   server.handle(RPC_CHANNELS.llmConnections.SET_WORKSPACE_DEFAULT, async (_ctx, workspaceId: string, slug: string | null): Promise<{ success: boolean; error?: string }> => {
     try {
-      const workspace = getWorkspaceOrThrow(workspaceId)
-
       // Validate connection exists if setting (not clearing)
       if (slug) {
         const connection = getLlmConnection(slug)
@@ -589,23 +587,25 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         if (!isAvailable(connection)) return managedUnavailable
       }
 
-      const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
-      const config = loadWorkspaceConfig(workspace.rootPath)
-      if (!config) {
-        return { success: false, error: 'Failed to load workspace config' }
-      }
+      return await sessionManager.withProjectLifecycle(workspaceId, async workspace => {
+        const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
+        const config = loadWorkspaceConfig(workspace.rootPath)
+        if (!config) {
+          return { success: false, error: 'Failed to load workspace config' }
+        }
 
-      // Update workspace defaults
-      config.defaults = config.defaults || {}
-      if (slug) {
-        config.defaults.defaultLlmConnection = slug
-      } else {
-        delete config.defaults.defaultLlmConnection
-      }
+        // Update workspace defaults
+        config.defaults = config.defaults || {}
+        if (slug) {
+          config.defaults.defaultLlmConnection = slug
+        } else {
+          delete config.defaults.defaultLlmConnection
+        }
 
-      saveWorkspaceConfig(workspace.rootPath, config)
-      deps.platform.logger?.info(`Workspace ${workspaceId} default LLM connection set to: ${slug}`)
-      return { success: true }
+        saveWorkspaceConfig(workspace.rootPath, config)
+        deps.platform.logger?.info(`Workspace ${workspaceId} default LLM connection set to: ${slug}`)
+        return { success: true }
+      })
     } catch (error) {
       deps.platform.logger?.error('Failed to set workspace default LLM connection:', error)
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }

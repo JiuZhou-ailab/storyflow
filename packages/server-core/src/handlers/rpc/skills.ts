@@ -1,12 +1,13 @@
 // input: Skills RPC requests routed through a Free or Project Conversation runtime
-// output: Pi-native Skill listings, exact package export, user creation, safe deletion, and local open actions
-// pos: Server boundary projecting the active project's Pi Skill catalog
+// output: Pi-native Skill listings, exact package export, user creation, scope-safe deletion, and local open actions
+// pos: Server boundary projecting Pi's global and lifecycle-stable Project Skill catalogs
 
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import { readdirSync, rmSync, statSync } from 'fs'
 import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults/skills'
 import { RPC_CHANNELS, type SkillFile } from '@craft-agent/shared/protocol'
 import { isFreeConversationWorkspaceId, resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
+import type { LoadedSkill } from '@craft-agent/shared/skills'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -46,6 +47,24 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
   ) => {
     const catalog = await loadWorkspaceCatalog(workspace)
     return catalog.skills.find(skill => skill.slug === skillSlug) ?? null
+  }
+
+  const assertDeletableSkill = (skill: LoadedSkill | null): LoadedSkill => {
+    if (!skill) throw new Error('Skill not found')
+    if (skill.origin === 'package') throw new Error('Packaged Skills must be removed with their package manager')
+    if (isDefaultGlobalAgentSkillSlug(basename(skill.path))) {
+      throw new Error('Default Storyflow Skills cannot be removed')
+    }
+    return skill
+  }
+
+  const deleteResolvedSkill = async (skill: LoadedSkill): Promise<void> => {
+    const target = basename(skill.filePath) === 'SKILL.md'
+      ? skill.path
+      : skill.filePath
+    rmSync(target, { recursive: true })
+    const { invalidateSkillsCache } = await import('@craft-agent/shared/skills')
+    invalidateSkillsCache()
   }
 
   server.handle(RPC_CHANNELS.skills.GET, async (_ctx, workspaceId: string, workingDirectory?: string) => {
@@ -159,19 +178,26 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     const workspace = resolveRuntimeWorkspace(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const skill = await findWorkspaceSkill(workspace, skillSlug)
-    if (!skill) throw new Error('Skill not found')
-    if (skill.origin === 'package') throw new Error('Packaged Skills must be removed with their package manager')
-    if (isDefaultGlobalAgentSkillSlug(basename(skill.path))) {
-      throw new Error('Default Storyflow Skills cannot be removed')
+    const candidate = assertDeletableSkill(await findWorkspaceSkill(workspace, skillSlug))
+    if (candidate.scope === 'project' && !isFreeConversationWorkspaceId(workspaceId)) {
+      await deps.sessionManager.withProjectLifecycle(workspaceId, async currentWorkspace => {
+        const current = assertDeletableSkill(await findWorkspaceSkill(currentWorkspace, skillSlug))
+        if (current.scope !== 'project') throw new Error('Skill changed while deleting; retry')
+        await deleteResolvedSkill(current)
+      })
+    } else {
+      const currentWorkspace = resolveRuntimeWorkspace(workspaceId)
+      if (!currentWorkspace) throw new Error('Workspace not found')
+      const current = assertDeletableSkill(await findWorkspaceSkill(currentWorkspace, skillSlug))
+      if (
+        (current.scope === 'project' && !isFreeConversationWorkspaceId(workspaceId))
+        || current.origin !== candidate.origin
+        || current.filePath !== candidate.filePath
+      ) {
+        throw new Error('Skill changed while deleting; retry')
+      }
+      await deleteResolvedSkill(current)
     }
-
-    const target = basename(skill.filePath) === 'SKILL.md'
-      ? skill.path
-      : skill.filePath
-    rmSync(target, { recursive: true })
-    const { invalidateSkillsCache } = await import('@craft-agent/shared/skills')
-    invalidateSkillsCache()
     if (isFreeConversationWorkspaceId(workspaceId)) {
       server.push(RPC_CHANNELS.skills.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
     }

@@ -24,8 +24,11 @@ export {
   listSessionWorkspaces,
 } from './application-context.ts';
 export {
+  ensureProjectOwnedDirectory,
   isPathWithinProjectRoot,
   rebasePathWithinProjectRoot,
+  resolveProjectOwnedPath,
+  resolveProjectOwnedFilePath,
   getExistingWorkspaceLabelConfigPath,
   getExistingWorkspaceViewsPath,
 } from './paths.ts';

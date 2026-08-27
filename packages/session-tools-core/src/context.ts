@@ -262,8 +262,8 @@ export interface SessionToolContext {
    */
   validateStdioMcpConnection?(config: StdioMcpConfig): Promise<StdioValidationResult>;
 
-  /** Whether the owning Host permits this Source to spawn a stdio process. */
-  isStdioMcpExecutionAllowed?(sourceSlug: string): boolean;
+  /** Whether the owning Host permits this exact Source capability to execute. */
+  isStdioMcpExecutionAllowed?(sourceSlug: string, capabilityRef?: string): boolean;
 
   /**
    * Validate an HTTP/SSE MCP connection.

@@ -345,6 +345,7 @@ describe('sendMessage durability', () => {
     await send
     await sourceUpdate
     expect(sourceUpdateCalls).toBe(1)
+    await sm.flushSession(sessionId)
   })
 
   it('does not recreate or persist a session after deletion starts', async () => {
@@ -389,6 +390,127 @@ describe('sendMessage durability', () => {
     expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
   })
 
+  it('rejects metadata persistence after durable deletion commits', async () => {
+    const sessionId = 'delete-metadata-tombstone'
+    const managed = buildSession(sessionId)
+    managed.sharedId = 'shared-delete-window'
+    ;(sm as unknown as { persistSession(session: typeof managed): void }).persistSession(managed)
+    await sm.flushSession(sessionId)
+
+    const originalFetch = globalThis.fetch
+    let markShareRevokeStarted!: () => void
+    let finishShareRevoke!: () => void
+    const shareRevokeStarted = new Promise<void>(resolve => { markShareRevokeStarted = resolve })
+    const shareRevokeGate = new Promise<void>(resolve => { finishShareRevoke = resolve })
+    globalThis.fetch = (async () => {
+      markShareRevokeStarted()
+      await shareRevokeGate
+      return new Response(null, { status: 204 })
+    }) as unknown as typeof fetch
+
+    try {
+      const deletion = sm.deleteSession(sessionId)
+      await shareRevokeStarted
+      expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
+
+      await sm.setSessionStatus(sessionId, 'done')
+      finishShareRevoke()
+      await deletion
+
+      expect((sm as unknown as { sessions: Map<string, unknown> }).sessions.has(sessionId)).toBe(false)
+      expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
+    } finally {
+      globalThis.fetch = originalFetch
+      finishShareRevoke()
+    }
+  })
+
+  it('waits for an accepted direct metadata writer before durable deletion', async () => {
+    const sessionId = 'delete-share-lease'
+    const managed = buildSession(sessionId)
+    ;(sm as unknown as { persistSession(session: typeof managed): void }).persistSession(managed)
+    await sm.flushSession(sessionId)
+
+    const originalFetch = globalThis.fetch
+    let markShareStarted!: () => void
+    let finishShare!: () => void
+    const shareStarted = new Promise<void>(resolve => { markShareStarted = resolve })
+    const shareGate = new Promise<void>(resolve => { finishShare = resolve })
+    globalThis.fetch = (async (
+      _input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      if (init?.method === 'POST') {
+        markShareStarted()
+        await shareGate
+        return Response.json({ id: 'shared-id', url: 'https://viewer.example/shared-id' })
+      }
+      return new Response(null, { status: 204 })
+    }) as unknown as typeof fetch
+
+    try {
+      const sharing = sm.shareToViewer(sessionId)
+      await shareStarted
+      let deletionFinished = false
+      const deletion = sm.deleteSession(sessionId).then(() => { deletionFinished = true })
+      await Promise.resolve()
+
+      expect(managed.runtimeState).toBe('deleting')
+      expect(deletionFinished).toBe(false)
+      expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(true)
+
+      finishShare()
+      await expect(sharing).resolves.toEqual({ success: true, url: 'https://viewer.example/shared-id' })
+      await deletion
+
+      expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
+    } finally {
+      globalThis.fetch = originalFetch
+      finishShare()
+    }
+  })
+
+  it('waits for an accepted Session-path write before durable deletion', async () => {
+    const sessionId = 'delete-session-path-lease'
+    const managed = buildSession(sessionId)
+    ;(sm as unknown as { persistSession(session: typeof managed): void }).persistSession(managed)
+    await sm.flushSession(sessionId)
+
+    let markOperationStarted!: () => void
+    let allowWrite!: () => void
+    let markWriteFinished!: () => void
+    let finishOperation!: () => void
+    const operationStarted = new Promise<void>(resolve => { markOperationStarted = resolve })
+    const writeGate = new Promise<void>(resolve => { allowWrite = resolve })
+    const writeFinished = new Promise<void>(resolve => { markWriteFinished = resolve })
+    const operationGate = new Promise<void>(resolve => { finishOperation = resolve })
+    const notePath = join(tmpRoot, '.craft-agent', 'sessions', sessionId, 'notes.md')
+
+    const pathWrite = sm.withSessionPathOperation(sessionId, async sessionPath => {
+      markOperationStarted()
+      await writeGate
+      writeFileSync(join(sessionPath, 'notes.md'), 'accepted write')
+      markWriteFinished()
+      await operationGate
+    })
+    await operationStarted
+
+    let deletionFinished = false
+    const deletion = sm.deleteSession(sessionId).then(() => { deletionFinished = true })
+    await Promise.resolve()
+    expect(managed.runtimeState).toBe('deleting')
+    expect(deletionFinished).toBe(false)
+
+    allowWrite()
+    await writeFinished
+    expect(existsSync(notePath)).toBe(true)
+    expect(deletionFinished).toBe(false)
+
+    finishOperation()
+    await Promise.all([pathWrite, deletion])
+    expect(existsSync(notePath)).toBe(false)
+  })
+
   it('does not let deletion race ahead of an accepted send transaction', async () => {
     const sessionId = 'delete-send-acceptance'
     const managed = buildSession(sessionId)
@@ -423,6 +545,44 @@ describe('sendMessage durability', () => {
 
     expect(acked).toBe(true)
     expect((sm as unknown as { sessions: Map<string, unknown> }).sessions.has(sessionId)).toBe(false)
+    expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
+  })
+
+  it('releases the Project lock before waiting for the active runtime lease', async () => {
+    const sessionId = 'delete-spawn-lock-order'
+    const managed = buildSession(sessionId)
+    ;(sm as unknown as { persistSession(session: typeof managed): void }).persistSession(managed)
+    await sm.flushSession(sessionId)
+
+    let markQueryStarted!: () => void
+    let allowSpawn!: () => void
+    const queryStarted = new Promise<void>(resolve => { markQueryStarted = resolve })
+    const spawnGate = new Promise<void>(resolve => { allowSpawn = resolve })
+    ;(sm as any).createSessionLocked = async () => ({ id: 'spawned-during-delete' })
+    const agent = {
+      dispose: () => {},
+      queryLlm: async () => {
+        markQueryStarted()
+        await spawnGate
+        await sm.createSession('ws_test')
+        return { text: 'done', model: 'test-model' }
+      },
+    }
+    managed.agent = agent as never
+    ;(sm as any).getOrCreateAgentLocked = async () => agent
+
+    const query = sm.queryOnce(sessionId, { prompt: 'spawn' } as never)
+    await queryStarted
+    const deletion = sm.deleteSession(sessionId)
+    while (managed.runtimeState !== 'deleting') await Promise.resolve()
+
+    allowSpawn()
+    let timeoutId: ReturnType<typeof setTimeout>
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('Project/runtime lock inversion')), 1_000)
+    })
+    await expect(Promise.race([Promise.all([query, deletion]), timeout])).resolves.toBeDefined()
+    clearTimeout(timeoutId!)
     expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
   })
 

@@ -18,6 +18,7 @@ import {
   getWorkspaceRootComparablePaths,
   resolveContextWorkspaceId,
   validateWorkspaceMutationPath,
+  withWorkspaceMutation,
 } from './file-workspace-scope'
 import { notifyConfigWatcherForWrite } from './workspace-file-effects'
 
@@ -199,9 +200,13 @@ async function deleteWorkspaceEntry(
 
 export function registerWorkspaceFileMutationHandlers(server: RpcServer, deps: HandlerDeps): void {
   server.handle(RPC_CHANNELS.file.MOVE_ENTRY, (ctx, input: MoveWorkspaceEntryInput) => (
-    moveWorkspaceEntry(ctx, deps, input)
+    withWorkspaceMutation(ctx, deps, (_workspaceId, scopedContext) => (
+      moveWorkspaceEntry(scopedContext, deps, input)
+    ))
   ))
   server.handle(RPC_CHANNELS.file.DELETE_ENTRY, (ctx, input: DeleteWorkspaceEntryInput) => (
-    deleteWorkspaceEntry(ctx, deps, input)
+    withWorkspaceMutation(ctx, deps, (_workspaceId, scopedContext) => (
+      deleteWorkspaceEntry(scopedContext, deps, input)
+    ))
   ))
 }

@@ -120,36 +120,35 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
 
   // Get workspace settings (model, permission mode, working directory, credential strategy)
   server.handle(RPC_CHANNELS.workspace.SETTINGS_GET, async (_ctx, workspaceId: string) => {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
-    if (!workspace) {
+    if (!getWorkspaceByNameOrId(workspaceId)) {
       deps.platform.logger.error(`Workspace not found: ${workspaceId}`)
       return null
     }
+    return deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
+      const { loadWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
+      const config = loadWorkspaceConfig(workspace.rootPath)
 
-    // Load workspace config
-    const { loadWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
-    const config = loadWorkspaceConfig(workspace.rootPath)
-
-    return {
-      name: config?.name ?? workspace.name,
-      model: config?.defaults?.model,
-      permissionMode: workspace.defaultPermissionMode,
-      cyclablePermissionModes: config?.defaults?.cyclablePermissionModes,
-      thinkingLevel: normalizeThinkingLevel(config?.defaults?.thinkingLevel),
-      workingDirectory: config?.defaults?.workingDirectory,
-      localMcpEnabled: workspace.localMcpEnabled ?? false,
-      automationsEnabled: workspace.automationsEnabled ?? false,
-      defaultLlmConnection: config?.defaults?.defaultLlmConnection,
-      enabledSourceSlugs: resolveHostGrantedSourceSlugs(
-        workspace.defaultEnabledSourceRefs,
-        loadWorkspaceSources(workspace.rootPath, workspace.id),
-      ),
-    }
+      return {
+        name: config?.name ?? workspace.name,
+        model: config?.defaults?.model,
+        permissionMode: workspace.defaultPermissionMode,
+        cyclablePermissionModes: config?.defaults?.cyclablePermissionModes,
+        thinkingLevel: normalizeThinkingLevel(config?.defaults?.thinkingLevel),
+        workingDirectory: config?.defaults?.workingDirectory,
+        localMcpEnabled: workspace.localMcpEnabled ?? false,
+        automationsEnabled: workspace.automationsEnabled ?? false,
+        defaultLlmConnection: config?.defaults?.defaultLlmConnection,
+        enabledSourceSlugs: resolveHostGrantedSourceSlugs(
+          workspace.defaultEnabledSourceRefs,
+          loadWorkspaceSources(workspace.rootPath, workspace.id),
+        ),
+      }
+    })
   })
 
   // Update a workspace setting
   server.handle(RPC_CHANNELS.workspace.SETTINGS_UPDATE, async (_ctx, workspaceId: string, key: string, value: unknown) => {
-    const workspace = getWorkspaceOrThrow(workspaceId)
+    getWorkspaceOrThrow(workspaceId)
     const normalizedValue = key === 'workingDirectory' && typeof value === 'string'
       ? value.trim()
       : value
@@ -168,16 +167,6 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
       }
     }
 
-    if (key === 'workingDirectory' && normalizedValue !== undefined && normalizedValue !== null) {
-      const validation = isValidWorkingDirectory(String(normalizedValue))
-      if (!validation.valid) {
-        throw new Error(validation.reason!)
-      }
-      if (!isPathWithinProjectRoot(workspace.rootPath, String(normalizedValue))) {
-        throw new Error('Project working directory must stay inside the Project root.')
-      }
-    }
-
     // Executable defaults live in the Host registry. Project files cannot grant
     // themselves execute mode, automatic Sources, local subprocesses, or Automations.
     if (key === 'permissionMode' || key === 'enabledSourceSlugs' || key === 'localMcpEnabled' || key === 'automationsEnabled') {
@@ -186,24 +175,28 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
       return { success: true }
     }
 
-    const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
-    const config = loadWorkspaceConfig(workspace.rootPath)
-    if (!config) {
-      throw new Error(`Failed to load workspace config: ${workspaceId}`)
-    }
+    await deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
+      if (key === 'workingDirectory' && normalizedValue !== undefined && normalizedValue !== null) {
+        const validation = isValidWorkingDirectory(String(normalizedValue))
+        if (!validation.valid) throw new Error(validation.reason!)
+        if (!isPathWithinProjectRoot(workspace.rootPath, String(normalizedValue))) {
+          throw new Error('Project working directory must stay inside the Project root.')
+        }
+      }
 
-    // Handle 'name' specially - it's a top-level config property, not in defaults
-    if (key === 'name') {
-      config.name = String(normalizedValue).trim()
-    } else {
-      // Update the setting in defaults
-      config.defaults = config.defaults || {}
-      ;(config.defaults as Record<string, unknown>)[key] = normalizedValue
-    }
+      const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
+      const config = loadWorkspaceConfig(workspace.rootPath)
+      if (!config) throw new Error(`Failed to load workspace config: ${workspaceId}`)
 
-    // Save the config
-    saveWorkspaceConfig(workspace.rootPath, config)
-    deps.platform.logger.info(`Workspace setting updated: ${key} = ${JSON.stringify(normalizedValue)}`)
+      if (key === 'name') config.name = String(normalizedValue).trim()
+      else {
+        config.defaults = config.defaults || {}
+        ;(config.defaults as Record<string, unknown>)[key] = normalizedValue
+      }
+
+      saveWorkspaceConfig(workspace.rootPath, config)
+      deps.platform.logger.info(`Workspace setting updated: ${key} = ${JSON.stringify(normalizedValue)}`)
+    })
   })
 
   // ============================================================

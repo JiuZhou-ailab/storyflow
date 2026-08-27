@@ -17,7 +17,11 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolveAutomationsConfigPath, generateShortId } from './resolve-config-path.ts';
+import {
+  generateShortId,
+  resolveAutomationOwnedPath,
+  resolveAutomationsConfigPath,
+} from './resolve-config-path.ts';
 import { compactAutomationHistorySync } from './history-store.ts';
 import { createLogger } from '../utils/debug.ts';
 import { WorkspaceEventBus, type EventPayloadMap } from './event-bus.ts';
@@ -49,7 +53,7 @@ export interface AutomationSystemOptions {
   /** Whether to start the scheduler service (default: false) */
   enableScheduler?: boolean;
   /** Called when prompts are ready to be executed */
-  onPromptsReady?: (prompts: PendingPrompt[]) => void;
+  onPromptsReady?: (prompts: PendingPrompt[]) => void | Promise<void>;
   /** Called when webhook results are available */
   onWebhookResults?: (results: WebhookActionResult[]) => void;
   /** Called when an error occurs during automation execution */
@@ -71,6 +75,8 @@ export class AutomationSystem implements AutomationsConfigProvider {
   private webhookHandler: WebhookHandler | null = null;
   private eventLogHandler: EventLogHandler | null = null;
   private scheduler: SchedulerService | null = null;
+  private readonly pendingHandlerDisposals = new Set<Promise<void>>();
+  private disposePromise: Promise<void> | null = null;
   private disposed = false;
 
   // Session metadata tracking (moved from SessionManager)
@@ -97,7 +103,8 @@ export class AutomationSystem implements AutomationsConfigProvider {
    * Returns the raw parsed JSON alongside validation results (avoids re-reading for backfillIds).
    */
   private readAndValidateConfig(configPath: string): { raw: unknown; validation: import('./types.ts').AutomationsValidationResult } {
-    const raw = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const safeConfigPath = resolveAutomationOwnedPath(this.options.workspaceRootPath, configPath);
+    const raw = JSON.parse(readFileSync(safeConfigPath, 'utf-8'));
     const validation = validateAutomationsConfig(raw);
     return { raw, validation };
   }
@@ -187,7 +194,11 @@ export class AutomationSystem implements AutomationsConfigProvider {
       }
 
       if (changed) {
-        writeFileSync(configPath, JSON.stringify(raw, null, 2) + '\n', 'utf-8');
+        writeFileSync(
+          resolveAutomationOwnedPath(this.options.workspaceRootPath, configPath),
+          JSON.stringify(raw, null, 2) + '\n',
+          'utf-8',
+        );
         log.debug('[AutomationSystem] Backfilled missing matcher IDs');
       }
     } catch {
@@ -295,16 +306,23 @@ export class AutomationSystem implements AutomationsConfigProvider {
     this.webhookHandler = null;
     this.eventLogHandler = null;
 
-    promptHandler?.dispose();
-    webhookHandler?.dispose();
-    await eventLogHandler?.dispose();
+    await Promise.all([
+      promptHandler?.dispose(),
+      webhookHandler?.dispose(),
+      eventLogHandler?.dispose(),
+    ]);
   }
 
   private voidDisposeHandlers(): void {
     const pending = this.disposeHandlers();
-    pending.catch(error => {
-      log.error('[AutomationSystem] Failed to dispose handlers:', error);
-    });
+    this.pendingHandlerDisposals.add(pending);
+    void pending
+      .catch(error => {
+        log.error('[AutomationSystem] Failed to dispose handlers:', error);
+      })
+      .finally(() => {
+        this.pendingHandlerDisposals.delete(pending);
+      });
   }
 
   private syncRuntimeForConfig(): void {
@@ -584,24 +602,24 @@ export class AutomationSystem implements AutomationsConfigProvider {
   /**
    * Dispose the automation system, cleaning up all resources.
    */
-  async dispose(): Promise<void> {
-    if (this.disposed) return;
-
-    log.debug(`[AutomationSystem] Disposing for workspace: ${this.options.workspaceId}`);
-
-    // Stop scheduler
-    this.stopScheduler();
-
-    // Dispose handlers
-    await this.disposeHandlers();
-
-    // Dispose event bus
-    this.eventBus.dispose();
-
-    // Clear metadata
-    this.lastKnownMetadata.clear();
+  dispose(): Promise<void> {
+    if (this.disposePromise) return this.disposePromise;
 
     this.disposed = true;
+    log.debug(`[AutomationSystem] Disposing for workspace: ${this.options.workspaceId}`);
+    this.stopScheduler();
+    this.disposePromise = this.finishDispose();
+    return this.disposePromise;
+  }
+
+  private async finishDispose(): Promise<void> {
+    await this.eventBus.dispose();
+    await Promise.all([
+      this.disposeHandlers(),
+      ...this.pendingHandlerDisposals,
+    ]);
+
+    this.lastKnownMetadata.clear();
     log.debug(`[AutomationSystem] Disposed`);
   }
 }

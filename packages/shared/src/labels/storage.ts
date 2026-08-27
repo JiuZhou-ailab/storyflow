@@ -9,7 +9,7 @@
  * Labels are visual by color only (colored circles in the UI).
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, writeFileSync } from 'fs';
 import type { WorkspaceLabelConfig, LabelConfig } from './types.ts';
 import { flattenLabels, findLabelById } from './tree.ts';
 import { readJsonFileSync } from '../utils/files.ts';
@@ -19,6 +19,8 @@ import {
   getExistingWorkspaceLabelConfigPath,
   getWorkspaceLabelConfigPath,
   getWorkspaceLabelsPath,
+  ensureProjectOwnedDirectory,
+  resolveProjectOwnedPath,
 } from '../workspaces/paths.ts';
 
 /**
@@ -112,6 +114,7 @@ export function loadLabelConfig(workspaceRootPath: string): WorkspaceLabelConfig
   }
 
   try {
+    resolveProjectOwnedPath(workspaceRootPath, configPath);
     const config = readJsonFileSync<WorkspaceLabelConfig>(configPath);
 
     // Auto-migrate old Tailwind class colors (e.g., "text-accent") to new EntityColor format.
@@ -139,9 +142,9 @@ export function saveLabelConfig(
 ): void {
   const labelDir = getWorkspaceLabelsPath(workspaceRootPath);
   const configPath = getWorkspaceLabelConfigPath(workspaceRootPath);
-
-  if (!existsSync(labelDir)) {
-    mkdirSync(labelDir, { recursive: true });
+  ensureProjectOwnedDirectory(workspaceRootPath, labelDir);
+  if (lstatSync(configPath, { throwIfNoEntry: false })) {
+    resolveProjectOwnedPath(workspaceRootPath, configPath);
   }
 
   try {

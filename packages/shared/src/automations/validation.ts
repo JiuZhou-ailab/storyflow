@@ -7,7 +7,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolveAutomationsConfigPath } from './resolve-config-path.ts';
+import { resolveAutomationOwnedPath, resolveAutomationsConfigPath } from './resolve-config-path.ts';
 import { AUTOMATIONS_CONFIG_FILE } from './constants.ts';
 import { AutomationsConfigSchema, zodErrorToIssues, DEPRECATED_EVENT_ALIASES } from './schemas.ts';
 import { isValidLabelId } from '../labels/storage.ts';
@@ -285,7 +285,7 @@ export function validateAutomations(workspaceRoot: string): ValidationResult {
 
   let raw: string;
   try {
-    raw = readFileSync(configPath, 'utf-8');
+    raw = readFileSync(resolveAutomationOwnedPath(workspaceRoot, configPath), 'utf-8');
   } catch (e) {
     return {
       valid: false,

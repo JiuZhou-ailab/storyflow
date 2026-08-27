@@ -135,4 +135,31 @@ describe('CredentialManager', () => {
     expect(await manager.deleteRemoteServerToken('workspace-1')).toBe(true);
     expect(manager.peekRemoteServerToken('workspace-1')).toBeNull();
   });
+
+  for (const failure of ['false', 'throw'] as const) {
+    it(`rejects strict deletion when an existing credential backend returns ${failure}`, async () => {
+      const id: CredentialId = {
+        type: 'source_oauth',
+        workspaceId: 'project-1',
+        sourceId: 'source-1',
+      };
+      const backend: CredentialBackend = {
+        name: 'mock',
+        priority: 1,
+        isAvailable: async () => true,
+        get: async () => ({ value: 'secret', refreshToken: 'refresh' }),
+        set: async () => {},
+        delete: async () => {
+          if (failure === 'throw') throw new Error('secure storage unavailable');
+          return false;
+        },
+        list: async () => [id],
+      };
+      const manager = createManagerWithBackend(backend);
+
+      await expect(manager.deleteStrict(id)).rejects.toThrow(
+        'Credential deletion could not be confirmed',
+      );
+    });
+  }
 });

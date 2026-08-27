@@ -180,6 +180,45 @@ describe('WorkspaceEventBus', () => {
   });
 
   describe('dispose', () => {
+    it('should wait for in-flight handlers before disposing', async () => {
+      let markStarted!: () => void;
+      let releaseHandler!: () => void;
+      const handlerStarted = new Promise<void>((resolve) => {
+        markStarted = resolve;
+      });
+      const handlerBlocked = new Promise<void>((resolve) => {
+        releaseHandler = resolve;
+      });
+
+      bus.on('LabelAdd', async () => {
+        markStarted();
+        await handlerBlocked;
+      });
+
+      const emitPromise = bus.emit('LabelAdd', {
+        sessionId: 'session-1',
+        workspaceId: 'test-workspace',
+        timestamp: Date.now(),
+        label: 'test-label',
+      });
+      await handlerStarted;
+
+      let disposed = false;
+      const disposePromise = Promise.resolve(bus.dispose()).then(() => {
+        disposed = true;
+      });
+      await Promise.resolve();
+
+      try {
+        expect(disposed).toBe(false);
+      } finally {
+        releaseHandler();
+        await emitPromise;
+      }
+      await disposePromise;
+      expect(disposed).toBe(true);
+    });
+
     it('should clear all handlers', () => {
       bus.on('LabelAdd', jest.fn());
       bus.on('FlagChange', jest.fn());

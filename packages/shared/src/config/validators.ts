@@ -387,6 +387,7 @@ import {
   getLegacyWorkspaceSourcesPath,
   getWorkspaceSourcesPath,
 } from '../workspaces/storage.ts';
+import { resolveProjectOwnedPath } from '../workspaces/paths.ts';
 
 // --- sources/{slug}/config.json ---
 
@@ -1378,6 +1379,31 @@ function validatePermissionsFile(filePath: string, displayFile: string): Validat
   return validatePermissionsContent(raw, displayFile);
 }
 
+function validateProjectPermissionsFile(
+  projectRoot: string,
+  filePath: string,
+  displayFile: string,
+): ValidationResult {
+  if (!existsSync(filePath)) return validatePermissionsFile(filePath, displayFile);
+  try {
+    return validatePermissionsFile(
+      resolveProjectOwnedPath(projectRoot, filePath),
+      displayFile,
+    );
+  } catch (error) {
+    return {
+      valid: false,
+      errors: [{
+        file: displayFile,
+        path: '',
+        message: `Cannot read file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        severity: 'error',
+      }],
+      warnings: [],
+    };
+  }
+}
+
 /**
  * Validate permissions config from a JSON string (no disk reads).
  * Used by PreToolUse hook to validate before writing to disk.
@@ -1437,7 +1463,7 @@ export function validatePermissionsContent(jsonString: string, displayFile: stri
  */
 export function validateWorkspacePermissions(workspaceRoot: string): ValidationResult {
   const permissionsPath = getWorkspacePermissionsPath(workspaceRoot);
-  return validatePermissionsFile(permissionsPath, 'permissions.json');
+  return validateProjectPermissionsFile(workspaceRoot, permissionsPath, 'permissions.json');
 }
 
 /**
@@ -1447,7 +1473,11 @@ export function validateWorkspacePermissions(workspaceRoot: string): ValidationR
  */
 export function validateSourcePermissions(workspaceRoot: string, sourceSlug: string): ValidationResult {
   const permissionsPath = getSourcePermissionsPath(workspaceRoot, sourceSlug);
-  return validatePermissionsFile(permissionsPath, `sources/${sourceSlug}/permissions.json`);
+  return validateProjectPermissionsFile(
+    workspaceRoot,
+    permissionsPath,
+    `sources/${sourceSlug}/permissions.json`,
+  );
 }
 
 /**

@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { AutomationSystem, type SessionMetadataSnapshot } from './automation-system.ts';
@@ -106,6 +106,28 @@ describe('AutomationSystem', () => {
       expect(config?.automations.LabelAdd).toHaveLength(1);
 
       await system.dispose();
+    });
+
+    it('does not load automations through a Project-internal config symlink', async () => {
+      const outsideDir = mkdtempSync(join(tmpdir(), 'automation-system-outside-'));
+      const outsideConfig = join(outsideDir, AUTOMATIONS_CONFIG_FILE);
+      writeFileSync(outsideConfig, JSON.stringify({
+        automations: {
+          LabelAdd: [{ actions: [{ type: 'prompt', prompt: 'outside' }] }],
+        },
+      }));
+      symlinkSync(outsideConfig, join(tempDir, AUTOMATIONS_CONFIG_FILE));
+
+      try {
+        const system = new AutomationSystem({
+          workspaceRootPath: tempDir,
+          workspaceId: 'test-workspace',
+        });
+        expect(system.getConfig()).toEqual({ automations: {} });
+        await system.dispose();
+      } finally {
+        rmSync(outsideDir, { recursive: true, force: true });
+      }
     });
 
     it('should handle invalid automations.json gracefully', async () => {
@@ -635,6 +657,57 @@ describe('AutomationSystem', () => {
   });
 
   describe('dispose', () => {
+    it('should wait for an in-flight async prompt callback', async () => {
+      writeFileSync(join(tempDir, AUTOMATIONS_CONFIG_FILE), JSON.stringify({
+        automations: {
+          LabelAdd: [
+            {
+              matcher: 'test-label',
+              actions: [{ type: 'prompt', prompt: 'echo hello' }],
+            },
+          ],
+        },
+      }));
+
+      let markCallbackStarted!: () => void;
+      let releaseCallback!: () => void;
+      const callbackStarted = new Promise<void>((resolve) => {
+        markCallbackStarted = resolve;
+      });
+      const callbackBlocked = new Promise<void>((resolve) => {
+        releaseCallback = resolve;
+      });
+      const system = new AutomationSystem({
+        workspaceRootPath: tempDir,
+        workspaceId: 'test-workspace',
+        onPromptsReady: async () => {
+          markCallbackStarted();
+          await callbackBlocked;
+        },
+      });
+
+      const emitPromise = system.emit('LabelAdd', {
+        sessionId: 'session-1',
+        workspaceId: 'test-workspace',
+        timestamp: Date.now(),
+        label: 'test-label',
+      });
+      await callbackStarted;
+
+      const disposePromise = system.dispose();
+      const disposition = await Promise.race([
+        disposePromise.then(() => 'disposed' as const),
+        new Promise<'waiting'>((resolve) => setTimeout(() => resolve('waiting'), 20)),
+      ]);
+
+      try {
+        expect(disposition).toBe('waiting');
+      } finally {
+        releaseCallback();
+        await Promise.all([emitPromise, disposePromise]);
+      }
+    });
+
     it('should clean up all resources', async () => {
       const system = new AutomationSystem({
         workspaceRootPath: tempDir,

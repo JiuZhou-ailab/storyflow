@@ -47,7 +47,7 @@ describe('releaseIdleSessionMessages', () => {
       lastUsedAt: Date.now(),
       messages,
     } as StoredSession
-    writeSessionJsonl(filePath, stored)
+    writeSessionJsonl(filePath, stored, tmpRoot)
 
     const managed = createManagedSession(
       {

@@ -35,6 +35,13 @@ function createHarness(sessionPath: string) {
   const deps: HandlerDeps = {
     sessionManager: {
       getSessionPath: (sessionId: string) => sessionId === 'session-1' ? sessionPath : null,
+      withSessionPathOperation: async <T>(
+        sessionId: string,
+        work: (sessionPath: string) => Promise<T> | T,
+      ): Promise<T> => {
+        if (sessionId !== 'session-1') throw new Error('Session not found')
+        return work(sessionPath)
+      },
     } as unknown as HandlerDeps['sessionManager'],
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
     platform: {

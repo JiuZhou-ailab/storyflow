@@ -88,7 +88,7 @@ const OFFICE_EXTENSIONS: Record<string, string> = {
   '.ppt': 'application/vnd.ms-powerpoint',
 };
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB limit
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_TEXT_SIZE = 100 * 1024; // 100KB for text files
 
 // Claude API image limits - images exceeding these will fail silently
@@ -289,7 +289,7 @@ export function readFileAttachment(filePath: string): FileAttachment | null {
       return null;
     }
 
-    if (stats.size > MAX_FILE_SIZE) {
+    if (stats.size > MAX_ATTACHMENT_BYTES) {
       throw new Error(`File too large: ${basename(resolved)} (${Math.round(stats.size / 1024 / 1024)}MB > 20MB limit)`);
     }
 

@@ -1,5 +1,5 @@
 // input: Core domain type modules
-// output: Stable public type exports for @craft-agent/core
+// output: Stable public type exports and DTO projections for @craft-agent/core
 // pos: Package type boundary consumed by storage, transports, runtimes, and UI
 
 /**
@@ -17,6 +17,7 @@ export type {
   OAuthCredentials,
   StoredConfig,
 } from './workspace.ts';
+export { toWorkspaceInfo } from './workspace.ts';
 
 // Session types
 export type {

@@ -9,10 +9,11 @@
 
 import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
 import { SourceCredentialManager } from '../credential-manager.ts';
+import { getSourceDefinitionIdentity } from '../storage.ts';
 import type { FolderSourceConfig } from '../types.ts';
 
-const mockMarkSourceAuthenticated = mock(() => true);
-const mockLoadSourceConfig = mock(() => null);
+let activeSourceConfig: FolderSourceConfig | null = null;
+const mockLoadSourceConfig = mock(() => activeSourceConfig);
 const mockSaveSourceConfig = mock(() => {});
 
 // Mock credentials module — track set() calls to verify saves
@@ -42,13 +43,14 @@ function createRenewSource(overrides: Partial<FolderSourceConfig> = {}) {
     },
     ...overrides,
   };
+  activeSourceConfig = config;
   return {
     config,
     guide: null,
     folderPath: '/mock/path',
     workspaceRootPath: '/mock/workspace',
     workspaceId: 'mock-workspace',
-    definitionIdentity: 'test-definition',
+    definitionIdentity: getSourceDefinitionIdentity(config),
     origin: 'workspace' as const,
   };
 }
@@ -83,14 +85,13 @@ describe('refreshApiRenew via refresh()', () => {
 
   beforeEach(() => {
     credManager = new SourceCredentialManager({
-      markSourceAuthenticated: mockMarkSourceAuthenticated,
       loadSourceConfig: mockLoadSourceConfig,
       saveSourceConfig: mockSaveSourceConfig,
     });
     originalFetch = globalThis.fetch;
     setCalls = [];
     fetchCalls = [];
-    mockMarkSourceAuthenticated.mockClear();
+    activeSourceConfig = null;
     mockLoadSourceConfig.mockClear();
     mockSaveSourceConfig.mockClear();
   });

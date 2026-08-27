@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createWebuiHandler } from '../http-server';
+import { loadSource } from '@craft-agent/shared/sources';
 
 const TEMP_DIRS: string[] = [];
 
@@ -31,12 +32,21 @@ afterEach(() => {
 
 describe('WebUI /api/oauth/callback', () => {
   it('completes OAuth when the relay forwards the inner flow state', async () => {
+    const webuiDir = createTestWebuiDir();
+    const sourceDir = join(webuiDir, '.craft-agent', 'sources', 'gmail');
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(join(sourceDir, 'config.json'), JSON.stringify({
+      id: 'gmail', slug: 'gmail', name: 'Gmail', provider: 'google', type: 'api', enabled: true,
+      api: { baseUrl: 'https://gmail.googleapis.com', authType: 'oauth' }, createdAt: 1, updatedAt: 1,
+    }));
+    const source = loadSource(webuiDir, 'gmail', 'workspace-1');
+    if (!source) throw new Error('test Source not loaded');
     const flow = {
       flowId: 'flow-1',
       state: 'inner-state-123',
       codeVerifier: 'verifier',
       redirectUri: 'https://agents.craft.do/auth/callback',
-      source: {} as any,
+      source,
       clientId: 'test-client-id',
       clientSecret: 'test-client-secret',
       tokenEndpoint: 'https://oauth2.googleapis.com/token',
@@ -50,7 +60,7 @@ describe('WebUI /api/oauth/callback', () => {
     const flows = new Map([[flow.state, flow]]);
 
     const handler = createWebuiHandler({
-      webuiDir: createTestWebuiDir(),
+      webuiDir,
       secret: 'test-secret',
       password: 'test-password',
       wsProtocol: 'wss',
@@ -62,6 +72,11 @@ describe('WebUI /api/oauth/callback', () => {
     handler.setOAuthCallbackDeps({
       flowStore: {
         getByState: (state: string) => flows.get(state) ?? null,
+        claim: (state: string) => {
+          const claimed = flows.get(state) ?? null;
+          flows.delete(state);
+          return claimed;
+        },
         remove: (state: string) => {
           flows.delete(state);
         },
@@ -71,6 +86,9 @@ describe('WebUI /api/oauth/callback', () => {
       },
       sessionManager: {
         completeAuthRequest: async () => {},
+        withProjectOperation: async (_projectId, work) => work({
+          id: 'workspace-1', name: 'Workspace', slug: 'workspace', rootPath: webuiDir, createdAt: 1,
+        }),
       },
       pushSourcesChanged: () => {},
     });
@@ -107,6 +125,7 @@ describe('WebUI /api/oauth/callback', () => {
     handler.setOAuthCallbackDeps({
       flowStore: {
         getByState: (state: string) => flows.get(state) ?? null,
+        claim: () => null,
         remove: (state: string) => {
           flows.delete(state);
         },
@@ -116,6 +135,7 @@ describe('WebUI /api/oauth/callback', () => {
       },
       sessionManager: {
         completeAuthRequest: async () => {},
+        withProjectOperation: async () => { throw new Error('not reached'); },
       },
       pushSourcesChanged: () => {},
     });

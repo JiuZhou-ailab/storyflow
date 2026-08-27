@@ -1,5 +1,5 @@
 // input: Workspace identity, catalog metadata, and optional remote connection details
-// output: Shared workspace DTOs with stable identity and derived local-root availability
+// output: Shared workspace DTOs plus the explicit client-safe WorkspaceInfo projection
 // pos: Canonical workspace type definitions
 
 /**
@@ -53,7 +53,7 @@ export interface Workspace extends WorkspaceInfo {
   createdAt: number;
   /** Host-owned executable defaults; Project files cannot self-grant these values. */
   defaultPermissionMode?: 'safe' | 'ask' | 'allow-all';
-  /** Exact Source capabilities (`origin:slug`); legacy bare slugs fail closed. */
+  /** Exact Source capabilities (`origin:slug:definitionIdentity`); legacy bare slugs fail closed. */
   defaultEnabledSourceRefs?: string[];
   /** Directory metadata fingerprint used only to verify explicit relink targets. */
   directoryConfigId?: string;
@@ -61,6 +61,28 @@ export interface Workspace extends WorkspaceInfo {
   automationsEnabled?: boolean;
   /** Derived local runtime state. Never persisted and always available for remote workspaces. */
   rootAvailable?: boolean;
+}
+
+/** Project a Host Workspace onto the exact client-safe RPC contract. */
+export function toWorkspaceInfo(workspace: Workspace): WorkspaceInfo {
+  const info: WorkspaceInfo = {
+    id: workspace.id,
+    name: workspace.name,
+    slug: workspace.slug,
+  }
+  if (workspace.lastAccessedAt !== undefined) info.lastAccessedAt = workspace.lastAccessedAt
+  if (workspace.archivedAt !== undefined) info.archivedAt = workspace.archivedAt
+  if (workspace.iconUrl !== undefined) info.iconUrl = workspace.iconUrl
+  if (workspace.mcpUrl !== undefined) info.mcpUrl = workspace.mcpUrl
+  if (workspace.mcpAuthType !== undefined) info.mcpAuthType = workspace.mcpAuthType
+  if (workspace.remoteServer !== undefined) {
+    info.remoteServer = {
+      url: workspace.remoteServer.url,
+      credentialRef: workspace.remoteServer.credentialRef,
+      remoteWorkspaceId: workspace.remoteServer.remoteWorkspaceId,
+    }
+  }
+  return info
 }
 
 /**

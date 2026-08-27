@@ -45,11 +45,14 @@ export class McpClientPool {
   /** Configs used for active MCP connections (for change detection during sync) */
   protected activeConfigs = new Map<string, SdkMcpServerConfig>();
 
+  /** Exact Source capability bound to each connected client. */
+  protected activeCapabilityRefs = new Map<string, string>();
+
   /** Cached tool lists keyed by source slug */
   private toolCache = new Map<string, Tool[]>();
 
   /** Proxy tool name → { slug, originalName } (e.g., "mcp__linear__createIssue" → { slug: "linear", originalName: "createIssue" }) */
-  private proxyTools = new Map<string, { slug: string; originalName: string }>();
+  private proxyTools = new Map<string, { slug: string; originalName: string; capabilityRef: string }>();
 
   /** Host-owned HTTP semantics for declarative in-process API tools. */
   private proxyToolPermissions = new Map<string, ApiOperationPermission>();
@@ -91,15 +94,16 @@ export class McpClientPool {
    * Register a client: connect, cache tools, build proxy mappings.
    * Shared logic for both remote MCP and in-process API sources.
    */
-  protected async registerClient(slug: string, client: PoolClient): Promise<void> {
+  protected async registerClient(slug: string, capabilityRef: string, client: PoolClient): Promise<void> {
     // listTools() triggers connect() internally for both CraftMcpClient and ApiSourcePoolClient
     const tools = await client.listTools();
     this.clients.set(slug, client);
+    this.activeCapabilityRefs.set(slug, capabilityRef);
     this.toolCache.set(slug, tools);
 
     for (const tool of tools) {
       const proxyName = `mcp__${slug}__${tool.name}`;
-      this.proxyTools.set(proxyName, { slug, originalName: tool.name });
+      this.proxyTools.set(proxyName, { slug, originalName: tool.name, capabilityRef });
     }
 
     this.debug(`Connected source ${slug}: ${tools.length} tools`);
@@ -116,7 +120,7 @@ export class McpClientPool {
       this.debug(`Unknown MCP server type for ${slug}: ${(config as { type: string }).type}`);
       return;
     }
-    await this.registerClient(slug, new CraftMcpClient(clientConfig));
+    await this.registerClient(slug, config.capabilityRef, new CraftMcpClient(clientConfig));
     this.activeConfigs.set(slug, config);
   }
 
@@ -125,7 +129,7 @@ export class McpClientPool {
    */
   async connectInProcess(slug: string, config: ApiServerConfig): Promise<void> {
     if (this.clients.has(slug)) return;
-    await this.registerClient(slug, new ApiSourcePoolClient(config.instance));
+    await this.registerClient(slug, config.capabilityRef, new ApiSourcePoolClient(config.instance));
     for (const [toolName, permission] of Object.entries(config.toolPermissions ?? {})) {
       this.proxyToolPermissions.set(`mcp__${slug}__${toolName}`, permission);
     }
@@ -150,6 +154,7 @@ export class McpClientPool {
     }
     this.toolCache.delete(slug);
     this.activeConfigs.delete(slug);
+    this.activeCapabilityRefs.delete(slug);
     this.debug(`Disconnected source: ${slug}`);
   }
 
@@ -164,6 +169,7 @@ export class McpClientPool {
     this.proxyTools.clear();
     this.proxyToolPermissions.clear();
     this.activeConfigs.clear();
+    this.activeCapabilityRefs.clear();
     this.debug('Disconnected all MCP clients');
   }
 
@@ -213,7 +219,10 @@ export class McpClientPool {
         }
       } else {
         const oldConfig = this.activeConfigs.get(slug);
-        if (oldConfig && mcpConfigChanged(oldConfig, config)) {
+        if (
+          this.activeCapabilityRefs.get(slug) !== config.capabilityRef
+          || (oldConfig && mcpConfigChanged(oldConfig, config))
+        ) {
           this.debug(`Config changed for ${slug}, reconnecting with fresh credentials`);
           await this.disconnect(slug);
           try {
@@ -226,9 +235,11 @@ export class McpClientPool {
       }
     }
 
-    // Connect new API sources
+    // Declarative API clients close over resolved credentials. Replacing the
+    // in-process instance is cheap and ensures a refresh cannot retain them.
     for (const [slug, config] of apiSlugs) {
-      if (!currentSlugs.has(slug)) {
+      if (this.clients.has(slug)) await this.disconnect(slug);
+      if (!this.clients.has(slug)) {
         try {
           await this.connectInProcess(slug, config);
         } catch (err) {
@@ -385,11 +396,14 @@ export class McpClientPool {
     }
   }
 
-  /**
-   * Check if a tool name is an MCP proxy tool managed by this pool.
-   */
-  isProxyTool(toolName: string): boolean {
-    return this.proxyTools.has(toolName);
+  /** Resolve a proxy through the pool's authoritative Source binding. */
+  getProxyToolCapability(
+    toolName: string,
+  ): { sourceSlug: string; capabilityRef: string } | undefined {
+    const info = this.proxyTools.get(toolName);
+    return info
+      ? { sourceSlug: info.slug, capabilityRef: info.capabilityRef }
+      : undefined;
   }
 
   /** Return immutable HTTP semantics for a declarative API tool call. */

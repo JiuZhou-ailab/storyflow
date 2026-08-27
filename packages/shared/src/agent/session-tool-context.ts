@@ -51,6 +51,7 @@ import {
   updateSourceConnectionState,
   getSourcePath,
   getSourceDefinitionIdentity,
+  isSourceUsable,
 } from '../sources/storage.ts';
 import type {
   FolderSourceConfig,
@@ -61,7 +62,7 @@ import { getSourceCredentialManager } from '../sources/credential-manager.ts';
 import { createStoryflowManagedTokenGetter } from '../sources/managed-access.ts';
 import { getTrustedManagedSourcePolicy } from '../sources/managed-source-policy.ts';
 import { isProjectStdioExecutionAllowed } from '../sources/server-builder.ts';
-import { isSourceHostGranted } from '../sources/grants.ts';
+import { getSourceGrantRef, isSourceHostGranted } from '../sources/grants.ts';
 import {
   inferGoogleServiceFromUrl,
   inferSlackServiceFromUrl,
@@ -93,9 +94,10 @@ export interface SessionToolContextOptions {
   onPlanSubmitted: (planPath: string) => void | Promise<void>;
   onAuthRequest: (request: unknown) => void;
   onAskUserQuestion?: (request: UserQuestionRequest) => Promise<UserQuestionResponse>;
-  allowProjectStdio?: boolean;
   /** null only for the Host-owned Free Conversations application context. */
   getHostGrantedSourceRefs: () => readonly string[] | null;
+  /** Read at execution time so a Host revocation applies to an existing Pi context. */
+  getHostAllowsProjectStdio: () => boolean;
 }
 
 /**
@@ -114,11 +116,14 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
   const loadVisibleSource = (sourceSlug: string) =>
     loadSourceImpl(workspacePath, sourceSlug, workspaceId);
 
-  const isSourceExecutionAllowed = (sourceSlug: string): boolean => {
-    const source = loadVisibleSource(sourceSlug);
-    if (!source) return false;
+  const isLoadedSourceHostGranted = (source: SharedLoadedSource): boolean => {
     const refs = options.getHostGrantedSourceRefs();
     return refs === null || isSourceHostGranted(refs, source);
+  };
+
+  const isSourceExecutionAllowed = (sourceSlug: string): boolean => {
+    const source = loadVisibleSource(sourceSlug);
+    return !!source && isLoadedSourceHostGranted(source);
   };
 
   // File system implementation
@@ -286,6 +291,12 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
     saveSourceConfig: (source: SourceConfig) => {
       const loaded = loadVisibleSource(source.slug);
       if (!loaded) return;
+      if (
+        getSourceDefinitionIdentity(source as unknown as FolderSourceConfig)
+        !== loaded.definitionIdentity
+      ) {
+        throw new Error(`Source definition changed while testing: ${source.slug}`);
+      }
 
       const connectionStatus = normalizeConnectionStatus(source.connectionStatus);
       if (loaded.origin === 'shared-global') {
@@ -320,11 +331,13 @@ export function createSessionToolContext(options: SessionToolContextOptions): Se
     },
 
     // MCP validation
-    isStdioMcpExecutionAllowed: (sourceSlug: string): boolean => {
+    isStdioMcpExecutionAllowed: (sourceSlug: string, capabilityRef?: string): boolean => {
       const source = loadVisibleSource(sourceSlug);
       return !!source
-        && isSourceExecutionAllowed(sourceSlug)
-        && isProjectStdioExecutionAllowed(source, options.allowProjectStdio === true);
+        && (capabilityRef === undefined || getSourceGrantRef(source) === capabilityRef)
+        && isLoadedSourceHostGranted(source)
+        && isSourceUsable(source)
+        && isProjectStdioExecutionAllowed(source, options.getHostAllowsProjectStdio());
     },
     validateStdioMcpConnection,
     validateMcpConnection,

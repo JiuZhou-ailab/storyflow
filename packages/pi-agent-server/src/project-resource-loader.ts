@@ -127,6 +127,7 @@ class StoryflowResourceLoader extends DefaultResourceLoader {
     await super.reload(options);
     this.runtimeSettingsManager.applyOverrides({
       enableSkillCommands: true,
+      compaction: { enabled: true },
     });
   }
 }

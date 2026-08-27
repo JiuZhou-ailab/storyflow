@@ -28,6 +28,7 @@ import {
   validateWorkspaceFilePath,
   validateWorkspaceMutationPath,
   validateWorkspaceSearchBasePath,
+  withWorkspaceMutation,
 } from './file-workspace-scope'
 import { notifyConfigWatcherForWrite } from './workspace-file-effects'
 
@@ -523,18 +524,19 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
       if (typeof content !== 'string') {
         throw new Error('File content must be a string')
       }
-
-      const safePath = await validateWorkspaceMutationPath(ctx, deps, path)
-      const parsedPath = parsePath(safePath)
-      writeSpan.setMetadata('file', parsedPath.base)
-      writeSpan.setMetadata('extension', parsedPath.ext || null)
-      writeSpan.mark('path.validated')
-      await mkdir(dirname(safePath), { recursive: true })
-      await writeFile(safePath, content, 'utf-8')
-      writeSpan.mark('file.written')
-      writeSpan.setMetadata('status', 'ok')
-      writeSpan.setMetadata('bytes', Buffer.byteLength(content, 'utf-8'))
-      notifyConfigWatcherForWrite(deps, workspaceId, safePath)
+      await withWorkspaceMutation(ctx, deps, async (currentWorkspaceId, scopedContext) => {
+        const safePath = await validateWorkspaceMutationPath(scopedContext, deps, path)
+        const parsedPath = parsePath(safePath)
+        writeSpan.setMetadata('file', parsedPath.base)
+        writeSpan.setMetadata('extension', parsedPath.ext || null)
+        writeSpan.mark('path.validated')
+        await mkdir(dirname(safePath), { recursive: true })
+        await writeFile(safePath, content, 'utf-8')
+        writeSpan.mark('file.written')
+        writeSpan.setMetadata('status', 'ok')
+        writeSpan.setMetadata('bytes', Buffer.byteLength(content, 'utf-8'))
+        notifyConfigWatcherForWrite(deps, currentWorkspaceId, safePath)
+      })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       writeSpan.setMetadata('status', 'error')
@@ -547,10 +549,11 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   server.handle(RPC_CHANNELS.file.DELETE, async (ctx, path: string) => {
     try {
-      const workspaceId = resolveContextWorkspaceId(ctx, deps)
-      const safePath = await validateWorkspaceMutationPath(ctx, deps, path)
-      await unlink(safePath)
-      notifyConfigWatcherForWrite(deps, workspaceId, safePath)
+      await withWorkspaceMutation(ctx, deps, async (workspaceId, scopedContext) => {
+        const safePath = await validateWorkspaceMutationPath(scopedContext, deps, path)
+        await unlink(safePath)
+        notifyConfigWatcherForWrite(deps, workspaceId, safePath)
+      })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       deps.platform.logger.error('deleteFile error:', path, message)
@@ -560,8 +563,10 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   server.handle(RPC_CHANNELS.file.CREATE_DIRECTORY, async (ctx, path: string) => {
     try {
-      const safePath = await validateWorkspaceMutationPath(ctx, deps, path)
-      await mkdir(safePath, { recursive: true })
+      await withWorkspaceMutation(ctx, deps, async (_workspaceId, scopedContext) => {
+        const safePath = await validateWorkspaceMutationPath(scopedContext, deps, path)
+        await mkdir(safePath, { recursive: true })
+      })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       deps.platform.logger.error('createDirectory error:', path, message)
@@ -734,21 +739,24 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
       }
 
       validateSessionId(sessionId)
-      const sessionPath = deps.sessionManager.getSessionPath(sessionId)
-      if (!sessionPath) {
-        throw new Error(`Session not found: ${sessionId}`)
-      }
-      await validateWorkspaceFilePath(ctx, deps, sessionPath)
+      return await deps.sessionManager.withSessionPathOperation(sessionId, async sessionPath => {
+        await validateWorkspaceFilePath(ctx, deps, sessionPath)
 
-      const attachmentsDir = join(sessionPath, 'attachments')
-      await mkdir(attachmentsDir, { recursive: true })
-      return await storeAttachmentFiles({
-        attachment,
-        attachmentsDir,
-        id: randomUUID(),
-        safeName: sanitizeFilename(attachment.name),
-        imageProcessor: deps.platform.imageProcessor,
-        logger: deps.platform.logger,
+        const attachmentsDir = await validateWorkspaceMutationPath(
+          ctx,
+          deps,
+          join(sessionPath, 'attachments'),
+        )
+        await mkdir(attachmentsDir, { recursive: true })
+        return storeAttachmentFiles({
+          attachment,
+          attachmentsDir,
+          id: randomUUID(),
+          safeName: sanitizeFilename(attachment.name),
+          validateWritePath: path => validateWorkspaceMutationPath(ctx, deps, path),
+          imageProcessor: deps.platform.imageProcessor,
+          logger: deps.platform.logger,
+        })
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'

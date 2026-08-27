@@ -202,6 +202,25 @@ describe('ActivityRail free-conversation scope', () => {
     expect(appSource).toContain('window.electronAPI.relinkWorkspace(workspaceId, rootPath)')
   })
 
+  it('orders a newly created Project before older Projects without access timestamps', () => {
+    installElectronApi()
+    const html = renderToStaticMarkup(
+      <Provider store={createStore()}>
+        <FocusProvider>
+          <ActivityRail
+            activeItem="recent"
+            workspaces={[
+              { id: 'older', name: 'A 旧项目', slug: 'older', rootPath: '/tmp/older', createdAt: 1 },
+              { id: 'newer', name: 'Z 新项目', slug: 'newer', rootPath: '/tmp/newer', createdAt: 2 },
+            ]}
+          />
+        </FocusProvider>
+      </Provider>
+    )
+
+    expect(html.indexOf('Z 新项目')).toBeLessThan(html.indexOf('A 旧项目'))
+  })
+
   it('labels the section by its domain rather than as a global recent list', () => {
     installElectronApi()
     const html = renderToStaticMarkup(

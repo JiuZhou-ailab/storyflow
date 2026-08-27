@@ -18,7 +18,9 @@ describe('queued message send-now', () => {
     sm = new SessionManager()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await sm.flushAllSessions()
+    sm.cleanup()
     rmSync(tmpRoot, { recursive: true, force: true })
   })
 
@@ -160,5 +162,39 @@ describe('queued message send-now', () => {
       sessionId,
       messageId: 'q1',
     })
+  })
+
+  it('keeps an accepted queue mutation ahead of runtime invalidation', async () => {
+    const { sessionId, managed } = buildProcessingSession()
+    managed.isProcessing = false
+    managed.agent = null
+    managed.llmConnection = 'test-connection'
+    managed.messagesLoaded = false
+    let markHydrationStarted!: () => void
+    let finishHydration!: () => void
+    const hydrationStarted = new Promise<void>(resolve => { markHydrationStarted = resolve })
+    const hydrationGate = new Promise<void>(resolve => { finishHydration = resolve })
+    ;(sm as unknown as {
+      ensureMessagesLoaded(session: typeof managed): Promise<void>
+    }).ensureMessagesLoaded = async () => {
+      markHydrationStarted()
+      await hydrationGate
+    }
+
+    const removal = sm.removeQueuedMessage(sessionId, 'q1')
+    await hydrationStarted
+    let invalidationFinished = false
+    const invalidation = sm.disposeConnectionRuntimes('test-connection').then(() => {
+      invalidationFinished = true
+    })
+    await Promise.resolve()
+    expect(invalidationFinished).toBe(false)
+
+    finishHydration()
+    await removal
+    await invalidation
+    expect(managed.messages.map(message => message.id)).toEqual(['first', 'q2'])
+    expect(managed.messageQueue.map(message => message.messageId)).toEqual(['q2'])
+    expect(managed.runtimeState).toBeUndefined()
   })
 })

@@ -9,6 +9,7 @@ import { appendFile } from 'fs/promises';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import type { ActionExecutionResult } from './types.ts';
+import { resolveAutomationOwnedPath } from './resolve-config-path.ts';
 
 // ============================================================================
 // Types
@@ -42,7 +43,7 @@ export type LoggedAutomationEventInput = Omit<LoggedAutomationEvent, 'id' | 'tim
 // ============================================================================
 
 export class AutomationEventLogger {
-  private logPath: string;
+  private readonly workspaceRootPath: string;
   private buffer: string[] = [];
   private flushTimer: NodeJS.Timeout | null = null;
   private isDisposed = false;
@@ -55,7 +56,7 @@ export class AutomationEventLogger {
   onEventLost?: (events: string[], error: Error) => void;
 
   constructor(workspaceRootPath: string) {
-    this.logPath = join(workspaceRootPath, 'events.jsonl');
+    this.workspaceRootPath = workspaceRootPath;
   }
 
   /**
@@ -82,7 +83,7 @@ export class AutomationEventLogger {
    * Get the path to the event log file.
    */
   getLogPath(): string {
-    return this.logPath;
+    return join(this.workspaceRootPath, 'events.jsonl');
   }
 
   /**
@@ -121,7 +122,11 @@ export class AutomationEventLogger {
     // Retry with exponential backoff
     for (let attempt = 0; attempt < this.MAX_RETRIES; attempt++) {
       try {
-        await appendFile(this.logPath, lines, 'utf-8');
+        const logPath = resolveAutomationOwnedPath(
+          this.workspaceRootPath,
+          join(this.workspaceRootPath, 'events.jsonl'),
+        );
+        await appendFile(logPath, lines, 'utf-8');
         this.flushInProgress = false;
         return; // Success
       } catch (error) {

@@ -276,6 +276,31 @@ describe('FreeFormInput attachment read path', () => {
     expect(pickerSource).not.toContain('FolderUp')
   })
 
+  it('collapses the desktop attachment and source controls into one add menu', () => {
+    const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
+    const desktopStart = source.indexOf('{/* Desktop: one add menu')
+    const desktopEnd = source.indexOf('{/* Right side:', desktopStart)
+    const desktopSource = source.slice(desktopStart, desktopEnd)
+
+    expect(desktopSource).toContain('<Plus className="h-4 w-4" />')
+    expect(desktopSource).toContain('onSelect={handleAttachClick}')
+    expect(desktopSource).toContain("setSourceDropdownOpen(true)")
+    expect(desktopSource).toContain('data-tutorial="source-selector-button"')
+    expect(desktopSource).not.toContain('renderAttachmentPicker(!!isEmptySession)')
+  })
+
+  it('uses text color alone for the desktop permission mode state', () => {
+    const source = readFileSync(new URL('../DesktopPermissionModeSelector.tsx', import.meta.url), 'utf-8')
+    const colorsStart = source.indexOf('const currentColor =')
+    const colorsEnd = source.indexOf('\n\n  return (', colorsStart)
+    const colorsSource = source.slice(colorsStart, colorsEnd)
+
+    expect(colorsSource).toContain("ask: 'text-info'")
+    expect(colorsSource).toContain("'allow-all': 'text-accent'")
+    expect(colorsSource).not.toContain('bg-')
+    expect(source).not.toContain('shadow-tinted')
+  })
+
   it('scopes asynchronous attachment imports to the active session and blocks send while loading', () => {
     const inputContainerSource = readFileSync(new URL('../InputContainer.tsx', import.meta.url), 'utf-8')
     const inputSource = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')

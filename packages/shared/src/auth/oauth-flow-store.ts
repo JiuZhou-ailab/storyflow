@@ -61,8 +61,24 @@ export class OAuthFlowStore {
     return flow;
   }
 
+  /** Atomically consume a flow so an authorization code can only be exchanged once. */
+  claim(state: string): PendingOAuthFlow | null {
+    const flow = this.getByState(state);
+    if (flow) this.flows.delete(state);
+    return flow;
+  }
+
   remove(state: string): void {
     this.flows.delete(state);
+  }
+
+  /** Invalidate every pending flow for a Source before credentials are revoked. */
+  removeForSource(workspaceId: string, sourceSlug: string): void {
+    for (const [state, flow] of this.flows) {
+      if (flow.workspaceId === workspaceId && flow.sourceSlug === sourceSlug) {
+        this.flows.delete(state);
+      }
+    }
   }
 
   /** Prune expired entries. Called on interval + lazily on access. */

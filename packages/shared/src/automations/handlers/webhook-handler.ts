@@ -245,8 +245,11 @@ export class WebhookHandler implements AutomationHandler {
       if (isTransientFailure(result)) {
         if (result.attempts && result.attempts > 1) {
           const expandedAction = expandWebhookAction(task.action, env);
-          this.retryScheduler.enqueue(task.matcherId, expandedAction, result.url, result.error)
-            .catch(e => log.debug(`[WebhookHandler] Failed to enqueue for deferred retry: ${e}`));
+          try {
+            await this.retryScheduler.enqueue(task.matcherId, expandedAction, result.url, result.error);
+          } catch (e) {
+            log.debug(`[WebhookHandler] Failed to enqueue for deferred retry: ${e}`);
+          }
         }
       }
     }
@@ -261,14 +264,14 @@ export class WebhookHandler implements AutomationHandler {
   /**
    * Clean up resources.
    */
-  dispose(): void {
+  async dispose(): Promise<void> {
     if (this.bus && this.boundHandler) {
       this.bus.offAny(this.boundHandler);
       this.boundHandler = null;
     }
     this.bus = null;
     this.rateLimiter.dispose();
-    this.retryScheduler.dispose();
+    await this.retryScheduler.dispose();
     log.debug(`[WebhookHandler] Disposed`);
   }
 }

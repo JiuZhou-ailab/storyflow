@@ -3,6 +3,7 @@
 // pos: Guards the product-side half of the Pi-owned rewind transaction
 
 import { afterEach, expect, it, jest } from 'bun:test'
+import { randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,7 +23,7 @@ function createHarness() {
   const rootPath = mkdtempSync(join(tmpdir(), 'rewind-transaction-'))
   const manager = new SessionManager()
   const managed = createManagedSession(
-    { id: 'rewind-session', name: 'rewind test' },
+    { id: `rewind-session-${randomUUID()}`, name: 'rewind test' },
     {
       id: 'rewind-workspace',
       name: 'Rewind Workspace',
@@ -146,6 +147,42 @@ it('holds runtime disposal until Pi rewind settles', async () => {
     await disposal
     expect(dispose).toHaveBeenCalledTimes(1)
   } finally {
+    rmSync(rootPath, { recursive: true, force: true })
+  }
+})
+
+it('holds runtime invalidation until a local rewind is durable', async () => {
+  const { rootPath, manager, managed } = createHarness()
+  try {
+    let markFlushStarted!: () => void
+    let finishFlush!: () => void
+    const flushStarted = new Promise<void>(resolve => { markFlushStarted = resolve })
+    const flushGate = new Promise<void>(resolve => { finishFlush = resolve })
+    const originalFlush = manager.flushSession.bind(manager)
+    ;(manager as unknown as { flushSession: (sessionId: string) => Promise<void> }).flushSession = async sessionId => {
+      markFlushStarted()
+      await flushGate
+      await originalFlush(sessionId)
+    }
+    managed.llmConnection = 'test-connection'
+
+    const rewind = manager.rewindUserMessage(managed.id, 'user-1')
+    await flushStarted
+    let invalidationSettled = false
+    const invalidation = manager.disposeConnectionRuntimes('test-connection').then(() => {
+      invalidationSettled = true
+    })
+    await Promise.resolve()
+    expect(invalidationSettled).toBe(false)
+
+    finishFlush()
+    await expect(rewind).resolves.toEqual({ draftText: 'first' })
+    await invalidation
+    expect(managed.messages).toEqual([])
+    expect(managed.runtimeState).toBeUndefined()
+  } finally {
+    await manager.flushSession(managed.id)
+    manager.cleanup()
     rmSync(rootPath, { recursive: true, force: true })
   }
 })

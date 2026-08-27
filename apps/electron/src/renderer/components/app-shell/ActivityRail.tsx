@@ -374,7 +374,8 @@ export function ActivityRail({
         && !workspace.archivedAt
       ))
       .sort((left, right) => {
-        const recentOrder = (right.lastAccessedAt ?? 0) - (left.lastAccessedAt ?? 0)
+        const recentOrder = Math.max(right.lastAccessedAt ?? 0, right.createdAt ?? 0)
+          - Math.max(left.lastAccessedAt ?? 0, left.createdAt ?? 0)
         return recentOrder || left.name.localeCompare(right.name, 'zh-Hans')
       }),
     [workspaces],

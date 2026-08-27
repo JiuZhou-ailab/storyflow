@@ -208,6 +208,10 @@ export interface ISessionManager {
   // ---------------------------------------------------------------------------
 
   getSessionPath(sessionId: string): string | null
+  withSessionPathOperation<T>(
+    sessionId: string,
+    work: (sessionPath: string) => Promise<T>,
+  ): Promise<T>
   reloadSessions(workspaceId?: string): Promise<void>
   refreshTitle(sessionId: string): Promise<{ success: boolean; title?: string; error?: string }>
   refreshBadge(): void
@@ -240,6 +244,23 @@ export interface ISessionManager {
     key: 'permissionMode' | 'enabledSourceSlugs' | 'localMcpEnabled' | 'automationsEnabled',
     value: unknown,
   ): Promise<void>
+  /** Run a Project-root mutation against the current locator under the shared lifecycle lock. Callback must not re-enter Project lifecycle methods. */
+  withProjectLifecycle<T>(
+    projectId: string,
+    work: (workspace: Workspace) => Promise<T>,
+  ): Promise<T>
+  /** Retain the current Project locator for lock-free work; lifecycle transitions drain accepted operations before commit. */
+  withProjectOperation<T>(
+    projectId: string,
+    work: (workspace: Workspace) => Promise<T>,
+  ): Promise<T>
+  /** Block new Project operations, drain accepted work, then run lock-free exclusive work. Callback must not re-enter Project lifecycle methods. */
+  withProjectExclusiveOperation<T>(
+    projectId: string,
+    work: (workspace: Workspace) => Promise<T>,
+  ): Promise<T>
+  /** Re-apply persisted Host Source grants to cached Sessions and live runtimes. */
+  reconcileProjectSourceGrants(projectId: string): Promise<void>
   setupConfigWatcher(workspaceRootPath: string, workspaceId: string): void
   /**
    * Manually notify the ConfigWatcher of a file change.

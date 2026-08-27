@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { appendAutomationHistoryEntry, compactAutomationHistory } from './history-store.ts';
@@ -56,6 +56,20 @@ describe('history-store', () => {
       const entries = readHistory(tempDir);
       expect(entries).toHaveLength(5);
       expect(entries.map(e => e.ts)).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('does not append history through a Project-internal file symlink', async () => {
+      const outsideDir = mkdtempSync(join(tmpdir(), 'history-store-outside-'));
+      const outsideHistory = join(outsideDir, AUTOMATIONS_HISTORY_FILE);
+      writeFileSync(outsideHistory, 'sentinel\n');
+      symlinkSync(outsideHistory, join(tempDir, AUTOMATIONS_HISTORY_FILE));
+
+      try {
+        await expect(appendAutomationHistoryEntry(tempDir, makeEntry('a1', 1))).rejects.toThrow(/symbolic link/);
+        expect(readFileSync(outsideHistory, 'utf-8')).toBe('sentinel\n');
+      } finally {
+        rmSync(outsideDir, { recursive: true, force: true });
+      }
     });
   });
 

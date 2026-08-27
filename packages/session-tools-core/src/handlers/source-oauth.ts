@@ -28,6 +28,12 @@ export interface SourceOAuthTriggerArgs {
   sourceSlug: string;
 }
 
+function getSourceGrantError(ctx: SessionToolContext, sourceSlug: string): ToolResult | null {
+  return ctx.isSourceExecutionAllowed(sourceSlug)
+    ? null
+    : errorResponse(`Source '${sourceSlug}' is not enabled by Host settings.`);
+}
+
 /**
  * Handle the source_oauth_trigger tool call.
  * Triggers OAuth 2.0 + PKCE flow for MCP sources.
@@ -43,6 +49,8 @@ export async function handleSourceOAuthTrigger(
   if (!source) {
     return errorResponse(`Source '${sourceSlug}' not found.`);
   }
+  const grantError = getSourceGrantError(ctx, sourceSlug);
+  if (grantError) return grantError;
 
   // Validate source uses OAuth — supports MCP OAuth and generic API OAuth (with or without oauth config block)
   const isMcpOAuth = source.type === 'mcp' && source.mcp?.authType === 'oauth';
@@ -115,6 +123,8 @@ export async function handleGoogleOAuthTrigger(
   if (!source) {
     return errorResponse(`Source '${sourceSlug}' not found.`);
   }
+  const grantError = getSourceGrantError(ctx, sourceSlug);
+  if (grantError) return grantError;
 
   // Verify this is a Google source
   if (source.provider !== 'google') {
@@ -221,6 +231,8 @@ export async function handleSlackOAuthTrigger(
   if (!source) {
     return errorResponse(`Source '${sourceSlug}' not found.`);
   }
+  const grantError = getSourceGrantError(ctx, sourceSlug);
+  if (grantError) return grantError;
 
   // Verify this is a Slack source
   if (source.provider !== 'slack') {
@@ -310,6 +322,8 @@ export async function handleMicrosoftOAuthTrigger(
   if (!source) {
     return errorResponse(`Source '${sourceSlug}' not found.`);
   }
+  const grantError = getSourceGrantError(ctx, sourceSlug);
+  if (grantError) return grantError;
 
   // Verify this is a Microsoft source
   if (source.provider !== 'microsoft') {

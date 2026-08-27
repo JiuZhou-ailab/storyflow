@@ -1,4 +1,4 @@
-// input: Validated attachment bytes, a session-owned directory, and platform image services
+// input: Attachment bytes, a session-owned directory, its write-path validator, and platform image services
 // output: Immutable original storage, derived representations, and transient model-input bytes
 // pos: Provider-neutral attachment persistence beneath RPC and session boundaries
 
@@ -7,7 +7,7 @@ import { writeFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AttachmentRepresentation, StoredAttachment } from '@craft-agent/core/types'
 import type { FileAttachment, StoreAttachmentResult } from '@craft-agent/shared/protocol'
-import { IMAGE_LIMITS, validateImageForClaudeAPI } from '@craft-agent/shared/utils'
+import { IMAGE_LIMITS, MAX_ATTACHMENT_BYTES, validateImageForClaudeAPI } from '@craft-agent/shared/utils'
 import { MarkItDown } from 'markitdown-js'
 import type { ImageProcessor, Logger } from '../runtime/platform'
 import { inspectImageBuffer, resizeImageForAPI } from './image-utils'
@@ -34,13 +34,32 @@ export async function storeAttachmentFiles(args: {
   attachmentsDir: string
   id: string
   safeName: string
+  validateWritePath: (path: string) => Promise<string>
   imageProcessor: ImageProcessor
   logger: Logger
 }): Promise<StoreAttachmentResult> {
-  const { attachment, attachmentsDir, id, safeName, imageProcessor, logger } = args
+  const { attachment, attachmentsDir, id, safeName, validateWritePath, imageProcessor, logger } = args
+  if (!Number.isSafeInteger(attachment.size) || attachment.size <= 0) {
+    throw new Error('Attachment size must be a positive integer')
+  }
+  if (attachment.size > MAX_ATTACHMENT_BYTES) {
+    throw new Error(`Attachment exceeds ${MAX_ATTACHMENT_BYTES / 1024 / 1024}MB limit`)
+  }
+  if (attachment.base64 !== undefined && typeof attachment.base64 !== 'string') {
+    throw new Error('Attachment base64 content must be a string')
+  }
+  if (attachment.text !== undefined && typeof attachment.text !== 'string') {
+    throw new Error('Attachment text content must be a string')
+  }
+  if (attachment.base64 && attachment.base64.length > Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4) {
+    throw new Error(`Attachment exceeds ${MAX_ATTACHMENT_BYTES / 1024 / 1024}MB limit`)
+  }
+  if (attachment.text && Buffer.byteLength(attachment.text, 'utf8') > MAX_ATTACHMENT_BYTES) {
+    throw new Error(`Attachment exceeds ${MAX_ATTACHMENT_BYTES / 1024 / 1024}MB limit`)
+  }
   const filesToCleanup: string[] = []
   const representations: AttachmentRepresentation[] = []
-  const storedPath = join(attachmentsDir, `${id}_${safeName}`)
+  const storedPath = await validateWritePath(join(attachmentsDir, `${id}_${safeName}`))
 
   try {
     const original: Buffer | null = attachment.base64
@@ -51,7 +70,7 @@ export async function storeAttachmentFiles(args: {
     if (!original) {
       throw new Error('Attachment has no content (neither base64 nor text)')
     }
-    if (attachment.base64 && Math.abs(original.length - attachment.size) > 100) {
+    if (original.length !== attachment.size) {
       throw new Error(`Attachment corrupted: size mismatch (expected ${attachment.size}, got ${original.length})`)
     }
 
@@ -128,7 +147,7 @@ export async function storeAttachmentFiles(args: {
         }
 
         const modelExtension = modelInputMimeType === 'image/jpeg' ? '.jpg' : '.png'
-        const modelPath = join(attachmentsDir, `${id}_model${modelExtension}`)
+        const modelPath = await validateWritePath(join(attachmentsDir, `${id}_model${modelExtension}`))
         await writeFile(modelPath, modelInput)
         filesToCleanup.push(modelPath)
         representations.push(representation(
@@ -144,12 +163,13 @@ export async function storeAttachmentFiles(args: {
 
     let thumbnailPath: string | undefined
     let thumbnailBase64: string | undefined
-    const thumbPath = join(attachmentsDir, `${id}_thumb.png`)
+    const thumbTargetPath = join(attachmentsDir, `${id}_thumb.png`)
     try {
       const thumbnail = await imageProcessor.process(storedPath, {
         resize: { width: 200, height: 200 },
         format: 'png',
       })
+      const thumbPath = await validateWritePath(thumbTargetPath)
       await writeFile(thumbPath, thumbnail)
       filesToCleanup.push(thumbPath)
       thumbnailPath = thumbPath
@@ -161,11 +181,12 @@ export async function storeAttachmentFiles(args: {
 
     let markdownPath: string | undefined
     if (attachment.type === 'office' || attachment.type === 'pdf') {
-      const markdownFilePath = join(attachmentsDir, `${id}_${safeName}.md`)
+      const markdownTargetPath = join(attachmentsDir, `${id}_${safeName}.md`)
       try {
         const result = await new MarkItDown().convert(storedPath)
         if (!result?.textContent) throw new Error('Conversion returned empty result')
         const markdown = Buffer.from(result.textContent, 'utf8')
+        const markdownFilePath = await validateWritePath(markdownTargetPath)
         await writeFile(markdownFilePath, markdown)
         filesToCleanup.push(markdownFilePath)
         markdownPath = markdownFilePath

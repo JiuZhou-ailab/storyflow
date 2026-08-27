@@ -127,7 +127,7 @@ export class PromptHandler implements AutomationHandler {
     // Deliver prompts via callback
     if (pendingPrompts.length > 0 && this.options.onPromptsReady) {
       log.debug(`[PromptHandler] Delivering ${pendingPrompts.length} prompts`);
-      this.options.onPromptsReady(pendingPrompts);
+      await this.options.onPromptsReady(pendingPrompts);
     }
   }
 

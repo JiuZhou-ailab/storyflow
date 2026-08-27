@@ -3,7 +3,7 @@
 // pos: Supply-chain trust boundary shared by local exchange and global Skills Market installs
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs'
-import { join, basename } from 'path'
+import { join, basename, resolve } from 'path'
 import { randomUUID } from 'crypto'
 import {
   type BundleFile,
@@ -18,12 +18,17 @@ import {
   getWorkspaceSkillsPath,
   getWorkspaceSourcesPath,
 } from '../workspaces/storage.ts'
-import { ensureProjectOwnedDirectory, resolveProjectOwnedPath } from '../workspaces/paths.ts'
+import {
+  assertSymlinkFreeTree,
+  ensureProjectOwnedDirectory,
+  resolveProjectOwnedPath,
+} from '../workspaces/paths.ts'
 import { assertSafeSourceSlug, loadSourceConfig, getSourcePath } from '../sources/storage.ts'
 import { validateSourceConfig } from '../config/validators.ts'
 import { AUTOMATIONS_CONFIG_FILE, AUTOMATIONS_HISTORY_FILE, AUTOMATIONS_RETRY_QUEUE_FILE } from '../automations/constants.ts'
 import { validateAutomationsConfig } from '../automations/validation.ts'
-import { generateShortId } from '../automations/resolve-config-path.ts'
+import { generateShortId, resolveAutomationOwnedPath } from '../automations/resolve-config-path.ts'
+import { withRetryQueueMutation } from '../automations/retry-scheduler.ts'
 import { VALID_EVENTS } from '../automations/schemas.ts'
 import { debug } from '../utils/debug.ts'
 import { isValidSkillSlug, validateSkillDocumentForSlug } from '../skills/storage.ts'
@@ -237,9 +242,19 @@ function exportSkills(
   }
 
   for (const slug of slugs) {
+    if (!isValidSkillSlug(slug)) {
+      warnings.push(`Skill selector '${slug}' is invalid, skipping`)
+      continue
+    }
     const skillDir = join(skillsDir, slug)
     if (!existsSync(skillDir)) {
       warnings.push(`Skill '${slug}' not found, skipping`)
+      continue
+    }
+    try {
+      assertSymlinkFreeTree(skillDir)
+    } catch (err) {
+      warnings.push(`Skill '${slug}' cannot be exported: ${err}`)
       continue
     }
 
@@ -326,7 +341,16 @@ function exportAutomations(
   selection: string[] | 'all',
   warnings: string[],
 ): AutomationBundleEntry[] {
-  const automationsPath = join(workspaceRootPath, AUTOMATIONS_CONFIG_FILE)
+  let automationsPath: string
+  try {
+    automationsPath = resolveAutomationOwnedPath(
+      workspaceRootPath,
+      join(workspaceRootPath, AUTOMATIONS_CONFIG_FILE),
+    )
+  } catch (err) {
+    warnings.push(`Failed to read automations.json: ${err}`)
+    return []
+  }
 
   if (!existsSync(automationsPath)) {
     warnings.push('No automations.json found in workspace')
@@ -657,11 +681,18 @@ export async function importResources(
     : emptyBucketResult()
 
   const skillsResult = bundle.resources.skills
-    ? importSkills(skillsRootPath, bundle.resources.skills, mode)
+    ? importSkills(
+        skillsRootPath,
+        bundle.resources.skills,
+        mode,
+        resolve(skillsRootPath) === resolve(getWorkspaceSkillsPath(workspaceRootPath))
+          ? workspaceRootPath
+          : undefined,
+      )
     : emptyBucketResult()
 
   const automationsResult = bundle.resources.automations?.length
-    ? importAutomations(workspaceRootPath, bundle.resources.automations, mode)
+    ? await importAutomations(workspaceRootPath, bundle.resources.automations, mode)
     : emptyBucketResult()
 
   return {
@@ -767,17 +798,22 @@ function importSkills(
   skillsDir: string,
   entries: SkillBundleEntry[],
   mode: ResourceImportMode,
+  projectRootPath?: string,
 ): ImportBucketResult {
   const result = emptyBucketResult()
 
-  if (!existsSync(skillsDir)) {
+  if (!projectRootPath && !existsSync(skillsDir)) {
     mkdirSync(skillsDir, { recursive: true })
   }
 
   for (const entry of entries) {
     try {
-      const targetDir = join(skillsDir, entry.slug)
+      const ownedSkillsDir = projectRootPath
+        ? ensureProjectOwnedDirectory(projectRootPath, skillsDir)
+        : skillsDir
+      const targetDir = join(ownedSkillsDir, entry.slug)
       const exists = existsSync(targetDir)
+      if (projectRootPath && exists) resolveProjectOwnedPath(projectRootPath, targetDir)
 
       if (exists && mode === 'skip') {
         result.skipped.push(entry.slug)
@@ -785,8 +821,9 @@ function importSkills(
       }
 
       // Stage: build in temp dir
-      const tmpDir = join(skillsDir, `.tmp-${entry.slug}-${randomUUID().slice(0, 8)}`)
-      mkdirSync(tmpDir, { recursive: true })
+      const tmpDir = join(ownedSkillsDir, `.tmp-${entry.slug}-${randomUUID().slice(0, 8)}`)
+      if (projectRootPath) ensureProjectOwnedDirectory(projectRootPath, tmpDir)
+      else mkdirSync(tmpDir, { recursive: true })
 
       try {
         // Restore all files
@@ -801,7 +838,10 @@ function importSkills(
 
         // On overwrite: remove old dir
         if (exists) {
-          rmSync(targetDir, { recursive: true, force: true })
+          rmSync(
+            projectRootPath ? resolveProjectOwnedPath(projectRootPath, targetDir) : targetDir,
+            { recursive: true, force: true },
+          )
         }
 
         // Atomic replace: rename temp → target
@@ -852,11 +892,16 @@ function findMatcherById(
  * Filter JSONL file to remove entries matching a set of matcher IDs.
  * Used for selective history/retry-queue cleanup on overwrite.
  */
-function filterJsonlByMatcherIds(filePath: string, idsToRemove: Set<string>): void {
-  if (!existsSync(filePath) || idsToRemove.size === 0) return
-
+function filterJsonlByMatcherIds(
+  workspaceRootPath: string,
+  filePath: string,
+  idsToRemove: Set<string>,
+): boolean {
+  if (idsToRemove.size === 0) return true
   try {
-    const raw = readFileSync(filePath, 'utf-8')
+    const ownedFilePath = resolveAutomationOwnedPath(workspaceRootPath, filePath)
+    if (!existsSync(ownedFilePath)) return true
+    const raw = readFileSync(ownedFilePath, 'utf-8')
     const lines = raw.split('\n')
     const kept: string[] = []
 
@@ -874,9 +919,11 @@ function filterJsonlByMatcherIds(filePath: string, idsToRemove: Set<string>): vo
       }
     }
 
-    writeFileSync(filePath, kept.length > 0 ? kept.join('\n') + '\n' : '', 'utf-8')
+    writeFileSync(ownedFilePath, kept.length > 0 ? kept.join('\n') + '\n' : '', 'utf-8')
+    return true
   } catch {
     // Non-critical: cleanup failure doesn't block import
+    return false
   }
 }
 
@@ -884,9 +931,30 @@ function importAutomations(
   workspaceRootPath: string,
   entries: AutomationBundleEntry[],
   mode: ResourceImportMode,
+): Promise<ImportBucketResult> {
+  return withRetryQueueMutation(
+    workspaceRootPath,
+    () => importAutomationsUnlocked(workspaceRootPath, entries, mode),
+  )
+}
+
+function importAutomationsUnlocked(
+  workspaceRootPath: string,
+  entries: AutomationBundleEntry[],
+  mode: ResourceImportMode,
 ): ImportBucketResult {
   const result = emptyBucketResult()
-  const configPath = join(workspaceRootPath, AUTOMATIONS_CONFIG_FILE)
+  let configPath: string
+  try {
+    configPath = resolveAutomationOwnedPath(
+      workspaceRootPath,
+      join(workspaceRootPath, AUTOMATIONS_CONFIG_FILE),
+    )
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err)
+    for (const entry of entries) result.failed.push({ id: automationLabel(entry), error })
+    return result
+  }
 
   // Read existing config (if present)
   let existingConfig: { version?: number; automations: Record<string, AutomationMatcher[]> }
@@ -980,6 +1048,26 @@ function importAutomations(
     return result
   }
 
+  const retryPath = join(workspaceRootPath, AUTOMATIONS_RETRY_QUEUE_FILE)
+  let retrySnapshot: string | null = null
+  if (overwrittenIds.size > 0) {
+    try {
+      const ownedRetryPath = resolveAutomationOwnedPath(workspaceRootPath, retryPath)
+      retrySnapshot = existsSync(ownedRetryPath) ? readFileSync(ownedRetryPath, 'utf-8') : null
+    } catch {
+      const error = 'Automation retry cleanup failed; import was not committed'
+      result.imported = []
+      for (const entry of entries) result.failed.push({ id: automationLabel(entry), error })
+      return result
+    }
+    if (!filterJsonlByMatcherIds(workspaceRootPath, retryPath, overwrittenIds)) {
+      const error = 'Automation retry cleanup failed; import was not committed'
+      result.imported = []
+      for (const entry of entries) result.failed.push({ id: automationLabel(entry), error })
+      return result
+    }
+  }
+
   // Write atomically: temp file + rename
   try {
     const configObj = {
@@ -990,7 +1078,17 @@ function importAutomations(
     writeFileSync(tmpPath, JSON.stringify(configObj, null, 2) + '\n', 'utf-8')
     renameSync(tmpPath, configPath)
   } catch (err) {
-    const errorMsg = `Failed to write automations.json: ${err}`
+    let restoreError = ''
+    if (overwrittenIds.size > 0) {
+      try {
+        const ownedRetryPath = resolveAutomationOwnedPath(workspaceRootPath, retryPath)
+        if (retrySnapshot === null) rmSync(ownedRetryPath, { force: true })
+        else writeFileSync(ownedRetryPath, retrySnapshot, 'utf-8')
+      } catch (restoreErr) {
+        restoreError = `; failed to restore automation retry queue: ${restoreErr}`
+      }
+    }
+    const errorMsg = `Failed to write automations.json: ${err}${restoreError}`
     result.imported = []
     for (const entry of entries) {
       result.failed.push({ id: automationLabel(entry), error: errorMsg })
@@ -1001,10 +1099,14 @@ function importAutomations(
   // Selectively clear history + retry queue for overwritten matcher IDs
   if (overwrittenIds.size > 0) {
     const historyPath = join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE)
-    const retryPath = join(workspaceRootPath, AUTOMATIONS_RETRY_QUEUE_FILE)
-    filterJsonlByMatcherIds(historyPath, overwrittenIds)
-    filterJsonlByMatcherIds(retryPath, overwrittenIds)
-    result.warnings.push(`Cleared history/retry entries for ${overwrittenIds.size} overwritten automation(s)`)
+    const historyCleanupSucceeded = filterJsonlByMatcherIds(
+      workspaceRootPath,
+      historyPath,
+      overwrittenIds,
+    )
+    result.warnings.push(historyCleanupSucceeded
+      ? `Cleared history/retry entries for ${overwrittenIds.size} overwritten automation(s)`
+      : `Automation history cleanup failed for ${overwrittenIds.size} overwritten automation(s)`)
   }
 
   return result

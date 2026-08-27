@@ -366,6 +366,28 @@ describe('createProjectResourceLoader', () => {
     expect(settingsManager.getHttpIdleTimeoutMs()).toBe(5 * 60 * 1000);
   });
 
+  it('keeps Pi auto-compaction enabled without rewriting user settings', async () => {
+    const agentDir = join(createRoot(), 'agent');
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, 'settings.json'),
+      JSON.stringify({ compaction: { enabled: false, keepRecentTokens: 12_345 } }),
+    );
+
+    const { settingsManager } = await createProjectResourceLoader({
+      cwd: createRoot(),
+      globalRoot: createRoot(),
+      agentDir,
+    });
+
+    expect(settingsManager.getCompactionSettings()).toMatchObject({
+      enabled: true,
+      keepRecentTokens: 12_345,
+    });
+    expect(JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf8')).compaction.enabled)
+      .toBe(false);
+  });
+
   it('loads Pi Skills without executing project or legacy Extensions', async () => {
     const projectRoot = createRoot();
     const globalRoot = createRoot();

@@ -43,6 +43,9 @@ export async function handleCredentialPrompt(
   if (!source) {
     return errorResponse(`Source '${sourceSlug}' not found.`);
   }
+  if (!ctx.isSourceExecutionAllowed(sourceSlug)) {
+    return errorResponse(`Source '${sourceSlug}' is not enabled by Host settings.`);
+  }
 
   // Detect effective mode (auto-upgrades to multi-header if source has headerNames)
   const effectiveMode = detectCredentialMode(source, mode, headerNames);

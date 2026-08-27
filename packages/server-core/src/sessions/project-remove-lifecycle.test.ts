@@ -7,101 +7,97 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { runIsolatedJson } from './isolated-test-runner'
 
 const SESSION_MANAGER_MODULE_PATH = pathToFileURL(join(import.meta.dir, 'SessionManager.ts')).href
 
 describe('Project removal lifecycle', () => {
-  it('serializes Project removal ahead of later Session creation', async () => {
+  it('serializes an explicit reload ahead of Session deletion', async () => {
     const managerModule = await import('./SessionManager')
     const manager = new managerModule.SessionManager()
     const events: string[] = []
-    let releaseRemoval!: () => void
-    const removalBlocked = new Promise<void>(resolve => { releaseRemoval = resolve })
-    ;(manager as any).removeWorkspaceLocked = async () => {
-      events.push('remove:start')
-      await removalBlocked
-      events.push('remove:end')
-      return true
+    let releaseReload!: () => void
+    const reloadGate = new Promise<void>(resolve => { releaseReload = resolve })
+    ;(manager as any).persistence.loadSessionsFromDisk = async () => {
+      events.push('reload:start')
+      await reloadGate
+      events.push('reload:end')
     }
-    ;(manager as any).createSessionLocked = async () => {
-      events.push('create')
-      return { id: 'session-after-remove' }
-    }
-
-    const removal = manager.removeWorkspace('project-serialized')
-    await Promise.resolve()
-    const creation = manager.createSession('project-serialized')
-    await Promise.resolve()
-    expect(events).toEqual(['remove:start'])
-
-    releaseRemoval()
-    await Promise.all([removal, creation])
-    expect(events).toEqual(['remove:start', 'remove:end', 'create'])
-    manager.cleanup()
-  })
-
-  it('serializes Session deletion behind an in-flight Project relink', async () => {
-    const managerModule = await import('./SessionManager')
-    const manager = new managerModule.SessionManager()
-    const events: string[] = []
-    let releaseRelink!: () => void
-    const relinkBlocked = new Promise<void>(resolve => { releaseRelink = resolve })
-    ;(manager as any).sessions.set('session-serialized', {
-      id: 'session-serialized',
-      workspace: { id: 'project-serialized' },
+    ;(manager as any).sessions.set('session-reload-race', {
+      id: 'session-reload-race',
+      workspace: { id: 'project-reload-race' },
     })
-    ;(manager as any).rebindWorkspaceRootLocked = async () => {
-      events.push('relink:start')
-      await relinkBlocked
-      events.push('relink:end')
-      return { id: 'project-serialized' }
-    }
     ;(manager as any).deleteSessionLocked = async () => {
       events.push('delete')
     }
 
-    const relink = manager.rebindWorkspaceRoot('project-serialized', '/target')
+    const reload = manager.reloadSessions('project-reload-race')
+    while (!events.includes('reload:start')) await Promise.resolve()
+    const deletion = manager.deleteSession('session-reload-race')
     await Promise.resolve()
-    const deletion = manager.deleteSession('session-serialized')
-    await Promise.resolve()
-    expect(events).toEqual(['relink:start'])
+    expect(events).toEqual(['reload:start'])
 
-    releaseRelink()
-    await Promise.all([relink, deletion])
-    expect(events).toEqual(['relink:start', 'relink:end', 'delete'])
+    releaseReload()
+    await Promise.all([reload, deletion])
+    expect(events).toEqual(['reload:start', 'reload:end', 'delete'])
     ;(manager as any).sessions.clear()
     manager.cleanup()
   })
 
-  it('serializes Host setting updates behind an in-flight Project relink', async () => {
-    const managerModule = await import('./SessionManager')
-    const manager = new managerModule.SessionManager()
-    const events: string[] = []
-    let releaseRelink!: () => void
-    const relinkBlocked = new Promise<void>(resolve => { releaseRelink = resolve })
-    ;(manager as any).rebindWorkspaceRootLocked = async () => {
-      events.push('relink:start')
-      await relinkBlocked
-      events.push('relink:end')
-      return { id: 'project-serialized' }
-    }
-    ;(manager as any).updateProjectHostSettingLocked = async () => {
-      events.push('setting')
-    }
+  it('locks the selected target root while a Project relink is in flight', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-relink-target-lock-'))
+    const configDir = join(parent, 'host')
+    const previousRoot = join(parent, 'missing-old-root')
+    const targetRoot = join(parent, 'target')
+    mkdirSync(join(targetRoot, '.craft-agent'), { recursive: true })
+    mkdirSync(configDir, { recursive: true })
+    writeFileSync(join(targetRoot, '.craft-agent', 'config.json'), JSON.stringify({
+      id: 'target-directory-id', name: 'Target', slug: 'target', createdAt: 1, updatedAt: 1,
+    }))
+    writeFileSync(join(configDir, 'config.json'), JSON.stringify({
+      workspaces: [{
+        id: 'legacy-project', name: 'Legacy', slug: 'legacy', rootPath: previousRoot,
+        createdAt: 1, directoryConfigId: 'target-directory-id',
+      }],
+      activeWorkspaceId: 'legacy-project', activeSessionId: null,
+    }))
 
-    const relink = manager.rebindWorkspaceRoot('project-serialized', '/target')
-    await Promise.resolve()
-    const setting = manager.updateProjectHostSetting('project-serialized', 'automationsEnabled', true)
-    await Promise.resolve()
-    expect(events).toEqual(['relink:start'])
-
-    releaseRelink()
-    await Promise.all([relink, setting])
-    expect(events).toEqual(['relink:start', 'relink:end', 'setting'])
-    manager.cleanup()
+    try {
+      const result = runIsolatedJson(configDir, 'RELINK_TARGET_LOCK_RESULT', `
+          import { SessionManager } from '${SESSION_MANAGER_MODULE_PATH}';
+          const manager = new SessionManager();
+          const events = [];
+          let releaseRelink;
+          const relinkGate = new Promise(resolve => { releaseRelink = resolve; });
+          manager.rebindWorkspaceRootLocked = async () => {
+            events.push('relink:start');
+            await relinkGate;
+            events.push('relink:end');
+            return { id: 'legacy-project', rootPath: ${JSON.stringify(targetRoot)} };
+          };
+          manager.reloadSessions = async () => { events.push('register:reload'); };
+          manager.setupConfigWatcher = () => {};
+          const relink = manager.rebindWorkspaceRoot('legacy-project', ${JSON.stringify(targetRoot)});
+          while (!events.includes('relink:start')) await Bun.sleep(0);
+          const registrationError = await manager.registerProject('Target', ${JSON.stringify(targetRoot)})
+            .then(() => null, error => error.message);
+          const during = [...events];
+          releaseRelink();
+          await relink;
+          console.log('RELINK_TARGET_LOCK_RESULT=' + JSON.stringify({ during, after: events, registrationError }));
+          manager.cleanup();
+        `)
+      expect(result).toEqual({
+        during: ['relink:start'],
+        after: ['relink:start', 'relink:end'],
+        registrationError: expect.stringContaining('removed or relinked'),
+      })
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
   })
 
-  it('serializes same-root Project registration and activation behind removal', () => {
+  it('fails same-root Project operations fast during removal', () => {
     const parent = mkdtempSync(join(tmpdir(), 'storyflow-register-remove-race-'))
     const configDir = join(parent, 'host')
     const projectRoot = join(parent, 'project')
@@ -119,10 +115,7 @@ describe('Project removal lifecycle', () => {
     }))
 
     try {
-      const run = Bun.spawnSync([
-        process.execPath,
-        '--eval',
-        `
+      const result = runIsolatedJson(configDir, 'REGISTER_REMOVE_RESULT', `
           import { SessionManager } from '${SESSION_MANAGER_MODULE_PATH}';
           const manager = new SessionManager();
           const events = [];
@@ -138,33 +131,33 @@ describe('Project removal lifecycle', () => {
           let watcherCalls = 0;
           manager.setupConfigWatcher = () => { events.push('watch:' + ++watcherCalls); };
           const removal = manager.removeWorkspace('project-old');
-          await Bun.sleep(0);
-          const registration = manager.registerProject('Project', ${JSON.stringify(projectRoot)});
-          const activation = manager.activateProject('project-old');
-          await Bun.sleep(20);
+          while (!events.includes('remove:start')) await Bun.sleep(0);
+          const [registrationError, activationError] = await Promise.all([
+            manager.registerProject('Project', ${JSON.stringify(projectRoot)})
+              .then(() => null, error => error.message),
+            manager.activateProject('project-old')
+              .then(() => null, error => error.message),
+          ]);
           const during = [...events];
           releaseRemoval();
-          await Promise.all([removal, registration, activation]);
-          console.log('REGISTER_REMOVE_RESULT=' + JSON.stringify({ during, after: events }));
+          await removal;
+          console.log('REGISTER_REMOVE_RESULT=' + JSON.stringify({
+            during, after: events, registrationError, activationError,
+          }));
           manager.cleanup();
-        `,
-      ], {
-        env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
-        stdout: 'pipe', stderr: 'pipe',
-      })
-      if (run.exitCode !== 0) throw new Error(run.stderr.toString())
-      const match = run.stdout.toString().match(/REGISTER_REMOVE_RESULT=(\{.*\})/)
-      if (!match) throw new Error(`Missing register/remove result:\n${run.stdout.toString()}`)
-      expect(JSON.parse(match[1])).toEqual({
+        `)
+      expect(result).toEqual({
         during: ['remove:start'],
-        after: ['remove:start', 'remove:end', 'register:reload', 'watch:1', 'watch:2'],
+        after: ['remove:start', 'remove:end'],
+        registrationError: expect.stringContaining('removed or relinked'),
+        activationError: expect.stringContaining('removed or relinked'),
       })
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }
   })
 
-  it('serializes remote reconnect behind Project removal', () => {
+  it('fails remote reconnect fast during Project removal', () => {
     const parent = mkdtempSync(join(tmpdir(), 'storyflow-remote-remove-race-'))
     const configDir = join(parent, 'host')
     mkdirSync(configDir, { recursive: true })
@@ -182,10 +175,7 @@ describe('Project removal lifecycle', () => {
     }))
 
     try {
-      const run = Bun.spawnSync([
-        process.execPath,
-        '--eval',
-        `
+      const result = runIsolatedJson(configDir, 'REMOTE_REMOVE_RESULT', `
           import { SessionManager } from '${SESSION_MANAGER_MODULE_PATH}';
           const manager = new SessionManager();
           const events = [];
@@ -199,27 +189,20 @@ describe('Project removal lifecycle', () => {
           };
           manager.updateRemoteProjectLocked = async () => { events.push('remote:update'); };
           const removal = manager.removeWorkspace('remote-project');
-          await Bun.sleep(0);
-          const update = manager.updateRemoteProject('remote-project', {
+          while (!events.includes('remove:start')) await Bun.sleep(0);
+          const updateError = await manager.updateRemoteProject('remote-project', {
             url: 'wss://new.example.test', token: 'secret', remoteWorkspaceId: 'upstream-project',
-          });
-          await Bun.sleep(20);
+          }).then(() => null, error => error.message);
           const during = [...events];
           releaseRemoval();
-          await Promise.all([removal, update]);
-          console.log('REMOTE_REMOVE_RESULT=' + JSON.stringify({ during, after: events }));
+          await removal;
+          console.log('REMOTE_REMOVE_RESULT=' + JSON.stringify({ during, after: events, updateError }));
           manager.cleanup();
-        `,
-      ], {
-        env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
-        stdout: 'pipe', stderr: 'pipe',
-      })
-      if (run.exitCode !== 0) throw new Error(run.stderr.toString())
-      const match = run.stdout.toString().match(/REMOTE_REMOVE_RESULT=(\{.*\})/)
-      if (!match) throw new Error(`Missing remote/remove result:\n${run.stdout.toString()}`)
-      expect(JSON.parse(match[1])).toEqual({
+        `)
+      expect(result).toEqual({
         during: ['remove:start'],
-        after: ['remove:start', 'remove:end', 'remote:update'],
+        after: ['remove:start', 'remove:end'],
+        updateError: expect.stringContaining('removed or relinked'),
       })
     } finally {
       rmSync(parent, { recursive: true, force: true })
@@ -328,10 +311,12 @@ describe('Project removal lifecycle', () => {
     }))
 
     try {
-      const run = Bun.spawnSync([
-        process.execPath,
-        '--eval',
-        `
+      const result = runIsolatedJson<{
+        removed: boolean
+        runtimeCountAfterRemove: number
+        readdedId: string
+        reloadedCount: number
+      }>(configDir, 'REMOVE_RESULT', `
           import { SessionManager, createManagedSession } from '${SESSION_MANAGER_MODULE_PATH}';
           import { registerLocalProject } from '@craft-agent/shared/workspaces';
           const manager = new SessionManager();
@@ -349,25 +334,88 @@ describe('Project removal lifecycle', () => {
             reloadedCount: manager.getSessions(readded.id).length,
           }));
           manager.cleanup();
-        `,
-      ], {
-        env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      if (run.exitCode !== 0) {
-        throw new Error(`${run.stderr.toString()}\n${run.stdout.toString()}`)
-      }
-      const match = run.stdout.toString().match(/REMOVE_RESULT=(\{.*\})/)
-      if (!match) throw new Error(`Missing remove result:\n${run.stdout.toString()}`)
-      expect(JSON.parse(match[1])).toMatchObject({
+        `)
+      expect(result).toMatchObject({
         removed: true,
         runtimeCountAfterRemove: 0,
         reloadedCount: 1,
       })
-      expect(JSON.parse(match[1]).readdedId).not.toBe('project-old')
+      expect(result.readdedId).not.toBe('project-old')
       expect(existsSync(projectRoot)).toBe(true)
       expect(existsSync(join(sessionDir, 'session.jsonl'))).toBe(true)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('retires writes accepted by a runtime lease before Project removal returns', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-remove-project-write-barrier-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const sessionDir = join(projectRoot, '.craft-agent', 'sessions', 'session-1')
+    mkdirSync(sessionDir, { recursive: true })
+    mkdirSync(configDir, { recursive: true })
+    writeFileSync(join(projectRoot, '.craft-agent', 'config.json'), JSON.stringify({
+      id: 'directory-id', name: 'Project', slug: 'project', createdAt: 1, updatedAt: 1,
+    }))
+    writeFileSync(join(sessionDir, 'session.jsonl'), `${JSON.stringify({
+      id: 'session-1', name: 'Old title', createdAt: 1, lastUsedAt: 1, messageCount: 1,
+    })}\n${JSON.stringify({ id: 'message-1', type: 'user', content: 'rename me', timestamp: 1 })}\n`)
+    writeFileSync(join(configDir, 'config.json'), JSON.stringify({
+      workspaces: [{
+        id: 'project-old', name: 'Project', slug: 'project', rootPath: projectRoot,
+        createdAt: 1, directoryConfigId: 'directory-id',
+      }],
+      activeWorkspaceId: 'project-old', activeSessionId: null,
+    }))
+
+    try {
+      const result = runIsolatedJson(configDir, 'REMOVE_WRITE_BARRIER_RESULT', `
+          import { SessionManager, createManagedSession } from '${SESSION_MANAGER_MODULE_PATH}';
+          import { sessionPersistenceQueue } from '@craft-agent/shared/sessions';
+          const manager = new SessionManager();
+          const workspace = manager.getWorkspaces()[0];
+          const managed = createManagedSession({ id: 'session-1', name: 'Old title' }, workspace, { messagesLoaded: true });
+          managed.messages = [{ id: 'message-1', role: 'user', content: 'rename me', timestamp: 1 }];
+          let markTitleStarted;
+          let releaseTitle;
+          const titleStarted = new Promise(resolve => { markTitleStarted = resolve; });
+          const titleGate = new Promise(resolve => { releaseTitle = resolve; });
+          const agent = {
+            regenerateTitle: async () => { markTitleStarted(); await titleGate; return 'New title'; },
+            dispose: () => {},
+          };
+          managed.agent = agent;
+          manager.sessions.set(managed.id, managed);
+          manager.getOrCreateAgentLocked = async () => agent;
+          manager.persistSession(managed);
+          await manager.flushSession(managed.id);
+
+          const title = manager.refreshTitle(managed.id);
+          await titleStarted;
+          const originalRuntimeLock = manager.withAgentRuntimeLock.bind(manager);
+          let markRuntimeWaitStarted;
+          const runtimeWaitStarted = new Promise(resolve => { markRuntimeWaitStarted = resolve; });
+          manager.withAgentRuntimeLock = async (...args) => {
+            markRuntimeWaitStarted();
+            return originalRuntimeLock(...args);
+          };
+          const removal = manager.removeWorkspace(workspace.id);
+          await runtimeWaitStarted;
+          releaseTitle();
+          const [titleResult, removed] = await Promise.all([title, removal]);
+          console.log('REMOVE_WRITE_BARRIER_RESULT=' + JSON.stringify({
+            removed,
+            title: titleResult.title,
+            hasPending: sessionPersistenceQueue.hasPending(managed.id),
+          }));
+          manager.cleanup();
+        `)
+      expect(result).toEqual({
+        removed: true,
+        title: 'New title',
+        hasPending: false,
+      })
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }
@@ -398,7 +446,13 @@ describe('Project removal lifecycle', () => {
           id: sessionId, createdAt: 1, lastUsedAt: 1, messageCount: 1,
           tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, contextTokens: 0, costUsd: 0 },
         }),
-        JSON.stringify({ id: messageId, type: 'user', content: 'disk survives', timestamp: 1 }),
+        JSON.stringify({
+          id: messageId,
+          type: 'user',
+          content: 'disk survives',
+          timestamp: 1,
+          ...(sessionId === 'session-cold' ? { isQueued: true } : {}),
+        }),
         '',
       ].join('\n'))
     }
@@ -427,6 +481,8 @@ describe('Project removal lifecycle', () => {
           manager.sessions.set(loaded.id, loaded);
           manager.sessions.set(cold.id, cold);
           manager.sessions.set(opened.id, opened);
+          let queuedRecoveryCalls = 0;
+          manager.processNextQueuedMessage = () => { queuedRecoveryCalls += 1; };
           renameSync(${JSON.stringify(projectRoot)}, ${JSON.stringify(offlineRoot)});
           const errors = {};
           try { await manager.setSessionLabels('session-loaded', ['latest-loaded']); } catch (error) { errors.loaded = error.message; }
@@ -436,6 +492,7 @@ describe('Project removal lifecycle', () => {
           const openedStayedCold = opened.messagesLoaded === false;
           renameSync(${JSON.stringify(offlineRoot)}, ${JSON.stringify(projectRoot)});
           const removed = await manager.removeWorkspace('project-old');
+          await Bun.sleep(0);
           const readSession = path => readFileSync(path, 'utf8').trim().split('\\n').map(line => JSON.parse(line));
           const loadedLines = readSession(join(${JSON.stringify(loadedSessionDir)}, 'session.jsonl'));
           const coldLines = readSession(join(${JSON.stringify(coldSessionDir)}, 'session.jsonl'));
@@ -445,8 +502,13 @@ describe('Project removal lifecycle', () => {
             errors,
             coldStayedCold,
             openedStayedCold,
+            queuedRecoveryCalls,
             loaded: { labels: loadedLines[0].labels, messageIds: loadedLines.slice(1).map(line => line.id) },
-            cold: { labels: coldLines[0].labels, messageIds: coldLines.slice(1).map(line => line.id) },
+            cold: {
+              labels: coldLines[0].labels,
+              messageIds: coldLines.slice(1).map(line => line.id),
+              isQueued: coldLines[1].isQueued,
+            },
             opened: { messageIds: openedLines.slice(1).map(line => line.id) },
           }));
           manager.cleanup();
@@ -464,13 +526,14 @@ describe('Project removal lifecycle', () => {
         removed: true,
         errors: {
           loaded: expect.stringContaining('Project root does not exist'),
-          cold: expect.stringContaining('durable transcript is unavailable'),
-          opened: expect.stringContaining('durable transcript is unavailable'),
+          cold: expect.stringContaining('Project root does not exist'),
+          opened: expect.stringContaining('relink Project'),
         },
         coldStayedCold: true,
         openedStayedCold: true,
+        queuedRecoveryCalls: 0,
         loaded: { labels: ['latest-loaded'], messageIds: ['loaded-message'] },
-        cold: { labels: ['latest-cold'], messageIds: ['cold-message'] },
+        cold: { labels: ['latest-cold'], messageIds: ['cold-message'], isQueued: true },
         opened: { messageIds: ['opened-message'] },
       })
     } finally {

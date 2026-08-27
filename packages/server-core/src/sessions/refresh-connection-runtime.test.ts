@@ -361,6 +361,20 @@ describe('refreshConnectionRuntime', () => {
     expect(second.agent).toBeNull()
   })
 
+  it('does not take over a Session already owned by another invalidation', async () => {
+    const agent = createAgentStub()
+    agent.dispose = jest.fn()
+    const managed = injectSession(sm, 'already-invalidating', tmpRoot, 'slug-A', agent)
+    managed.runtimeState = 'invalidating'
+    ;(managed as typeof managed & { runtimeEpoch: number }).runtimeEpoch = 7
+
+    await sm.disposeConnectionRuntimes('slug-A')
+
+    expect(managed.runtimeState).toBe('invalidating')
+    expect((managed as typeof managed & { runtimeEpoch: number }).runtimeEpoch).toBe(7)
+    expect(agent.dispose).not.toHaveBeenCalled()
+  })
+
   it('preserves per-model capabilities in the runtime refresh IPC payload', async () => {
     // End-to-end shape check: when the session's connection resolves to a
     // pi_compat connection with explicit per-model `supportsImages`, the

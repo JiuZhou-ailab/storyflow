@@ -353,22 +353,32 @@ async function handleInit(msg: Extract<PiInboundMessage, { type: 'init' }>): Pro
  * _runAutoCompaction calls crash on a shared AbortController
  * (see craft-agents-oss#464). Default timeout matches the RPC compact timeout
  * in PiAgent.requestCompact (300 s), since GPT compactions can legitimately
- * take 60–120 s.
+ * take 60–120 s. A timeout invalidates the active session instead of racing it.
  */
-async function waitForCompaction(session: { isCompacting: boolean }, timeoutMs = 300_000): Promise<void> {
+export async function waitForCompaction(
+  session: Pick<AgentSession, 'isCompacting' | 'abortCompaction' | 'abortBranchSummary' | 'dispose'>,
+  timeoutMs = 300_000,
+): Promise<void> {
   if (!session.isCompacting) return;
   debugLog('Waiting for in-flight compaction to finish before prompt...');
   const start = Date.now();
   while (session.isCompacting) {
-    if (Date.now() - start > timeoutMs) {
-      debugLog(`Compaction wait timed out after ${Math.floor(timeoutMs / 1000)}s, proceeding anyway`);
-      break;
+    if (Date.now() - start >= timeoutMs) {
+      const message = `Compaction wait timed out after ${Math.floor(timeoutMs / 1000)}s`;
+      debugLog(`${message}; aborting and discarding the timed-out Pi session`);
+      if (piSession === session as AgentSession) {
+        unsubscribeEvents?.();
+        unsubscribeEvents = null;
+        piSession = null;
+      }
+      session.abortCompaction();
+      session.abortBranchSummary();
+      session.dispose();
+      throw new Error(message);
     }
     await new Promise(resolve => setTimeout(resolve, 200));
   }
-  if (Date.now() - start < timeoutMs) {
-    debugLog('Compaction finished, proceeding with prompt');
-  }
+  debugLog('Compaction finished, proceeding with prompt');
 }
 
 async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>): Promise<void> {
@@ -566,8 +576,8 @@ async function handleCompact(msg: Extract<PiInboundMessage, { type: 'compact' }>
     // session.compact() calls agent.abort() and uses its own controller; if
     // it runs while _runAutoCompaction is suspended, agent state churns and
     // the SDK's race surface widens. Wait for the auto-compaction to drain
-    // before starting a manual one. waitForCompaction has its own timeout
-    // fallback so we don't deadlock on a stuck subprocess.
+    // before starting a manual one. A timeout invalidates the stuck session;
+    // the next request resumes from Pi's persisted session state.
     await waitForCompaction(session);
     const result = await session.compact(msg.customInstructions);
     send({
@@ -942,17 +952,19 @@ async function runSkillCatalogMode(cwd: string): Promise<void> {
   process.stdout.write(`${JSON.stringify(catalog)}\n`);
 }
 
-const skillCatalogArg = process.argv.indexOf('--skill-catalog');
-if (skillCatalogArg >= 0) {
-  const cwd = process.argv[skillCatalogArg + 1];
-  if (!cwd) {
-    console.error('Missing cwd after --skill-catalog');
-    process.exit(2);
+if (import.meta.main) {
+  const skillCatalogArg = process.argv.indexOf('--skill-catalog');
+  if (skillCatalogArg >= 0) {
+    const cwd = process.argv[skillCatalogArg + 1];
+    if (!cwd) {
+      console.error('Missing cwd after --skill-catalog');
+      process.exit(2);
+    }
+    runSkillCatalogMode(cwd).catch((error) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    });
+  } else {
+    main();
   }
-  runSkillCatalogMode(cwd).catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
-  });
-} else {
-  main();
 }

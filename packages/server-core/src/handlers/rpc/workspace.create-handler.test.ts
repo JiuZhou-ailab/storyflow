@@ -2,7 +2,16 @@
 // output: Regression coverage for canonical registration, stable relinking, root preservation, and runtime activation
 // pos: Guards the server boundary between Project storage, active runtimes, and in-memory Sessions
 
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
@@ -10,8 +19,11 @@ import { FREE_CONVERSATION_WORKSPACE_ID, RPC_CHANNELS } from '@craft-agent/share
 import { CONFIG_DIR, ensureConfigDefaults } from '../../../../shared/src/config/storage.ts'
 import {
   createWorkspaceAtPath,
+  ensureProjectOwnedDirectory,
+  isPathWithinProjectRoot,
   isValidWorkspace,
   loadWorkspaceConfig,
+  resolveProjectOwnedPath,
 } from '@craft-agent/shared/workspaces'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -21,6 +33,13 @@ interface CreatedWorkspace {
   name: string
   rootPath: string
   slug: string
+  createdAt?: number
+  defaultPermissionMode?: 'safe' | 'ask' | 'allow-all'
+  defaultEnabledSourceRefs?: string[]
+  directoryConfigId?: string
+  localMcpEnabled?: boolean
+  automationsEnabled?: boolean
+  rootAvailable?: boolean
   remoteServer?: {
     url: string
     credentialRef: string
@@ -69,9 +88,11 @@ mock.module('@craft-agent/shared/config', () => ({
 
 mock.module('@craft-agent/shared/workspaces', () => ({
   createWorkspaceAtPath,
+  ensureProjectOwnedDirectory,
   ensureDefaultWorkspacesDir: () => { mkdirSync(defaultWorkspacesDir, { recursive: true }) },
   getDefaultWorkspacesDir: () => defaultWorkspacesDir,
   isValidWorkspace,
+  isPathWithinProjectRoot,
   loadWorkspaceConfig,
   isWorkspaceRootAvailable: (workspace: CreatedWorkspace) => (
     Boolean(workspace.remoteServer || loadWorkspaceConfig(workspace.rootPath))
@@ -92,6 +113,7 @@ mock.module('@craft-agent/shared/workspaces', () => ({
         createdAt: 0,
       }
     : createdWorkspaces.find(workspace => workspace.id === workspaceId) ?? null,
+  resolveProjectOwnedPath,
 }))
 
 const { registerWorkspaceCoreHandlers } = await import('./workspace')
@@ -108,6 +130,8 @@ function createWorkspaceHarness() {
   const reloadSessionScopes: Array<string | undefined> = []
   const setupConfigWatcherCalls: Array<[string, string]> = []
   const rebindWorkspaceRootCalls: Array<[string, string]> = []
+  const projectLifecycleCalls: string[] = []
+  let projectLifecycleWorkspaceOverride: CreatedWorkspace | undefined
 
   const server: RpcServer = {
     handle(channel, handler) {
@@ -166,6 +190,14 @@ function createWorkspaceHarness() {
       },
       getActiveSessionCount: () => 0,
       getSessions: () => [],
+      withProjectLifecycle: async <T>(projectId: string, work: (workspace: CreatedWorkspace) => Promise<T>) => {
+        projectLifecycleCalls.push(projectId)
+        const workspace = projectLifecycleWorkspaceOverride?.id === projectId
+          ? projectLifecycleWorkspaceOverride
+          : createdWorkspaces.find(candidate => candidate.id === projectId)
+        if (!workspace) throw new Error(`Project not found: ${projectId}`)
+        return work(workspace)
+      },
       setupConfigWatcher: (rootPath: string, workspaceId: string) => {
         setupConfigWatcherCalls.push([rootPath, workspaceId])
       },
@@ -208,6 +240,22 @@ function createWorkspaceHarness() {
   if (!relinkWorkspace) {
     throw new Error('workspace relink handler not registered')
   }
+  const writeWorkspaceImage = handlers.get(RPC_CHANNELS.workspace.WRITE_IMAGE)
+  if (!writeWorkspaceImage) {
+    throw new Error('workspace image handler not registered')
+  }
+  const readWorkspaceImage = handlers.get(RPC_CHANNELS.workspace.READ_IMAGE)
+  if (!readWorkspaceImage) throw new Error('workspace image read handler not registered')
+  const listViews = handlers.get(RPC_CHANNELS.views.LIST)
+  if (!listViews) throw new Error('views list handler not registered')
+  const saveViews = handlers.get(RPC_CHANNELS.views.SAVE)
+  if (!saveViews) throw new Error('views save handler not registered')
+  const getWorkspaceTheme = handlers.get(RPC_CHANNELS.theme.GET_WORKSPACE_COLOR_THEME)
+  const setWorkspaceTheme = handlers.get(RPC_CHANNELS.theme.SET_WORKSPACE_COLOR_THEME)
+  const getAllWorkspaceThemes = handlers.get(RPC_CHANNELS.theme.GET_ALL_WORKSPACE_THEMES)
+  if (!getWorkspaceTheme || !setWorkspaceTheme || !getAllWorkspaceThemes) {
+    throw new Error('workspace theme handlers not registered')
+  }
 
   const ctx: RequestContext = {
     clientId: 'client-1',
@@ -218,6 +266,13 @@ function createWorkspaceHarness() {
   return {
     createWorkspace,
     relinkWorkspace,
+    writeWorkspaceImage,
+    readWorkspaceImage,
+    listViews,
+    saveViews,
+    getWorkspaceTheme,
+    setWorkspaceTheme,
+    getAllWorkspaceThemes,
     checkWorkspaceSlug,
     switchWorkspace,
     ctx,
@@ -225,6 +280,10 @@ function createWorkspaceHarness() {
     getReloadSessionScopes: () => reloadSessionScopes,
     getSetupConfigWatcherCalls: () => setupConfigWatcherCalls,
     getRebindWorkspaceRootCalls: () => rebindWorkspaceRootCalls,
+    getProjectLifecycleCalls: () => projectLifecycleCalls,
+    setProjectLifecycleWorkspace: (workspace: CreatedWorkspace) => {
+      projectLifecycleWorkspaceOverride = workspace
+    },
   }
 }
 
@@ -249,6 +308,15 @@ function createServerWorkspaceHarness() {
       waitForInit: async (workspaceId?: string | null) => { waitForInitScopes.push(workspaceId) },
       registerProject: async (name: string, rootPath: string) => {
         const workspace = registerProjectForTest(name, rootPath)
+        Object.assign(workspace, {
+          createdAt: 1,
+          defaultPermissionMode: 'allow-all' as const,
+          defaultEnabledSourceRefs: ['workspace:private:identity'],
+          directoryConfigId: 'directory-private',
+          localMcpEnabled: true,
+          automationsEnabled: true,
+          rootAvailable: true,
+        })
         reloadSessionScopes.push(workspace.id)
         setupConfigWatcherCalls.push([workspace.rootPath, workspace.id])
         activeWorkspaceIds.push(workspace.id)
@@ -297,6 +365,151 @@ function createServerWorkspaceHarness() {
 }
 
 describe('workspace core RPC registration', () => {
+  it('reads and writes workspace themes only at the lifecycle-committed root', async () => {
+    createdWorkspaces.length = 0
+    const staleRoot = mkdtempSync(join(tmpdir(), 'craft-theme-stale-root-'))
+    const currentRoot = mkdtempSync(join(tmpdir(), 'craft-theme-current-root-'))
+    createWorkspaceAtPath(staleRoot, 'Theme Project')
+    createWorkspaceAtPath(currentRoot, 'Theme Project')
+    const workspace = {
+      id: 'workspace-theme-project',
+      name: 'Theme Project',
+      rootPath: staleRoot,
+      slug: 'theme-project',
+    }
+    createdWorkspaces.push(workspace)
+    const {
+      ctx,
+      getWorkspaceTheme,
+      setWorkspaceTheme,
+      getAllWorkspaceThemes,
+      setProjectLifecycleWorkspace,
+    } = createWorkspaceHarness()
+    setProjectLifecycleWorkspace({ ...workspace, rootPath: currentRoot })
+
+    try {
+      await setWorkspaceTheme(ctx, workspace.id, 'nord')
+      expect(await getWorkspaceTheme(ctx, workspace.id)).toBe('nord')
+      expect(await getAllWorkspaceThemes(ctx)).toEqual({ [workspace.id]: 'nord' })
+      expect(loadWorkspaceConfig(staleRoot)?.defaults?.colorTheme).toBeUndefined()
+      expect(loadWorkspaceConfig(currentRoot)?.defaults?.colorTheme).toBe('nord')
+    } finally {
+      rmSync(staleRoot, { recursive: true, force: true })
+      rmSync(currentRoot, { recursive: true, force: true })
+      createdWorkspaces.length = 0
+    }
+  })
+
+  it('rejects final, ancestor, and broken symlinks when reading a workspace image', async () => {
+    createdWorkspaces.length = 0
+    const projectRoot = mkdtempSync(join(tmpdir(), 'craft-workspace-image-project-'))
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'craft-workspace-image-outside-'))
+    const outsideSecret = join(outsideRoot, 'secret.txt')
+    writeFileSync(outsideSecret, 'outside secret')
+    symlinkSync(outsideSecret, join(projectRoot, 'final.svg'))
+    symlinkSync(outsideRoot, join(projectRoot, 'assets'), 'dir')
+    symlinkSync(join(outsideRoot, 'missing.txt'), join(projectRoot, 'broken.svg'))
+    createdWorkspaces.push({
+      id: 'workspace-image-project',
+      name: 'Image Project',
+      rootPath: projectRoot,
+      slug: 'image-project',
+    })
+    const { readWorkspaceImage, ctx, getProjectLifecycleCalls } = createWorkspaceHarness()
+
+    try {
+      for (const relativePath of ['final.svg', 'assets/secret.svg', 'broken.svg']) {
+        await expect(readWorkspaceImage(ctx, 'workspace-image-project', relativePath))
+          .rejects.toThrow(/symbolic link/)
+      }
+      expect(getProjectLifecycleCalls()).toEqual([
+        'workspace-image-project',
+        'workspace-image-project',
+        'workspace-image-project',
+      ])
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true })
+      rmSync(outsideRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a workspace image write through a project-internal symlink', async () => {
+    createdWorkspaces.length = 0
+    const projectRoot = mkdtempSync(join(tmpdir(), 'craft-workspace-image-project-'))
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'craft-workspace-image-outside-'))
+    const outsideIcon = join(outsideRoot, 'icon.svg')
+    writeFileSync(outsideIcon, '<svg>keep</svg>')
+    symlinkSync(outsideRoot, join(projectRoot, 'assets'), 'dir')
+    createdWorkspaces.push({
+      id: 'workspace-image-project',
+      name: 'Image Project',
+      rootPath: projectRoot,
+      slug: 'image-project',
+    })
+    const { writeWorkspaceImage, ctx, getProjectLifecycleCalls } = createWorkspaceHarness()
+
+    try {
+      await expect(writeWorkspaceImage(
+        ctx,
+        'workspace-image-project',
+        'assets/icon.svg',
+        Buffer.from('<svg>replace</svg>').toString('base64'),
+        'image/svg+xml',
+      )).rejects.toThrow(/symbolic link/)
+      expect(readFileSync(outsideIcon, 'utf-8')).toBe('<svg>keep</svg>')
+      expect(getProjectLifecycleCalls()).toEqual(['workspace-image-project'])
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true })
+      rmSync(outsideRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('seeds and saves views only at the lifecycle-committed Project root', async () => {
+    createdWorkspaces.length = 0
+    const staleRoot = mkdtempSync(join(tmpdir(), 'craft-views-stale-root-'))
+    const listRoot = mkdtempSync(join(tmpdir(), 'craft-views-list-root-'))
+    const saveRoot = mkdtempSync(join(tmpdir(), 'craft-views-save-root-'))
+    const workspace = {
+      id: 'workspace-views-project',
+      name: 'Views Project',
+      rootPath: staleRoot,
+      slug: 'views-project',
+    }
+    createdWorkspaces.push(workspace)
+    const {
+      listViews,
+      saveViews,
+      ctx,
+      getProjectLifecycleCalls,
+      setProjectLifecycleWorkspace,
+    } = createWorkspaceHarness()
+
+    try {
+      setProjectLifecycleWorkspace({ ...workspace, rootPath: listRoot })
+      await listViews(ctx, workspace.id)
+      expect(existsSync(join(listRoot, '.craft-agent', 'views.json'))).toBe(true)
+      expect(existsSync(join(staleRoot, '.craft-agent', 'views.json'))).toBe(false)
+
+      setProjectLifecycleWorkspace({ ...workspace, rootPath: saveRoot })
+      await saveViews(ctx, workspace.id, [{
+        id: 'view-review',
+        name: 'Review',
+        expression: 'status == "review"',
+      }])
+      expect(existsSync(join(saveRoot, '.craft-agent', 'views.json'))).toBe(true)
+      expect(existsSync(join(staleRoot, '.craft-agent', 'views.json'))).toBe(false)
+      expect(getProjectLifecycleCalls()).toEqual([
+        'workspace-views-project',
+        'workspace-views-project',
+      ])
+    } finally {
+      rmSync(staleRoot, { recursive: true, force: true })
+      rmSync(listRoot, { recursive: true, force: true })
+      rmSync(saveRoot, { recursive: true, force: true })
+    }
+  })
+
+
   it('routes headless Project creation through canonical registration and activation', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'craft-server-workspace-create-handler-'))
     defaultWorkspacesDir = join(parent, 'managed-projects')
@@ -324,7 +537,7 @@ describe('workspace core RPC registration', () => {
       expect(setupConfigWatcherCalls).toEqual([[rootPath, workspace.id]])
       expect(activeWorkspaceIds).toEqual([workspace.id])
       expect(loadWorkspaceConfig(rootPath)?.name).toBe('Headless Project')
-      expect(workspace).not.toHaveProperty('rootPath')
+      expect(Object.keys(workspace).sort()).toEqual(['id', 'name', 'slug'])
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }

@@ -1,6 +1,6 @@
 // input: Temporary project plus a third-party ~/.agents Source fixture
-// output: Proof that SessionToolContext ignores resources outside Storyflow-owned roots
-// pos: Regression test for the explicit Resource Resolver ownership boundary
+// output: Proof that SessionToolContext enforces current Host grants and Storyflow-owned roots
+// pos: Regression tests for Resource Resolver ownership and live execution revocation
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import {
@@ -12,7 +12,9 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { SourceConfig } from '@craft-agent/session-tools-core';
 import { createSessionToolContext } from '../session-tool-context.ts';
+import { PiAgentToolHost } from '../pi-agent-tool-host.ts';
 import { CONFIG_DIR } from '../../config/paths.ts';
 import { getPiUserSkillsDir } from '../../skills/storage.ts';
 import {
@@ -32,6 +34,58 @@ afterEach(() => {
 });
 
 describe('Pi SessionToolContext Source ownership', () => {
+  it('rechecks the pool-bound exact capability before every MCP proxy execution', async () => {
+    const sourceSlug = 'project__source';
+    const poolCapabilityRef = `workspace:${sourceSlug}:definition-1`;
+    let currentCapabilityRef = poolCapabilityRef;
+    let granted = true;
+    let stdioAllowed = true;
+    let calls = 0;
+    const host = Object.create(PiAgentToolHost.prototype) as Record<string, unknown>;
+    host.config = {
+      mcpPool: {
+        getProxyToolCapability: () => ({ sourceSlug, capabilityRef: poolCapabilityRef }),
+        callTool: async () => {
+          calls++;
+          return { content: 'ok', isError: false };
+        },
+      },
+    };
+    host.getSessionToolContext = () => ({
+      isSourceExecutionAllowed: () => granted,
+      isStdioMcpExecutionAllowed: (candidateSlug: string, capabilityRef?: string) => (
+        granted
+        && stdioAllowed
+        && candidateSlug === sourceSlug
+        && capabilityRef === currentCapabilityRef
+      ),
+    });
+    const routeToolCall = (PiAgentToolHost.prototype as unknown as {
+      routeToolCall(toolName: string, args: Record<string, unknown>): Promise<{ content: string; isError: boolean }>;
+    }).routeToolCall.bind(host);
+
+    const toolName = `mcp__${sourceSlug}__run`;
+    await expect(routeToolCall(toolName, {})).resolves.toEqual({ content: 'ok', isError: false });
+    currentCapabilityRef = `workspace:${sourceSlug}:definition-2`;
+    await expect(routeToolCall(toolName, {})).resolves.toEqual({
+      content: `Source "${sourceSlug}" is disabled by Host settings.`,
+      isError: true,
+    });
+    currentCapabilityRef = poolCapabilityRef;
+    granted = false;
+    await expect(routeToolCall(toolName, {})).resolves.toEqual({
+      content: `Source "${sourceSlug}" is disabled by Host settings.`,
+      isError: true,
+    });
+    granted = true;
+    stdioAllowed = false;
+    await expect(routeToolCall(toolName, {})).resolves.toEqual({
+      content: `Source "${sourceSlug}" is disabled by Host settings.`,
+      isError: true,
+    });
+    expect(calls).toBe(1);
+  });
+
   it('does not discover a Source from ~/.agents implicitly', () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), `${TEST_PREFIX}-workspace-`));
     const slug = `${TEST_PREFIX}-shared`;
@@ -57,6 +111,7 @@ describe('Pi SessionToolContext Source ownership', () => {
       workspaceId: 'test-workspace',
       workspacePath: workspaceRoot,
       getHostGrantedSourceRefs: () => [],
+      getHostAllowsProjectStdio: () => false,
       onPlanSubmitted: () => {},
       onAuthRequest: () => {},
     });
@@ -77,6 +132,7 @@ describe('Pi SessionToolContext Source ownership', () => {
       workspaceId: 'project-workspace',
       workspacePath: workspaceRoot,
       getHostGrantedSourceRefs: () => [],
+      getHostAllowsProjectStdio: () => false,
       onPlanSubmitted: () => {},
       onAuthRequest: () => {},
     });
@@ -107,6 +163,8 @@ Inspect the current project evidence.
       slug: sourceSlug,
       name: 'Project Source',
       enabled: true,
+      isAuthenticated: true,
+      connectionStatus: 'connected',
       provider: 'test',
       type: 'api',
       api: { baseUrl: 'https://first.example', authType: 'bearer' },
@@ -121,6 +179,7 @@ Inspect the current project evidence.
       workspaceId: 'project-stable',
       workspacePath: workspaceRoot,
       getHostGrantedSourceRefs: () => [],
+      getHostAllowsProjectStdio: () => false,
       onPlanSubmitted: () => {},
       onAuthRequest: () => {},
     });
@@ -129,6 +188,7 @@ Inspect the current project evidence.
       workspaceId: 'project-stable',
       workspacePath: workspaceRoot,
       getHostGrantedSourceRefs: () => liveRefs,
+      getHostAllowsProjectStdio: () => false,
       onPlanSubmitted: () => {},
       onAuthRequest: () => {},
     });
@@ -140,9 +200,65 @@ Inspect the current project evidence.
     expect(granted.isSourceExecutionAllowed(sourceSlug)).toBe(false);
     liveRefs = [exactRef];
 
-    const replacement = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const revoked = JSON.parse(readFileSync(configPath, 'utf-8'));
+    revoked.isAuthenticated = false;
+    revoked.connectionStatus = 'needs_auth';
+    writeFileSync(configPath, JSON.stringify(revoked));
+    expect(granted.isSourceExecutionAllowed(sourceSlug)).toBe(true);
+
+    const replacement = { ...revoked, isAuthenticated: true, connectionStatus: 'connected' };
     replacement.api.baseUrl = 'https://replacement.example';
     writeFileSync(configPath, JSON.stringify(replacement));
     expect(granted.isSourceExecutionAllowed(sourceSlug)).toBe(false);
+    expect(() => granted.saveSourceConfig?.({
+      ...loaded!.config,
+      connectionStatus: 'connected',
+    } as SourceConfig)).toThrow('Source definition changed while testing');
+    expect(JSON.parse(readFileSync(configPath, 'utf-8')).api.baseUrl)
+      .toBe('https://replacement.example');
+  });
+
+  it('reads the current Host stdio grant for every execution attempt', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), `${TEST_PREFIX}-stdio-grant-`));
+    const sourceSlug = `${TEST_PREFIX}-project-stdio`;
+    const sourceDir = join(workspaceRoot, '.craft-agent', 'sources', sourceSlug);
+    touchedPaths.add(workspaceRoot);
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(join(sourceDir, 'config.json'), JSON.stringify({
+      id: 'stdio-source-id',
+      slug: sourceSlug,
+      name: 'Project stdio Source',
+      enabled: true,
+      provider: 'test',
+      type: 'mcp',
+      mcp: { transport: 'stdio', command: 'echo' },
+    }));
+
+    const loaded = loadSource(workspaceRoot, sourceSlug, 'project-stable');
+    const exactRef = getSourceGrantRef(loaded!);
+    let liveRefs = [exactRef];
+    let hostAllowsProjectStdio = true;
+    const context = createSessionToolContext({
+      sessionId: 'stdio-session',
+      workspaceId: 'project-stable',
+      workspacePath: workspaceRoot,
+      getHostGrantedSourceRefs: () => liveRefs,
+      getHostAllowsProjectStdio: () => hostAllowsProjectStdio,
+      onPlanSubmitted: () => {},
+      onAuthRequest: () => {},
+    });
+
+    expect(context.isStdioMcpExecutionAllowed?.(sourceSlug, exactRef)).toBe(true);
+    hostAllowsProjectStdio = false;
+    expect(context.isStdioMcpExecutionAllowed?.(sourceSlug, exactRef)).toBe(false);
+    hostAllowsProjectStdio = true;
+
+    const replacement = JSON.parse(readFileSync(join(sourceDir, 'config.json'), 'utf-8'));
+    replacement.mcp.command = 'replacement-command';
+    writeFileSync(join(sourceDir, 'config.json'), JSON.stringify(replacement));
+    liveRefs = [getSourceGrantRef(loadSource(workspaceRoot, sourceSlug, 'project-stable')!)];
+
+    expect(context.isStdioMcpExecutionAllowed?.(sourceSlug, exactRef)).toBe(false);
+    expect(context.isStdioMcpExecutionAllowed?.(sourceSlug, liveRefs[0])).toBe(true);
   });
 });

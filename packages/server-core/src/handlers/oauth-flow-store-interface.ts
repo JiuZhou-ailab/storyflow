@@ -10,5 +10,7 @@ import type { PendingOAuthFlow } from '@craft-agent/shared/auth'
 export interface IOAuthFlowStore {
   store(flow: PendingOAuthFlow): void
   getByState(state: string): PendingOAuthFlow | null
+  claim(state: string): PendingOAuthFlow | null
   remove(state: string): void
+  removeForSource(workspaceId: string, sourceSlug: string): void
 }

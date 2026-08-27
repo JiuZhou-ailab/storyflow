@@ -32,9 +32,11 @@ import { getSessionDataPath, getSessionPath, getSessionPlansPath } from '../sess
 import { runPreToolUseChecks } from './core/pre-tool-use.ts';
 import { executeBrowserToolCommand } from './browser-tool-runtime.ts';
 import { saveBinaryResponse } from '../utils/binary-detection.ts';
-import { isFreeConversationWorkspaceId } from '../workspaces/application-context.ts';
+import {
+  isFreeConversationWorkspaceId,
+  resolveRuntimeWorkspace,
+} from '../workspaces/application-context.ts';
 import { isLocalMcpEnabled } from '../workspaces/storage.ts';
-import { getWorkspaceByNameOrId } from '../config/storage.ts';
 
 // ============================================================
 // PiAgent Implementation
@@ -300,8 +302,20 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
     }
 
     // MCP source tools — route through centralized pool
-    if (this.mcpPool?.isProxyTool(toolName)) {
-      return this.mcpPool.callTool(toolName, args);
+    const mcpPool = this.mcpPool;
+    const proxyCapability = mcpPool?.getProxyToolCapability(toolName);
+    if (mcpPool && proxyCapability) {
+      const { sourceSlug, capabilityRef } = proxyCapability;
+      const context = this.getSessionToolContext();
+      if (
+        context.isStdioMcpExecutionAllowed?.(sourceSlug, capabilityRef) !== true
+      ) {
+        return {
+          content: `Source "${sourceSlug}" is disabled by Host settings.`,
+          isError: true,
+        };
+      }
+      return mcpPool.callTool(toolName, args);
     }
 
     // Unknown tool
@@ -328,10 +342,10 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
       workspaceId,
       getHostGrantedSourceRefs: () => isFreeConversationWorkspaceId(workspaceId)
         ? null
-        : getWorkspaceByNameOrId(workspaceId)?.defaultEnabledSourceRefs ?? [],
-      allowProjectStdio: isLocalMcpEnabled(
+        : resolveRuntimeWorkspace(workspaceId)?.defaultEnabledSourceRefs ?? [],
+      getHostAllowsProjectStdio: () => isLocalMcpEnabled(
         workspacePath,
-        this.config.workspace.localMcpEnabled,
+        resolveRuntimeWorkspace(workspaceId)?.localMcpEnabled,
       ),
       onPlanSubmitted: async (planPath: string) => {
         await this.onPlanSubmitted?.(planPath);

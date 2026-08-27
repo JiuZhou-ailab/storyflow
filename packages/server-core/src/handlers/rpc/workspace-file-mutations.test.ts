@@ -43,6 +43,7 @@ function createHarness(workspaceId: string | null = 'workspace-1') {
   const deps: HandlerDeps = {
     sessionManager: {
       notifyConfigFileChange: () => {},
+      withProjectLifecycle: async <T>(_projectId: string, work: () => Promise<T>): Promise<T> => work(),
     } as unknown as HandlerDeps['sessionManager'],
     resolveRuntimeWorkspace: (id: string) => id === 'workspace-1'
       ? {

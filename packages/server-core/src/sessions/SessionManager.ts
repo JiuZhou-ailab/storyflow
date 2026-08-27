@@ -35,7 +35,7 @@ import {
   type Workspace,
   type WorkspaceInfo,
 } from '@craft-agent/shared/config'
-import type { ActiveSessionInfo, RemoteServerConnectionInput, SessionProcessingStatus } from '@craft-agent/core/types'
+import { toWorkspaceInfo, type ActiveSessionInfo, type RemoteServerConnectionInput, type SessionProcessingStatus } from '@craft-agent/core/types'
 import {
   canonicalizeProjectRoot,
   isFreeConversationWorkspaceId,
@@ -72,7 +72,7 @@ import {
   type SessionStatus,
   type SessionHeader,
 } from '@craft-agent/shared/sessions'
-import { createSourceGrantRefs, loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, resolveHostGrantedSourceSlugs, type LoadedSource, TokenRefreshManager } from '@craft-agent/shared/sources'
+import { createSourceGrantRefs, loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceHostGranted, isSourceUsable, resolveHostGrantedSourceSlugs, type LoadedSource, TokenRefreshManager } from '@craft-agent/shared/sources'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { getLastApiError } from '@craft-agent/shared/provider-diagnostics'
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
@@ -176,6 +176,31 @@ interface RefreshExpiredCredentialsResult {
   failedSources: Array<{ slug: string; reason: string }>
 }
 
+interface SessionDeletionClaim {
+  managed: ManagedSession
+  projectId: string
+  workspaceRootPath: string
+  runtimeEpoch: number
+}
+
+interface ProjectTransitionClaim {
+  token: symbol
+  workspace: Workspace
+  rootKeys: string[]
+  operationsDrained: Promise<void>
+}
+
+interface ProjectInvalidationClaim extends ProjectTransitionClaim {
+  sessions: ManagedSession[]
+  runtimeEpochs: Map<string, number>
+}
+
+interface WorkspaceRelinkClaim extends ProjectInvalidationClaim {
+  plan: ReturnType<typeof prepareWorkspaceRootRelink>
+}
+
+class ProjectLifecycleTransitionError extends Error {}
+
 /**
  * Refresh expired OAuth / renew-endpoint tokens for the given sources.
  *
@@ -217,16 +242,20 @@ export { createManagedSession } from './managed-session'
 
 export class SessionManager implements ISessionManager {
   private sessions: Map<string, ManagedSession> = new Map()
+  private getMutableSession(sessionId: string): ManagedSession | undefined {
+    const managed = this.sessions.get(sessionId)
+    return managed?.runtimeState ? undefined : managed
+  }
   /** Outbound event delivery — sole owner of the EventSink and delta batching state. */
   private broadcaster = new SessionBroadcaster()
   private messageEdits = new MessageEdits({
-    getSession: id => this.sessions.get(id),
+    getSession: id => this.getMutableSession(id),
     persistSession: managed => this.persistSession(managed),
     broadcaster: this.broadcaster,
   })
   private crudMetadata = new SessionCrudMetadata({
-    getSession: id => this.sessions.get(id),
-    allSessions: () => this.sessions.values(),
+    getSession: id => this.getMutableSession(id),
+    allSessions: () => [...this.sessions.values()].filter(managed => !managed.runtimeState),
     persistSession: managed => this.persistSession(managed),
     flushSession: sessionId => this.flushSession(sessionId),
     sendEvent: (event, workspaceId) => this.sendEvent(event, workspaceId),
@@ -247,7 +276,7 @@ export class SessionManager implements ISessionManager {
     getSession: id => this.sessions.get(id),
     hasSession: id => this.sessions.has(id),
     setSession: (id, managed) => this.sessions.set(id, managed),
-    createSession: workspaceId => this.createSession(workspaceId),
+    createSessionLocked: workspaceId => this.createSessionLocked(workspaceId),
     ensureMessagesLoaded: managed => this.ensureMessagesLoaded(managed),
     resolveManagedModelAccess: managed => this.resolveManagedModelAccess(managed),
     persistSession: managed => this.persistSession(managed),
@@ -268,10 +297,15 @@ export class SessionManager implements ISessionManager {
       // ever connect, yet scheduled/event-driven automations must still fire.
       const workspaces = getWorkspaces()
       for (const workspace of workspaces) {
-        await this.withProjectLifecycleLock(workspace.id, async () => {
-          const current = resolveRuntimeWorkspace(workspace.id)
-          if (current) this.setupConfigWatcher(current.rootPath, current.id)
-        })
+        try {
+          await this.withProjectLifecycleLock(workspace.id, async () => {
+            const current = resolveRuntimeWorkspace(workspace.id)
+            if (current) this.setupConfigWatcher(current.rootPath, current.id)
+          })
+        } catch (error) {
+          if (error instanceof ProjectLifecycleTransitionError) continue
+          throw error
+        }
       }
       getSessionLog().info('Initialized workspace runtime services', { workspaceCount: workspaces.length })
     },
@@ -284,6 +318,12 @@ export class SessionManager implements ISessionManager {
   private automationSystems: Map<string, AutomationSystem> = new Map()
   /** Serializes Project identity changes with every operation that creates durable Sessions. */
   private projectLifecycleTails = new Map<string, Promise<void>>()
+  /** Logical ownership spans the lock-free runtime-drain phase of remove/relink. */
+  private projectLifecycleTransitions = new Map<string, symbol>()
+  private projectRootLifecycleTransitions = new Map<string, symbol>()
+  /** Accepted lock-free Project work that transitions must drain before commit. */
+  private projectOperationCounts = new Map<string, number>()
+  private projectOperationDrainWaiters = new Map<string, Set<() => void>>()
   // Pending credential request resolvers (keyed by requestId)
   private pendingCredentialResolvers: Map<string, (response: import('@craft-agent/shared/protocol').CredentialResponse) => void> = new Map()
   // Permission request metadata tracking (keyed by requestId)
@@ -400,26 +440,291 @@ export class SessionManager implements ISessionManager {
     }
   }
 
+  private async withLifecycleRootKeys<T>(
+    keys: readonly string[],
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const orderedKeys = [...new Set(keys)].sort()
+    const acquire = (index: number): Promise<T> => (
+      index === orderedKeys.length
+        ? work()
+        : this.withLifecycleLockKey(orderedKeys[index], () => acquire(index + 1))
+    )
+    return acquire(0)
+  }
+
   private projectRootLifecycleKey(rootPath: string): string {
     const canonicalRoot = canonicalizeProjectRoot(rootPath, true)
     return `root:${process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot}`
   }
 
+  private assertProjectLifecycleAvailable(
+    projectId: string | undefined,
+    rootKeys: readonly string[],
+    token?: symbol,
+  ): void {
+    const projectOwner = projectId
+      ? this.projectLifecycleTransitions.get(projectId)
+      : undefined
+    if (projectOwner && projectOwner !== token) {
+      throw new ProjectLifecycleTransitionError(`Project ${projectId} is being removed or relinked; retry this operation.`)
+    }
+    const busyRoot = rootKeys.find(key => {
+      const owner = this.projectRootLifecycleTransitions.get(key)
+      return owner && owner !== token
+    })
+    if (busyRoot) {
+      throw new ProjectLifecycleTransitionError('The selected Project directory is being removed or relinked; retry this operation.')
+    }
+  }
+
   private async withProjectLifecycleLock<T>(
     workspaceId: string,
     work: () => Promise<T>,
+    transitionToken?: symbol,
   ): Promise<T> {
-    if (isFreeConversationWorkspaceId(workspaceId)) return work()
+    if (isFreeConversationWorkspaceId(workspaceId)) {
+      this.assertProjectLifecycleAvailable(workspaceId, [], transitionToken)
+      return work()
+    }
 
     const projectKey = `project:${workspaceId}`
     const workspace = loadStoredConfig()?.workspaces.find(candidate => candidate.id === workspaceId)
-    if (!workspace || workspace.remoteServer) {
-      return this.withLifecycleLockKey(projectKey, work)
-    }
-    return this.withLifecycleLockKey(
-      this.projectRootLifecycleKey(workspace.rootPath),
-      () => this.withLifecycleLockKey(projectKey, work),
+    const rootKey = workspace && !workspace.remoteServer
+      ? this.projectRootLifecycleKey(workspace.rootPath)
+      : undefined
+    this.assertProjectLifecycleAvailable(workspaceId, rootKey ? [rootKey] : [], transitionToken)
+    let retry = false
+    let outcome: { value: T } | undefined
+    await this.withLifecycleRootKeys(
+      rootKey ? [rootKey] : [],
+      () => this.withLifecycleLockKey(projectKey, async () => {
+        const current = loadStoredConfig()?.workspaces.find(candidate => candidate.id === workspaceId)
+        const currentRootKey = current && !current.remoteServer
+          ? this.projectRootLifecycleKey(current.rootPath)
+          : undefined
+        if (currentRootKey !== rootKey) {
+          retry = true
+          return
+        }
+        this.assertProjectLifecycleAvailable(workspaceId, rootKey ? [rootKey] : [], transitionToken)
+        outcome = { value: await work() }
+      }),
     )
+    if (retry) return this.withProjectLifecycleLock(workspaceId, work, transitionToken)
+    return outcome!.value
+  }
+
+  private async withWorkspaceRootRelinkLock<T>(
+    projectId: string,
+    targetRoot: string,
+    work: () => Promise<T>,
+    transitionToken?: symbol,
+  ): Promise<T> {
+    const projectKey = `project:${projectId}`
+    const targetKey = this.projectRootLifecycleKey(targetRoot)
+    const workspace = loadStoredConfig()?.workspaces.find(candidate => candidate.id === projectId)
+    const previousRootKey = workspace && !workspace.remoteServer
+      ? this.projectRootLifecycleKey(workspace.rootPath)
+      : undefined
+    this.assertProjectLifecycleAvailable(
+      projectId,
+      previousRootKey ? [previousRootKey, targetKey] : [targetKey],
+      transitionToken,
+    )
+
+    let retry = false
+    let outcome: { value: T } | undefined
+    await this.withLifecycleRootKeys(
+      previousRootKey ? [previousRootKey, targetKey] : [targetKey],
+      () => this.withLifecycleLockKey(projectKey, async () => {
+        const current = loadStoredConfig()?.workspaces.find(candidate => candidate.id === projectId)
+        const currentRootKey = current && !current.remoteServer
+          ? this.projectRootLifecycleKey(current.rootPath)
+          : undefined
+        if (currentRootKey !== previousRootKey) {
+          retry = true
+          return
+        }
+        this.assertProjectLifecycleAvailable(
+          projectId,
+          previousRootKey ? [previousRootKey, targetKey] : [targetKey],
+          transitionToken,
+        )
+        outcome = { value: await work() }
+      }),
+    )
+    if (retry) return this.withWorkspaceRootRelinkLock(projectId, targetRoot, work, transitionToken)
+    return outcome!.value
+  }
+
+  private beginProjectInvalidation(
+    workspace: Workspace,
+    sessions: ManagedSession[],
+    rootKeys: string[],
+  ): ProjectInvalidationClaim {
+    const busySession = sessions.find(managed => managed.runtimeState)
+    if (busySession) {
+      throw new Error(`Session ${busySession.id} is already being changed; retry the Project operation.`)
+    }
+
+    const transition = this.beginProjectTransition(workspace, rootKeys)
+    const runtimeEpochs = new Map<string, number>()
+    for (const managed of sessions) {
+      managed.runtimeState = 'invalidating'
+      managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
+      runtimeEpochs.set(managed.id, managed.runtimeEpoch)
+    }
+    return { ...transition, sessions, runtimeEpochs }
+  }
+
+  private beginProjectTransition(workspace: Workspace, rootKeys: string[]): ProjectTransitionClaim {
+    const token = Symbol(workspace.id)
+    this.projectLifecycleTransitions.set(workspace.id, token)
+    for (const rootKey of rootKeys) this.projectRootLifecycleTransitions.set(rootKey, token)
+    return {
+      token,
+      workspace,
+      rootKeys,
+      operationsDrained: this.waitForProjectOperations(workspace.id),
+    }
+  }
+
+  private retainProjectOperation(projectId: string): () => void {
+    this.projectOperationCounts.set(projectId, (this.projectOperationCounts.get(projectId) ?? 0) + 1)
+    let retained = true
+    return () => {
+      if (!retained) return
+      retained = false
+      const remaining = (this.projectOperationCounts.get(projectId) ?? 1) - 1
+      if (remaining > 0) {
+        this.projectOperationCounts.set(projectId, remaining)
+        return
+      }
+      this.projectOperationCounts.delete(projectId)
+      const waiters = this.projectOperationDrainWaiters.get(projectId)
+      this.projectOperationDrainWaiters.delete(projectId)
+      for (const resolve of waiters ?? []) resolve()
+    }
+  }
+
+  private waitForProjectOperations(projectId: string): Promise<void> {
+    if ((this.projectOperationCounts.get(projectId) ?? 0) === 0) return Promise.resolve()
+    return new Promise(resolve => {
+      const waiters = this.projectOperationDrainWaiters.get(projectId) ?? new Set<() => void>()
+      waiters.add(resolve)
+      this.projectOperationDrainWaiters.set(projectId, waiters)
+    })
+  }
+
+  private ownsProjectInvalidation(claim: ProjectInvalidationClaim, managed: ManagedSession): boolean {
+    return this.sessions.get(managed.id) === managed
+      && managed.runtimeState === 'invalidating'
+      && managed.runtimeEpoch === claim.runtimeEpochs.get(managed.id)
+  }
+
+  private restoreProjectInvalidation(claim: ProjectInvalidationClaim): void {
+    for (const managed of claim.sessions) {
+      if (this.ownsProjectInvalidation(claim, managed)) managed.runtimeState = undefined
+    }
+  }
+
+  private releaseProjectTransition(claim: ProjectTransitionClaim): void {
+    if (this.projectLifecycleTransitions.get(claim.workspace.id) === claim.token) {
+      this.projectLifecycleTransitions.delete(claim.workspace.id)
+    }
+    for (const rootKey of claim.rootKeys) {
+      if (this.projectRootLifecycleTransitions.get(rootKey) === claim.token) {
+        this.projectRootLifecycleTransitions.delete(rootKey)
+      }
+    }
+  }
+
+  async withProjectLifecycle<T>(
+    projectId: string,
+    work: (workspace: Workspace) => Promise<T>,
+  ): Promise<T> {
+    const resolved = resolveRuntimeWorkspace(projectId)
+    if (!resolved) throw new Error(`Project not found: ${projectId}`)
+    const canonicalProjectId = resolved.id
+    return this.withProjectLifecycleLock(canonicalProjectId, async () => {
+      const workspace = resolveRuntimeWorkspace(canonicalProjectId)
+      if (!workspace) throw new Error(`Project not found: ${projectId}`)
+      return work(workspace)
+    })
+  }
+
+  async withProjectOperation<T>(
+    projectId: string,
+    work: (workspace: Workspace) => Promise<T>,
+  ): Promise<T> {
+    const resolved = resolveRuntimeWorkspace(projectId)
+    if (!resolved) throw new Error(`Project not found: ${projectId}`)
+    const canonicalProjectId = resolved.id
+    const lease = await this.withProjectLifecycleLock(canonicalProjectId, async () => {
+      const workspace = resolveRuntimeWorkspace(canonicalProjectId)
+      if (!workspace) throw new Error(`Project not found: ${projectId}`)
+      return {
+        workspace,
+        release: this.retainProjectOperation(canonicalProjectId),
+      }
+    })
+    try {
+      return await work(lease.workspace)
+    } finally {
+      lease.release()
+    }
+  }
+
+  async withProjectExclusiveOperation<T>(
+    projectId: string,
+    work: (workspace: Workspace) => Promise<T>,
+  ): Promise<T> {
+    const resolved = resolveRuntimeWorkspace(projectId)
+    if (!resolved) throw new Error(`Project not found: ${projectId}`)
+    const canonicalProjectId = resolved.id
+    const transition = await this.withProjectLifecycleLock(canonicalProjectId, async () => {
+      const workspace = resolveRuntimeWorkspace(canonicalProjectId)
+      if (!workspace) throw new Error(`Project not found: ${projectId}`)
+      const sessions = [...this.sessions.values()]
+        .filter(managed => managed.workspace.id === canonicalProjectId)
+      return this.beginProjectInvalidation(
+        workspace,
+        sessions,
+        workspace.remoteServer ? [] : [this.projectRootLifecycleKey(workspace.rootPath)],
+      )
+    })
+    try {
+      await transition.operationsDrained
+      for (const managed of transition.sessions) {
+        await this.withAgentRuntimeLock(managed, async () => {}, true)
+      }
+      return await work(transition.workspace)
+    } finally {
+      this.restoreProjectInvalidation(transition)
+      this.releaseProjectTransition(transition)
+    }
+  }
+
+  async reconcileProjectSourceGrants(projectId: string): Promise<void> {
+    let shouldReconcile = false
+    try {
+      await this.withProjectLifecycleLock(projectId, async () => {
+        const hostWorkspace = loadStoredConfig()?.workspaces.find(candidate => candidate.id === projectId)
+        if (!hostWorkspace || hostWorkspace.remoteServer) return
+        for (const managed of this.sessions.values()) {
+          if (managed.workspace.id === projectId) {
+            managed.workspace.defaultEnabledSourceRefs = [...(hostWorkspace.defaultEnabledSourceRefs ?? [])]
+          }
+        }
+        shouldReconcile = true
+      })
+    } catch (error) {
+      // The owning transition is already disposing or rebuilding every runtime.
+      if (error instanceof ProjectLifecycleTransitionError) return
+      throw error
+    }
+    if (shouldReconcile) await this.reconcileProjectSourceRuntimes(projectId)
   }
 
   private handleTurnWatchdogTimeout(sessionId: string, generation: number, timeout: TurnWatchdogTimeout): void {
@@ -814,7 +1119,11 @@ export class SessionManager implements ISessionManager {
             error: result.status === 'rejected' ? String(result.reason) : undefined,
           })
 
-          appendAutomationHistoryEntry(workspaceRootPath, entry).catch(e => getSessionLog().warn('[Automations] Failed to write history:', e))
+          try {
+            await appendAutomationHistoryEntry(workspaceRootPath, entry)
+          } catch (error) {
+            getSessionLog().warn('[Automations] Failed to write history:', error)
+          }
 
           if (result.status === 'rejected') {
             getSessionLog().error(`[Automations] Failed to execute prompt action ${idx + 1}:`, result.reason)
@@ -1131,7 +1440,7 @@ export class SessionManager implements ISessionManager {
   }
 
   getWorkspacesInfo(): WorkspaceInfo[] {
-    return getWorkspaces().map(({ rootPath, createdAt, ...info }) => info)
+    return getWorkspaces().map(toWorkspaceInfo)
   }
 
   async registerProject(
@@ -1140,7 +1449,9 @@ export class SessionManager implements ISessionManager {
     remoteServer?: RemoteServerConnectionInput,
   ): Promise<Workspace> {
     const rootKey = this.projectRootLifecycleKey(rootPath)
+    this.assertProjectLifecycleAvailable(undefined, [rootKey])
     return this.withLifecycleLockKey(rootKey, async () => {
+      this.assertProjectLifecycleAvailable(undefined, [rootKey])
       const existing = loadStoredConfig()?.workspaces.find(candidate => (
         this.projectRootLifecycleKey(candidate.rootPath) === rootKey
       ))
@@ -1152,10 +1463,11 @@ export class SessionManager implements ISessionManager {
       }
       const workspace = registerStoredLocalProject(name, rootPath)
       return this.withLifecycleLockKey(`project:${workspace.id}`, async () => {
+        this.assertProjectLifecycleAvailable(workspace.id, [rootKey])
         if (remoteServer) {
           workspace.remoteServer = await updateWorkspaceRemoteServer(workspace.id, remoteServer)
         }
-        await this.reloadSessions(workspace.id)
+        await this.persistence.loadSessionsFromDisk(workspace.id)
         this.setupConfigWatcher(workspace.rootPath, workspace.id)
         setActiveWorkspace(workspace.id)
         return workspace
@@ -1194,195 +1506,232 @@ export class SessionManager implements ISessionManager {
   }
 
   async removeWorkspace(projectId: string): Promise<boolean> {
-    return this.withProjectLifecycleLock(projectId, () => this.removeWorkspaceLocked(projectId))
-  }
-
-  private async removeWorkspaceLocked(projectId: string): Promise<boolean> {
-    const workspace = getWorkspaces().find(candidate => candidate.id === projectId)
-    if (!workspace) return false
-    if (this.getActiveSessionCount(projectId) > 0) {
-      throw new Error('Stop all running sessions before removing this Project.')
-    }
-
-    const ownedSessions = [...this.sessions.values()]
-      .filter(managed => managed.workspace.id === projectId)
-    for (const managed of ownedSessions) {
-      managed.runtimeState = 'deleting'
-      managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
-    }
+    const claim = await this.withProjectLifecycleLock(projectId, async () => {
+      const workspace = getWorkspaces().find(candidate => candidate.id === projectId)
+      if (!workspace) return false
+      if (this.getActiveSessionCount(projectId) > 0) {
+        throw new Error('Stop all running sessions before removing this Project.')
+      }
+      const sessions = [...this.sessions.values()]
+        .filter(managed => managed.workspace.id === projectId)
+      const rootKeys = workspace.remoteServer
+        ? []
+        : [this.projectRootLifecycleKey(workspace.rootPath)]
+      return this.beginProjectInvalidation(workspace, sessions, rootKeys)
+    })
+    if (!claim) return false
 
     try {
-      if (!workspace.remoteServer && isWorkspaceRootAvailable(workspace)) {
-        await Promise.all(ownedSessions.map(async managed => {
-          // A recovered locator may still have a rejected write tail from when
-          // it was offline. Retire that tail, then durably save the current
-          // in-memory snapshot before detaching the Project.
-          await sessionPersistenceQueue.retire(managed.id)
-          this.persistSession(managed)
-          await this.flushSession(managed.id)
-        }))
-        for (const managed of ownedSessions) sessionPersistenceQueue.cancel(managed.id)
-      } else {
-        await Promise.all(ownedSessions.map(managed => sessionPersistenceQueue.retire(managed.id)))
-      }
-      for (const managed of ownedSessions) {
+      await claim.operationsDrained
+      // A Pi turn may call spawn_session, so runtime drain must never retain
+      // the Project/root locks. The logical transition makes that call fail fast.
+      for (const managed of claim.sessions) {
         await this.withAgentRuntimeLock(
           managed,
           () => this.disposeManagedAgentRuntime(managed, 'workspace removal'),
           true,
         )
       }
-
-      const watcher = this.configWatchers.get(workspace.rootPath)
-      watcher?.stop()
-      this.configWatchers.delete(workspace.rootPath)
-      const automationSystem = this.automationSystems.get(workspace.rootPath)
-      this.automationSystems.delete(workspace.rootPath)
-      if (automationSystem) await automationSystem.dispose()
-
-      const removed = await removeStoredWorkspace(projectId)
-      if (!removed) throw new Error(`Project not found: ${projectId}`)
-
-      for (const managed of ownedSessions) {
-        try {
-          this.broadcaster.clearSessionDeltas(managed.id)
-          this.clearAdminRememberApprovalsForSession(managed.id)
-          this.clearPendingPermissionRequestsForSession(managed.id)
-          this.cancelPendingUserQuestionsForSession(managed.id)
-          unregisterSessionScopedToolCallbacks(managed.id)
-          this.browserPaneManager?.destroyForSession(managed.id)
-        } catch (error) {
-          getSessionLog().warn(`Project removed; failed to release Session ${managed.id} metadata:`, error)
-        } finally {
-          this.sessions.delete(managed.id)
-        }
-      }
-      return true
+      return await this.withProjectLifecycleLock(
+        projectId,
+        () => this.removeWorkspaceLocked(claim),
+        claim.token,
+      )
     } catch (error) {
-      for (const managed of ownedSessions) {
-        if (this.sessions.get(managed.id) === managed) managed.runtimeState = undefined
-      }
+      this.restoreProjectInvalidation(claim)
       try {
-        this.setupConfigWatcher(workspace.rootPath, projectId)
+        this.setupConfigWatcher(claim.workspace.rootPath, projectId)
       } catch (watcherError) {
         getSessionLog().error('Failed to restore Project watcher after removal error:', watcherError)
       }
       throw error
+    } finally {
+      this.releaseProjectTransition(claim)
     }
+  }
+
+  private async removeWorkspaceLocked(claim: ProjectInvalidationClaim): Promise<boolean> {
+    const { workspace, sessions } = claim
+    if (sessions.some(managed => !this.ownsProjectInvalidation(claim, managed))) {
+      throw new Error(`Project ${workspace.id} removal was superseded`)
+    }
+
+    if (!workspace.remoteServer && isWorkspaceRootAvailable(workspace)) {
+      await Promise.all(sessions.map(async managed => {
+        // Runtime drain is the write barrier. Retire any older tail, then
+        // durably save the final in-memory snapshot before detaching.
+        await sessionPersistenceQueue.retire(managed.id)
+        this.persistence.enqueueProjectInvalidationSnapshot(managed)
+        await this.flushSession(managed.id)
+      }))
+      for (const managed of sessions) sessionPersistenceQueue.cancel(managed.id)
+    } else {
+      await Promise.all(sessions.map(managed => sessionPersistenceQueue.retire(managed.id)))
+    }
+
+    const watcher = this.configWatchers.get(workspace.rootPath)
+    watcher?.stop()
+    this.configWatchers.delete(workspace.rootPath)
+    const automationSystem = this.automationSystems.get(workspace.rootPath)
+    this.automationSystems.delete(workspace.rootPath)
+    if (automationSystem) await automationSystem.dispose()
+
+    const removed = await removeStoredWorkspace(workspace.id)
+    if (!removed) throw new Error(`Project not found: ${workspace.id}`)
+
+    for (const managed of sessions) {
+      try {
+        this.broadcaster.clearSessionDeltas(managed.id)
+        this.clearAdminRememberApprovalsForSession(managed.id)
+        this.clearPendingPermissionRequestsForSession(managed.id)
+        this.cancelPendingUserQuestionsForSession(managed.id)
+        unregisterSessionScopedToolCallbacks(managed.id)
+        this.browserPaneManager?.destroyForSession(managed.id)
+      } catch (error) {
+        getSessionLog().warn(`Project removed; failed to release Session ${managed.id} metadata:`, error)
+      } finally {
+        this.sessions.delete(managed.id)
+      }
+    }
+    return true
   }
 
   async rebindWorkspaceRoot(projectId: string, currentRoot: string): Promise<Workspace> {
-    return this.withProjectLifecycleLock(
-      projectId,
-      () => this.rebindWorkspaceRootLocked(projectId, currentRoot),
-    )
-  }
-
-  private async rebindWorkspaceRootLocked(projectId: string, currentRoot: string): Promise<Workspace> {
-    if (this.getActiveSessionCount(projectId) > 0) {
-      throw new Error('Stop all running sessions before relinking this Project.')
-    }
-
-    const reboundSessions = [...this.sessions.values()]
-      .filter(managed => managed.workspace.id === projectId)
-    const plan = prepareWorkspaceRootRelink(
+    const claim = await this.withWorkspaceRootRelinkLock(
       projectId,
       currentRoot,
-      reboundSessions.map(managed => managed.id),
+      async () => {
+        if (this.getActiveSessionCount(projectId) > 0) {
+          throw new Error('Stop all running sessions before relinking this Project.')
+        }
+        const sessions = [...this.sessions.values()]
+          .filter(managed => managed.workspace.id === projectId)
+        const plan = prepareWorkspaceRootRelink(
+          projectId,
+          currentRoot,
+          sessions.map(managed => managed.id),
+        )
+        const invalidation = this.beginProjectInvalidation(
+          plan.workspace,
+          sessions,
+          [
+            this.projectRootLifecycleKey(plan.previousRoot),
+            this.projectRootLifecycleKey(plan.currentRoot),
+          ],
+        )
+        return { ...invalidation, plan }
+      },
     )
-    const previousRoot = plan.previousRoot
-    for (const managed of reboundSessions) {
-      managed.runtimeState = 'invalidating'
-      managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
-    }
 
-    const staged = new Map<string, ManagedSession>()
-    let hostCommitted = false
+    let updated: Workspace
     try {
-      // Settle every old-root write before staging durable snapshots at the target.
-      await Promise.all(reboundSessions.map(managed => sessionPersistenceQueue.retire(managed.id)))
-
-      const watcher = this.configWatchers.get(previousRoot)
-      watcher?.stop()
-      this.configWatchers.delete(previousRoot)
-
-      const automationSystem = this.automationSystems.get(previousRoot)
-      this.automationSystems.delete(previousRoot)
-      if (automationSystem) await automationSystem.dispose()
-
-      for (const managed of reboundSessions) {
+      await claim.operationsDrained
+      for (const managed of claim.sessions) {
         await this.withAgentRuntimeLock(
           managed,
           () => this.disposeManagedAgentRuntime(managed, 'workspace root relink'),
           true,
         )
-        if (!managed.messagesLoaded) {
-          this.persistence.hydrateMessagesFromRoot(managed, currentRoot)
-        }
-        const rebound = {
-          ...managed,
-          workspace: plan.workspace,
-          workingDirectory: rebasePathWithinProjectRoot(
-            managed.workingDirectory,
-            previousRoot,
-            currentRoot,
-          ) ?? currentRoot,
-          sdkCwd: rebasePathWithinProjectRoot(managed.sdkCwd, previousRoot, currentRoot),
-          branchFromSessionPath: rebasePathWithinProjectRoot(
-            managed.branchFromSessionPath,
-            previousRoot,
-            currentRoot,
-          ),
-          branchFromSdkCwd: rebasePathWithinProjectRoot(
-            managed.branchFromSdkCwd,
-            previousRoot,
-            currentRoot,
-          ),
-        }
-        staged.set(managed.id, rebound)
-        this.persistence.enqueuePersistStrict(rebound)
       }
-      await Promise.all(reboundSessions.map(managed => this.flushSession(managed.id)))
-
-      // Host identity moves only after every target Session snapshot is durable.
-      const updated = commitWorkspaceRootRelink(plan)
-      hostCommitted = true
-      try {
-        rebaseWorkspaceDefaultWorkingDirectory(plan)
-      } catch (error) {
-        getSessionLog().warn('Relink committed; default working directory will fall back to the Project root:', error)
-      }
-      for (const managed of reboundSessions) {
-        const rebound = staged.get(managed.id)!
-        managed.workspace = updated
-        managed.workingDirectory = rebound.workingDirectory
-        managed.sdkCwd = rebound.sdkCwd
-        managed.branchFromSessionPath = rebound.branchFromSessionPath
-        managed.branchFromSdkCwd = rebound.branchFromSdkCwd
-        managed.runtimeState = undefined
-      }
-      try {
-        await this.persistence.loadSessionsFromDisk(projectId)
-      } catch (error) {
-        getSessionLog().error('Project relink committed, but its Session index is unavailable:', error)
-      }
-      try {
-        this.setupConfigWatcher(currentRoot, projectId)
-      } catch (error) {
-        getSessionLog().error('Project relink committed, but runtime observers are unavailable:', error)
-      }
-      return updated
+      updated = await this.withWorkspaceRootRelinkLock(
+        projectId,
+        currentRoot,
+        () => this.rebindWorkspaceRootLocked(claim),
+        claim.token,
+      )
     } catch (error) {
-      for (const managed of reboundSessions) {
-        if (this.sessions.get(managed.id) === managed) managed.runtimeState = undefined
-      }
+      this.restoreProjectInvalidation(claim)
       try {
-        this.setupConfigWatcher(hostCommitted ? currentRoot : previousRoot, projectId)
+        this.setupConfigWatcher(claim.plan.previousRoot, projectId)
       } catch (watcherError) {
         getSessionLog().error('Failed to restore Project watcher after relink error:', watcherError)
       }
       throw error
+    } finally {
+      this.releaseProjectTransition(claim)
     }
+    for (const managed of claim.sessions) {
+      this.persistence.recoverOrphanedQueuedMessages(managed)
+    }
+    return updated
+  }
+
+  private async rebindWorkspaceRootLocked(claim: WorkspaceRelinkClaim): Promise<Workspace> {
+    const { plan, sessions: reboundSessions } = claim
+    if (reboundSessions.some(managed => !this.ownsProjectInvalidation(claim, managed))) {
+      throw new Error(`Project ${plan.projectId} relink was superseded`)
+    }
+    const projectId = plan.projectId
+    const currentRoot = plan.currentRoot
+    const previousRoot = plan.previousRoot
+
+    const staged = new Map<string, ManagedSession>()
+    const watcher = this.configWatchers.get(previousRoot)
+    watcher?.stop()
+    this.configWatchers.delete(previousRoot)
+
+    const automationSystem = this.automationSystems.get(previousRoot)
+    this.automationSystems.delete(previousRoot)
+    if (automationSystem) await automationSystem.dispose()
+
+    // Runtime drain is the old-root write barrier. No operation can enqueue
+    // another snapshot after these tails are retired.
+    await Promise.all(reboundSessions.map(managed => sessionPersistenceQueue.retire(managed.id)))
+
+    for (const managed of reboundSessions) {
+      const rebound: ManagedSession = {
+        ...managed,
+        workspace: plan.workspace,
+        workingDirectory: rebasePathWithinProjectRoot(
+          managed.workingDirectory,
+          previousRoot,
+          currentRoot,
+        ) ?? currentRoot,
+        sdkCwd: rebasePathWithinProjectRoot(managed.sdkCwd, previousRoot, currentRoot),
+        branchFromSessionPath: rebasePathWithinProjectRoot(
+          managed.branchFromSessionPath,
+          previousRoot,
+          currentRoot,
+        ),
+        branchFromSdkCwd: rebasePathWithinProjectRoot(
+          managed.branchFromSdkCwd,
+          previousRoot,
+          currentRoot,
+        ),
+      }
+      if (!managed.messagesLoaded) {
+        this.persistence.hydrateMessagesFromRoot(rebound, currentRoot, false)
+      }
+      staged.set(managed.id, rebound)
+      this.persistence.enqueuePersistStrict(rebound)
+    }
+    await Promise.all(reboundSessions.map(managed => this.flushSession(managed.id)))
+
+    // Host identity moves only after every target Session snapshot is durable.
+    const updated = commitWorkspaceRootRelink(plan)
+    try {
+      rebaseWorkspaceDefaultWorkingDirectory(plan)
+    } catch (error) {
+      getSessionLog().warn('Relink committed; default working directory will fall back to the Project root:', error)
+    }
+    for (const managed of reboundSessions) {
+      const rebound = staged.get(managed.id)!
+      Object.assign(managed, rebound, { workspace: updated })
+      if (this.ownsProjectInvalidation(claim, managed)) {
+        managed.runtimeState = undefined
+      }
+    }
+    try {
+      await this.persistence.loadSessionsFromDisk(projectId)
+    } catch (error) {
+      getSessionLog().error('Project relink committed, but its Session index is unavailable:', error)
+    }
+    try {
+      this.setupConfigWatcher(currentRoot, projectId)
+    } catch (error) {
+      getSessionLog().error('Project relink committed, but runtime observers are unavailable:', error)
+    }
+    return updated
   }
 
   async updateProjectHostSetting(
@@ -1390,23 +1739,52 @@ export class SessionManager implements ISessionManager {
     key: 'permissionMode' | 'enabledSourceSlugs' | 'localMcpEnabled' | 'automationsEnabled',
     value: unknown,
   ): Promise<void> {
-    return this.withProjectLifecycleLock(
+    const { runtimeDispose, projectTransition } = await this.withProjectLifecycleLock(
       projectId,
-      () => this.updateProjectHostSettingLocked(projectId, key, value),
+      async () => this.updateProjectHostSettingLocked(projectId, key, value),
     )
+    try {
+      await projectTransition?.operationsDrained
+      await runtimeDispose
+      if (key === 'enabledSourceSlugs') {
+        await this.reconcileProjectSourceRuntimes(projectId)
+        return
+      }
+      if (key !== 'localMcpEnabled') return
+
+      await Promise.all([...this.sessions.values()]
+        .filter(managed => managed.workspace.id === projectId && !managed.runtimeState)
+        .map(async managed => {
+          try {
+            await this.reloadSessionSources(managed)
+          } catch (error) {
+            if (managed.runtimeState || this.sessions.get(managed.id) !== managed) return
+            throw error
+          }
+        }))
+    } finally {
+      if (projectTransition) this.releaseProjectTransition(projectTransition)
+    }
   }
 
-  private async updateProjectHostSettingLocked(
+  private updateProjectHostSettingLocked(
     projectId: string,
     key: 'permissionMode' | 'enabledSourceSlugs' | 'localMcpEnabled' | 'automationsEnabled',
     value: unknown,
-  ): Promise<void> {
+  ): {
+    runtimeDispose?: Promise<void>
+    projectTransition?: ProjectTransitionClaim
+  } {
     const workspace = resolveRuntimeWorkspace(projectId)
     if (!workspace || workspace.remoteServer) throw new Error(`Project not found: ${projectId}`)
 
     const hostConfig = loadStoredConfig()
     const hostWorkspace = hostConfig?.workspaces.find(candidate => candidate.id === projectId)
     if (!hostConfig || !hostWorkspace) throw new Error(`Project not found: ${projectId}`)
+
+    const previousSourceRefs = [...(hostWorkspace.defaultEnabledSourceRefs ?? [])]
+    const previousLocalMcpEnabled = hostWorkspace.localMcpEnabled === true
+    const previousAutomationsEnabled = hostWorkspace.automationsEnabled === true
 
     if (key === 'permissionMode') {
       if (value !== 'safe' && value !== 'ask' && value !== 'allow-all') {
@@ -1435,26 +1813,87 @@ export class SessionManager implements ISessionManager {
     }
     saveConfig(hostConfig)
 
+    if (key === 'enabledSourceSlugs') {
+      for (const managed of this.sessions.values()) {
+        if (managed.workspace.id === projectId) {
+          managed.workspace.defaultEnabledSourceRefs = [...(hostWorkspace.defaultEnabledSourceRefs ?? [])]
+        }
+      }
+      const nextRefs = hostWorkspace.defaultEnabledSourceRefs ?? []
+      return {
+        projectTransition: previousSourceRefs.some(ref => !nextRefs.includes(ref))
+          ? this.beginProjectTransition(workspace, [this.projectRootLifecycleKey(workspace.rootPath)])
+          : undefined,
+      }
+    }
+
     if (key === 'localMcpEnabled') {
       for (const managed of this.sessions.values()) {
         if (managed.workspace.id !== projectId) continue
         managed.workspace.localMcpEnabled = value as boolean
-        await this.reloadSessionSources(managed)
       }
-      return
+      return {
+        projectTransition: previousLocalMcpEnabled && value === false
+          ? this.beginProjectTransition(workspace, [this.projectRootLifecycleKey(workspace.rootPath)])
+          : undefined,
+      }
     }
-    if (key !== 'automationsEnabled') return
+    if (key !== 'automationsEnabled') return {}
 
     for (const managed of this.sessions.values()) {
       if (managed.workspace.id === projectId) managed.workspace.automationsEnabled = value as boolean
     }
     if (value) {
       this.setupAutomationSystem(workspace.rootPath, projectId)
-      return
+      return {}
     }
     const automationSystem = this.automationSystems.get(workspace.rootPath)
     this.automationSystems.delete(workspace.rootPath)
-    if (automationSystem) await automationSystem.dispose()
+    const projectTransition = previousAutomationsEnabled || automationSystem
+      ? this.beginProjectTransition(
+          workspace,
+          [this.projectRootLifecycleKey(workspace.rootPath)],
+        )
+      : undefined
+    const runtimeDispose = automationSystem?.dispose()
+    return {
+      runtimeDispose,
+      projectTransition,
+    }
+  }
+
+  private async reconcileProjectSourceRuntimes(projectId: string): Promise<void> {
+    const managedSessions = [...this.sessions.values()]
+      .filter(managed => managed.workspace.id === projectId && !managed.runtimeState)
+
+    await Promise.all(managedSessions.map(async managed => {
+      try {
+        await this.withAgentRuntimeLock(managed, async () => {
+          const workspace = resolveRuntimeWorkspace(projectId)
+          const refs = workspace && !workspace.remoteServer
+            ? workspace.defaultEnabledSourceRefs ?? []
+            : []
+          managed.workspace.defaultEnabledSourceRefs = [...refs]
+          const allowedSlugs = new Set(workspace && !workspace.remoteServer
+            ? resolveHostGrantedSourceSlugs(
+              refs,
+              loadWorkspaceSources(workspace.rootPath, workspace.id),
+            )
+            : [])
+          const currentSlugs = managed.enabledSourceSlugs
+            ?? readSessionHeader(getSessionFilePath(managed.workspace.rootPath, managed.id))?.enabledSourceSlugs
+            ?? []
+          const nextSlugs = currentSlugs.filter(slug => allowedSlugs.has(slug))
+          const changed = currentSlugs.length !== nextSlugs.length
+            || currentSlugs.some((slug, index) => slug !== nextSlugs[index])
+          if (!changed && !managed.agent) return
+          await this.setSessionSourcesLocked(managed, nextSlugs)
+        })
+      } catch (error) {
+        if (managed.runtimeState || this.sessions.get(managed.id) !== managed) return
+        throw error
+      }
+    }))
   }
 
   getActiveSessionCount(workspaceId?: string): number {
@@ -1515,7 +1954,19 @@ export class SessionManager implements ISessionManager {
    * Used after importing sessions to refresh the in-memory session list.
    */
   async reloadSessions(workspaceId?: string): Promise<void> {
-    await this.persistence.loadSessionsFromDisk(workspaceId)
+    if (workspaceId) {
+      await this.withProjectLifecycleLock(
+        workspaceId,
+        () => this.persistence.loadSessionsFromDisk(workspaceId),
+      )
+      return
+    }
+    for (const workspace of getWorkspaces()) {
+      await this.withProjectLifecycleLock(
+        workspace.id,
+        () => this.persistence.loadSessionsFromDisk(workspace.id),
+      )
+    }
   }
 
   getSessions(workspaceId?: string): Session[] {
@@ -1594,14 +2045,24 @@ export class SessionManager implements ISessionManager {
    */
   async getSession(sessionId: string): Promise<Session | null> {
     const getSessionSpan = perf.span('session.getSession', { sessionId })
-    const m = this.sessions.get(sessionId)
+    const m = this.getMutableSession(sessionId)
     if (!m) {
       getSessionSpan.setMetadata('status', 'not_found')
       getSessionSpan.end()
       return null
     }
 
+    let release: (() => void) | undefined
     try {
+      release = this.beginSessionOperationLease(m)
+      const registeredWorkspace = getWorkspaces().find(workspace => workspace.id === m.workspace.id)
+      if (
+        registeredWorkspace
+        && !isFreeConversationWorkspaceId(registeredWorkspace.id)
+        && !isWorkspaceRootAvailable(registeredWorkspace)
+      ) {
+        throw new Error(`Project directory is unavailable; relink Project ${m.workspace.id} before loading a Session`)
+      }
       // Lazy-load messages from disk if not yet loaded
       await this.ensureMessagesLoaded(m)
       getSessionSpan.mark('messages.loaded')
@@ -1615,6 +2076,7 @@ export class SessionManager implements ISessionManager {
       getSessionSpan.setMetadata('status', 'ok')
       return session
     } finally {
+      release?.()
       getSessionSpan.end()
     }
   }
@@ -1684,6 +2146,23 @@ export class SessionManager implements ISessionManager {
     const managed = this.sessions.get(sessionId)
     if (!managed) return null
     return getSessionStoragePath(managed.workspace.rootPath, sessionId)
+  }
+
+  async withSessionPathOperation<T>(
+    sessionId: string,
+    work: (sessionPath: string) => Promise<T>,
+  ): Promise<T> {
+    return this.withRequiredSessionOperation(sessionId, async managed => {
+      const registeredWorkspace = getWorkspaces().find(workspace => workspace.id === managed.workspace.id)
+      if (
+        registeredWorkspace
+        && !isFreeConversationWorkspaceId(registeredWorkspace.id)
+        && !isWorkspaceRootAvailable(registeredWorkspace)
+      ) {
+        throw new Error(`Project directory is unavailable; relink Project ${managed.workspace.id} before accessing Session files`)
+      }
+      return work(getSessionStoragePath(managed.workspace.rootPath, managed.id))
+    })
   }
 
   async createSession(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
@@ -2109,6 +2588,18 @@ export class SessionManager implements ISessionManager {
       throw new Error(`Session ${sessionId} not found`)
     }
 
+    return this.withAgentRuntimeLock(
+      managed,
+      () => this.rewindUserMessageLocked(managed, userMessageId),
+    )
+  }
+
+  private async rewindUserMessageLocked(
+    managed: ManagedSession,
+    userMessageId: string,
+  ): Promise<{ draftText: string }> {
+    const sessionId = managed.id
+
     await this.ensureMessagesLoaded(managed)
 
     const messageIndex = managed.messages.findIndex(message => message.id === userMessageId)
@@ -2136,21 +2627,16 @@ export class SessionManager implements ISessionManager {
     if (hasPiTranscript) {
       // Rewind is a model-free Pi tree operation. Reuse the loaded session even
       // when a newly selected provider will require a restart on the next send.
-      await this.withAgentRuntimeLock(managed, async () => {
-        if (managed.isProcessing || managed.messageQueue.length > 0) {
-          throw new Error('Cannot rewind while this conversation is processing or has queued messages')
-        }
-        let agent = managed.agent
-        if (!agent) {
-          agent = await this.getOrCreateAgentLocked(managed)
-        }
-        try {
-          await agent.rewindUserMessage(target.id)
-        } catch (error) {
-          managed.pendingConversationRewind = undefined
-          throw error
-        }
-      })
+      let agent = managed.agent
+      if (!agent) {
+        agent = await this.getOrCreateAgentLocked(managed)
+      }
+      try {
+        await agent.rewindUserMessage(target.id)
+      } catch (error) {
+        managed.pendingConversationRewind = undefined
+        throw error
+      }
     } else if (hasPriorUserMessage) {
       // Mid-history without a provider session file would desync UI transcript from LLM context.
       throw new Error(
@@ -2290,6 +2776,35 @@ export class SessionManager implements ISessionManager {
     return this.agentLease.beginSessionOperationLease(managed)
   }
 
+  private async withSessionOperation<T>(
+    sessionId: string,
+    unavailable: T,
+    work: (managed: ManagedSession) => Promise<T>,
+  ): Promise<T> {
+    const managed = this.getMutableSession(sessionId)
+    if (!managed) return unavailable
+    const release = this.beginSessionOperationLease(managed)
+    try {
+      return await work(managed)
+    } finally {
+      release()
+    }
+  }
+
+  private async withRequiredSessionOperation<T>(
+    sessionId: string,
+    work: (managed: ManagedSession) => Promise<T>,
+  ): Promise<T> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) throw new Error(`Session ${sessionId} not found`)
+    const release = this.beginSessionOperationLease(managed)
+    try {
+      return await work(managed)
+    } finally {
+      release()
+    }
+  }
+
   /** Serialize exclusive control-plane mutations per session. (Delegates to AgentRuntimeLease.) */
   private async withAgentRuntimeLock<T>(
     managed: ManagedSession,
@@ -2396,7 +2911,8 @@ export class SessionManager implements ISessionManager {
 
   /** Set the LLM connection for a not-yet-started session (delegates to SessionCrudMetadata). */
   async setSessionConnection(sessionId: string, connectionSlug: string): Promise<void> {
-    await this.crudMetadata.setSessionConnection(sessionId, connectionSlug)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.setSessionConnection(sessionId, connectionSlug))
   }
 
   // ============================================
@@ -2405,31 +2921,28 @@ export class SessionManager implements ISessionManager {
 
   /** Set pending plan execution state (no-op if the session is gone). */
   async setPendingPlanExecution(sessionId: string, planPath: string, draftInputSnapshot?: string): Promise<void> {
-    const managed = this.sessions.get(sessionId)
-    if (managed) await setPendingPlanExecution(managed, planPath, draftInputSnapshot)
+    await this.withSessionOperation(sessionId, undefined, managed =>
+      setPendingPlanExecution(managed, planPath, draftInputSnapshot))
   }
 
   /** Mark compaction complete for pending plan execution (no-op if the session is gone). */
   async markCompactionComplete(sessionId: string): Promise<void> {
-    const managed = this.sessions.get(sessionId)
-    if (managed) await markCompactionComplete(managed)
+    await this.withSessionOperation(sessionId, undefined, markCompactionComplete)
   }
 
   /** Mark pending plan execution as dispatched from the UI (no-op if the session is gone). */
   async markPendingPlanExecutionDispatched(sessionId: string): Promise<void> {
-    const managed = this.sessions.get(sessionId)
-    if (managed) await markPendingPlanExecutionDispatched(managed)
+    await this.withSessionOperation(sessionId, undefined, markPendingPlanExecutionDispatched)
   }
 
   /** Clear pending plan execution state (no-op if the session is gone). */
   async clearPendingPlanExecution(sessionId: string): Promise<void> {
-    const managed = this.sessions.get(sessionId)
-    if (managed) await clearPendingPlanExecution(managed)
+    await this.withSessionOperation(sessionId, undefined, clearPendingPlanExecution)
   }
 
   /** Read pending plan execution state for a session. */
   getPendingPlanExecution(sessionId: string): PendingPlanExecutionState | null {
-    const managed = this.sessions.get(sessionId)
+    const managed = this.getMutableSession(sessionId)
     return managed ? getPendingPlanExecution(managed) : null
   }
 
@@ -2441,7 +2954,7 @@ export class SessionManager implements ISessionManager {
    * path.
    */
   async acceptPlan(sessionId: string, _planPath?: string): Promise<void> {
-    const managed = this.sessions.get(sessionId)
+    const managed = this.getMutableSession(sessionId)
     if (!managed) {
       getSessionLog().warn(`acceptPlan: session ${sessionId} not found`)
       return
@@ -2460,23 +2973,29 @@ export class SessionManager implements ISessionManager {
 
   /** Share session to the web viewer. */
   async shareToViewer(sessionId: string): Promise<import('@craft-agent/shared/protocol').ShareResult> {
-    const managed = this.sessions.get(sessionId)
-    if (!managed) return { success: false, error: 'Session not found' }
-    return shareToViewer(managed, this.broadcaster)
+    return this.withSessionOperation(
+      sessionId,
+      { success: false, error: 'Session not found' },
+      managed => shareToViewer(managed, this.broadcaster),
+    )
   }
 
   /** Update an existing shared session. */
   async updateShare(sessionId: string): Promise<import('@craft-agent/shared/protocol').ShareResult> {
-    const managed = this.sessions.get(sessionId)
-    if (!managed) return { success: false, error: 'Session not found' }
-    return updateShare(managed, this.broadcaster)
+    return this.withSessionOperation(
+      sessionId,
+      { success: false, error: 'Session not found' },
+      managed => updateShare(managed, this.broadcaster),
+    )
   }
 
   /** Revoke a shared session. */
   async revokeShare(sessionId: string): Promise<import('@craft-agent/shared/protocol').ShareResult> {
-    const managed = this.sessions.get(sessionId)
-    if (!managed) return { success: false, error: 'Session not found' }
-    return revokeShare(managed, this.broadcaster)
+    return this.withSessionOperation(
+      sessionId,
+      { success: false, error: 'Session not found' },
+      managed => revokeShare(managed, this.broadcaster),
+    )
   }
 
   // ============================================
@@ -2494,56 +3013,62 @@ export class SessionManager implements ISessionManager {
       throw new Error(`Session not found: ${sessionId}`)
     }
 
-    await this.withAgentRuntimeLock(managed, async () => {
-      const workspaceRootPath = managed.workspace.rootPath
-      const projectRoot = getResourceProjectRoot(managed.workspace)
-      getSessionLog().info(`Setting sources for session ${sessionId}:`, sourceSlugs)
+    await this.withAgentRuntimeLock(
+      managed,
+      () => this.setSessionSourcesLocked(managed, sourceSlugs),
+    )
+  }
 
-      // Clean up credential cache for sources being disabled (security)
-      const previousSlugs = new Set(managed.enabledSourceSlugs || [])
-      const newSlugs = new Set(sourceSlugs)
-      const disabledSlugs = [...previousSlugs].filter(prevSlug => !newSlugs.has(prevSlug))
-      if (disabledSlugs.length > 0) {
-        try {
-          await cleanupSourceRuntimeArtifacts(workspaceRootPath, disabledSlugs)
-        } catch (err) {
-          getSessionLog().warn(`Failed to clean up source runtime artifacts: ${err}`)
-        }
+  private async setSessionSourcesLocked(managed: ManagedSession, sourceSlugs: string[]): Promise<void> {
+    const sessionId = managed.id
+    const workspaceRootPath = managed.workspace.rootPath
+    const projectRoot = getResourceProjectRoot(managed.workspace)
+    getSessionLog().info(`Setting sources for session ${sessionId}:`, sourceSlugs)
+
+    // Clean up credential cache for sources being disabled (security)
+    const previousSlugs = new Set(managed.enabledSourceSlugs || [])
+    const newSlugs = new Set(sourceSlugs)
+    const disabledSlugs = [...previousSlugs].filter(prevSlug => !newSlugs.has(prevSlug))
+    if (disabledSlugs.length > 0) {
+      try {
+        await cleanupSourceRuntimeArtifacts(workspaceRootPath, disabledSlugs)
+      } catch (err) {
+        getSessionLog().warn(`Failed to clean up source runtime artifacts: ${err}`)
       }
+    }
 
-      managed.enabledSourceSlugs = sourceSlugs
+    managed.enabledSourceSlugs = sourceSlugs
 
-      const agent = managed.agent
-      if (agent) {
-        const sources = getSourcesBySlugs(projectRoot, sourceSlugs, managed.workspace.id)
-        const sessionPath = getSessionStoragePath(workspaceRootPath, sessionId)
-        const { mcpServers, apiServers, errors, resolvedSources } = await buildServersFromSources(
-          sources,
-          sessionPath,
-          managed.tokenRefreshManager,
-          agent.getSummarizeCallback(),
-          managed.workspace,
-        )
-        if (errors.length > 0) getSessionLog().warn('Source build errors:', errors)
+    const agent = managed.agent
+    if (agent) {
+      const sources = getSourcesBySlugs(projectRoot, sourceSlugs, managed.workspace.id)
+      const sessionPath = getSessionStoragePath(workspaceRootPath, sessionId)
+      const { mcpServers, apiServers, errors, resolvedSources } = await buildServersFromSources(
+        sources,
+        sessionPath,
+        managed.tokenRefreshManager,
+        agent.getSummarizeCallback(),
+        managed.workspace,
+      )
+      if (errors.length > 0) getSessionLog().warn('Source build errors:', errors)
 
-        const allSources = loadAllSources(projectRoot, managed.workspace.id)
-        agent.setAllSources(allSources)
-        const usableSources = resolvedSources.filter(isSourceUsable)
-        const intendedSlugs = usableSources.map(source => source.config.slug)
-        await agent.applyBridgeUpdates({ sessionPath, enabledSources: usableSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source config change' })
-        await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
+      const allSources = loadAllSources(projectRoot, managed.workspace.id)
+      agent.setAllSources(allSources)
+      const usableSources = resolvedSources.filter(isSourceUsable)
+      const intendedSlugs = usableSources.map(source => source.config.slug)
+      await agent.applyBridgeUpdates({ sessionPath, enabledSources: usableSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source config change' })
+      await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
 
-        getSessionLog().info(`Applied ${Object.keys(mcpServers).length} MCP + ${Object.keys(apiServers).length} API sources to active agent (${allSources.length} total)`)
-      }
+      getSessionLog().info(`Applied ${Object.keys(mcpServers).length} MCP + ${Object.keys(apiServers).length} API sources to active agent (${allSources.length} total)`)
+    }
 
-      this.persistSession(managed)
-      this.sendEvent({
-        type: 'sources_changed',
-        sessionId,
-        enabledSourceSlugs: sourceSlugs,
-      }, managed.workspace.id)
-      getSessionLog().info(`Session ${sessionId} sources updated: ${sourceSlugs.length} sources`)
-    })
+    this.persistSession(managed)
+    this.sendEvent({
+      type: 'sources_changed',
+      sessionId,
+      enabledSourceSlugs: sourceSlugs,
+    }, managed.workspace.id)
+    getSessionLog().info(`Session ${sessionId} sources updated: ${sourceSlugs.length} sources`)
   }
 
   /**
@@ -2682,7 +3207,8 @@ export class SessionManager implements ISessionManager {
    * (Delegates to SessionCrudMetadata.)
    */
   async updateSessionModel(sessionId: string, workspaceId: string, model: string | null, connection?: string): Promise<void> {
-    await this.crudMetadata.updateSessionModel(sessionId, workspaceId, model, connection)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.updateSessionModel(sessionId, workspaceId, model, connection))
   }
 
   /** Update a message's content in place (delegates to MessageEdits). */
@@ -2718,65 +3244,71 @@ export class SessionManager implements ISessionManager {
     }
     if (managed.runtimeState === 'deleting') return
 
-    return this.withProjectLifecycleLock(
+    const claim = await this.withProjectLifecycleLock(
       managed.workspace.id,
       () => this.deleteSessionLocked(sessionId),
     )
-  }
+    if (!claim) return
 
-  private async deleteSessionLocked(sessionId: string): Promise<void> {
-    const managed = this.sessions.get(sessionId)
-    if (!managed || managed.runtimeState === 'deleting') return
-    if (
-      !isFreeConversationWorkspaceId(managed.workspace.id)
-      && !isWorkspaceRootAvailable(managed.workspace)
-    ) {
-      throw new Error(`Project directory is unavailable; relink Project ${managed.workspace.id} before deleting a Session`)
-    }
-
-    // Tombstone synchronously so queued title/query work cannot recreate or
-    // persist this session while deletion waits for the active runtime lease.
-    managed.runtimeState = 'deleting'
-    managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
-
-    // Get workspace slug before deleting
-    const workspaceRootPath = managed.workspace.rootPath
-
-    // If processing is in progress, force-abort via Query.close() and wait for cleanup
-    if (managed.isProcessing && managed.agent) {
-      managed.agent.forceAbort(AbortReason.UserStop)
-      // Brief wait for the query to finish tearing down before we delete session files.
-      // Prevents file corruption from overlapping writes during rapid delete operations.
-      await new Promise(resolve => setTimeout(resolve, 100))
-    }
-
-    // Cancel any pending persistence write (session is being deleted, no need to save)
-    sessionPersistenceQueue.cancel(sessionId)
-
-    // Dispose only after any model-free runtime transaction (for example rewind) settles.
-    await this.withAgentRuntimeLock(
-      managed,
-      () => this.disposeManagedAgentRuntime(managed, 'session deletion'),
-      true,
+    const {
+      managed: claimedSession,
+      projectId,
+      workspaceRootPath,
+      runtimeEpoch,
+    } = claim
+    const ownsDeletion = () => (
+      this.sessions.get(sessionId) === claimedSession
+      && claimedSession.runtimeState === 'deleting'
+      && claimedSession.runtimeEpoch === runtimeEpoch
     )
 
-    // A send that linearized before the tombstone may have queued a final
-    // debounced snapshot while deletion waited for its operation lease.
-    sessionPersistenceQueue.cancel(sessionId)
-    await sessionPersistenceQueue.flush(sessionId)
+    try {
+      // If processing is in progress, force-abort via Query.close() and wait for cleanup.
+      if (claimedSession.isProcessing && claimedSession.agent) {
+        claimedSession.agent.forceAbort(AbortReason.UserStop)
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
 
-    if (!deleteStoredSession(workspaceRootPath, sessionId)) {
-      managed.runtimeState = undefined
-      throw new Error(`Could not delete Session ${sessionId} from its Project-owned storage`)
+      sessionPersistenceQueue.cancel(sessionId)
+
+      // Do not hold the Project lifecycle lock while waiting for a Pi turn. A
+      // running turn may itself need that lock for spawn_session.
+      await this.withAgentRuntimeLock(
+        claimedSession,
+        () => this.disposeManagedAgentRuntime(claimedSession, 'session deletion'),
+        true,
+      )
+
+      // An operation accepted before the tombstone may have queued a final
+      // snapshot while deletion waited for its lease.
+      sessionPersistenceQueue.cancel(sessionId)
+      await sessionPersistenceQueue.flush(sessionId)
+
+      await this.withProjectLifecycleLock(projectId, async () => {
+        if (!ownsDeletion()) throw new Error(`Session ${sessionId} deletion was superseded`)
+        if (
+          !isFreeConversationWorkspaceId(projectId)
+          && !isWorkspaceRootAvailable(claimedSession.workspace)
+        ) {
+          throw new Error(`Project directory is unavailable; relink Project ${projectId} before deleting a Session`)
+        }
+        if (!deleteStoredSession(workspaceRootPath, sessionId)) {
+          throw new Error(`Could not delete Session ${sessionId} from its Project-owned storage`)
+        }
+        this.sessions.delete(sessionId)
+      })
+    } catch (error) {
+      if (ownsDeletion()) claimedSession.runtimeState = undefined
+      throw error
     }
 
     // Durable deletion is committed. External and in-memory cleanup is now
     // best-effort and must not make a failed filesystem mutation look successful.
-    if (managed.sharedId) {
+    if (claimedSession.sharedId) {
       try {
         const { VIEWER_URL } = await import('@craft-agent/shared/branding')
         const response = await fetch(
-          `${VIEWER_URL}/s/api/${managed.sharedId}`,
+          `${VIEWER_URL}/s/api/${claimedSession.sharedId}`,
           { method: 'DELETE', signal: AbortSignal.timeout(5000) }
         )
         if (!response.ok) {
@@ -2796,20 +3328,37 @@ export class SessionManager implements ISessionManager {
     unregisterSessionScopedToolCallbacks(sessionId)
     this.browserPaneManager?.destroyForSession(sessionId)
 
-    this.sessions.delete(sessionId)
-
-    // Clean up session metadata in AutomationSystem (prevents memory leak)
     const automationSystem = this.automationSystems.get(workspaceRootPath)
-    if (automationSystem) {
-      automationSystem.removeSessionMetadata(sessionId)
+    if (automationSystem) automationSystem.removeSessionMetadata(sessionId)
+
+    this.sendEvent({ type: 'session_deleted', sessionId }, projectId)
+    this.emitUnreadSummaryChanged()
+    getSessionLog().info(`Deleted session ${sessionId}`)
+  }
+
+  private async deleteSessionLocked(sessionId: string): Promise<SessionDeletionClaim | undefined> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed || managed.runtimeState === 'deleting') return
+    if (managed.runtimeState) {
+      throw new Error(`Session ${sessionId} is already being changed; retry deletion.`)
+    }
+    if (
+      !isFreeConversationWorkspaceId(managed.workspace.id)
+      && !isWorkspaceRootAvailable(managed.workspace)
+    ) {
+      throw new Error(`Project directory is unavailable; relink Project ${managed.workspace.id} before deleting a Session`)
     }
 
-    // Notify all windows for this workspace that the session was deleted
-    this.sendEvent({ type: 'session_deleted', sessionId }, managed.workspace.id)
-    this.emitUnreadSummaryChanged()
-
-    // Clean up attachments directory (handled by deleteStoredSession for workspace-scoped storage)
-    getSessionLog().info(`Deleted session ${sessionId}`)
+    // Tombstone synchronously so queued title/query work cannot recreate or
+    // persist this session after the Project lock is released.
+    managed.runtimeState = 'deleting'
+    managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
+    return {
+      managed,
+      projectId: managed.workspace.id,
+      workspaceRootPath: managed.workspace.rootPath,
+      runtimeEpoch: managed.runtimeEpoch,
+    }
   }
 
   async queryOnce(sessionId: string, request: OneShotLlmRequest): Promise<OneShotLlmResult> {
@@ -3169,11 +3718,15 @@ export class SessionManager implements ISessionManager {
     // runs its internal cold-session build. Otherwise that build sees stale tokens
     // and emits AUTH_REQUIRED, causing a brief "needs_auth" UI flicker before the
     // post-build refresh restores state (#710).
-    const sources: LoadedSource[] = hasSources
+    const loadedSources: LoadedSource[] = hasSources
       ? getSourcesBySlugs(projectRoot, enabledSlugs, managed.workspace.id)
       : []
+    const currentWorkspace = resolveRuntimeWorkspace(managed.workspace.id) ?? managed.workspace
+    const sources = !isFreeConversationWorkspaceId(currentWorkspace.id)
+      ? loadedSources.filter(source => isSourceHostGranted(currentWorkspace.defaultEnabledSourceRefs, source))
+      : loadedSources
 
-    if (hasSources && managed.tokenRefreshManager) {
+    if (sources.length > 0 && managed.tokenRefreshManager) {
       const refreshResult = await refreshExpiredCredentials(sources, managed.tokenRefreshManager)
       if (refreshResult.failedSources.length > 0) {
         getSessionLog().warn('[OAuth] Some sources failed token refresh:', refreshResult.failedSources.map(f => f.slug))
@@ -3205,7 +3758,7 @@ export class SessionManager implements ISessionManager {
         sessionPath,
         managed.tokenRefreshManager,
         agent.getSummarizeCallback(),
-        managed.workspace,
+        currentWorkspace,
       )
       if (errors.length > 0) {
         getSessionLog().warn(`Source build errors:`, errors)
@@ -3583,81 +4136,75 @@ export class SessionManager implements ISessionManager {
   }
 
   async sendQueuedMessageNow(sessionId: string, messageId: string): Promise<void> {
-    const managed = this.sessions.get(sessionId)
-    if (!managed) {
-      throw new Error(`Session ${sessionId} not found`)
-    }
+    await this.withRequiredSessionOperation(sessionId, async managed => {
+      await this.ensureMessagesLoaded(managed)
 
-    await this.ensureMessagesLoaded(managed)
-
-    const queuedIndex = managed.messageQueue.findIndex(entry => entry.messageId === messageId)
-    if (queuedIndex < 0) {
-      throw new Error(`Queued message ${messageId} not found`)
-    }
-
-    const [selected] = managed.messageQueue.splice(queuedIndex, 1)
-    if (!selected) {
-      throw new Error(`Queued message ${messageId} not found`)
-    }
-    managed.messageQueue.unshift(selected)
-    this.persistSession(managed)
-
-    if (!managed.isProcessing) {
-      this.processNextQueuedMessage(sessionId)
-      return
-    }
-
-    getSessionLog().info('Sending queued message now:', {
-      sessionId,
-      messageId,
-      queueLength: managed.messageQueue.length,
-    })
-
-    managed.stopRequested = true
-    managed.wasInterrupted = true
-
-    if (managed.agent) {
-      managed.agent.forceAbort(AbortReason.Redirect)
-    }
-
-    this.sendEvent({
-      type: 'interrupted',
-      sessionId,
-      reason: 'queued_handoff',
-    }, managed.workspace.id)
-
-    setTimeout(() => {
-      if (managed.stopRequested && managed.isProcessing) {
-        getSessionLog().warn('Generator did not complete after queued send-now request, forcing cleanup')
-        void this.onProcessingStopped(sessionId, 'timeout').catch(error => {
-          getSessionLog().error('Failed to stop queued processing after timeout:', error)
-        })
+      const queuedIndex = managed.messageQueue.findIndex(entry => entry.messageId === messageId)
+      if (queuedIndex < 0) {
+        throw new Error(`Queued message ${messageId} not found`)
       }
-    }, 5000)
+
+      const [selected] = managed.messageQueue.splice(queuedIndex, 1)
+      if (!selected) {
+        throw new Error(`Queued message ${messageId} not found`)
+      }
+      managed.messageQueue.unshift(selected)
+      this.persistSession(managed)
+
+      if (!managed.isProcessing) {
+        this.processNextQueuedMessage(sessionId)
+        return
+      }
+
+      getSessionLog().info('Sending queued message now:', {
+        sessionId,
+        messageId,
+        queueLength: managed.messageQueue.length,
+      })
+
+      managed.stopRequested = true
+      managed.wasInterrupted = true
+
+      if (managed.agent) {
+        managed.agent.forceAbort(AbortReason.Redirect)
+      }
+
+      this.sendEvent({
+        type: 'interrupted',
+        sessionId,
+        reason: 'queued_handoff',
+      }, managed.workspace.id)
+
+      setTimeout(() => {
+        if (managed.stopRequested && managed.isProcessing) {
+          getSessionLog().warn('Generator did not complete after queued send-now request, forcing cleanup')
+          void this.onProcessingStopped(sessionId, 'timeout').catch(error => {
+            getSessionLog().error('Failed to stop queued processing after timeout:', error)
+          })
+        }
+      }, 5000)
+    })
   }
 
   async removeQueuedMessage(sessionId: string, messageId: string): Promise<void> {
-    const managed = this.sessions.get(sessionId)
-    if (!managed) {
-      throw new Error(`Session ${sessionId} not found`)
-    }
+    await this.withRequiredSessionOperation(sessionId, async managed => {
+      await this.ensureMessagesLoaded(managed)
 
-    await this.ensureMessagesLoaded(managed)
+      const queuedIndex = managed.messageQueue.findIndex(entry => entry.messageId === messageId)
+      if (queuedIndex < 0) {
+        throw new Error(`Queued message ${messageId} not found`)
+      }
 
-    const queuedIndex = managed.messageQueue.findIndex(entry => entry.messageId === messageId)
-    if (queuedIndex < 0) {
-      throw new Error(`Queued message ${messageId} not found`)
-    }
+      managed.messageQueue.splice(queuedIndex, 1)
+      managed.messages = managed.messages.filter(message => message.id !== messageId)
+      this.persistSession(managed)
 
-    managed.messageQueue.splice(queuedIndex, 1)
-    managed.messages = managed.messages.filter(message => message.id !== messageId)
-    this.persistSession(managed)
-
-    this.sendEvent({
-      type: 'queued_message_removed',
-      sessionId,
-      messageId,
-    }, managed.workspace.id)
+      this.sendEvent({
+        type: 'queued_message_removed',
+        sessionId,
+        messageId,
+      }, managed.workspace.id)
+    })
   }
 
   /**
@@ -3767,7 +4314,7 @@ export class SessionManager implements ISessionManager {
    */
   private processNextQueuedMessage(sessionId: string): void {
     const managed = this.sessions.get(sessionId)
-    if (!managed || managed.messageQueue.length === 0) return
+    if (!managed || managed.runtimeState || managed.messageQueue.length === 0) return
 
     const next = managed.messageQueue.shift()!
     getSessionLog().info('replay queued', {
@@ -4747,34 +5294,50 @@ export class SessionManager implements ISessionManager {
     const resolved = mentions
       ? await this.resolveAutomationMentions(workspaceRootPath, workspace.id, mentions)
       : undefined
-    const automationSourceSlugs = resolved?.sourceSlugs.length
-      ? isFreeConversationWorkspaceId(workspace.id)
-        ? resolved.sourceSlugs
-        : getSourcesBySlugs(workspaceRootPath, resolved.sourceSlugs, workspace.id)
-          .filter(source => canAutoEnableSource(workspace, [], source))
-          .map(source => source.config.slug)
-      : undefined
-
-    // Ensure labels exist in workspace config before assigning to session
-    const resolvedLabels = labels?.length
-      ? ensureLabelsExist(workspaceRootPath, labels)
-      : labels
+    const resolvedWorkspace = resolveRuntimeWorkspace(workspaceId)
+    if (!resolvedWorkspace || resolvedWorkspace.rootPath !== workspaceRootPath) {
+      throw new Error(`Automation workspace mismatch: ${workspaceId}`)
+    }
+    if (!isFreeConversationWorkspaceId(resolvedWorkspace.id) && resolvedWorkspace.automationsEnabled !== true) {
+      throw new Error('Project automations are disabled by Host settings')
+    }
 
     // Use automation name if provided, otherwise fall back to prompt snippet
     const fallback = `Automation: ${prompt.slice(0, 50)}${prompt.length > 50 ? '...' : ''}`
     const sessionName = automationName || fallback
 
-    // Create a new session for this automation
-    const session = await this.createSession(workspaceId, {
-      name: sessionName,
-      labels: resolvedLabels,
-      permissionMode: isFreeConversationWorkspaceId(workspace.id)
-        ? permissionMode || 'safe'
-        : capPermissionMode(permissionMode, workspace.defaultPermissionMode, 'safe'),
-      enabledSourceSlugs: automationSourceSlugs,
-      llmConnection,
-      model,
-      thinkingLevel,
+    // Revalidate the Host grant atomically with Session creation. Mention and
+    // label resolution may have yielded while automations or Sources changed.
+    const session = await this.withProjectLifecycleLock(workspaceId, async () => {
+      const currentWorkspace = resolveRuntimeWorkspace(workspaceId)
+      if (!currentWorkspace || currentWorkspace.rootPath !== workspaceRootPath) {
+        throw new Error(`Automation workspace mismatch: ${workspaceId}`)
+      }
+      if (!isFreeConversationWorkspaceId(currentWorkspace.id) && currentWorkspace.automationsEnabled !== true) {
+        throw new Error('Project automations are disabled by Host settings')
+      }
+      const resolvedLabels = labels?.length
+        ? ensureLabelsExist(currentWorkspace.rootPath, labels)
+        : labels
+      const automationSourceSlugs = resolved?.sourceSlugs.length
+        ? isFreeConversationWorkspaceId(currentWorkspace.id)
+          ? resolved.sourceSlugs
+          : getSourcesBySlugs(workspaceRootPath, resolved.sourceSlugs, currentWorkspace.id)
+            .filter(source => canAutoEnableSource(currentWorkspace, [], source))
+            .map(source => source.config.slug)
+        : undefined
+
+      return this.createSessionLocked(workspaceId, {
+        name: sessionName,
+        labels: resolvedLabels,
+        permissionMode: isFreeConversationWorkspaceId(currentWorkspace.id)
+          ? permissionMode || 'safe'
+          : capPermissionMode(permissionMode, currentWorkspace.defaultPermissionMode, 'safe'),
+        enabledSourceSlugs: automationSourceSlugs,
+        llmConnection,
+        model,
+        thinkingLevel,
+      })
     })
 
     // Populate triggeredBy metadata so title generation is explicitly skipped
@@ -4859,7 +5422,10 @@ export class SessionManager implements ISessionManager {
     workspaceId: string,
     payload: RemoteSessionTransferPayload,
   ): Promise<{ sessionId: string }> {
-    return this.exportImport.importRemoteSessionTransfer(workspaceId, payload)
+    return this.withProjectLifecycleLock(
+      workspaceId,
+      () => this.exportImport.importRemoteSessionTransfer(workspaceId, payload),
+    )
   }
 
   /**

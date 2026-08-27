@@ -35,6 +35,7 @@ import {
   getWorkspaceSessionsPath,
   ensureProjectOwnedDirectory,
   rebasePathWithinProjectRoot,
+  resolveProjectOwnedFilePath,
   resolveProjectOwnedPath,
 } from '../workspaces/paths.ts';
 import { toPortablePath, expandPath } from '../utils/paths.ts';
@@ -132,9 +133,10 @@ function getValidSessionFileCandidate(path: string, priority: number): ValidSess
  * Returns a readable candidate even if promotion fails, so callers never need
  * to discard the only valid copy.
  */
-export function recoverSessionFile(sessionFile: string): string | null {
-  const tmpFile = sessionFile + '.tmp';
-  const backupFile = sessionFile + '.bak';
+export function recoverSessionFile(sessionFile: string, workspaceRootPath: string): string | null {
+  sessionFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile);
+  const tmpFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile + '.tmp');
+  const backupFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile + '.bak');
 
   if (activeSessionFileReplacements.has(sessionFile)) {
     return existsSync(sessionFile) ? sessionFile : null;
@@ -391,7 +393,7 @@ export function loadSession(workspaceRootPath: string, sessionId: string): Store
   const end = perf.start('session.loadSession', { sessionId });
 
   const jsonlPath = getSessionFilePath(workspaceRootPath, sessionId);
-  const readablePath = recoverSessionFile(jsonlPath);
+  const readablePath = recoverSessionFile(jsonlPath, workspaceRootPath);
   if (readablePath) {
     const session = readSessionJsonl(readablePath);
     if (session) {
@@ -452,7 +454,7 @@ export function listSessions(workspaceRootPath: string): SessionMetadata[] {
         const sessionDir = join(sessionsDir, sessionId);
         const jsonlFile = join(sessionDir, 'session.jsonl');
 
-        const readablePath = recoverSessionFile(jsonlFile);
+        const readablePath = recoverSessionFile(jsonlFile, workspaceRootPath);
         if (readablePath) {
           const header = readSessionHeader(readablePath);
           if (header) {
@@ -496,7 +498,7 @@ export async function listSessionsAsync(workspaceRootPath: string): Promise<Sess
       const batch = entries.slice(index, index + 32);
       const metadataBatch = await Promise.all(batch.map(async (entry) => {
         const jsonlFile = join(sessionsDir, entry.name, 'session.jsonl');
-        const readablePath = recoverSessionFile(jsonlFile);
+        const readablePath = recoverSessionFile(jsonlFile, workspaceRootPath);
         if (!readablePath) return null;
 
         const header = await readSessionHeaderAsync(readablePath);

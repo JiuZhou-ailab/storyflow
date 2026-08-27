@@ -515,11 +515,11 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
 
   // Get files in session directory (recursive tree structure)
   server.handle(RPC_CHANNELS.sessions.GET_FILES, async (_ctx, sessionId: string) => {
-    const sessionPath = sessionManager.getSessionPath(sessionId)
-    if (!sessionPath) return []
-
     try {
-      return await scanSessionDirectory(sessionPath)
+      return await sessionManager.withSessionPathOperation(
+        sessionId,
+        sessionPath => scanSessionDirectory(sessionPath),
+      )
     } catch (error) {
       log.error('Failed to get session files:', error)
       return []
@@ -572,13 +572,11 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
 
   // Get session notes (reads notes.md from session directory)
   server.handle(RPC_CHANNELS.sessions.GET_NOTES, async (_ctx, sessionId: string) => {
-    const sessionPath = sessionManager.getSessionPath(sessionId)
-    if (!sessionPath) return ''
-
     try {
-      const notesPath = join(sessionPath, 'notes.md')
-      const content = await readFile(notesPath, 'utf-8')
-      return content
+      return await sessionManager.withSessionPathOperation(sessionId, async sessionPath => {
+        const notesPath = join(sessionPath, 'notes.md')
+        return readFile(notesPath, 'utf-8')
+      })
     } catch {
       // File doesn't exist yet - return empty string
       return ''
@@ -587,14 +585,11 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
 
   // Set session notes (writes to notes.md in session directory)
   server.handle(RPC_CHANNELS.sessions.SET_NOTES, async (_ctx, sessionId: string, content: string) => {
-    const sessionPath = sessionManager.getSessionPath(sessionId)
-    if (!sessionPath) {
-      throw new Error(`Session not found: ${sessionId}`)
-    }
-
     try {
-      const notesPath = join(sessionPath, 'notes.md')
-      await writeFile(notesPath, content, 'utf-8')
+      await sessionManager.withSessionPathOperation(sessionId, async sessionPath => {
+        const notesPath = join(sessionPath, 'notes.md')
+        await writeFile(notesPath, content, 'utf-8')
+      })
     } catch (error) {
       log.error('Failed to save session notes:', error)
       throw error

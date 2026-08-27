@@ -13,11 +13,12 @@
  */
 
 import { readFile, writeFile, appendFile } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { createLogger } from '../utils/debug.ts';
 import { executeWebhookRequest, createWebhookHistoryEntry } from './webhook-utils.ts';
 import { AUTOMATIONS_RETRY_QUEUE_FILE } from './constants.ts';
 import { appendAutomationHistoryEntry } from './history-store.ts';
+import { resolveAutomationOwnedPath } from './resolve-config-path.ts';
 import type { WebhookAction, WebhookActionResult } from './types.ts';
 
 const log = createLogger('retry-scheduler');
@@ -33,6 +34,20 @@ const MAX_DEFERRED_ATTEMPTS = DEFERRED_DELAYS_MS.length;
 
 /** Queue tick interval (how often we check the queue file) */
 const TICK_INTERVAL_MS = 60_000; // 1 minute
+
+const queueMutations = new Map<string, Promise<void>>();
+
+/** Serialize every read-modify-write and append for one durable retry queue. */
+export function withRetryQueueMutation<T>(
+  workspaceRootPath: string,
+  mutate: () => T | Promise<T>,
+): Promise<T> {
+  const key = resolve(workspaceRootPath);
+  const previous = queueMutations.get(key) ?? Promise.resolve();
+  const next = previous.then(mutate, mutate);
+  queueMutations.set(key, next.then(() => {}, () => {}));
+  return next;
+}
 
 // ============================================================================
 // Queue Entry
@@ -68,7 +83,8 @@ export interface RetrySchedulerOptions {
 export class RetryScheduler {
   private readonly workspaceRootPath: string;
   private timer: ReturnType<typeof setInterval> | null = null;
-  private processing = false;
+  private initialTimer: ReturnType<typeof setTimeout> | null = null;
+  private inFlightTick: Promise<void> | null = null;
 
   constructor(options: RetrySchedulerOptions) {
     this.workspaceRootPath = options.workspaceRootPath;
@@ -79,20 +95,28 @@ export class RetryScheduler {
    */
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => this.tick(), TICK_INTERVAL_MS);
+    this.timer = setInterval(() => void this.tick(), TICK_INTERVAL_MS);
     log.debug('[RetryScheduler] Started');
     // Run an initial tick after a short delay (don't block startup)
-    setTimeout(() => this.tick(), 5_000);
+    this.initialTimer = setTimeout(() => {
+      this.initialTimer = null;
+      void this.tick();
+    }, 5_000);
   }
 
   /**
    * Stop the scheduler and clean up.
    */
-  dispose(): void {
+  async dispose(): Promise<void> {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
+    if (this.initialTimer) {
+      clearTimeout(this.initialTimer);
+      this.initialTimer = null;
+    }
+    await this.inFlightTick;
     log.debug('[RetryScheduler] Disposed');
   }
 
@@ -106,31 +130,50 @@ export class RetryScheduler {
     expandedUrl: string,
     lastError?: string,
   ): Promise<void> {
-    const entry: RetryQueueEntry = {
-      id: `${matcherId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      matcherId,
-      action,
-      expandedUrl,
-      deferredAttempt: 0,
-      nextRetryAt: Date.now() + DEFERRED_DELAYS_MS[0]!,
-      createdAt: Date.now(),
-      lastError,
-    };
+    await withRetryQueueMutation(this.workspaceRootPath, async () => {
+      const entry: RetryQueueEntry = {
+        id: `${matcherId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        matcherId,
+        action,
+        expandedUrl,
+        deferredAttempt: 0,
+        nextRetryAt: Date.now() + DEFERRED_DELAYS_MS[0]!,
+        createdAt: Date.now(),
+        lastError,
+      };
 
-    const queuePath = join(this.workspaceRootPath, AUTOMATIONS_RETRY_QUEUE_FILE);
-    await appendFile(queuePath, JSON.stringify(entry) + '\n', 'utf-8');
-    log.debug(`[RetryScheduler] Enqueued ${entry.id} — next retry in ${DEFERRED_DELAYS_MS[0]! / 60_000}m`);
+      const queuePath = resolveAutomationOwnedPath(
+        this.workspaceRootPath,
+        join(this.workspaceRootPath, AUTOMATIONS_RETRY_QUEUE_FILE),
+      );
+      await appendFile(queuePath, JSON.stringify(entry) + '\n', 'utf-8');
+      log.debug(`[RetryScheduler] Enqueued ${entry.id} — next retry in ${DEFERRED_DELAYS_MS[0]! / 60_000}m`);
+    });
   }
 
   /**
    * Process the queue: read entries, retry those that are due, rewrite the queue.
    */
-  private async tick(): Promise<void> {
-    if (this.processing) return;
-    this.processing = true;
+  private tick(): Promise<void> {
+    if (this.inFlightTick) return this.inFlightTick;
 
-    try {
-      const queuePath = join(this.workspaceRootPath, AUTOMATIONS_RETRY_QUEUE_FILE);
+    const tick = this.processQueue().finally(() => {
+      if (this.inFlightTick === tick) {
+        this.inFlightTick = null;
+      }
+    });
+    this.inFlightTick = tick;
+    return tick;
+  }
+
+  private processQueue(): Promise<void> {
+    // ponytail: hold one per-Project queue lock across network retries; split read/commit if enqueue latency matters.
+    return withRetryQueueMutation(this.workspaceRootPath, async () => {
+      try {
+      let queuePath = resolveAutomationOwnedPath(
+        this.workspaceRootPath,
+        join(this.workspaceRootPath, AUTOMATIONS_RETRY_QUEUE_FILE),
+      );
 
       // Read queue
       let raw: string;
@@ -231,17 +274,20 @@ export class RetryScheduler {
       }
 
       // Rewrite queue file with remaining entries
+      queuePath = resolveAutomationOwnedPath(
+        this.workspaceRootPath,
+        join(this.workspaceRootPath, AUTOMATIONS_RETRY_QUEUE_FILE),
+      );
       if (remaining.length === 0) {
         await writeFile(queuePath, '', 'utf-8');
       } else {
         const content = remaining.map(e => JSON.stringify(e)).join('\n') + '\n';
         await writeFile(queuePath, content, 'utf-8');
       }
-    } catch (err) {
-      log.debug(`[RetryScheduler] Tick error: ${err}`);
-    } finally {
-      this.processing = false;
-    }
+      } catch (err) {
+        log.debug(`[RetryScheduler] Tick error: ${err}`);
+      }
+    });
   }
 
 }

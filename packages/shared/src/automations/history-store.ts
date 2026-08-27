@@ -21,6 +21,7 @@ import {
   AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER,
   AUTOMATION_HISTORY_MAX_ENTRIES,
 } from './constants.ts';
+import { resolveAutomationOwnedPath } from './resolve-config-path.ts';
 
 const log = createLogger('history-store');
 
@@ -58,9 +59,11 @@ export async function appendAutomationHistoryEntry(
   workspaceRootPath: string,
   entry: Record<string, unknown>,
 ): Promise<void> {
-  const historyPath = join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE);
-
   await withMutex(workspaceRootPath, async () => {
+    const historyPath = resolveAutomationOwnedPath(
+      workspaceRootPath,
+      join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE),
+    );
     await appendFile(historyPath, JSON.stringify(entry) + '\n', 'utf-8');
 
     const count = (appendCounters.get(workspaceRootPath) ?? 0) + 1;
@@ -68,7 +71,7 @@ export async function appendAutomationHistoryEntry(
 
     if (count >= AUTOMATION_HISTORY_MAX_ENTRIES) {
       appendCounters.set(workspaceRootPath, 0);
-      await runCompaction(historyPath);
+      await runCompaction(workspaceRootPath, historyPath);
     }
   });
 }
@@ -85,9 +88,13 @@ export async function compactAutomationHistory(
   maxPerMatcher: number = AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER,
   maxTotal: number = AUTOMATION_HISTORY_MAX_ENTRIES,
 ): Promise<void> {
-  const historyPath = join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE);
-
-  await withMutex(workspaceRootPath, () => runCompaction(historyPath, maxPerMatcher, maxTotal));
+  await withMutex(workspaceRootPath, () => {
+    const historyPath = resolveAutomationOwnedPath(
+      workspaceRootPath,
+      join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE),
+    );
+    return runCompaction(workspaceRootPath, historyPath, maxPerMatcher, maxTotal);
+  });
 }
 
 /**
@@ -100,7 +107,10 @@ export function compactAutomationHistorySync(
   maxPerMatcher: number = AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER,
   maxTotal: number = AUTOMATION_HISTORY_MAX_ENTRIES,
 ): void {
-  const historyPath = join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE);
+  const historyPath = resolveAutomationOwnedPath(
+    workspaceRootPath,
+    join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE),
+  );
   if (!existsSync(historyPath)) return;
 
   let content: string;
@@ -109,7 +119,7 @@ export function compactAutomationHistorySync(
   const result = compactEntries(content, maxPerMatcher, maxTotal);
   if (!result) return;
 
-  writeFileSync(historyPath, result, 'utf-8');
+  writeFileSync(resolveAutomationOwnedPath(workspaceRootPath, historyPath), result, 'utf-8');
   log.debug(`[HistoryStore] Startup compaction complete`);
 }
 
@@ -117,6 +127,7 @@ export function compactAutomationHistorySync(
  * Internal async compaction — must be called inside withMutex.
  */
 async function runCompaction(
+  workspaceRootPath: string,
   historyPath: string,
   maxPerMatcher: number = AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER,
   maxTotal: number = AUTOMATION_HISTORY_MAX_ENTRIES,
@@ -132,7 +143,11 @@ async function runCompaction(
   const result = compactEntries(content, maxPerMatcher, maxTotal);
   if (!result) return;
 
-  await writeFile(historyPath, result, 'utf-8');
+  await writeFile(
+    resolveAutomationOwnedPath(workspaceRootPath, historyPath),
+    result,
+    'utf-8',
+  );
   log.debug(`[HistoryStore] Compacted history`);
 }
 

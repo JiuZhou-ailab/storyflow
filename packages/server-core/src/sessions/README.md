@@ -1,6 +1,6 @@
 # Sessions
 
-`SessionManager.ts` is the Product Host session Facade: it implements `ISessionManager` (handlers/session-manager-interface.ts) as one-line delegates, and keeps only the cross-cutting orchestration that changes for reasons of its own — sendMessage/processEvent projection, rewind, configWatcher/automations glue, session create/delete, permission/question responders.
+`SessionManager.ts` is the Product Host session Facade: it implements `ISessionManager` (handlers/session-manager-interface.ts) as one-line delegates, and keeps only the cross-cutting orchestration that changes for reasons of its own — sendMessage/processEvent projection, rewind, Project transition/operation draining, configWatcher/automations glue, session create/delete, permission/question responders.
 
 Modules by reason-of-change (all flat in this directory):
 
@@ -15,6 +15,7 @@ Modules by reason-of-change (all flat in this directory):
 | `export-import.ts` | Session export/import incl. remote transfer payloads |
 | `persistence.ts` | Boot/init gate, disk load, debounced persist queue, lazy message load, idle release |
 | `agent-runtime-lease.ts` | Per-session runtime mutex + shared-subprocess lease counting |
+| `isolated-test-runner.ts` | Shared Bun subprocess + marked JSON parsing for lifecycle tests |
 | `agent-runtime.ts` | Pi subprocess lifecycle: getOrCreateAgentLocked, runtime refresh, credential rotation, connection-scoped disposal; AGENT_FLAGS |
 | `wire-agent-callbacks.ts` | Post-construction product callback wiring onto a live agent |
 | `browser-pane-bridge.ts` | browser_* tool delegation to BrowserPaneManager |

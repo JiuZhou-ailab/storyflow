@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadSession } from '@craft-agent/shared/sessions'
+import { runIsolatedJson } from './isolated-test-runner'
 
 const SESSION_MANAGER_MODULE_PATH = pathToFileURL(join(import.meta.dir, 'SessionManager.ts')).href
 
@@ -84,7 +85,9 @@ it('hydrates a cold Session from the moved-to root before staging it', () => {
       id: 'session-cold', workspaceRootPath: previousRoot, createdAt: 1, lastUsedAt: 1,
       lastMessageAt: 1, messageCount: 1,
     }),
-    JSON.stringify({ id: 'message-cold', type: 'user', content: 'DO NOT LOSE', timestamp: 1 }),
+    JSON.stringify({
+      id: 'message-cold', type: 'user', content: 'DO NOT LOSE', timestamp: 1, isQueued: true,
+    }),
     '',
   ].join('\n'))
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({
@@ -99,15 +102,62 @@ it('hydrates a cold Session from the moved-to root before staging it', () => {
     const run = Bun.spawnSync([
       process.execPath,
       '--eval',
-      `import { SessionManager, createManagedSession } from '${SESSION_MANAGER_MODULE_PATH}'; const manager = new SessionManager(); const managed = createManagedSession({ id: 'session-cold' }, { id: 'project-1', name: 'Project', slug: 'project', rootPath: ${JSON.stringify(previousRoot)}, createdAt: 1, directoryConfigId: 'directory-cold' }); manager['sessions'].set(managed.id, managed); await manager.rebindWorkspaceRoot('project-1', ${JSON.stringify(currentRoot)}); manager.cleanup();`,
+      `import { SessionManager, createManagedSession } from '${SESSION_MANAGER_MODULE_PATH}'; const manager = new SessionManager(); const managed = createManagedSession({ id: 'session-cold' }, { id: 'project-1', name: 'Project', slug: 'project', rootPath: ${JSON.stringify(previousRoot)}, createdAt: 1, directoryConfigId: 'directory-cold' }); manager['sessions'].set(managed.id, managed); const recoveryStates = []; manager['processNextQueuedMessage'] = () => { recoveryStates.push(managed.runtimeState ?? null); }; await manager.rebindWorkspaceRoot('project-1', ${JSON.stringify(currentRoot)}); await new Promise(resolve => setImmediate(resolve)); console.log('COLD_REBIND_RESULT=' + JSON.stringify({ recoveryStates, queueLength: managed.messageQueue.length })); manager.cleanup();`,
     ], {
       env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
       stdout: 'pipe', stderr: 'pipe',
     })
     if (run.exitCode !== 0) throw new Error(run.stderr.toString())
+    const match = run.stdout.toString().match(/COLD_REBIND_RESULT=(\{.*\})/)
+    if (!match) throw new Error(`Missing cold rebind result:\n${run.stdout.toString()}`)
+    expect(JSON.parse(match[1])).toEqual({ recoveryStates: [null], queueLength: 1 })
     expect(loadSession(currentRoot, 'session-cold')?.messages.map(message => message.content))
       .toEqual(['DO NOT LOSE'])
     expect(existsSync(previousRoot)).toBe(false)
+  } finally {
+    rmSync(parent, { recursive: true, force: true })
+  }
+})
+
+it('keeps a cold in-memory Session untouched when target staging fails', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-rebind-rollback-'))
+  const configDir = join(parent, 'host')
+  const previousRoot = join(parent, 'moved-from')
+  const currentRoot = join(parent, 'moved-to')
+  const sessionDir = join(currentRoot, '.craft-agent', 'sessions', 'session-cold')
+  mkdirSync(sessionDir, { recursive: true })
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(join(currentRoot, '.craft-agent', 'config.json'), JSON.stringify({
+    id: 'directory-rollback', name: 'Project', slug: 'project', createdAt: 1, updatedAt: 1,
+  }))
+  writeFileSync(join(sessionDir, 'session.jsonl'), [
+    JSON.stringify({
+      id: 'session-cold', name: 'Target title', workspaceRootPath: previousRoot,
+      createdAt: 1, lastUsedAt: 1, lastMessageAt: 1, messageCount: 1,
+    }),
+    JSON.stringify({ id: 'target-message', type: 'user', content: 'TARGET', timestamp: 1 }),
+    '',
+  ].join('\n'))
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({
+    workspaces: [{
+      id: 'project-1', name: 'Project', slug: 'project', rootPath: previousRoot,
+      createdAt: 1, directoryConfigId: 'directory-rollback',
+    }],
+    activeWorkspaceId: 'project-1', activeSessionId: null,
+  }))
+
+  try {
+    const result = runIsolatedJson(configDir, 'COLD_ROLLBACK_RESULT',
+      `import { SessionManager, createManagedSession } from '${SESSION_MANAGER_MODULE_PATH}'; const manager = new SessionManager(); const workspace = manager.getWorkspaces()[0]; const managed = createManagedSession({ id: 'session-cold', name: 'Old title' }, workspace); manager['sessions'].set(managed.id, managed); manager.flushSession = async () => { throw new Error('target flush failed'); }; let error; try { await manager.rebindWorkspaceRoot('project-1', ${JSON.stringify(currentRoot)}); } catch (cause) { error = cause.message; } console.log('COLD_ROLLBACK_RESULT=' + JSON.stringify({ error, messagesLoaded: managed.messagesLoaded, messageIds: managed.messages.map(message => message.id), name: managed.name, workspaceRoot: managed.workspace.rootPath, hostRoot: manager.getWorkspaces()[0].rootPath, runtimeState: managed.runtimeState ?? null })); manager.cleanup();`)
+    expect(result).toEqual({
+      error: 'target flush failed',
+      messagesLoaded: false,
+      messageIds: [],
+      name: 'Old title',
+      workspaceRoot: previousRoot,
+      hostRoot: previousRoot,
+      runtimeState: null,
+    })
   } finally {
     rmSync(parent, { recursive: true, force: true })
   }

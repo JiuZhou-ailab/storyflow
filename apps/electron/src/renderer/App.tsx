@@ -2096,10 +2096,10 @@ function AppContent() {
       storage.set(storage.KEYS.firstRunTourPending, true)
     }
     clearReturnLocation()
-    await handleSelectWorkspace(workspace.id)
+    await activateRuntimeWorkspace(workspace.id, routes.action.newSession())
   }, [
+    activateRuntimeWorkspace,
     clearReturnLocation,
-    handleSelectWorkspace,
     handleWorkspaceCreated,
   ])
 

@@ -2,9 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { loadSource, loadWorkspaceSources, getSourceCredentialManager } from '@craft-agent/shared/sources'
+import { isFreeConversationWorkspaceId } from '@craft-agent/shared/workspaces'
 import { createPendingFlow } from '@craft-agent/shared/auth'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
+import type { IOAuthFlowStore } from '../oauth-flow-store-interface'
+import type { ISessionManager } from '../session-manager-interface'
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.oauth.START,
@@ -25,9 +28,9 @@ export const HANDLED_CHANNELS = [
 export async function completeOAuthFlow(opts: {
   code: string
   state: string
-  flowStore: { getByState(state: string): any; remove(state: string): void }
+  flowStore: Pick<IOAuthFlowStore, 'getByState' | 'claim'>
   credManager: { exchangeAndStore(...args: any[]): Promise<any> }
-  sessionManager: { completeAuthRequest(...args: any[]): Promise<void> }
+  sessionManager: Pick<ISessionManager, 'completeAuthRequest' | 'withProjectOperation'>
   pushSourcesChanged: (workspaceId: string) => void
   logger: { info(msg: string): void; }
   clientId?: string
@@ -46,33 +49,71 @@ export async function completeOAuthFlow(opts: {
     if (flow.workspaceId !== opts.workspaceId) throw new Error('Workspace mismatch')
   }
 
-  const result = await credManager.exchangeAndStore(flow.source, flow.provider, {
-    code,
-    codeVerifier: flow.codeVerifier,
-    tokenEndpoint: flow.tokenEndpoint,
-    clientId: flow.clientId,
-    clientSecret: flow.clientSecret,
-    redirectUri: flow.redirectUri,
+  const claimedFlow = flowStore.claim(state)
+  if (!claimedFlow || claimedFlow.flowId !== flow.flowId) {
+    throw new Error('OAuth flow has already been completed or cancelled')
+  }
+
+  const result = await sessionManager.withProjectOperation(claimedFlow.workspaceId, async workspace => {
+    const currentSource = loadSource(
+      isFreeConversationWorkspaceId(workspace.id) ? undefined : workspace.rootPath,
+      claimedFlow.sourceSlug,
+      workspace.id,
+    )
+    if (!currentSource || currentSource.definitionIdentity !== claimedFlow.source.definitionIdentity) {
+      throw new Error(`Source definition changed during OAuth: ${claimedFlow.sourceSlug}`)
+    }
+
+    const exchanged = await credManager.exchangeAndStore(currentSource, claimedFlow.provider, {
+      code,
+      codeVerifier: claimedFlow.codeVerifier,
+      tokenEndpoint: claimedFlow.tokenEndpoint,
+      clientId: claimedFlow.clientId,
+      clientSecret: claimedFlow.clientSecret,
+      redirectUri: claimedFlow.redirectUri,
+    })
+    pushSourcesChanged(claimedFlow.workspaceId)
+    return exchanged
   })
 
-  flowStore.remove(state)
-
   // If this was triggered from a session auth card, complete it
-  if (flow.sessionId && flow.authRequestId) {
-    await sessionManager.completeAuthRequest(flow.sessionId, {
-      requestId: flow.authRequestId,
-      sourceSlug: flow.sourceSlug,
+  if (claimedFlow.sessionId && claimedFlow.authRequestId) {
+    await sessionManager.completeAuthRequest(claimedFlow.sessionId, {
+      requestId: claimedFlow.authRequestId,
+      sourceSlug: claimedFlow.sourceSlug,
       success: result.success,
       email: result.email,
       error: result.error,
     })
   }
 
-  // Push source status update to all clients in this workspace
-  pushSourcesChanged(flow.workspaceId)
-
-  logger.info(`[OAuth] Flow complete for ${flow.sourceSlug} (success=${result.success})`)
+  logger.info(`[OAuth] Flow complete for ${claimedFlow.sourceSlug} (success=${result.success})`)
   return result
+}
+
+export async function revokeOAuthSource(opts: {
+  workspaceId: string
+  sourceSlug: string
+  flowStore: Pick<IOAuthFlowStore, 'removeForSource'>
+  credManager: {
+    deleteAllStrict(source: NonNullable<ReturnType<typeof loadSource>>): Promise<void>
+    markSourceRevoked(source: NonNullable<ReturnType<typeof loadSource>>): void
+  }
+  sessionManager: Pick<ISessionManager, 'withProjectExclusiveOperation' | 'reconcileProjectSourceGrants'>
+}): Promise<ReturnType<typeof loadWorkspaceSources>> {
+  const { workspaceId, sourceSlug, flowStore, credManager, sessionManager } = opts
+  const sources = await sessionManager.withProjectExclusiveOperation(workspaceId, async workspace => {
+    const projectRoot = isFreeConversationWorkspaceId(workspace.id) ? undefined : workspace.rootPath
+    const source = loadSource(projectRoot, sourceSlug, workspace.id)
+    if (!source) throw new Error(`Source not found: ${sourceSlug}`)
+
+    flowStore.removeForSource(workspace.id, sourceSlug)
+    await credManager.deleteAllStrict(source)
+    credManager.markSourceRevoked(source)
+    return loadWorkspaceSources(projectRoot, workspace.id)
+  })
+  await sessionManager.reconcileProjectSourceGrants(workspaceId)
+  return sources
 }
 
 export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -94,38 +135,36 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       throw new Error('No workspace bound to this client')
     }
 
-    const workspace = getWorkspaceByNameOrId(ctx.workspaceId)
-    if (!workspace) {
-      throw new Error(`Workspace not found: ${ctx.workspaceId}`)
-    }
+    return deps.sessionManager.withProjectOperation(ctx.workspaceId, async workspace => {
+      const source = loadSource(
+        isFreeConversationWorkspaceId(workspace.id) ? undefined : workspace.rootPath,
+        sourceSlug,
+        workspace.id,
+      )
+      if (!source) throw new Error(`Source not found: ${sourceSlug}`)
+      const prepared = await credManager.prepareOAuth(source, { callbackPort, callbackUrl })
 
-    const source = loadSource(workspace.rootPath, sourceSlug, workspace.id)
-    if (!source) {
-      throw new Error(`Source not found: ${sourceSlug}`)
-    }
+      const flowId = randomUUID()
+      flowStore.store(createPendingFlow({
+        flowId,
+        state: prepared.state,
+        codeVerifier: prepared.codeVerifier,
+        redirectUri: prepared.redirectUri,
+        source,
+        clientId: prepared.clientId,
+        clientSecret: prepared.clientSecret,
+        tokenEndpoint: prepared.tokenEndpoint,
+        provider: prepared.provider,
+        ownerClientId: ctx.clientId,
+        workspaceId: workspace.id,
+        sourceSlug,
+        sessionId,
+        authRequestId,
+      }))
 
-    const prepared = await credManager.prepareOAuth(source, { callbackPort, callbackUrl })
-
-    const flowId = randomUUID()
-    flowStore.store(createPendingFlow({
-      flowId,
-      state: prepared.state,
-      codeVerifier: prepared.codeVerifier,
-      redirectUri: prepared.redirectUri,
-      source,
-      clientId: prepared.clientId,
-      clientSecret: prepared.clientSecret,
-      tokenEndpoint: prepared.tokenEndpoint,
-      provider: prepared.provider,
-      ownerClientId: ctx.clientId,
-      workspaceId: ctx.workspaceId,
-      sourceSlug,
-      sessionId,
-      authRequestId,
-    }))
-
-    log.info(`[OAuth] Flow started for ${sourceSlug} (flow=${flowId})`)
-    return { authUrl: prepared.authUrl, state: prepared.state, flowId }
+      log.info(`[OAuth] Flow started for ${sourceSlug} (flow=${flowId})`)
+      return { authUrl: prepared.authUrl, state: prepared.state, flowId }
+    })
   })
 
   // ── oauth:complete ───────────────────────────────────────────
@@ -181,21 +220,14 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       throw new Error('No workspace bound to this client')
     }
 
-    const workspace = getWorkspaceByNameOrId(ctx.workspaceId)
-    if (!workspace) {
-      throw new Error(`Workspace not found: ${ctx.workspaceId}`)
-    }
+    const revokeSources = await revokeOAuthSource({
+      workspaceId: ctx.workspaceId,
+      sourceSlug,
+      flowStore,
+      credManager,
+      sessionManager: deps.sessionManager,
+    })
 
-    const source = loadSource(workspace.rootPath, sourceSlug, workspace.id)
-    if (!source) {
-      throw new Error(`Source not found: ${sourceSlug}`)
-    }
-
-    await credManager.delete(source)
-    credManager.markSourceNeedsReauth(source, 'Signed out by user')
-
-    // Push source status update
-    const revokeSources = loadWorkspaceSources(workspace.rootPath, workspace.id)
     pushTyped(server, RPC_CHANNELS.sources.CHANGED, { to: 'workspace', workspaceId: ctx.workspaceId }, ctx.workspaceId, revokeSources)
 
     log.info(`[OAuth] Revoked credentials for ${sourceSlug}`)

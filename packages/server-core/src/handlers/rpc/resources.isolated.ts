@@ -44,7 +44,16 @@ function createHarness(): {
     async invokeClient() { return undefined },
   }
   const deps = {
-    sessionManager: { notifyConfigFileChange: () => {} },
+    sessionManager: {
+      withProjectLifecycle: async (workspaceId: string, work: (workspace: { id: string; rootPath: string; name: string }) => Promise<unknown>) => {
+        const workspace = workspaceId === 'workspace-1' || workspaceId === FREE_CONVERSATION_WORKSPACE_ID
+          ? { id: workspaceId, rootPath: workspaceRoot, name: 'Workspace' }
+          : null
+        if (!workspace) throw new Error(`Project not found: ${workspaceId}`)
+        return work(workspace)
+      },
+      notifyConfigFileChange: () => {},
+    },
     oauthFlowStore: {},
     platform: {},
   } as unknown as HandlerDeps

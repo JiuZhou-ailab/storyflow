@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { createSourceGrantRefs, loadWorkspaceSources } from '@craft-agent/shared/sources'
 import { SessionManager, createManagedSession, setSessionRuntimeHooks } from './SessionManager.ts'
 
 // Regression tests for #710 — OAuth tokens expire without silent refresh.
@@ -31,7 +32,9 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     sm = new SessionManager()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await sm.flushAllSessions()
+    sm.cleanup()
     setSessionRuntimeHooks({
       ensureManagedModelAccessToken: async () => ({ token: 'managed-token', refreshed: false }),
     })
@@ -73,6 +76,13 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     writeFileSync(join(dir, 'guide.md'), `# ${slug}\n`)
   }
 
+  function grantSource(managed: ReturnType<typeof buildSession>, slug: string) {
+    managed.workspace.defaultEnabledSourceRefs = createSourceGrantRefs(
+      [slug],
+      loadWorkspaceSources(tmpRoot, managed.workspace.id),
+    )
+  }
+
   it('cold session: tokenRefreshManager runs before getOrCreateAgent', async () => {
     // Pre-fix this sequence was inverted: getOrCreateAgent's internal build
     // (~SessionManager.ts:2956) ran first and saw stale tokens, triggering a
@@ -80,6 +90,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     const sessionId = 'cold-oauth'
     const managed = buildSession(sessionId)
     writeOAuthSource('test-oauth-mcp', true)
+    grantSource(managed, 'test-oauth-mcp')
     managed.enabledSourceSlugs = ['test-oauth-mcp']
 
     const calls: string[] = []
@@ -97,6 +108,23 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     expect(calls).toContain('refresh.getSourcesNeedingRefresh')
   })
 
+  it('does not inspect or refresh credentials for an ungranted source', async () => {
+    const sessionId = 'revoked-oauth'
+    const managed = buildSession(sessionId)
+    writeOAuthSource('revoked-mcp', true)
+    managed.enabledSourceSlugs = ['revoked-mcp']
+
+    let refreshChecks = 0
+    managed.tokenRefreshManager.getSourcesNeedingRefresh = async () => {
+      refreshChecks++
+      return []
+    }
+
+    await sm.sendMessage(sessionId, 'hello').catch(() => { /* expected */ })
+
+    expect(refreshChecks).toBe(0)
+  })
+
   it('failed refresh: source excluded from usable set via in-memory mutation', async () => {
     // Change 3 mirrors markSourceNeedsReauth's disk write to source.config in
     // memory. After a failed refresh, isSourceUsable() must return false so
@@ -104,6 +132,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     const sessionId = 'failed-oauth'
     const managed = buildSession(sessionId)
     writeOAuthSource('failing-mcp', true)
+    grantSource(managed, 'failing-mcp')
     managed.enabledSourceSlugs = ['failing-mcp']
 
     const trm = managed.tokenRefreshManager!

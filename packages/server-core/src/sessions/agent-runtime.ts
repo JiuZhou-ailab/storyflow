@@ -306,7 +306,7 @@ export class AgentRuntime {
   /** Revoke all live runtimes that still hold credentials for this connection. */
   async disposeConnectionRuntimes(connectionSlug: string): Promise<void> {
     const targets = [...this.deps.allSessions()]
-      .filter(managed => managed.llmConnection === connectionSlug && managed.runtimeState !== 'deleting')
+      .filter(managed => managed.llmConnection === connectionSlug && !managed.runtimeState)
       .map(managed => {
         const invalidationEpoch = (managed.runtimeEpoch ?? 0) + 1
         managed.runtimeEpoch = invalidationEpoch

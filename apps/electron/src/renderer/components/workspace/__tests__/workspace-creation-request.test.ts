@@ -1,6 +1,6 @@
 // input: Renderer local workspace creation API, completion callback, and App creation navigation
-// output: Checks for option-free creation and zero-session project opening
-// pos: Guards folder-first creation from hidden profiles and implicit conversations
+// output: Checks for option-free creation and canonical new-session navigation
+// pos: Guards folder-first creation and its default conversation handoff
 
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -42,7 +42,7 @@ describe('workspace creation request', () => {
     expect(created).toEqual([workspace])
   })
 
-  it('opens a new project without creating a starting session', () => {
+  it('opens a new project on the canonical new-session route', () => {
     const start = appSource.indexOf('const handleProjectHubWorkspaceCreated')
     const end = appSource.indexOf('const handleClientSignedIn', start)
 
@@ -50,7 +50,9 @@ describe('workspace creation request', () => {
     expect(end).toBeGreaterThan(start)
 
     const creationHandler = appSource.slice(start, end)
-    expect(creationHandler).toContain('await handleSelectWorkspace(workspace.id)')
+    expect(creationHandler).toContain(
+      'await activateRuntimeWorkspace(workspace.id, routes.action.newSession())'
+    )
     expect(creationHandler).not.toContain('handleCreateSession')
     expect(creationHandler).not.toContain('handleSelectProjectSession')
   })

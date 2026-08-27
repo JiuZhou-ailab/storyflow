@@ -10,7 +10,7 @@
  * - URL: Auto-downloaded to statuses/icons/{id}.{ext}
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import type { WorkspaceStatusConfig, StatusConfig, StatusCategory } from './types.ts';
 import { readJsonFileSync } from '../utils/files.ts';
@@ -30,6 +30,8 @@ import {
   getWorkspaceStatusConfigPath,
   getWorkspaceStatusIconsPath,
   getWorkspaceStatusesPath,
+  ensureProjectOwnedDirectory,
+  resolveProjectOwnedPath,
 } from '../workspaces/paths.ts';
 
 /**
@@ -99,22 +101,21 @@ export function getDefaultStatusConfig(): WorkspaceStatusConfig {
  */
 export function ensureDefaultIconFiles(workspaceRootPath: string): void {
   const iconsDir = getWorkspaceStatusIconsPath(workspaceRootPath);
-
-  // Create icons directory if missing
-  if (!existsSync(iconsDir)) {
-    mkdirSync(iconsDir, { recursive: true });
-  }
+  ensureProjectOwnedDirectory(workspaceRootPath, iconsDir);
 
   // Write each default icon file if missing
   for (const [statusId, svgContent] of Object.entries(DEFAULT_ICON_SVGS)) {
     const iconPath = join(iconsDir, `${statusId}.svg`);
 
-    if (!existsSync(iconPath)) {
-      try {
-        writeFileSync(iconPath, svgContent, 'utf-8');
-      } catch (error) {
-        console.error(`[ensureDefaultIconFiles] Failed to write ${statusId}.svg:`, error);
-      }
+    if (lstatSync(iconPath, { throwIfNoEntry: false })) {
+      resolveProjectOwnedPath(workspaceRootPath, iconPath);
+      continue;
+    }
+
+    try {
+      writeFileSync(iconPath, svgContent, 'utf-8');
+    } catch (error) {
+      console.error(`[ensureDefaultIconFiles] Failed to write ${statusId}.svg:`, error);
     }
   }
 }
@@ -148,6 +149,7 @@ export function loadStatusConfig(workspaceRootPath: string): WorkspaceStatusConf
   }
 
   try {
+    resolveProjectOwnedPath(workspaceRootPath, configPath);
     const config = readJsonFileSync<WorkspaceStatusConfig>(configPath);
 
     // Validate required fixed statuses exist
@@ -180,10 +182,9 @@ export function saveStatusConfig(
 ): void {
   const statusDir = getWorkspaceStatusesPath(workspaceRootPath);
   const configPath = getWorkspaceStatusConfigPath(workspaceRootPath);
-
-  // Create status directory if missing
-  if (!existsSync(statusDir)) {
-    mkdirSync(statusDir, { recursive: true });
+  ensureProjectOwnedDirectory(workspaceRootPath, statusDir);
+  if (lstatSync(configPath, { throwIfNoEntry: false })) {
+    resolveProjectOwnedPath(workspaceRootPath, configPath);
   }
 
   // Write config to disk
@@ -275,16 +276,21 @@ export async function downloadStatusIcon(
   statusId: string,
   iconUrl: string
 ): Promise<string | null> {
-  const iconsDir = getWorkspaceStatusIconsPath(workspaceRootPath);
+  if (!/^[a-z0-9-]+$/.test(statusId)) throw new Error(`Invalid status ID: ${statusId}`);
 
-  // Ensure icons directory exists
-  if (!existsSync(iconsDir)) {
-    mkdirSync(iconsDir, { recursive: true });
+  const iconsDir = getWorkspaceStatusIconsPath(workspaceRootPath);
+  ensureProjectOwnedDirectory(workspaceRootPath, iconsDir);
+  for (const ext of ICON_EXTENSIONS) {
+    const tempIconPath = join(iconsDir, `icon${ext}`);
+    if (lstatSync(tempIconPath, { throwIfNoEntry: false })) {
+      resolveProjectOwnedPath(workspaceRootPath, tempIconPath);
+    }
   }
 
   // Download to a temp file first, then rename to {statusId}.{ext}
   const tempPath = await downloadIcon(iconsDir, iconUrl, 'Statuses');
   if (!tempPath) return null;
+  resolveProjectOwnedPath(workspaceRootPath, tempPath);
 
   // Rename from icon.{ext} to {statusId}.{ext}
   const ext = tempPath.substring(tempPath.lastIndexOf('.'));
@@ -295,9 +301,9 @@ export async function downloadStatusIcon(
     // Remove any existing icon with different extension
     for (const existingExt of ICON_EXTENSIONS) {
       const existingPath = join(iconsDir, `${statusId}${existingExt}`);
-      if (existsSync(existingPath) && existingPath !== finalPath) {
-        unlinkSync(existingPath);
-      }
+      if (!lstatSync(existingPath, { throwIfNoEntry: false })) continue;
+      resolveProjectOwnedPath(workspaceRootPath, existingPath);
+      if (existingPath !== finalPath) unlinkSync(existingPath);
     }
     // Rename temp file to final path
     if (tempPath !== finalPath) {

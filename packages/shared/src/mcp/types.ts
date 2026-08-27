@@ -47,6 +47,8 @@ export interface PoolClient {
 export type SdkMcpServerConfig =
   | {
       type: 'http' | 'sse';
+      /** Exact Host capability bound to this Source definition. */
+      capabilityRef: string;
       url: string;
       headers?: Record<string, string>;
       /** Environment variable name containing bearer token (Codex-specific) */
@@ -54,6 +56,8 @@ export type SdkMcpServerConfig =
     }
   | {
       type: 'stdio';
+      /** Exact Host capability bound to this Source definition. */
+      capabilityRef: string;
       command: string;
       args?: string[];
       /** Environment variables to set (literal values) */
@@ -70,6 +74,8 @@ export type SdkMcpServerConfig =
  */
 export interface ApiServerConfig {
   type: 'sdk';
+  /** Exact Host capability bound to this Source definition. */
+  capabilityRef: string;
   instance: McpServer;
   toolPermissions?: Record<string, ApiOperationPermission>;
 }
@@ -108,7 +114,10 @@ export interface McpClientPoolLike {
   disconnectAll(): Promise<void>;
   getProxyToolDefs(slugs?: string[]): ProxyToolDef[];
   callTool(proxyName: string, args: Record<string, unknown>): Promise<McpToolResult>;
-  isProxyTool(toolName: string): boolean;
+  /** Resolve the exact Source capability owned by a registered proxy tool. */
+  getProxyToolCapability(
+    toolName: string
+  ): { sourceSlug: string; capabilityRef: string } | undefined;
   getProxyToolPermission(
     toolName: string,
     input: Record<string, unknown>

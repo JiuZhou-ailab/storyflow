@@ -8,7 +8,10 @@ import type { RemoteServerConnectionInput } from '@craft-agent/core/types'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId, setActiveWorkspace, getWorkspaces } from '@craft-agent/shared/config'
 import {
+  ensureProjectOwnedDirectory,
+  isPathWithinProjectRoot,
   isWorkspaceRootAvailable,
+  resolveProjectOwnedPath,
   resolveRuntimeWorkspace,
 } from '@craft-agent/shared/workspaces'
 import { perf } from '@craft-agent/shared/utils'
@@ -196,8 +199,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { readFileSync, existsSync } = await import('fs')
-    const { join, normalize } = await import('path')
+    const { lstatSync, readFileSync } = await import('fs')
 
     // Security: validate path
     // - Must not contain .. (path traversal)
@@ -213,37 +215,35 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
       throw new Error(`Invalid file type: ${ext}. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`)
     }
 
-    // Resolve path relative to workspace root
-    const absolutePath = normalize(join(workspace.rootPath, relativePath))
+    return sessionManager.withProjectLifecycle(workspace.id, async (currentWorkspace) => {
+      const absolutePath = resolve(currentWorkspace.rootPath, relativePath)
+      if (!isPathWithinProjectRoot(currentWorkspace.rootPath, absolutePath, { allowMissing: true })) {
+        throw new Error(`Project image path contains a symbolic link or escapes the Project: ${relativePath}`)
+      }
+      try {
+        lstatSync(absolutePath)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          return null  // Missing optional files - silent fallback to default icons
+        }
+        throw error
+      }
+      resolveProjectOwnedPath(currentWorkspace.rootPath, absolutePath)
 
-    // Double-check the resolved path is still within workspace
-    if (!absolutePath.startsWith(workspace.rootPath)) {
-      throw new Error('Invalid path: outside workspace directory')
-    }
+      const buffer = readFileSync(absolutePath)
+      if (ext === '.svg') return buffer.toString('utf-8')
 
-    if (!existsSync(absolutePath)) {
-      return null  // Missing optional files - silent fallback to default icons
-    }
-
-    // Read file as buffer
-    const buffer = readFileSync(absolutePath)
-
-    // If SVG, return as UTF-8 string (caller will use as innerHTML)
-    if (ext === '.svg') {
-      return buffer.toString('utf-8')
-    }
-
-    // For binary images, return as data URL
-    const mimeTypes: Record<string, string> = {
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.webp': 'image/webp',
-      '.ico': 'image/x-icon',
-      '.gif': 'image/gif',
-    }
-    const mimeType = mimeTypes[ext] || 'image/png'
-    return `data:${mimeType};base64,${buffer.toString('base64')}`
+      const mimeTypes: Record<string, string> = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
+        '.ico': 'image/x-icon',
+        '.gif': 'image/gif',
+      }
+      const mimeType = mimeTypes[ext] || 'image/png'
+      return `data:${mimeType};base64,${buffer.toString('base64')}`
+    })
   })
 
   // Generic workspace image writing (for workspace icon, etc.)
@@ -252,8 +252,8 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { writeFileSync, existsSync, unlinkSync, readdirSync } = await import('fs')
-    const { join, normalize, basename } = await import('path')
+    const { lstatSync, writeFileSync, unlinkSync, readdirSync } = await import('fs')
+    const { basename, dirname } = await import('path')
 
     // Security: validate path
     const ALLOWED_EXTENSIONS = ['.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif']
@@ -267,55 +267,51 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
       throw new Error(`Invalid file type: ${ext}. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`)
     }
 
-    // Resolve path relative to workspace root
-    const absolutePath = normalize(join(workspace.rootPath, relativePath))
+    // Decode base64 to buffer
+    const buffer = Buffer.from(base64, 'base64')
+    let output: Buffer<ArrayBufferLike> = buffer
 
-    // Double-check the resolved path is still within workspace
-    if (!absolutePath.startsWith(workspace.rootPath)) {
-      throw new Error('Invalid path: outside workspace directory')
-    }
+    if (mimeType !== 'image/svg+xml' && ext !== '.svg') {
+      const metadata = await deps.platform.imageProcessor.getMetadata(buffer)
+      const width = metadata?.width ?? 0
+      const height = metadata?.height ?? 0
 
-    // If this is an icon file (icon.*), delete any existing icon files with different extensions
-    const fileName = basename(relativePath)
-    if (fileName.startsWith('icon.')) {
-      const files = readdirSync(workspace.rootPath)
-      for (const file of files) {
-        if (file.startsWith('icon.') && file !== fileName) {
-          const oldPath = join(workspace.rootPath, file)
-          try {
-            unlinkSync(oldPath)
-          } catch {
-            // Ignore errors deleting old icon
-          }
-        }
+      if (width > 256 || height > 256) {
+        output = await deps.platform.imageProcessor.process(buffer, {
+          resize: { width: 256, height: 256 },
+          format: 'png',
+        })
       }
     }
 
-    // Decode base64 to buffer
-    const buffer = Buffer.from(base64, 'base64')
+    await sessionManager.withProjectLifecycle(workspace.id, async (currentWorkspace) => {
+      const absolutePath = resolve(currentWorkspace.rootPath, relativePath)
+      ensureProjectOwnedDirectory(currentWorkspace.rootPath, dirname(absolutePath))
+      try {
+        lstatSync(absolutePath)
+        resolveProjectOwnedPath(currentWorkspace.rootPath, absolutePath)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
 
-    // For SVGs, just write directly (no resizing needed)
-    if (mimeType === 'image/svg+xml' || ext === '.svg') {
-      writeFileSync(absolutePath, buffer)
-      return
-    }
+      // If this is an icon file (icon.*), delete any existing icon files with different extensions
+      const fileName = basename(relativePath)
+      if (fileName.startsWith('icon.')) {
+        const files = readdirSync(currentWorkspace.rootPath)
+        for (const file of files) {
+          if (file.startsWith('icon.') && file !== fileName) {
+            const oldPath = join(currentWorkspace.rootPath, file)
+            try {
+              unlinkSync(oldPath)
+            } catch {
+              // Ignore errors deleting old icon
+            }
+          }
+        }
+      }
 
-    // For raster images, resize to max 256x256
-    const metadata = await deps.platform.imageProcessor.getMetadata(buffer)
-    const width = metadata?.width ?? 0
-    const height = metadata?.height ?? 0
-
-    // Only resize if larger than 256px
-    if (width > 256 || height > 256) {
-      const resized = await deps.platform.imageProcessor.process(buffer, {
-        resize: { width: 256, height: 256 },
-        format: 'png',
-      })
-      writeFileSync(absolutePath, resized)
-    } else {
-      // Small enough, write as-is
-      writeFileSync(absolutePath, buffer)
-    }
+      writeFileSync(absolutePath, output)
+    })
   })
 
   // ============================================================
@@ -355,30 +351,31 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
 
   // Workspace-level theme overrides
   server.handle(RPC_CHANNELS.theme.GET_WORKSPACE_COLOR_THEME, async (_ctx, workspaceId: string) => {
-    const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
     const { getWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
-    const workspaces = getWorkspaces()
-    const workspace = workspaces.find(w => w.id === workspaceId)
-    if (!workspace) return null
-    return getWorkspaceColorTheme(workspace.rootPath) ?? null
+    if (!getWorkspaceByNameOrId(workspaceId)) return null
+    return sessionManager.withProjectLifecycle(
+      workspaceId,
+      async workspace => getWorkspaceColorTheme(workspace.rootPath) ?? null,
+    )
   })
 
   server.handle(RPC_CHANNELS.theme.SET_WORKSPACE_COLOR_THEME, async (_ctx, workspaceId: string, themeId: string | null) => {
-    const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
     const { setWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
-    const workspaces = getWorkspaces()
-    const workspace = workspaces.find(w => w.id === workspaceId)
-    if (!workspace) return
-    setWorkspaceColorTheme(workspace.rootPath, themeId ?? undefined)
+    if (!getWorkspaceByNameOrId(workspaceId)) return
+    await sessionManager.withProjectLifecycle(workspaceId, async workspace => {
+      setWorkspaceColorTheme(workspace.rootPath, themeId ?? undefined)
+    })
   })
 
   server.handle(RPC_CHANNELS.theme.GET_ALL_WORKSPACE_THEMES, async () => {
-    const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
     const { getWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
-    const workspaces = getWorkspaces()
+    const workspaces = sessionManager.getWorkspaces()
     const themes: Record<string, string | undefined> = {}
     for (const ws of workspaces) {
-      themes[ws.id] = getWorkspaceColorTheme(ws.rootPath)
+      themes[ws.id] = await sessionManager.withProjectLifecycle(
+        ws.id,
+        async workspace => getWorkspaceColorTheme(workspace.rootPath),
+      )
     }
     return themes
   })
@@ -398,7 +395,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     if (!workspace) throw new Error('Workspace not found')
 
     const { listViews } = await import('../../services/views-storage')
-    return listViews(workspace.rootPath)
+    return sessionManager.withProjectLifecycle(
+      workspace.id,
+      async currentWorkspace => listViews(currentWorkspace.rootPath),
+    )
   })
 
   // Save views (replaces full array)
@@ -407,7 +407,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     if (!workspace) throw new Error('Workspace not found')
 
     const { saveViews } = await import('../../services/views-storage')
-    saveViews(workspace.rootPath, views)
+    await sessionManager.withProjectLifecycle(
+      workspace.id,
+      async currentWorkspace => saveViews(currentWorkspace.rootPath, views),
+    )
     // Broadcast labels changed since views are used alongside labels in sidebar
     pushTyped(server, RPC_CHANNELS.labels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
   })

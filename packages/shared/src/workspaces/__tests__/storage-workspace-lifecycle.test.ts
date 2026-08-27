@@ -49,6 +49,24 @@ describe('blank workspace creation', () => {
 })
 
 describe('legacy workspace host-state migration', () => {
+  it('does not claim writing metadata without a legacy Project config', () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-writing-only-root-'))
+    writeFileSync(join(rootPath, 'craft-writing.json'), JSON.stringify({
+      schemaVersion: 1,
+      type: 'short-form',
+    }))
+    writeFileSync(join(rootPath, 'craft-pack-lock.json'), '{"keep":true}\n')
+
+    try {
+      expect(loadWorkspaceConfig(rootPath)).toBeNull()
+      expect(existsSync(join(rootPath, 'craft-writing.json'))).toBe(true)
+      expect(existsSync(join(rootPath, 'craft-pack-lock.json'))).toBe(true)
+      expect(existsSync(join(rootPath, '.craft-agent'))).toBe(false)
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true })
+    }
+  })
+
   it('moves old host files without claiming project-owned plugin data', () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-legacy-state-workspace-'))
     const now = Date.now()

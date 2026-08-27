@@ -72,7 +72,7 @@ describe('cold-session metadata persistence', () => {
       lastUsedAt: Date.now(),
       messages: opts.messages ?? [],
     } as StoredSession
-    writeSessionJsonl(filePath, stored)
+    writeSessionJsonl(filePath, stored, tmpRoot)
 
     const managed = createManagedSession(
       {
@@ -133,7 +133,7 @@ describe('cold-session metadata persistence', () => {
 
     const stored = loadSession(tmpRoot, sessionId)!
     stored.name = 'latest external name'
-    writeSessionJsonl(sessionFile, stored)
+    writeSessionJsonl(sessionFile, stored, tmpRoot)
 
     jest.advanceTimersByTime(5000)
 

@@ -127,6 +127,7 @@ export class AgentRuntimeLease {
         await this.waitForAgentRuntimeLeases(managed.id)
         this.assertAgentRuntimeOpen(managed, expectedEpoch)
         agent = await this.deps.getOrCreateAgent(managed)
+        this.assertAgentRuntimeOpen(managed, expectedEpoch)
       }
       this.retainAgentRuntimeLease(managed.id)
       return agent

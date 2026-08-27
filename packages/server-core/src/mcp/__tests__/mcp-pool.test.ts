@@ -10,9 +10,10 @@
  * This was the root cause of MCP connection drops every 30-60 minutes:
  * tokens were refreshed but never applied to existing transports.
  */
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { afterEach, describe, it, expect, beforeEach } from 'bun:test';
 import { McpClientPool } from '../mcp-pool';
-import type { PoolClient, SdkMcpServerConfig } from '@craft-agent/shared/mcp';
+import type { ApiServerConfig, PoolClient, SdkMcpServerConfig } from '@craft-agent/shared/mcp';
+import { createApiServer } from '@craft-agent/shared/sources';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 // ============================================================
@@ -27,6 +28,12 @@ const mockTools: Tool[] = [
   },
 ];
 
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
 function makeMockClient(): PoolClient {
   return {
     listTools: async () => mockTools,
@@ -35,8 +42,24 @@ function makeMockClient(): PoolClient {
   };
 }
 
-function httpConfig(token: string, url = 'https://mcp.example.com'): SdkMcpServerConfig {
-  return { type: 'http', url, headers: { Authorization: `Bearer ${token}` } };
+function httpConfig(
+  token: string,
+  url = 'https://mcp.example.com',
+  capabilityRef = 'workspace:craft:definition-1',
+): SdkMcpServerConfig {
+  return {
+    type: 'http',
+    url,
+    headers: { Authorization: `Bearer ${token}` },
+    capabilityRef,
+  } as SdkMcpServerConfig;
+}
+
+function apiConfig(baseUrl: string, capabilityRef: string): ApiServerConfig {
+  return {
+    ...createApiServer({ name: 'craft', baseUrl, auth: { type: 'none' } }, ''),
+    capabilityRef,
+  };
 }
 
 /** Narrow the union to read the Authorization header of an HTTP config. */
@@ -56,7 +79,7 @@ class TestablePool extends McpClientPool {
 
   async connect(slug: string, config: SdkMcpServerConfig): Promise<void> {
     this.connectCalls.push({ slug, config });
-    await this.registerClient(slug, makeMockClient());
+    await this.registerClient(slug, config.capabilityRef, makeMockClient());
     this.activeConfigs.set(slug, config);
   }
 
@@ -117,16 +140,32 @@ describe('McpClientPool.sync — config change detection', () => {
     expect(pool.connectCalls).toHaveLength(1);
   });
 
+  it('reconnects when the exact Source capability changes', async () => {
+    await pool.sync({ craft: httpConfig('token', undefined, 'workspace:craft:definition-1') });
+    pool.resetTracking();
+
+    await pool.sync({ craft: httpConfig('token', undefined, 'workspace:craft:definition-2') });
+
+    expect(pool.disconnectCalls).toEqual(['craft']);
+    expect(pool.connectCalls).toHaveLength(1);
+    expect(pool.getProxyToolCapability('mcp__craft__test-tool')).toEqual({
+      sourceSlug: 'craft',
+      capabilityRef: 'workspace:craft:definition-2',
+    });
+  });
+
   it('does not reconnect when only non-auth headers change', async () => {
     // Only Authorization and URL should trigger reconnect — other header
     // changes (tracing, versioning) should not cause connection churn.
     const config1: SdkMcpServerConfig = {
       type: 'http',
+      capabilityRef: 'workspace:craft:definition-1',
       url: 'https://mcp.example.com',
       headers: { Authorization: 'Bearer same', 'X-Request-Id': 'aaa' },
     };
     const config2: SdkMcpServerConfig = {
       type: 'http',
+      capabilityRef: 'workspace:craft:definition-1',
       url: 'https://mcp.example.com',
       headers: { Authorization: 'Bearer same', 'X-Request-Id': 'bbb' },
     };
@@ -193,5 +232,50 @@ describe('McpClientPool.sync — config change detection', () => {
 
     expect(failures).toContain('craft');
     expect(failPool.isConnected('craft')).toBe(false);
+  });
+
+  it('replaces an API client when the same slug has a new exact capability', async () => {
+    const apiPool = new McpClientPool();
+    globalThis.fetch = Object.assign(async (input: string | URL | Request) => {
+      return new Response(String(input));
+    }, { preconnect: originalFetch.preconnect });
+
+    try {
+      await apiPool.sync({}, {
+        craft: apiConfig('https://old.example.com', 'workspace:craft:definition-1'),
+      });
+      await apiPool.sync({}, {
+        craft: apiConfig('https://new.example.com', 'workspace:craft:definition-2'),
+      });
+
+      const result = await apiPool.callTool('mcp__craft__api_craft', {
+        path: '/identity',
+        method: 'GET',
+      });
+      expect(result.content).toBe('https://new.example.com/identity');
+    } finally {
+      await apiPool.disconnectAll();
+    }
+  });
+
+  it('replaces an API client when resolved runtime config changes under the same capability', async () => {
+    const apiPool = new McpClientPool();
+    globalThis.fetch = Object.assign(async (input: string | URL | Request) => {
+      return new Response(String(input));
+    }, { preconnect: originalFetch.preconnect });
+
+    try {
+      const capabilityRef = 'workspace:craft:definition-1';
+      await apiPool.sync({}, { craft: apiConfig('https://old.example.com', capabilityRef) });
+      await apiPool.sync({}, { craft: apiConfig('https://new.example.com', capabilityRef) });
+
+      const result = await apiPool.callTool('mcp__craft__api_craft', {
+        path: '/credentials',
+        method: 'GET',
+      });
+      expect(result.content).toBe('https://new.example.com/credentials');
+    } finally {
+      await apiPool.disconnectAll();
+    }
   });
 });

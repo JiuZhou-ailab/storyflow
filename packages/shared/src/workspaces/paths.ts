@@ -315,6 +315,27 @@ export function resolveProjectOwnedPath(projectRoot: string, targetPath: string)
   return currentPath;
 }
 
+/** Resolve a Project-owned file path, allowing only the final file to be absent. */
+export function resolveProjectOwnedFilePath(projectRoot: string, targetPath: string): string {
+  const { lexicalRoot, canonicalRoot } = getProjectBoundary(projectRoot);
+  const lexicalTarget = resolve(targetPath);
+  const segments = getProjectRelativeSegments(lexicalRoot, lexicalTarget);
+  let currentPath = lexicalRoot;
+
+  for (const segment of segments) {
+    currentPath = join(currentPath, segment);
+    const stat = lstatIfPresent(currentPath);
+    if (!stat) continue;
+    if (stat.isSymbolicLink()) {
+      throw new UnsafeProjectPathError(`Project path contains a symbolic link: ${currentPath}`);
+    }
+    if (!isWithinPath(canonicalRoot, realpathSync(currentPath))) {
+      throw new UnsafeProjectPathError(`Project path escapes its real root: ${currentPath}`);
+    }
+  }
+  return lexicalTarget;
+}
+
 /** Create a project-owned directory one component at a time, rejecting symlink ancestors. */
 export function ensureProjectOwnedDirectory(projectRoot: string, targetPath: string): string {
   const lexicalRoot = resolve(projectRoot);

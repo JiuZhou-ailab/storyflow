@@ -11,6 +11,8 @@ import { createApiServer, type SummarizeCallback } from './api-tools.ts';
 import { debug } from '../utils/debug.ts';
 import { normalizeMcpUrl } from './mcp-url.ts';
 import { getTrustedManagedSourcePolicy } from './managed-source-policy.ts';
+import { getSourceGrantRef } from './grants.ts';
+import type { ApiServerConfig, SdkMcpServerConfig } from '../mcp/types.ts';
 export { normalizeMcpUrl } from './mcp-url.ts';
 
 /**
@@ -27,9 +29,7 @@ export const SERVER_BUILD_ERRORS = {
  * Host MCP server configuration projected into Pi tool definitions.
  * Supports HTTP/SSE (remote) and stdio (local subprocess) transports.
  */
-export type McpServerConfig =
-  | { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }
-  | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> };
+export type McpServerConfig = SdkMcpServerConfig;
 
 /**
  * Source with its credential pre-loaded
@@ -48,7 +48,7 @@ export interface BuiltServers {
   /** MCP server configs keyed by source slug */
   mcpServers: Record<string, McpServerConfig>;
   /** In-process API servers keyed by source slug */
-  apiServers: Record<string, ReturnType<typeof createApiServer>>;
+  apiServers: Record<string, ApiServerConfig>;
   /** Sources that failed to build (missing auth, etc.) */
   errors: Array<{ sourceSlug: string; error: string }>;
 }
@@ -103,6 +103,7 @@ export class SourceServerBuilder {
       }
       return {
         type: 'stdio',
+        capabilityRef: getSourceGrantRef(source),
         command: mcp.command,
         args: mcp.args,
         env: mcp.env,
@@ -119,6 +120,7 @@ export class SourceServerBuilder {
 
     const config: McpServerConfig = {
       type: mcp.transport === 'sse' ? 'sse' : 'http',
+      capabilityRef: getSourceGrantRef(source),
       url,
     };
 
@@ -319,7 +321,7 @@ export class SourceServerBuilder {
     options: { allowProjectStdio?: boolean } = {}
   ): Promise<BuiltServers> {
     const mcpServers: Record<string, McpServerConfig> = {};
-    const apiServers: Record<string, ReturnType<typeof createApiServer>> = {};
+    const apiServers: Record<string, ApiServerConfig> = {};
     const errors: BuiltServers['errors'] = [];
 
     for (const { source, token, credential } of sourcesWithCredentials) {
@@ -345,7 +347,10 @@ export class SourceServerBuilder {
           const getToken = getTokenForSource?.(source);
           const server = await this.buildApiServer(source, credential ?? null, getToken, sessionPath, summarize);
           if (server) {
-            apiServers[source.config.slug] = server;
+            apiServers[source.config.slug] = {
+              ...server,
+              capabilityRef: getSourceGrantRef(source),
+            };
           }
         }
       } catch (error) {

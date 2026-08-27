@@ -15,6 +15,7 @@ import {
   ChevronDown,
   AlertCircle,
   Image as ImageIcon,
+  Plus,
   X,
 } from 'lucide-react'
 import { Spinner } from '@craft-agent/ui'
@@ -2148,85 +2149,54 @@ export function FreeFormInput({
           </>
           )}
 
-          {/* Desktop: attachment, source, and permission controls */}
+          {/* Desktop: one add menu for attachments/sources, then permission */}
           {!compactMode && (
           <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-          {/* 1. Attach Files Badge */}
-          {renderAttachmentPicker(!!isEmptySession)}
-
-          {/* 2. Source Selector Badge - only show if onSourcesChange is provided */}
-          {onSourcesChange && (
-            <div className="relative shrink min-w-0 overflow-hidden">
-              <FreeFormInputContextBadge
-                buttonRef={sourceButtonRef}
-                icon={
-                  optimisticSourceSlugs.length === 0 ? (
-                    <DatabaseZap className="h-4 w-4" />
-                  ) : (
-                    <div className="flex items-center -ml-0.5">
-                      {(() => {
-                        const displaySources = selectedSourcesForBadge.slice(0, 3)
-                        const remainingCount = selectedSourcesForBadge.length - 3
-                        return (
-                          <>
-                            {displaySources.map((source, index) => (
-                              <div
-                                key={source.config.slug}
-                                className={cn("relative h-5 w-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center", index > 0 && "-ml-1")}
-                                style={{ zIndex: index + 1 }}
-                              >
-                                <SourceAvatar source={source} size="xs" />
-                              </div>
-                            ))}
-                            {remainingCount > 0 && (
-                              <div
-                                className="-ml-1 h-5 w-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center text-[8px] font-medium text-muted-foreground"
-                                style={{ zIndex: displaySources.length + 1 }}
-                              >
-                                +{remainingCount}
-                              </div>
-                            )}
-                          </>
-                        )
-                      })()}
-                    </div>
-                  )
-                }
-                label={
-                  optimisticSourceSlugs.length === 0
-                    ? t("chat.chooseSources")
-                    : (() => {
-                        if (selectedSourcesForBadge.length === 1) return selectedSourcesForBadge[0].config.name
-                        if (selectedSourcesForBadge.length === 2) return selectedSourcesForBadge.map(s => s.config.name).join(', ')
-                        return t("chat.sourcesCount", { count: selectedSourcesForBadge.length })
-                      })()
-                }
-                isExpanded={isEmptySession}
-                hasSelection={optimisticSourceSlugs.length > 0}
-                showChevron={true}
-                isOpen={sourceDropdownOpen}
-                disabled={disabled}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                ref={sourceButtonRef}
+                type="button"
                 data-tutorial="source-selector-button"
-                onClick={() => setSourceDropdownOpen(prev => !prev)}
-                tooltip={t("chat.sourcesTooltip")}
-              />
+                aria-label={`${t('chat.attachFiles')} / ${t('chat.chooseSources')}`}
+                disabled={disabled}
+                className="input-toolbar-btn inline-flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-[6px] text-foreground outline-none transition-colors hover:bg-foreground/5 active:bg-foreground/10 focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <StyledDropdownMenuContent side="top" align="start" sideOffset={6} className="min-w-40">
+              <StyledDropdownMenuItem onSelect={handleAttachClick}>
+                <Paperclip className="h-4 w-4" />
+                <span>{t('chat.attachFiles')}</span>
+              </StyledDropdownMenuItem>
+              {onSourcesChange && (
+                <StyledDropdownMenuItem
+                  onSelect={() => queueMicrotask(() => setSourceDropdownOpen(true))}
+                >
+                  <DatabaseZap className="h-4 w-4" />
+                  <span>{t('chat.chooseSources')}</span>
+                </StyledDropdownMenuItem>
+              )}
+            </StyledDropdownMenuContent>
+          </DropdownMenu>
 
-              <SourceSelectorPopover
-                open={sourceDropdownOpen}
-                onOpenChange={setSourceDropdownOpen}
-                anchorRef={sourceButtonRef}
-                sources={sources}
-                selectedSlugs={optimisticSourceSlugs}
-                onToggleSlug={(slug) => {
-                  const isEnabled = optimisticSourceSlugs.includes(slug)
-                  const newSlugs = isEnabled
-                    ? optimisticSourceSlugs.filter(currentSlug => currentSlug !== slug)
-                    : [...optimisticSourceSlugs, slug]
-                  setOptimisticSourceSlugs(newSlugs)
-                  onSourcesChange?.(newSlugs)
-                }}
-              />
-            </div>
+          {onSourcesChange && (
+            <SourceSelectorPopover
+              open={sourceDropdownOpen}
+              onOpenChange={setSourceDropdownOpen}
+              anchorRef={sourceButtonRef}
+              sources={sources}
+              selectedSlugs={optimisticSourceSlugs}
+              onToggleSlug={(slug) => {
+                const isEnabled = optimisticSourceSlugs.includes(slug)
+                const newSlugs = isEnabled
+                  ? optimisticSourceSlugs.filter(currentSlug => currentSlug !== slug)
+                  : [...optimisticSourceSlugs, slug]
+                setOptimisticSourceSlugs(newSlugs)
+                onSourcesChange(newSlugs)
+              }}
+            />
           )}
 
           {onPermissionModeChange && (

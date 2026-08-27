@@ -33,6 +33,7 @@ function createBaseContext(sessionId: string): SessionToolContext {
     workspacePath: '/tmp/test-workspace',
     workspaceId: 'test-ws',
     getHostGrantedSourceRefs: () => [],
+    getHostAllowsProjectStdio: () => false,
     onPlanSubmitted: noopPlan,
     onAuthRequest: noopAuth,
   });

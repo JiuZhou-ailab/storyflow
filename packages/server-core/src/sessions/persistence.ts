@@ -61,6 +61,7 @@ export interface PersistenceDeps {
 export class SessionPersistence {
   // Deduplicates concurrent lazy loads of the same session's messages.
   private messageLoadingPromises: Map<string, Promise<void>> = new Map()
+  private queuedRecoveryScheduled = new Set<string>()
   // Coordinates startup initialization waiters from IPC handlers.
   private initGate = new InitGate()
 
@@ -223,6 +224,7 @@ export class SessionPersistence {
    */
   persistSession(managed: ManagedSession): void {
     if (this.deps.getSession(managed.id) !== managed) return
+    if (managed.runtimeState) return
     if (!managed.messagesLoaded) {
       this.hydrateMessagesForColdPersist(managed)
     }
@@ -232,9 +234,12 @@ export class SessionPersistence {
   // Cold-persist hydration. Mirrors the messages/queue-recovery half of
   // loadMessagesFromDisk but skips the metadata field syncs. Sets
   // messagesLoaded=true so subsequent persistSession calls take the fast path.
-  // Subsequent ensureMessagesLoaded calls also short-circuit, which is fine —
-  // queue recovery has already run here.
-  private hydrateMessagesForColdPersist(managed: ManagedSession): void {
+  // Normal cold persists also recover queued work. Project lifecycle callers
+  // opt out so snapshot hydration cannot start runtime work mid-transition.
+  private hydrateMessagesForColdPersist(
+    managed: ManagedSession,
+    recoverQueuedMessages = true,
+  ): void {
     getSessionLog().debug(`Cold-load triggered for persistSession on ${managed.id}`)
     const stored = loadStoredSession(managed.workspace.rootPath, managed.id)
     if (!stored) {
@@ -255,7 +260,7 @@ export class SessionPersistence {
     if (managed.transferredSessionSummary === undefined) managed.transferredSessionSummary = stored.transferredSessionSummary
     if (managed.transferredSessionSummaryApplied === undefined) managed.transferredSessionSummaryApplied = stored.transferredSessionSummaryApplied
 
-    this.recoverOrphanedQueuedMessages(managed)
+    if (recoverQueuedMessages) this.recoverOrphanedQueuedMessages(managed)
     getSessionLog().debug(`Cold-hydrated ${managed.messages.length} messages for session ${managed.id}`)
     managed.messagesLoaded = true
   }
@@ -277,9 +282,10 @@ export class SessionPersistence {
 
   // Shared by both hydration paths: find orphaned queued messages from
   // crash/restart, re-queue them, and hand dispatch back to the Facade.
-  private recoverOrphanedQueuedMessages(managed: ManagedSession): void {
+  recoverOrphanedQueuedMessages(managed: ManagedSession): void {
+    const queuedMessageIds = new Set(managed.messageQueue.map(message => message.messageId))
     const orphanedQueued = managed.messages.filter(m =>
-      m.role === 'user' && m.isQueued === true
+      m.role === 'user' && m.isQueued === true && !queuedMessageIds.has(m.id)
     )
     if (orphanedQueued.length > 0) {
       getSessionLog().info(`Recovering ${orphanedQueued.length} queued message(s) for session ${managed.id}`)
@@ -294,13 +300,20 @@ export class SessionPersistence {
             : undefined,
         })
       }
-      // Process queue when session becomes active (will be triggered by first message or interaction)
-      // Use setImmediate to avoid blocking the load and allow session state to settle
-      if (!managed.isProcessing && managed.messageQueue.length > 0) {
-        setImmediate(() => {
-          this.deps.onQueuedRecovery(managed.id)
-        })
-      }
+    }
+    // Use setImmediate to avoid blocking the load and allow session state to settle.
+    // Project lifecycle hydration is passive; relink resumes only after its transition commits.
+    if (
+      !managed.runtimeState
+      && !managed.isProcessing
+      && managed.messageQueue.length > 0
+      && !this.queuedRecoveryScheduled.has(managed.id)
+    ) {
+      this.queuedRecoveryScheduled.add(managed.id)
+      setImmediate(() => {
+        this.queuedRecoveryScheduled.delete(managed.id)
+        this.deps.onQueuedRecovery(managed.id)
+      })
     }
   }
 
@@ -320,6 +333,7 @@ export class SessionPersistence {
    * (e.g. rewind commit).
    */
   enqueuePersistStrict(managed: ManagedSession): void {
+    if (managed.runtimeState === 'deleting') return
     const persistableMessages = managed.messages.filter(m => m.role !== 'status')
     const storedSession: StoredSession = {
       ...pickSessionFields(managed),
@@ -330,6 +344,15 @@ export class SessionPersistence {
       tokenUsage: managed.tokenUsage ?? DEFAULT_TOKEN_USAGE,
     } as StoredSession
     sessionPersistenceQueue.enqueue(storedSession)
+  }
+
+  /** Persist the lifecycle owner's final snapshot while ordinary invalidating writes are fenced. */
+  enqueueProjectInvalidationSnapshot(managed: ManagedSession): void {
+    if (managed.runtimeState !== 'invalidating') {
+      throw new Error(`Session ${managed.id} is not owned by a Project invalidation`)
+    }
+    if (!managed.messagesLoaded) this.hydrateMessagesForColdPersist(managed, false)
+    this.enqueuePersistStrict(managed)
   }
 
   // Flush a specific session immediately (call on session close/switch).
@@ -416,18 +439,23 @@ export class SessionPersistence {
   }
 
   /** Hydrate a cold Session from a validated relink target, never the missing old root. */
-  hydrateMessagesFromRoot(managed: ManagedSession, rootPath: string): void {
+  hydrateMessagesFromRoot(
+    managed: ManagedSession,
+    rootPath: string,
+    recoverQueuedMessages = true,
+  ): void {
     const storedSession = loadStoredSession(rootPath, managed.id)
     if (!storedSession || storedSession.id !== managed.id) {
       throw new Error(`The selected Project does not contain readable Session ${managed.id}.`)
     }
-    this.hydrateMessages(managed, storedSession, rootPath)
+    this.hydrateMessages(managed, storedSession, rootPath, recoverQueuedMessages)
   }
 
   private hydrateMessages(
     managed: ManagedSession,
     storedSession: StoredSession,
     projectRootOverride?: string,
+    recoverQueuedMessages = true,
   ): void {
     managed.messages = (storedSession.messages || []).map(storedToMessage)
     managed.tokenUsage = storedSession.tokenUsage
@@ -451,6 +479,6 @@ export class SessionPersistence {
     managed.transferredSessionSummaryApplied = storedSession.transferredSessionSummaryApplied
     managed.messagesLoaded = true
     getSessionLog().debug(`Lazy-loaded ${managed.messages.length} messages for session ${managed.id}`)
-    this.recoverOrphanedQueuedMessages(managed)
+    if (recoverQueuedMessages) this.recoverOrphanedQueuedMessages(managed)
   }
 }

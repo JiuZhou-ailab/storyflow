@@ -12,6 +12,7 @@ import { toPortablePath, expandPath, normalizePath } from '../utils/paths.ts';
 import { debug } from '../utils/debug.ts';
 import { safeJsonParse } from '../utils/files.ts';
 import { pickSessionFields } from './utils.ts';
+import { resolveProjectOwnedFilePath } from '../workspaces/paths.ts';
 
 // ============================================================
 // Session Path Portability
@@ -144,7 +145,12 @@ export function readSessionJsonl(sessionFile: string): StoredSession | null {
  * Line 1: Header with pre-computed metadata
  * Lines 2+: Messages (one per line)
  */
-export function writeSessionJsonl(sessionFile: string, session: StoredSession): void {
+export function writeSessionJsonl(
+  sessionFile: string,
+  session: StoredSession,
+  workspaceRootPath: string,
+): void {
+  sessionFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile);
   const header = createSessionHeader(session);
   const sessionDir = dirname(sessionFile);
 
@@ -153,7 +159,7 @@ export function writeSessionJsonl(sessionFile: string, session: StoredSession): 
     ...session.messages.map(m => makeSessionPathPortable(JSON.stringify(m), sessionDir)),
   ];
 
-  const tmpFile = sessionFile + '.tmp';
+  const tmpFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile + '.tmp');
   writeFileSync(tmpFile, lines.join('\n') + '\n');
   // On Windows, rename fails if target exists. Delete first for cross-platform compatibility.
   try { unlinkSync(sessionFile); } catch { /* ignore if doesn't exist */ }

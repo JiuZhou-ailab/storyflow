@@ -64,7 +64,7 @@ export interface ExportImportDeps {
   getSession: (sessionId: string) => ManagedSession | undefined
   hasSession: (sessionId: string) => boolean
   setSession: (sessionId: string, managed: ManagedSession) => void
-  createSession: (workspaceId: string) => Promise<{ id: string }>
+  createSessionLocked: (workspaceId: string) => Promise<{ id: string }>
   ensureMessagesLoaded: (managed: ManagedSession) => Promise<void>
   resolveManagedModelAccess: (managed: ManagedSession) => Promise<ManagedModelAccess | undefined>
   persistSession: (managed: ManagedSession) => void
@@ -178,7 +178,7 @@ export class ExportImport {
 
     // The target session starts with target-domain defaults. Operational state
     // such as permission mode, labels, and status must never cross domains.
-    const session = await this.deps.createSession(workspaceId)
+    const session = await this.deps.createSessionLocked(workspaceId)
 
     const managed = this.deps.getSession(session.id)
     if (!managed) {
@@ -405,7 +405,7 @@ export class ExportImport {
     // Write JSONL file (after compatibility checks so remapped values are persisted)
     const sessionFile = getSessionFilePath(workspaceRootPath, sessionId)
     getSessionLog().info(`[import] Writing JSONL: ${sessionFile} (llmConnection=${storedSession.llmConnection ?? 'default'}, messages=${storedSession.messages.length})`)
-    writeSessionJsonl(sessionFile, storedSession)
+    writeSessionJsonl(sessionFile, storedSession, workspaceRootPath)
 
     // Write all bundle files (attachments, plans, data, downloads, etc.)
     // Uses restoreFiles() for path traversal, size, and base64 validation.

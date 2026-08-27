@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, readdirSync } from 'fs'
+import { chmodSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, readdirSync, symlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { exportResources, importResources, validateResourceBundle } from '../resource-bundle'
@@ -245,6 +245,37 @@ describe('resource-bundle', () => {
       expect(paths).toContain('LICENSE.txt')
     })
 
+    it('rejects an unsafe Skill export selector', () => {
+      const wsDir = createTestWorkspace(tmpDir)
+      const outsideSkill = join(skillRoot(wsDir), '..', 'outside-skill')
+      mkdirSync(outsideSkill, { recursive: true })
+      writeFileSync(join(outsideSkill, 'SKILL.md'), '# outside')
+
+      const { bundle, warnings } = exportResources(wsDir, { skills: ['../outside-skill'] })
+
+      expect(bundle.resources.skills).toEqual([])
+      expect(warnings.some(warning => warning.includes('invalid'))).toBe(true)
+    })
+
+    it('does not export a Skill through a symlinked Skill directory', () => {
+      const wsDir = createTestWorkspace(tmpDir)
+      const skillsRoot = join(tmpDir, 'global-skills')
+      const outsideSkill = join(tmpDir, 'outside-skill')
+      mkdirSync(skillsRoot)
+      mkdirSync(outsideSkill)
+      writeFileSync(join(outsideSkill, 'SKILL.md'), '# outside secret')
+      symlinkSync(outsideSkill, join(skillsRoot, 'safe-skill'), 'dir')
+
+      const { bundle, warnings } = exportResources(
+        wsDir,
+        { skills: ['safe-skill'] },
+        skillsRoot,
+      )
+
+      expect(bundle.resources.skills).toEqual([])
+      expect(warnings.some(warning => warning.includes('symbolic link'))).toBe(true)
+    })
+
     it('exports automations as per-entry array', () => {
       const wsDir = createTestWorkspace(tmpDir)
       createTestAutomations(wsDir, {
@@ -267,6 +298,26 @@ describe('resource-bundle', () => {
       expect(greeting.name).toBe('Greeting')
       expect(greeting.event).toBe('UserPromptSubmit')
       expect(greeting.matcher.actions).toHaveLength(1)
+    })
+
+    it('does not export automations through a project symlink', () => {
+      const wsDir = createTestWorkspace(tmpDir)
+      const outsideConfig = join(tmpDir, 'outside-automations.json')
+      writeFileSync(outsideConfig, JSON.stringify({
+        version: 2,
+        automations: {
+          UserPromptSubmit: [{
+            id: 'outside',
+            actions: [{ type: 'prompt', prompt: 'outside secret' }],
+          }],
+        },
+      }))
+      symlinkSync(outsideConfig, join(wsDir, 'automations.json'))
+
+      const { bundle, warnings } = exportResources(wsDir, { automations: 'all' })
+
+      expect(bundle.resources.automations).toEqual([])
+      expect(warnings.some(warning => warning.includes('symbolic link'))).toBe(true)
     })
 
     it('exports automations selectively by ID', () => {
@@ -744,6 +795,30 @@ describe('resource-bundle', () => {
       expect(existsSync(join(skillPath(wsDir, 'pdf-tools'), 'scripts', 'extract.py'))).toBe(true)
     })
 
+    it('does not import a project Skill through a symlinked Skill root', async () => {
+      const wsDir = createTestWorkspace(tmpDir)
+      const outsideSkills = join(tmpDir, 'outside-skills')
+      mkdirSync(outsideSkills)
+      rmSync(skillRoot(wsDir), { recursive: true })
+      symlinkSync(outsideSkills, skillRoot(wsDir), 'dir')
+      const bundle: ResourceBundle = {
+        version: 1,
+        exportedAt: Date.now(),
+        resources: { skills: [{
+          slug: 'escaped-skill',
+          files: [makeBundleFile(
+            'SKILL.md',
+            '---\nname: escaped-skill\ndescription: test\n---\nBody',
+          )],
+        }] },
+      }
+
+      const result = await importResources(wsDir, bundle, 'skip', noopDeps)
+
+      expect(result.skills.failed[0]?.error).toContain('symbolic link')
+      expect(existsSync(join(outsideSkills, 'escaped-skill'))).toBe(false)
+    })
+
     it('imports and exports Skills through an explicit global root', async () => {
       const wsDir = createTestWorkspace(tmpDir)
       const globalSkillsRoot = join(tmpDir, 'global-skills')
@@ -1061,6 +1136,125 @@ describe('resource-bundle', () => {
       const retries = readFileSync(join(wsDir, 'automations-retry-queue.jsonl'), 'utf-8')
       expect(retries).not.toContain('aaa111')
       expect(retries).toContain('bbb222')
+    })
+
+    it('does not clear automation history through a project symlink', async () => {
+      const wsDir = createTestWorkspace(tmpDir)
+      createTestAutomations(wsDir, {
+        UserPromptSubmit: [{ id: 'aaa111', actions: [{ type: 'prompt', prompt: 'old' }] }],
+      })
+      const outsideHistory = join(tmpDir, 'outside-history.jsonl')
+      const originalHistory = `${JSON.stringify({ automationId: 'aaa111', ts: 1 })}\n`
+      writeFileSync(outsideHistory, originalHistory)
+      symlinkSync(outsideHistory, join(wsDir, 'automations-history.jsonl'))
+      const bundle: ResourceBundle = {
+        version: 1,
+        exportedAt: Date.now(),
+        resources: { automations: [
+          makeAutomationEntry({ id: 'aaa111', event: 'UserPromptSubmit' }),
+        ] },
+      }
+
+      const result = await importResources(wsDir, bundle, 'overwrite', noopDeps)
+
+      expect(readFileSync(outsideHistory, 'utf-8')).toBe(originalHistory)
+      expect(result.automations.warnings.some(warning => warning.includes('cleanup failed'))).toBe(true)
+    })
+
+    it('does not commit an automation overwrite when retry cleanup is unsafe', async () => {
+      const wsDir = createTestWorkspace(tmpDir)
+      createTestAutomations(wsDir, {
+        UserPromptSubmit: [{
+          id: 'aaa111', name: 'Old', actions: [{ type: 'prompt', prompt: 'old' }],
+        }],
+      })
+      const outsideRetry = join(tmpDir, 'outside-retry.jsonl')
+      const originalRetry = `${JSON.stringify({ matcherId: 'aaa111', action: { url: 'https://old.example' } })}\n`
+      writeFileSync(outsideRetry, originalRetry)
+      symlinkSync(outsideRetry, join(wsDir, 'automations-retry-queue.jsonl'))
+      const bundle: ResourceBundle = {
+        version: 1,
+        exportedAt: Date.now(),
+        resources: { automations: [
+          makeAutomationEntry({ id: 'aaa111', name: 'New', event: 'UserPromptSubmit' }),
+        ] },
+      }
+
+      const result = await importResources(wsDir, bundle, 'overwrite', noopDeps)
+
+      expect(result.automations.imported).toEqual([])
+      expect(result.automations.failed[0]?.error).toContain('retry cleanup')
+      expect(readFileSync(outsideRetry, 'utf-8')).toBe(originalRetry)
+      expect(JSON.parse(readFileSync(join(wsDir, 'automations.json'), 'utf-8'))
+        .automations.UserPromptSubmit[0].name).toBe('Old')
+    })
+
+    it('does not commit an automation overwrite when its retry queue is read-only', async () => {
+      const wsDir = createTestWorkspace(tmpDir)
+      createTestAutomations(wsDir, {
+        UserPromptSubmit: [{
+          id: 'aaa111', name: 'Old', actions: [{ type: 'prompt', prompt: 'old' }],
+        }],
+      })
+      const retryPath = join(wsDir, 'automations-retry-queue.jsonl')
+      const originalRetry = `${JSON.stringify({
+        matcherId: 'aaa111',
+        action: { type: 'webhook', url: 'https://old.example' },
+      })}\n`
+      writeFileSync(retryPath, originalRetry)
+      const bundle: ResourceBundle = {
+        version: 1,
+        exportedAt: Date.now(),
+        resources: { automations: [
+          makeAutomationEntry({ id: 'aaa111', name: 'New', event: 'UserPromptSubmit' }),
+        ] },
+      }
+
+      chmodSync(retryPath, 0o444)
+      let result
+      try {
+        result = await importResources(wsDir, bundle, 'overwrite', noopDeps)
+      } finally {
+        chmodSync(retryPath, 0o644)
+      }
+
+      expect(result.automations.imported).toEqual([])
+      expect(result.automations.failed[0]?.error).toContain('retry cleanup')
+      expect(readFileSync(retryPath, 'utf-8')).toBe(originalRetry)
+      expect(JSON.parse(readFileSync(join(wsDir, 'automations.json'), 'utf-8'))
+        .automations.UserPromptSubmit[0].name).toBe('Old')
+    })
+
+    it('keeps the retry queue when the automation config commit fails', async () => {
+      const wsDir = createTestWorkspace(tmpDir)
+      createTestAutomations(wsDir, {
+        UserPromptSubmit: [{
+          id: 'aaa111', name: 'Old', actions: [{ type: 'prompt', prompt: 'old' }],
+        }],
+      })
+      const retryPath = join(wsDir, 'automations-retry-queue.jsonl')
+      const originalRetry = `${JSON.stringify({ matcherId: 'aaa111', id: 'retry-1' })}\n`
+      writeFileSync(retryPath, originalRetry)
+      const bundle: ResourceBundle = {
+        version: 1,
+        exportedAt: Date.now(),
+        resources: { automations: [
+          makeAutomationEntry({ id: 'aaa111', name: 'New', event: 'UserPromptSubmit' }),
+        ] },
+      }
+
+      chmodSync(wsDir, 0o555)
+      let result
+      try {
+        result = await importResources(wsDir, bundle, 'overwrite', noopDeps)
+      } finally {
+        chmodSync(wsDir, 0o755)
+      }
+
+      expect(result.automations.failed[0]?.error).toContain('Failed to write automations.json')
+      expect(readFileSync(retryPath, 'utf-8')).toBe(originalRetry)
+      expect(JSON.parse(readFileSync(join(wsDir, 'automations.json'), 'utf-8'))
+        .automations.UserPromptSubmit[0].name).toBe('Old')
     })
 
     it('fails import when existing automations.json is invalid in skip mode', async () => {

@@ -53,20 +53,11 @@ export function DesktopPermissionModeSelector({
     setOpen(false)
   }, [onPermissionModeChange])
 
-  const currentStyle = {
-    safe: {
-      className: 'bg-foreground/5 text-foreground/60',
-      shadowVar: 'var(--foreground-rgb)',
-    },
-    ask: {
-      className: 'bg-info/10 text-info',
-      shadowVar: 'var(--info-rgb)',
-    },
-    'allow-all': {
-      className: 'bg-accent/5 text-accent',
-      shadowVar: 'var(--accent-rgb)',
-    },
-  } satisfies Record<PermissionMode, { className: string; shadowVar: string }>
+  const currentColor = {
+    safe: 'text-foreground/60',
+    ask: 'text-info',
+    'allow-all': 'text-accent',
+  } satisfies Record<PermissionMode, string>
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -76,10 +67,9 @@ export function DesktopPermissionModeSelector({
           data-tutorial="permission-mode-dropdown"
           aria-label={t('mode.permissionAria', { mode: shortName })}
           className={cn(
-            'input-toolbar-btn flex h-7 shrink-0 select-none items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-[12px] font-medium shadow-tinted outline-none transition-colors hover:bg-foreground/[0.07] active:bg-foreground/10 focus-visible:ring-1 focus-visible:ring-ring',
-            currentStyle[permissionMode].className,
+            'input-toolbar-btn flex h-7 shrink-0 select-none items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-[12px] font-medium outline-none transition-colors hover:bg-foreground/[0.07] active:bg-foreground/10 focus-visible:ring-1 focus-visible:ring-ring',
+            currentColor[permissionMode],
           )}
-          style={{ '--shadow-color': currentStyle[permissionMode].shadowVar } as React.CSSProperties}
         >
           <PermissionModeIcon mode={permissionMode} className="h-3.5 w-3.5" />
           <span>{shortName}</span>

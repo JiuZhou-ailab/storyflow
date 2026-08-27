@@ -49,6 +49,28 @@ export function resolveContextWorkspaceId(ctx: RequestContext, deps: HandlerDeps
   return windowWorkspaceId ?? ctx.workspaceId
 }
 
+/** Keep a workspace-root mutation on one current Project locator for its full IO lifetime. */
+export function withWorkspaceMutation<T>(
+  ctx: RequestContext,
+  deps: HandlerDeps,
+  work: (
+    workspaceId: string | null | undefined,
+    scopedContext: RequestContext,
+  ) => Promise<T>,
+): Promise<T> {
+  const workspaceId = resolveContextWorkspaceId(ctx, deps)
+  const scopedContext: RequestContext = {
+    ...ctx,
+    webContentsId: null,
+    workspaceId: workspaceId ?? null,
+  }
+  if (!workspaceId) return work(workspaceId, scopedContext)
+  return deps.sessionManager.withProjectLifecycle(
+    workspaceId,
+    () => work(workspaceId, scopedContext),
+  )
+}
+
 function resolveContextWorkspace(deps: HandlerDeps, workspaceId: string) {
   return deps.resolveRuntimeWorkspace?.(workspaceId) ?? resolveRuntimeWorkspace(workspaceId)
 }

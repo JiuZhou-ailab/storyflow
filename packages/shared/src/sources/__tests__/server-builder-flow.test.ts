@@ -199,7 +199,11 @@ describe('SourceServerBuilder project execution grants', () => {
     );
 
     expect(result.mcpServers).toEqual({
-      'global-local': { type: 'stdio', command: 'project-command' },
+      'global-local': {
+        type: 'stdio',
+        capabilityRef: 'craft-global:global-local:test-definition',
+        command: 'project-command',
+      },
     });
 
     const granted = await new SourceServerBuilder().buildAll(
@@ -210,6 +214,17 @@ describe('SourceServerBuilder project execution grants', () => {
       { allowProjectStdio: true },
     );
     expect(Object.keys(granted.mcpServers).sort()).toEqual(['global-local', 'project-local']);
+  });
+
+  test('binds API pool configs to the exact Source capability', async () => {
+    const source = createMockSource({
+      api: { baseUrl: 'https://api.example.com/', authType: 'none' },
+    });
+
+    const result = await new SourceServerBuilder().buildAll([{ source }]);
+
+    expect(result.apiServers['test-source']?.capabilityRef)
+      .toBe('workspace:test-source:test-definition');
   });
 });
 

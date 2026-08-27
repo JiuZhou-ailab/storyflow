@@ -110,7 +110,7 @@ describe('session jsonl: permission mode normalization', () => {
     const loaded = readSessionJsonl(sessionFile);
     expect(loaded?.agentRuntime).toBe('claude-sdk');
 
-    writeSessionJsonl(sessionFile, loaded!);
+    writeSessionJsonl(sessionFile, loaded!, sessionDir);
     const rewrittenHeader = JSON.parse(readFileSync(sessionFile, 'utf-8').split('\n')[0]!);
     expect(rewrittenHeader.agentRuntime).toBeUndefined();
   });
