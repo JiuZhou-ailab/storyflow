@@ -479,10 +479,13 @@ export function listSessions(workspaceRootPath: string): SessionMetadata[] {
  * Non-blocking session listing for startup restoration.
  * Reads headers in bounded batches so large histories do not stall the main thread.
  */
-export async function listSessionsAsync(workspaceRootPath: string): Promise<SessionMetadata[]> {
+export async function listSessionsAsync(
+  workspaceRootPath: string,
+  includeLegacyRoot = true,
+): Promise<SessionMetadata[]> {
   const span = perf.span('session.listSessionsAsync');
   const sessionDirs = [
-    getLegacyWorkspaceSessionsPath(workspaceRootPath),
+    ...(includeLegacyRoot ? [getLegacyWorkspaceSessionsPath(workspaceRootPath)] : []),
     getWorkspaceSessionsPath(workspaceRootPath),
   ]
     .filter((sessionsDir, index, dirs) => existsSync(sessionsDir) && dirs.indexOf(sessionsDir) === index)

@@ -157,7 +157,6 @@ export class PromptBuilder {
     return getWorkingDirectoryContext(
       effectiveWorkingDir,
       isSessionRoot,
-      this.config.session?.sdkCwd
     );
   }
 

@@ -31,7 +31,7 @@ describe('cold-session metadata persistence', () => {
 
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-cold-meta-'))
-    sm = new SessionManager()
+    sm = new SessionManager((_workspaceId, managed) => managed.workspace)
   })
 
   afterEach(async () => {
@@ -142,6 +142,31 @@ describe('cold-session metadata persistence', () => {
 
     expect(managed.name).toBe('latest external name')
     expect(managed.pendingExternalMetadata).toBeUndefined()
+  })
+
+  it('does not reconcile deferred metadata after the Host Project disappears', async () => {
+    jest.useFakeTimers()
+    sm.cleanup()
+    let projectAvailable = true
+    sm = new SessionManager((_workspaceId, managed) => projectAvailable ? managed.workspace : null)
+    const sessionId = 'stale-write-guard'
+    const managed = seedColdSession(sessionId, { name: 'local name' })
+
+    ;(sm as unknown as { setMetadataWriteGuard: (session: typeof managed) => void })
+      .setMetadataWriteGuard(managed)
+    const sessionFile = getSessionFilePath(tmpRoot, sessionId)
+    managed.pendingExternalMetadata = readSessionHeader(sessionFile)!
+
+    const stored = loadSession(tmpRoot, sessionId)!
+    stored.name = 'stale external name'
+    writeSessionJsonl(sessionFile, stored, tmpRoot)
+    projectAvailable = false
+
+    jest.advanceTimersByTime(5000)
+    await Promise.resolve()
+
+    expect(managed.name).toBe('local name')
+    expect(managed.pendingExternalMetadata).toBeDefined()
   })
 
   it('setSessionLabels on a cold session is on disk after flushSession resolves', async () => {

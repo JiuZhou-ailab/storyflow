@@ -7,6 +7,12 @@ import type { AgentInstance, ManagedSession } from './managed-session'
 export interface AgentRuntimeLeaseDeps {
   /** True when the session is still present in the Facade registry (not closing/deleted). */
   isSessionTracked(managed: ManagedSession): boolean
+  /** Refresh Host-owned Project identity; true means a live runtime is stale. */
+  refreshSessionWorkspace(managed: ManagedSession): boolean
+  /** Strictly re-resolve Pi cwd; true means the runtime was built for a stale target. */
+  revalidateAgentWorkingDirectory(managed: ManagedSession): boolean
+  /** Dispose a runtime after its Project identity or cwd grants change. */
+  disposeAgentRuntime(managed: ManagedSession, reason: string): Promise<void>
   /** Resolve or create the session's Pi subprocess. Resolves through the Facade at call time so per-instance stubs keep working. */
   getOrCreateAgent(managed: ManagedSession): Promise<AgentInstance>
 }
@@ -24,6 +30,8 @@ export class AgentRuntimeLease {
   private agentRuntimeLeaseCounts: Map<string, number> = new Map()
   /** Exclusive mutations wait here until every active operation releases the subprocess. */
   private agentRuntimeLeaseWaiters: Map<string, Set<() => void>> = new Map()
+  /** A short Session operation refreshed Project inputs before the next runtime lease. */
+  private workspaceRuntimeRefreshRequired = new Set<string>()
 
   private assertAgentRuntimeOpen(managed: ManagedSession, expectedEpoch?: number): void {
     if (!this.deps.isSessionTracked(managed) || managed.runtimeState) {
@@ -82,6 +90,9 @@ export class AgentRuntimeLease {
   /** Keep short pre-runtime session work ahead of deletion and invalidation. */
   beginSessionOperationLease(managed: ManagedSession): () => void {
     this.assertAgentRuntimeOpen(managed)
+    if (this.deps.refreshSessionWorkspace(managed)) {
+      this.workspaceRuntimeRefreshRequired.add(managed.id)
+    }
     this.retainAgentRuntimeLease(managed.id)
     let retained = true
     return () => {
@@ -93,16 +104,83 @@ export class AgentRuntimeLease {
 
   async withAgentRuntimeLock<T>(
     managed: ManagedSession,
-    work: () => Promise<T>,
+    work: (getOrCreateAgent: () => Promise<AgentInstance>) => Promise<T>,
     allowClosing = false,
   ): Promise<T> {
     if (!allowClosing) this.assertAgentRuntimeOpen(managed)
+    const expectedEpoch = managed.runtimeEpoch ?? 0
     return this.withAgentRuntimeMutex(managed, async () => {
       if (!allowClosing) this.assertAgentRuntimeOpen(managed)
       await this.waitForAgentRuntimeLeases(managed.id)
       if (!allowClosing) this.assertAgentRuntimeOpen(managed)
-      return work()
+      if (!allowClosing) {
+        const runtimeChanged = this.deps.refreshSessionWorkspace(managed)
+          || this.workspaceRuntimeRefreshRequired.has(managed.id)
+        if (runtimeChanged && managed.agent) {
+          await this.deps.disposeAgentRuntime(managed, 'Project runtime inputs changed')
+        }
+        this.workspaceRuntimeRefreshRequired.delete(managed.id)
+      }
+      return work(() => this.getOrCreateValidatedAgentLocked(managed, expectedEpoch))
     })
+  }
+
+  /** Resolve Pi while holding the runtime mutex, then recheck Project inputs after async creation. */
+  private async getOrCreateValidatedAgentLocked(
+    managed: ManagedSession,
+    expectedEpoch: number,
+  ): Promise<AgentInstance> {
+    this.assertAgentRuntimeOpen(managed, expectedEpoch)
+    const workspaceChanged = this.deps.refreshSessionWorkspace(managed)
+    const workingDirectoryChanged = this.deps.revalidateAgentWorkingDirectory(managed)
+    const runtimeChanged = workspaceChanged
+      || workingDirectoryChanged
+      || this.workspaceRuntimeRefreshRequired.has(managed.id)
+    let agent = managed.agent
+    if (runtimeChanged && agent) {
+      await this.waitForAgentRuntimeLeases(managed.id)
+      this.assertAgentRuntimeOpen(managed, expectedEpoch)
+      await this.deps.disposeAgentRuntime(managed, 'Project runtime inputs changed')
+      agent = null
+    }
+    if (
+      !agent
+      || runtimeChanged
+      || managed.credentialRestartRequired
+      || (this.agentRuntimeLeaseCounts.get(managed.id) ?? 0) === 0
+    ) {
+      for (;;) {
+        await this.waitForAgentRuntimeLeases(managed.id)
+        this.assertAgentRuntimeOpen(managed, expectedEpoch)
+        this.workspaceRuntimeRefreshRequired.delete(managed.id)
+        agent = await this.deps.getOrCreateAgent(managed)
+        this.assertAgentRuntimeOpen(managed, expectedEpoch)
+
+        let changedDuringFactory: boolean
+        try {
+          const workspaceChangedDuringFactory = this.deps.refreshSessionWorkspace(managed)
+          const workingDirectoryChangedDuringFactory = this.deps.revalidateAgentWorkingDirectory(managed)
+          changedDuringFactory = workspaceChangedDuringFactory
+            || workingDirectoryChangedDuringFactory
+            || this.workspaceRuntimeRefreshRequired.has(managed.id)
+        } catch (error) {
+          if (managed.agent) {
+            await this.deps.disposeAgentRuntime(managed, 'Project became unavailable during runtime creation')
+          }
+          throw error
+        }
+        if (!changedDuringFactory) break
+
+        await this.waitForAgentRuntimeLeases(managed.id)
+        this.assertAgentRuntimeOpen(managed, expectedEpoch)
+        if (managed.agent) {
+          await this.deps.disposeAgentRuntime(managed, 'Project changed during runtime creation')
+        }
+        agent = null
+      }
+    }
+    this.workspaceRuntimeRefreshRequired.delete(managed.id)
+    return agent
   }
 
   /**
@@ -117,18 +195,7 @@ export class AgentRuntimeLease {
     this.assertAgentRuntimeOpen(managed)
     const expectedEpoch = managed.runtimeEpoch ?? 0
     const agent = await this.withAgentRuntimeMutex(managed, async () => {
-      this.assertAgentRuntimeOpen(managed, expectedEpoch)
-      let agent = managed.agent
-      if (
-        !agent
-        || managed.credentialRestartRequired
-        || (this.agentRuntimeLeaseCounts.get(managed.id) ?? 0) === 0
-      ) {
-        await this.waitForAgentRuntimeLeases(managed.id)
-        this.assertAgentRuntimeOpen(managed, expectedEpoch)
-        agent = await this.deps.getOrCreateAgent(managed)
-        this.assertAgentRuntimeOpen(managed, expectedEpoch)
-      }
+      const agent = await this.getOrCreateValidatedAgentLocked(managed, expectedEpoch)
       this.retainAgentRuntimeLease(managed.id)
       return agent
     })

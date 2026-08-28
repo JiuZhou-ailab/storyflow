@@ -34,7 +34,7 @@ import { executeBrowserToolCommand } from './browser-tool-runtime.ts';
 import { saveBinaryResponse } from '../utils/binary-detection.ts';
 import {
   isFreeConversationWorkspaceId,
-  resolveRuntimeWorkspace,
+  resolveRuntimeWorkspaceById,
 } from '../workspaces/application-context.ts';
 import { isLocalMcpEnabled } from '../workspaces/storage.ts';
 
@@ -342,10 +342,10 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
       workspaceId,
       getHostGrantedSourceRefs: () => isFreeConversationWorkspaceId(workspaceId)
         ? null
-        : resolveRuntimeWorkspace(workspaceId)?.defaultEnabledSourceRefs ?? [],
+        : resolveRuntimeWorkspaceById(workspaceId)?.defaultEnabledSourceRefs ?? [],
       getHostAllowsProjectStdio: () => isLocalMcpEnabled(
         workspacePath,
-        resolveRuntimeWorkspace(workspaceId)?.localMcpEnabled,
+        resolveRuntimeWorkspaceById(workspaceId)?.localMcpEnabled,
       ),
       onPlanSubmitted: async (planPath: string) => {
         await this.onPlanSubmitted?.(planPath);

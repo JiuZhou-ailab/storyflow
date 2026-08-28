@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runIsolatedJson } from './isolated-test-runner'
+import { AuthFlow } from './auth-flow'
 
 const SETTINGS_HANDLER_PATH = pathToFileURL(join(import.meta.dir, '..', 'handlers', 'rpc', 'settings.ts')).href
 const SOURCES_HANDLER_PATH = pathToFileURL(join(import.meta.dir, '..', 'handlers', 'rpc', 'sources.ts')).href
@@ -34,6 +35,48 @@ function writeGlobalSource(configDir: string, slug: string): void {
 }
 
 describe('Project Source grants', () => {
+  it('releases the Session lease before runtime refresh and conversation resume', async () => {
+    const phases: string[] = []
+    let leaseHeld = false
+    const managed = {
+      id: 'session-1',
+      workspace: { id: 'free-conversations', rootPath: '/tmp/free' },
+      messages: [],
+      enabledSourceSlugs: [],
+      tokenRefreshManager: { clearCooldown() {} },
+      agent: null,
+    }
+    const flow = new AuthFlow({
+      withSessionOperation: async (_sessionId, work) => {
+        leaseHeld = true
+        try {
+          return await work(managed as never)
+        } finally {
+          leaseHeld = false
+        }
+      },
+      sendEvent() { expect(leaseHeld).toBeTrue() },
+      persistSession() { expect(leaseHeld).toBeTrue() },
+      withAgentRuntimeLock: async (_managed, work) => {
+        expect(leaseHeld).toBeFalse()
+        phases.push('runtime')
+        return work()
+      },
+      sendMessage: async () => {
+        expect(leaseHeld).toBeFalse()
+        phases.push('resume')
+      },
+    })
+
+    await flow.completeAuthRequest('session-1', {
+      requestId: 'request-1',
+      sourceSlug: 'source-1',
+      success: true,
+    })
+
+    expect(phases).toEqual(['runtime', 'resume'])
+  })
+
   it('does not save a credential after its pending Source grant is revoked', () => {
     const parent = mkdtempSync(join(tmpdir(), 'storyflow-pending-credential-revoke-'))
     const configDir = join(parent, 'host')
@@ -81,7 +124,7 @@ describe('Project Source grants', () => {
           credentialManager.markSourceAuthenticated = () => {};
           const messages = [];
           const flow = new AuthFlow({
-            getSession: () => managed,
+            withSessionOperation: async (_sessionId, work) => work(managed),
             sendEvent() {},
             persistSession() {},
             withAgentRuntimeLock: async (_managed, work) => work(),

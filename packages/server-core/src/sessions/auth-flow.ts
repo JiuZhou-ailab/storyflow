@@ -25,8 +25,11 @@ import { getResourceProjectRoot, getSessionLog } from './session-runtime'
 import type { ManagedSession } from './managed-session'
 
 export interface AuthFlowDeps {
-  /** Registry lookup — identity-checked by callers via the shared sessions map. */
-  getSession: (sessionId: string) => ManagedSession | undefined
+  /** Run short Session state changes behind the shared Project freshness lease. */
+  withSessionOperation: <T>(
+    sessionId: string,
+    work: (managed: ManagedSession) => Promise<T>,
+  ) => Promise<T | undefined>
   sendEvent: (event: SessionEvent, workspaceId?: string) => void
   persistSession: (managed: ManagedSession) => void
   withAgentRuntimeLock: <T>(managed: ManagedSession, work: () => Promise<T>, allowClosing?: boolean) => Promise<T>
@@ -36,7 +39,7 @@ export interface AuthFlowDeps {
     attachments?: import('@craft-agent/shared/protocol').FileAttachment[],
     storedAttachments?: import('@craft-agent/core/types').StoredAttachment[],
     options?: import('@craft-agent/shared/protocol').SendMessageOptions,
-    existingMessageId?: string,
+    existingMessageId?: string | null,
   ) => Promise<unknown>
 }
 
@@ -130,81 +133,81 @@ export class AuthFlow {
    * This updates the auth message status and sends a faked user message
    */
   async completeAuthRequest(sessionId: string, result: AuthResult): Promise<void> {
-    const managed = this.deps.getSession(sessionId)
-    if (!managed) {
+    const completion = await this.deps.withSessionOperation(sessionId, async managed => {
+      // Find and update the pending auth-request message
+      const authMessage = managed.messages.find(m =>
+        m.role === 'auth-request' &&
+        m.authRequestId === result.requestId &&
+        m.authStatus === 'pending'
+      )
+
+      if (authMessage) {
+        authMessage.authStatus = result.success ? 'completed' :
+                                 result.cancelled ? 'cancelled' : 'failed'
+        authMessage.authError = result.error
+        authMessage.authEmail = result.email
+        authMessage.authWorkspace = result.workspace
+      }
+
+      // Emit auth_completed event to update UI
+      this.deps.sendEvent({
+        type: 'auth_completed',
+        sessionId,
+        requestId: result.requestId,
+        success: result.success,
+        cancelled: result.cancelled,
+        error: result.error,
+      }, managed.workspace.id)
+
+      // Clear pending auth state
+      managed.pendingAuthRequestId = undefined
+      managed.pendingAuthRequest = undefined
+
+      // Auto-enable the source in the session after successful auth
+      if (result.success && result.sourceSlug) {
+        const slugSet = new Set(managed.enabledSourceSlugs || [])
+        if (!slugSet.has(result.sourceSlug)) {
+          slugSet.add(result.sourceSlug)
+          managed.enabledSourceSlugs = Array.from(slugSet)
+          getSessionLog().info(`Auto-enabled source ${result.sourceSlug} in session ${sessionId} after auth`)
+        }
+
+        // Clear any refresh cooldown so the source is immediately usable
+        managed.tokenRefreshManager.clearCooldown(result.sourceSlug)
+      }
+
+      // Persist session with updated auth message and enabled sources
+      this.deps.persistSession(managed)
+      return { managed, resultContent: this.formatAuthResultMessage(result) }
+    })
+    if (!completion) {
       getSessionLog().warn(`Cannot complete auth request - session ${sessionId} not found`)
       return
     }
-
-    // Find and update the pending auth-request message
-    const authMessage = managed.messages.find(m =>
-      m.role === 'auth-request' &&
-      m.authRequestId === result.requestId &&
-      m.authStatus === 'pending'
-    )
-
-    if (authMessage) {
-      authMessage.authStatus = result.success ? 'completed' :
-                               result.cancelled ? 'cancelled' : 'failed'
-      authMessage.authError = result.error
-      authMessage.authEmail = result.email
-      authMessage.authWorkspace = result.workspace
-    }
-
-    // Emit auth_completed event to update UI
-    this.deps.sendEvent({
-      type: 'auth_completed',
-      sessionId,
-      requestId: result.requestId,
-      success: result.success,
-      cancelled: result.cancelled,
-      error: result.error,
-    }, managed.workspace.id)
-
-    // Create faked user message with result
-    const resultContent = this.formatAuthResultMessage(result)
-
-    // Clear pending auth state
-    managed.pendingAuthRequestId = undefined
-    managed.pendingAuthRequest = undefined
-
-    // Auto-enable the source in the session after successful auth
-    if (result.success && result.sourceSlug) {
-      const slugSet = new Set(managed.enabledSourceSlugs || [])
-      if (!slugSet.has(result.sourceSlug)) {
-        slugSet.add(result.sourceSlug)
-        managed.enabledSourceSlugs = Array.from(slugSet)
-        getSessionLog().info(`Auto-enabled source ${result.sourceSlug} in session ${sessionId} after auth`)
-      }
-
-      // Clear any refresh cooldown so the source is immediately usable
-      managed.tokenRefreshManager.clearCooldown(result.sourceSlug)
-    }
-
-    // Persist session with updated auth message and enabled sources
-    this.deps.persistSession(managed)
+    const { managed, resultContent } = completion
 
     // Update source runtime config/credentials for backends that need it
     if (result.success && result.sourceSlug) {
-      const workspaceRootPath = managed.workspace.rootPath
-      const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
-      const enabledSlugs = managed.enabledSourceSlugs || []
-      const allSources = loadAllSources(
-        getResourceProjectRoot(managed.workspace),
-        managed.workspace.id,
-      )
-      const enabledSources = allSources.filter(s =>
-        enabledSlugs.includes(s.config.slug) && isSourceUsable(s)
-      )
-      const { mcpServers, resolvedSources } = await buildServersFromSources(
-        enabledSources,
-        sessionPath,
-        managed.tokenRefreshManager,
-        undefined,
-        managed.workspace,
-      )
       await this.deps.withAgentRuntimeLock(managed, async () => {
         if (!managed.agent) return
+        managed.agent.markSourceUnseen(result.sourceSlug!)
+        const workspaceRootPath = managed.workspace.rootPath
+        const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
+        const enabledSlugs = managed.enabledSourceSlugs || []
+        const allSources = loadAllSources(
+          getResourceProjectRoot(managed.workspace),
+          managed.workspace.id,
+        )
+        const enabledSources = allSources.filter(s =>
+          enabledSlugs.includes(s.config.slug) && isSourceUsable(s)
+        )
+        const { mcpServers, resolvedSources } = await buildServersFromSources(
+          enabledSources,
+          sessionPath,
+          managed.tokenRefreshManager,
+          undefined,
+          managed.workspace,
+        )
         await managed.agent.applyBridgeUpdates({ sessionPath, enabledSources: resolvedSources, mcpServers, sessionId: managed.id, workspaceRootPath, context: 'source auth' })
       })
     }
@@ -225,69 +228,66 @@ export class AuthFlow {
     requestId: string,
     response: import('@craft-agent/shared/protocol').CredentialResponse
   ): Promise<void> {
-    const managed = this.deps.getSession(sessionId)
-    if (!managed?.pendingAuthRequest) {
-      getSessionLog().warn(`Cannot handle credential input - no pending auth request for session ${sessionId}`)
-      return
-    }
-
-    const request = managed.pendingAuthRequest as CredentialAuthRequest
-    if (request.requestId !== requestId) {
-      getSessionLog().warn(`Credential request ID mismatch: expected ${request.requestId}, got ${requestId}`)
-      return
-    }
-
-    if (response.cancelled) {
-      await this.completeAuthRequest(sessionId, {
-        requestId,
-        sourceSlug: request.sourceSlug,
-        success: false,
-        cancelled: true,
-      })
-      return
-    }
-
-    try {
-      const source = loadSource(
-        getResourceProjectRoot(managed.workspace),
-        request.sourceSlug,
-        managed.workspace.id,
-      )
-      if (!source) throw new Error(`Source not found: ${request.sourceSlug}`)
-      if (
-        !isFreeConversationWorkspaceId(managed.workspace.id)
-        && !isSourceHostGranted(managed.workspace.defaultEnabledSourceRefs, source)
-      ) {
-        throw new Error(`Source '${request.sourceSlug}' is not enabled by Host settings.`)
+    const result = await this.deps.withSessionOperation<AuthResult | null>(sessionId, async managed => {
+      if (!managed.pendingAuthRequest) {
+        getSessionLog().warn(`Cannot handle credential input - no pending auth request for session ${sessionId}`)
+        return null
       }
 
-      const value = request.mode === 'basic'
-        ? JSON.stringify({ username: response.username, password: response.password })
-        : request.mode === 'multi-header'
-          ? JSON.stringify(response.headers)
-          : response.value!
-      const credentialManager = getSourceCredentialManager()
-      await credentialManager.save(source, { value })
-      credentialManager.markSourceAuthenticated(source)
-
-      // Mark source as unseen so fresh guide is injected on next message
-      if (managed.agent) {
-        managed.agent.markSourceUnseen(request.sourceSlug)
+      const request = managed.pendingAuthRequest as CredentialAuthRequest
+      if (request.requestId !== requestId) {
+        getSessionLog().warn(`Credential request ID mismatch: expected ${request.requestId}, got ${requestId}`)
+        return null
       }
 
-      await this.completeAuthRequest(sessionId, {
-        requestId,
-        sourceSlug: request.sourceSlug,
-        success: true,
-      })
-    } catch (error) {
-      getSessionLog().error(`Failed to save credentials for ${request.sourceSlug}:`, error)
-      await this.completeAuthRequest(sessionId, {
-        requestId,
-        sourceSlug: request.sourceSlug,
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to save credentials',
-      })
-    }
+      if (response.cancelled) {
+        return {
+          requestId,
+          sourceSlug: request.sourceSlug,
+          success: false,
+          cancelled: true,
+        }
+      }
+
+      try {
+        const source = loadSource(
+          getResourceProjectRoot(managed.workspace),
+          request.sourceSlug,
+          managed.workspace.id,
+        )
+        if (!source) throw new Error(`Source not found: ${request.sourceSlug}`)
+        if (
+          !isFreeConversationWorkspaceId(managed.workspace.id)
+          && !isSourceHostGranted(managed.workspace.defaultEnabledSourceRefs, source)
+        ) {
+          throw new Error(`Source '${request.sourceSlug}' is not enabled by Host settings.`)
+        }
+
+        const value = request.mode === 'basic'
+          ? JSON.stringify({ username: response.username, password: response.password })
+          : request.mode === 'multi-header'
+            ? JSON.stringify(response.headers)
+            : response.value!
+        const credentialManager = getSourceCredentialManager()
+        await credentialManager.save(source, { value })
+        credentialManager.markSourceAuthenticated(source)
+
+        return {
+          requestId,
+          sourceSlug: request.sourceSlug,
+          success: true,
+        }
+      } catch (error) {
+        getSessionLog().error(`Failed to save credentials for ${request.sourceSlug}:`, error)
+        return {
+          requestId,
+          sourceSlug: request.sourceSlug,
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to save credentials',
+        }
+      }
+    })
+
+    if (result) await this.completeAuthRequest(sessionId, result)
   }
 }

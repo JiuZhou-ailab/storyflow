@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'path'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { getPreferencesPath, getSystemInstructionsPath, getUserProfilePath, saveSystemInstructionsMarkdown, saveUserProfileMarkdown, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, getDefaultLlmConnection, getDefaultThinkingLevel, getLlmConnections, normalizeLlmConnectionSlug, setDefaultLlmSelection, setDefaultThinkingLevel } from '@craft-agent/shared/config'
+import { getPreferencesPath, getSystemInstructionsPath, getUserProfilePath, saveSystemInstructionsMarkdown, saveUserProfileMarkdown, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, getDefaultLlmConnection, getDefaultThinkingLevel, getLlmConnections, normalizeLlmConnectionSlug, setDefaultLlmSelection, setDefaultThinkingLevel, updateWorkspaceName } from '@craft-agent/shared/config'
 import { isValidThinkingLevel, normalizeThinkingLevel, THINKING_LEVEL_IDS } from '@craft-agent/shared/agent/thinking-levels'
 
 const VALID_THINKING_LEVELS_LIST = THINKING_LEVEL_IDS.map(id => `'${id}'`).join(', ')
@@ -14,11 +14,11 @@ import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { requestClientOpenFileDialog } from '@craft-agent/server-core/transport'
 import { isValidWorkingDirectory } from '../../utils/path-validation'
-import { isPathWithinProjectRoot } from '@craft-agent/shared/workspaces'
 import {
   loadWorkspaceSources,
   resolveHostGrantedSourceSlugs,
 } from '@craft-agent/shared/sources'
+import { grantWorkspaceWorkingDirectory } from '@craft-agent/shared/workspaces'
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.workspace.SETTINGS_GET,
@@ -129,7 +129,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
       const config = loadWorkspaceConfig(workspace.rootPath)
 
       return {
-        name: config?.name ?? workspace.name,
+        name: workspace.name,
         model: config?.defaults?.model,
         permissionMode: workspace.defaultPermissionMode,
         cyclablePermissionModes: config?.defaults?.cyclablePermissionModes,
@@ -149,7 +149,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Update a workspace setting
   server.handle(RPC_CHANNELS.workspace.SETTINGS_UPDATE, async (_ctx, workspaceId: string, key: string, value: unknown) => {
     getWorkspaceOrThrow(workspaceId)
-    const normalizedValue = key === 'workingDirectory' && typeof value === 'string'
+    let normalizedValue = key === 'workingDirectory' && typeof value === 'string'
       ? value.trim()
       : value
 
@@ -179,22 +179,25 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
       if (key === 'workingDirectory' && normalizedValue !== undefined && normalizedValue !== null) {
         const validation = isValidWorkingDirectory(String(normalizedValue))
         if (!validation.valid) throw new Error(validation.reason!)
-        if (!isPathWithinProjectRoot(workspace.rootPath, String(normalizedValue))) {
-          throw new Error('Project working directory must stay inside the Project root.')
-        }
+        normalizedValue = grantWorkspaceWorkingDirectory(
+          workspace.id,
+          String(normalizedValue),
+        ).workingDirectory
       }
 
       const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
       const config = loadWorkspaceConfig(workspace.rootPath)
       if (!config) throw new Error(`Failed to load workspace config: ${workspaceId}`)
 
-      if (key === 'name') config.name = String(normalizedValue).trim()
-      else {
+      if (key === 'name') {
+        config.name = String(normalizedValue).trim()
+      } else {
         config.defaults = config.defaults || {}
         ;(config.defaults as Record<string, unknown>)[key] = normalizedValue
       }
 
       saveWorkspaceConfig(workspace.rootPath, config)
+      if (key === 'name') updateWorkspaceName(workspace.id, config.name)
       deps.platform.logger.info(`Workspace setting updated: ${key} = ${JSON.stringify(normalizedValue)}`)
     })
   })

@@ -77,7 +77,7 @@ function createFileHarness(options: {
         return work(attachmentSessionPath)
       },
     } as unknown as HandlerDeps['sessionManager'],
-    resolveRuntimeWorkspace: (id: string) => {
+    resolveRuntimeWorkspaceById: (id: string) => {
       const rootPath = id === 'workspace-1'
         ? workspaceRootPath
         : id === 'stale-workspace'

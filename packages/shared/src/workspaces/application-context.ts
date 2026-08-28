@@ -9,7 +9,8 @@ import {
   FREE_CONVERSATION_WORKSPACE_SLUG,
 } from '../protocol/dto.ts'
 import { CONFIG_DIR } from '../config/paths.ts'
-import { getWorkspaceByNameOrId, getWorkspaces } from '../config/storage.ts'
+import { getWorkspaceById, getWorkspaceByNameOrId, getWorkspaces } from '../config/storage.ts'
+import { isWorkspaceRootAvailable } from './project-registry.ts'
 
 export { FREE_CONVERSATION_WORKSPACE_SLUG } from '../protocol/dto.ts'
 
@@ -33,13 +34,20 @@ export function resolveRuntimeWorkspace(workspaceId: string): Workspace | null {
   if (isFreeConversationWorkspaceId(workspaceId)) {
     return getFreeConversationWorkspace()
   }
-  const workspace = getWorkspaceByNameOrId(workspaceId)
-  return workspace?.rootAvailable === false ? null : workspace
+  return getWorkspaceByNameOrId(workspaceId)
+}
+
+/** Resolve an internal Project reference without allowing a Host name to impersonate its ID. */
+export function resolveRuntimeWorkspaceById(workspaceId: string): Workspace | null {
+  if (isFreeConversationWorkspaceId(workspaceId)) {
+    return getFreeConversationWorkspace()
+  }
+  return getWorkspaceById(workspaceId)
 }
 
 export function listSessionWorkspaces(): Workspace[] {
   return [
     getFreeConversationWorkspace(),
-    ...getWorkspaces().filter(workspace => !workspace.remoteServer && workspace.rootAvailable !== false),
+    ...getWorkspaces().filter(workspace => !workspace.remoteServer && isWorkspaceRootAvailable(workspace)),
   ]
 }

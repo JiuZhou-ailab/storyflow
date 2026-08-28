@@ -12,7 +12,12 @@ import {
 import { resolveSessionConnection } from '@craft-agent/shared/agent/backend'
 import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
 import { updateSessionMetadata, type SessionStatus } from '@craft-agent/shared/sessions'
-import { isFreeConversationWorkspaceId, isPathWithinProjectRoot, loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
+import {
+  grantWorkspaceWorkingDirectory,
+  isFreeConversationWorkspaceId,
+  loadWorkspaceConfig,
+  resolveWorkspaceWorkingDirectory,
+} from '@craft-agent/shared/workspaces'
 import { invalidateSkillsCache } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
 import { canSwitchSessionModelConnection } from '@craft-agent/server-core/domain'
@@ -306,38 +311,36 @@ export class SessionCrudMetadata {
         return
       }
 
-      const validation = isValidWorkingDirectory(path)
-      if (!validation.valid) {
-        getSessionLog().warn(`Session ${sessionId}: rejected working directory "${path}" — ${validation.reason}`)
+      let workingDirectory: string
+      try {
+        const validation = isValidWorkingDirectory(path)
+        if (!validation.valid) throw new Error(validation.reason!)
+        try {
+          workingDirectory = resolveWorkspaceWorkingDirectory(managed.workspace, path)
+        } catch {
+          const granted = grantWorkspaceWorkingDirectory(managed.workspace.id, path)
+          managed.workspace = granted.workspace
+          workingDirectory = granted.workingDirectory
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        getSessionLog().warn(`Session ${sessionId}: rejected working directory "${path}" — ${reason}`)
         this.deps.sendEvent({
           type: 'working_directory_error',
           sessionId,
-          error: validation.reason!,
+          error: reason,
         }, managed.workspace.id)
         return
       }
-      if (!isPathWithinProjectRoot(managed.workspace.rootPath, path)) {
-        getSessionLog().warn(`Session ${sessionId}: rejected working directory outside the Project root`)
-        this.deps.sendEvent({
-          type: 'working_directory_error',
-          sessionId,
-          error: 'Working directory must stay inside the Project root.',
-        }, managed.workspace.id)
-        return
-      }
-
-      managed.workingDirectory = path
-      // Read-compatible legacy field. Pi persistence is isolated by the explicit
-      // PiSessionManager path; new runtime behavior uses workingDirectory as cwd.
-      managed.sdkCwd = path
+      managed.workingDirectory = workingDirectory
 
       // Invalidate filesystem caches that depend on working directory
-      invalidateContextFileCache(path)
+      invalidateContextFileCache(workingDirectory)
       invalidateSkillsCache()
 
       this.deps.persistSession(managed)
       // Notify renderer of the working directory change
-      this.deps.sendEvent({ type: 'working_directory_changed', sessionId, workingDirectory: path }, managed.workspace.id)
+      this.deps.sendEvent({ type: 'working_directory_changed', sessionId, workingDirectory }, managed.workspace.id)
     }
   }
 

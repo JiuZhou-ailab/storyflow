@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 import { readdirSync, rmSync, statSync } from 'fs'
 import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults/skills'
 import { RPC_CHANNELS, type SkillFile } from '@craft-agent/shared/protocol'
-import { isFreeConversationWorkspaceId, resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
+import { isFreeConversationWorkspaceId, resolveRuntimeWorkspaceById } from '@craft-agent/shared/workspaces'
 import type { LoadedSkill } from '@craft-agent/shared/skills'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -28,7 +28,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
   }
 
   const loadWorkspaceCatalog = async (
-    workspace: NonNullable<ReturnType<typeof resolveRuntimeWorkspace>>,
+    workspace: NonNullable<ReturnType<typeof resolveRuntimeWorkspaceById>>,
     workingDirectory?: string,
   ) => {
     const { loadPiSkillCatalog } = await import('@craft-agent/shared/skills')
@@ -42,7 +42,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
   }
 
   const findWorkspaceSkill = async (
-    workspace: NonNullable<ReturnType<typeof resolveRuntimeWorkspace>>,
+    workspace: NonNullable<ReturnType<typeof resolveRuntimeWorkspaceById>>,
     skillSlug: string,
   ) => {
     const catalog = await loadWorkspaceCatalog(workspace)
@@ -69,7 +69,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
 
   server.handle(RPC_CHANNELS.skills.GET, async (_ctx, workspaceId: string, workingDirectory?: string) => {
     deps.platform.logger?.info(`SKILLS_GET: Loading skills for workspace: ${workspaceId}${workingDirectory ? `, workingDirectory: ${workingDirectory}` : ''}`)
-    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const workspace = resolveRuntimeWorkspaceById(workspaceId)
     if (!workspace) {
       deps.platform.logger?.error(`SKILLS_GET: Workspace not found: ${workspaceId}`)
       return []
@@ -85,7 +85,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
 
   // Get files in a skill directory
   server.handle(RPC_CHANNELS.skills.GET_FILES, async (_ctx, workspaceId: string, skillSlug: string) => {
-    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const workspace = resolveRuntimeWorkspaceById(workspaceId)
     if (!workspace) {
       deps.platform.logger?.error(`SKILLS_GET_FILES: Workspace not found: ${workspaceId}`)
       return []
@@ -136,7 +136,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     skillSlug: string,
     workingDirectory?: string,
   ) => {
-    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const workspace = resolveRuntimeWorkspaceById(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
     const catalog = await loadWorkspaceCatalog(workspace, workingDirectory)
@@ -165,7 +165,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
     content: string,
   ) => {
     await assertSkillSlug(skillSlug)
-    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const workspace = resolveRuntimeWorkspaceById(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
     const { createSkill } = await import('@craft-agent/shared/skills')
@@ -175,7 +175,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
   })
 
   server.handle(RPC_CHANNELS.skills.DELETE, async (_ctx, workspaceId: string, skillSlug: string) => {
-    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const workspace = resolveRuntimeWorkspaceById(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
     const candidate = assertDeletableSkill(await findWorkspaceSkill(workspace, skillSlug))
@@ -186,7 +186,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
         await deleteResolvedSkill(current)
       })
     } else {
-      const currentWorkspace = resolveRuntimeWorkspace(workspaceId)
+      const currentWorkspace = resolveRuntimeWorkspaceById(workspaceId)
       if (!currentWorkspace) throw new Error('Workspace not found')
       const current = assertDeletableSkill(await findWorkspaceSkill(currentWorkspace, skillSlug))
       if (
@@ -206,7 +206,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
 
   // Open skill SKILL.md in editor
   server.handle(RPC_CHANNELS.skills.OPEN_EDITOR, async (_ctx, workspaceId: string, skillSlug: string) => {
-    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const workspace = resolveRuntimeWorkspaceById(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
     if (workspace.remoteServer) throw new Error('Open in editor is not available for remote workspaces')
 
@@ -217,7 +217,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
 
   // Open skill folder in Finder/Explorer
   server.handle(RPC_CHANNELS.skills.OPEN_FINDER, async (_ctx, workspaceId: string, skillSlug: string) => {
-    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const workspace = resolveRuntimeWorkspaceById(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
     if (workspace.remoteServer) throw new Error('Show in Finder is not available for remote workspaces')
 

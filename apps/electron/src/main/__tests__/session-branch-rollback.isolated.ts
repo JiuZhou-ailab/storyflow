@@ -7,13 +7,14 @@ import { mkdirSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 
 const workspaceRootPath = '/tmp/ws-rollback'
-const workspace = {
+const workspace: Record<string, any> = {
   id: 'ws-1',
   name: 'Workspace',
   rootPath: workspaceRootPath,
 }
 
 let idCounter = 0
+let migrationError: Error | undefined
 const storedById = new Map<string, any>()
 const deletedIds: string[] = []
 
@@ -80,8 +81,14 @@ mock.module('../logger', () => {
 mock.module('@craft-agent/shared/config', () => ({
   ...actualSharedConfigModule,
   CONFIG_DIR: '/tmp/craft-agent',
+  getWorkspaceById: (id: string) => (id === workspace.id ? workspace : null),
   getWorkspaceByNameOrId: (id: string) => (id === workspace.id ? workspace : null),
   getWorkspaces: () => [workspace],
+  loadStoredConfig: () => ({
+    workspaces: [workspace],
+    activeWorkspaceId: workspace.id,
+    activeSessionId: null,
+  }),
   loadConfigDefaults: () => ({
     workspaceDefaults: {
       permissionMode: 'ask',
@@ -145,10 +152,31 @@ mock.module('@craft-agent/shared/workspaces', () => ({
   isFreeConversationWorkspaceId: () => false,
   listSessionWorkspaces: () => [workspace],
   resolveRuntimeWorkspace: (id: string) => (id === workspace.id ? workspace : null),
+  resolveRuntimeWorkspaceById: (id: string) => (id === workspace.id ? workspace : null),
   isWorkspaceRootAvailable: () => true,
   isPathWithinProjectRoot: () => true,
-  prepareWorkspaceRootRelink: () => ({ workspace, previousRootPath: workspace.rootPath }),
-  commitWorkspaceRootRelink: () => workspace,
+  resolveVerifiedWorkspaceWorkingDirectory: (_workspace: unknown, path: string) => path,
+  resolveWorkspaceWorkingDirectory: (_workspace: unknown, path: string) => path,
+  grantWorkspaceWorkingDirectory: (_workspaceId: string, path: string) => ({ workspace, workingDirectory: path }),
+  migrateLegacyLocalProjectDirectoryIdentity: async () => {
+    if (migrationError) throw migrationError
+    return { applied: false, restoredDirectoryIdentity: false }
+  },
+  discoverLegacyWorkingDirectoryRoots: async () => {
+    if (migrationError) throw migrationError
+    return []
+  },
+  prepareWorkspaceRootRelink: (_projectId: string, currentRoot: string) => ({
+    projectId: workspace.id,
+    previousRoot: workspace.rootPath,
+    currentRoot,
+    directoryConfigId: 'directory-id',
+    workspace: { ...workspace, rootPath: currentRoot },
+  }),
+  commitWorkspaceRootRelink: (plan: { workspace: Record<string, any> }) => {
+    Object.assign(workspace, plan.workspace)
+    return { ...workspace }
+  },
   rebaseWorkspaceDefaultWorkingDirectory: (_workspace: unknown, rootPath: string) => rootPath,
   rebasePathWithinProjectRoot: (candidatePath: string | undefined) => candidatePath,
   registerLocalProject: () => workspace,
@@ -330,6 +358,9 @@ const { SessionManager } = await import('@craft-agent/server-core/sessions')
 describe('session branch rollback on preflight failure', () => {
   beforeEach(() => {
     idCounter = 0
+    migrationError = undefined
+    workspace.rootPath = workspaceRootPath
+    delete workspace.grantedWorkingDirectoryRoots
     storedById.clear()
     deletedIds.length = 0
     rmSync(workspaceRootPath, { recursive: true, force: true })
@@ -476,5 +507,17 @@ describe('session branch rollback on preflight failure', () => {
     expect(storedById.get('legacy-import')?.agentRuntime).toBeUndefined()
     expect((manager as any).sessions.get('legacy-import')?.agentRuntime).toBeUndefined()
     expect((manager as any).sessions.get('legacy-import')?.needsPiMigrationSeed).toBe(true)
+  })
+
+  it('does not commit a relink when legacy grant discovery fails', async () => {
+    const manager = new SessionManager()
+    const currentRoot = '/tmp/ws-relinked'
+    migrationError = new Error('grant discovery failed')
+    ;(manager as any).setupConfigWatcher = () => {}
+
+    await expect(manager.rebindWorkspaceRoot(workspace.id, currentRoot))
+      .rejects.toThrow('grant discovery failed')
+
+    expect(workspace.rootPath).toBe(workspaceRootPath)
   })
 })

@@ -4,7 +4,7 @@
 
 import { afterEach, expect, it, jest } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
@@ -20,14 +20,23 @@ afterEach(() => {
 })
 
 function createHarness() {
-  const rootPath = mkdtempSync(join(tmpdir(), 'rewind-transaction-'))
-  const manager = new SessionManager()
+  const rootPath = realpathSync(mkdtempSync(join(tmpdir(), 'rewind-transaction-')))
+  mkdirSync(join(rootPath, '.craft-agent'), { recursive: true })
+  writeFileSync(join(rootPath, '.craft-agent', 'config.json'), JSON.stringify({
+    id: 'directory-rewind',
+    name: 'Rewind Workspace',
+    slug: 'rewind-workspace',
+    createdAt: 1,
+    updatedAt: 1,
+  }))
+  const manager = new SessionManager((_workspaceId, managed) => managed.workspace)
   const managed = createManagedSession(
     { id: `rewind-session-${randomUUID()}`, name: 'rewind test' },
     {
       id: 'rewind-workspace',
       name: 'Rewind Workspace',
       rootPath,
+      directoryConfigId: 'directory-rewind',
       createdAt: Date.now(),
     } as never,
     { messagesLoaded: true },

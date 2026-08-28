@@ -12,7 +12,7 @@ mock.module('../../../config/preferences.ts', () => ({
   formatPreferencesForPrompt: () => '',
 }))
 
-function createBuilder(rootPath: string): PromptBuilder {
+function createBuilder(rootPath: string, workingDirectory = rootPath, sdkCwd?: string): PromptBuilder {
   return new PromptBuilder({
     workspace: {
       id: 'workspace',
@@ -24,7 +24,8 @@ function createBuilder(rootPath: string): PromptBuilder {
     session: {
       id: 'session',
       workspaceRootPath: rootPath,
-      workingDirectory: rootPath,
+      workingDirectory,
+      sdkCwd,
       createdAt: Date.now(),
       lastUsedAt: Date.now(),
     },
@@ -33,6 +34,16 @@ function createBuilder(rootPath: string): PromptBuilder {
 }
 
 describe('PromptBuilder project context', () => {
+  it('treats the selected Pi cwd as effective instead of legacy sdkCwd metadata', () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-prompt-sdk-cwd-'))
+    const workingDirectory = mkdtempSync(join(tmpdir(), 'craft-prompt-pi-cwd-'))
+    const context = createBuilder(rootPath, workingDirectory, rootPath).getWorkingDirectoryContext()
+
+    expect(context).toContain(`<working_directory>${workingDirectory}</working_directory>`)
+    expect(context).not.toContain('bash shell runs from a different directory')
+    expect(context).not.toContain(rootPath)
+  })
+
   it('injects a bounded workspace structure on every turn', () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-workspace-state-'))
     mkdirSync(join(rootPath, '正文'), { recursive: true })

@@ -19,7 +19,6 @@ import type { Message, StoredAttachment, TurnMetrics } from '@craft-agent/core/t
 import { normalizeThinkingLevel, type ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels';
 import {
   isFreeConversationWorkspaceId,
-  isPathWithinProjectRoot,
   loadWorkspaceConfig,
 } from '@craft-agent/shared/workspaces';
 import { isSourceHostGranted, resolveHostGrantedSourceSlugs, type LoadedSource } from '@craft-agent/shared/sources';
@@ -279,13 +278,6 @@ export function createManagedSessionState(
     managed.workingDirectory = isFreeConversationWorkspaceId(workspace.id)
       ? getSessionStoragePath(workspace.rootPath, managed.id)
       : workspace.rootPath;
-  } else if (
-    !isFreeConversationWorkspaceId(workspace.id)
-    && !isPathWithinProjectRoot(workspace.rootPath, managed.workingDirectory)
-  ) {
-    log(`Session ${managed.id}: rejected Project-owned cwd outside ${workspace.rootPath}`);
-    managed.workingDirectory = workspace.rootPath;
-    managed.sdkCwd = undefined;
   }
   if (managed.branchFromMessageId && !managed.branchContextStrategy) {
     managed.branchContextStrategy = managed.branchFromSdkSessionId

@@ -29,7 +29,11 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
 
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-oauth-refresh-'))
-    sm = new SessionManager()
+    mkdirSync(join(tmpRoot, '.craft-agent'), { recursive: true })
+    writeFileSync(join(tmpRoot, '.craft-agent', 'config.json'), JSON.stringify({
+      id: 'directory-test', name: 'Test Workspace', slug: 'test-workspace', createdAt: 1, updatedAt: 1,
+    }))
+    sm = new SessionManager((_workspaceId, managed) => managed.workspace)
   })
 
   afterEach(async () => {
@@ -47,6 +51,7 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
       name: 'Test Workspace',
       rootPath: tmpRoot,
       createdAt: Date.now(),
+      directoryConfigId: 'directory-test',
     }
     const managed = createManagedSession(
       { id, name: 'oauth-refresh test' },

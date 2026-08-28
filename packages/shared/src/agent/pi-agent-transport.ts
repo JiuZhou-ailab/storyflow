@@ -272,7 +272,6 @@ export abstract class PiAgentTransport extends PiAgentHost {
     }
 
     const nodePath = runtime.paths?.node || process.execPath;
-    const cwd = this.resolvedCwd();
     const piServerIsScript = /\.(?:[cm]?js|ts)$/.test(piServerPath);
     const executablePath = piServerIsScript ? nodePath : piServerPath;
 
@@ -311,6 +310,12 @@ export abstract class PiAgentTransport extends PiAgentHost {
 
     // Derive AWS env vars from the piAuth credential (single fetch, no race).
     const awsEnv = this.buildAwsEnv(piAuth, runtime);
+
+    // Revalidate at the spawn sink, after credential awaits, so a replaced cwd
+    // cannot redirect the subprocess through a stale symlink target.
+    const requestedCwd = this.resolvedCwd();
+    const cwd = this.config.validateWorkingDirectory?.(requestedCwd) ?? requestedCwd;
+    if (cwd !== requestedCwd) this.updateWorkingDirectory(cwd);
 
     // Spawn the subprocess
     const child = spawn(executablePath, args, {
@@ -362,7 +367,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
       ? getSessionPath(this.config.workspace.rootPath, sessionId)
       : '';
     const plansFolderPath = getSessionPlansPath(this.config.workspace.rootPath, sessionId);
-    const workingDirectory = this.config.session?.workingDirectory || cwd;
+    const workingDirectory = cwd;
 
     // Send init command (flat structure matching subprocess InboundMessage type)
     this.send({

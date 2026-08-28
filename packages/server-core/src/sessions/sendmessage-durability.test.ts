@@ -3,7 +3,7 @@
 // pos: Guards send acceptance and runtime ownership across concurrent session operations
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { getSessionFilePath, sessionPersistenceQueue } from '@craft-agent/shared/sessions/storage'
@@ -37,7 +37,7 @@ describe('sendMessage durability', () => {
     writeFileSync(join(tmpRoot, '.craft-agent', 'config.json'), JSON.stringify({
       id: 'directory-test', name: 'Test Workspace', slug: 'test-workspace', createdAt: 1, updatedAt: 1,
     }))
-    sm = new SessionManager()
+    sm = new SessionManager((_workspaceId, managed) => managed.workspace)
     clearMetrics()
   })
 
@@ -65,7 +65,7 @@ describe('sendMessage durability', () => {
     const workspace = {
       id: 'ws_test',
       name: 'Test Workspace',
-      rootPath: tmpRoot,
+      rootPath: realpathSync(tmpRoot),
       directoryConfigId: 'directory-test',
       createdAt: Date.now(),
     }
@@ -214,7 +214,7 @@ describe('sendMessage durability', () => {
     expect(onDiskAtAck).toBe(true)
     expectAcceptMetric(acceptMetricAtAck, 'queued')
 
-    const restoredManager = new SessionManager()
+    const restoredManager = new SessionManager((_workspaceId, managed) => managed.workspace)
     const restored = createManagedSession(
       { id: sessionId, name: 'restored queue' },
       managed.workspace,
@@ -227,6 +227,41 @@ describe('sendMessage durability', () => {
     }).persistence).loadMessagesFromDisk(restored)
     expect(restored.messageQueue[0]?.options?.workspaceFreshnessContext)
       .toBe('read chapter-2.md before editing')
+  })
+
+  it('dequeues a replay only inside the durable send transaction', async () => {
+    const sessionId = 'durability-queued-replay'
+    const managed = buildSession(sessionId)
+    managed.messages = [
+      { id: 'queued-1', role: 'user', content: 'later', timestamp: 1, isQueued: true },
+      { id: 'answer-1', role: 'assistant', content: 'done', timestamp: 2 },
+    ] as never
+    managed.messageQueue = [{ message: 'later', messageId: 'queued-1' }]
+    const agent = {
+      getModel: () => 'test-model',
+      setAllSources: () => {},
+      getSessionId: () => undefined,
+      chat: async function* () { yield { type: 'complete' } },
+    }
+    ;(sm as any).getOrCreateAgentLocked = async () => agent
+    let durableAtAck = false
+
+    await sm.sendMessage(
+      sessionId,
+      'later',
+      undefined,
+      undefined,
+      undefined,
+      'queued-1',
+      () => {
+        durableAtAck = managed.messageQueue.length === 0
+          && readPersistedMessageIds(sessionId).at(-1) === 'queued-1'
+      },
+    )
+
+    expect(durableAtAck).toBe(true)
+    expect(managed.messageQueue).toEqual([])
+    expect(managed.messages.map(message => message.id)).toEqual(['answer-1', 'queued-1'])
   })
 
   it('keeps one-time and interruption context out of the durable model message', async () => {
@@ -516,6 +551,37 @@ describe('sendMessage durability', () => {
     expect(existsSync(notePath)).toBe(false)
   })
 
+  it('waits for an accepted export before durable deletion', async () => {
+    const sessionId = 'delete-export-lease'
+    const managed = buildSession(sessionId)
+    ;(sm as unknown as { persistSession(session: typeof managed): void }).persistSession(managed)
+    await sm.flushSession(sessionId)
+
+    let markExportStarted!: () => void
+    let finishExport!: () => void
+    const exportStarted = new Promise<void>(resolve => { markExportStarted = resolve })
+    const exportGate = new Promise<void>(resolve => { finishExport = resolve })
+    ;(sm as any).exportImport.exportSession = async () => {
+      markExportStarted()
+      await exportGate
+      return null
+    }
+
+    const exporting = sm.exportSession(sessionId, 'ws_test')
+    await exportStarted
+    let deletionFinished = false
+    const deletion = sm.deleteSession(sessionId).then(() => { deletionFinished = true })
+    await Promise.resolve()
+
+    expect(managed.runtimeState).toBe('deleting')
+    expect(deletionFinished).toBe(false)
+
+    finishExport()
+    await expect(exporting).resolves.toBeNull()
+    await deletion
+    expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
+  })
+
   it('does not let deletion race ahead of an accepted send transaction', async () => {
     const sessionId = 'delete-send-acceptance'
     const managed = buildSession(sessionId)
@@ -609,7 +675,7 @@ describe('sendMessage durability', () => {
     sm.setEventSink((_channel, _target, event) => {
       if (event?.type === 'text_complete') assistantCompleted = true
     })
-    sm.setActiveViewingSession(sessionId, 'ws_test')
+    await sm.setActiveViewingSession(sessionId, 'ws_test')
     ;(sm as unknown as { getOrCreateAgentLocked: () => Promise<unknown> }).getOrCreateAgentLocked = async () => ({
       getModel: () => 'test-model',
       setAllSources: () => {},
@@ -655,7 +721,7 @@ describe('plan submission durability', () => {
 
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-plan-durability-'))
-    sm = new SessionManager()
+    sm = new SessionManager((_workspaceId, managed) => managed.workspace)
   })
 
   afterEach(() => {

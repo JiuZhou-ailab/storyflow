@@ -23,7 +23,11 @@ import type {
   ManagedModelAccess,
 } from '@craft-agent/shared/agent/backend/types'
 import { getEnable1MContext, getExtendedPromptCache, getMiniModel } from '@craft-agent/shared/config'
-import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
+import {
+  isFreeConversationWorkspaceId,
+  loadWorkspaceConfig,
+  resolveWorkspaceWorkingDirectory,
+} from '@craft-agent/shared/workspaces'
 import { getSessionPath as getSessionStoragePath, sessionPersistenceQueue } from '@craft-agent/shared/sessions'
 import { loadAllSources, isSourceUsable } from '@craft-agent/shared/sources'
 import { perf } from '@craft-agent/shared/utils'
@@ -369,9 +373,15 @@ export class AgentRuntime {
    * 1. session.llmConnection (locked after first message)
    * 2. workspace.defaults.defaultLlmConnection
    * 3. global defaultLlmConnection
-   * 4. fallback: no connection configured
-   */
+  * 4. fallback: no connection configured
+  */
   async getOrCreateAgentLocked(managed: ManagedSession): Promise<AgentInstance> {
+    if (!isFreeConversationWorkspaceId(managed.workspace.id)) {
+      managed.workingDirectory = resolveWorkspaceWorkingDirectory(
+        managed.workspace,
+        managed.workingDirectory,
+      )
+    }
     if (managed.credentialRestartRequired && managed.agent && !managed.agent.isProcessing()) {
       await this.disposeManagedAgentRuntime(managed, 'deferred credential reload')
     }
@@ -639,6 +649,12 @@ export class AgentRuntime {
         coreConfig: {
           workspace: managed.workspace,
           projectRoot: getResourceProjectRoot(managed.workspace),
+          validateWorkingDirectory: path => {
+            if (isFreeConversationWorkspaceId(managed.workspace.id)) return path
+            const resolved = resolveWorkspaceWorkingDirectory(managed.workspace, path)
+            managed.workingDirectory = resolved
+            return resolved
+          },
           miniModel,
           thinkingLevel: managed.thinkingLevel,
           managedModelAccess,

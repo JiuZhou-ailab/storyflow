@@ -30,6 +30,7 @@ import {
   isFreeConversationWorkspaceId,
   listSessionWorkspaces,
   loadWorkspaceConfig,
+  resolveVerifiedWorkspaceWorkingDirectory,
 } from '@craft-agent/shared/workspaces'
 import { loadAllSources } from '@craft-agent/shared/sources'
 import { InitGate, orderWorkspacesByActiveFirst } from '@craft-agent/server-core/domain'
@@ -130,6 +131,7 @@ export class SessionPersistence {
           // Load workspace config once per workspace for default working directory
           const wsConfig = loadWorkspaceConfig(workspaceRootPath)
           const wsDefaultWorkingDir = wsConfig?.defaults?.workingDirectory
+          const workingDirectoryCache = new Map<string, string>()
 
           for (const meta of sessionMetadata) {
             const existing = this.deps.getSession(meta.id)
@@ -142,10 +144,25 @@ export class SessionPersistence {
               continue
             }
 
+            const requestedWorkingDirectory = meta.workingDirectory ?? wsDefaultWorkingDir
+            const workingDirectoryKey = requestedWorkingDirectory ?? workspace.rootPath
+            let workingDirectory = requestedWorkingDirectory
+            if (!isFreeConversationWorkspaceId(workspace.id)) {
+              workingDirectory = workingDirectoryCache.get(workingDirectoryKey)
+              if (!workingDirectory) {
+                workingDirectory = resolveVerifiedWorkspaceWorkingDirectory(
+                  workspace,
+                  workingDirectoryKey,
+                  true,
+                )
+                workingDirectoryCache.set(workingDirectoryKey, workingDirectory)
+              }
+            }
+
             // Create managed session from metadata only (messages lazy-loaded on demand)
             const managed = createManagedSession(meta, workspace, {
               enabledSourceSlugs: undefined,
-              workingDirectory: meta.workingDirectory ?? wsDefaultWorkingDir,
+              workingDirectory,
             })
 
             // Migration: clear orphaned llmConnection references (e.g., after connection was deleted)

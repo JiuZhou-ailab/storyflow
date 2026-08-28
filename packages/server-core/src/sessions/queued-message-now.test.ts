@@ -15,7 +15,7 @@ describe('queued message send-now', () => {
 
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-queued-now-'))
-    sm = new SessionManager()
+    sm = new SessionManager((_workspaceId, managed) => managed.workspace)
   })
 
   afterEach(async () => {
@@ -112,7 +112,7 @@ describe('queued message send-now', () => {
     }))
   })
 
-  it('moves a replayed queued message after the completed response', () => {
+  it('hands replay to sendMessage before dequeuing', () => {
     const { sessionId, managed } = buildProcessingSession()
     managed.messages = [
       { id: 'first', role: 'user', content: 'first', timestamp: 1 },
@@ -134,13 +134,17 @@ describe('queued message send-now', () => {
 
     internal.processNextQueuedMessage(sessionId)
 
-    expect(managed.messages.map(message => message.id)).toEqual(['first', 'answer', 'q1'])
-    expect(managed.messages[2]?.timestamp).toBeGreaterThan(3)
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'user_message',
-      status: 'processing',
-      message: expect.objectContaining({ id: 'q1', isQueued: false }),
-    }))
+    expect(replay).toHaveBeenCalledWith(
+      sessionId,
+      'later',
+      undefined,
+      undefined,
+      undefined,
+      'q1',
+    )
+    expect(managed.messageQueue.map(entry => entry.messageId)).toEqual(['q1'])
+    expect(managed.messages.map(message => message.id)).toEqual(['first', 'q1', 'answer'])
+    expect(events).toEqual([])
   })
 
   it('removes a queued message without interrupting the active turn', async () => {

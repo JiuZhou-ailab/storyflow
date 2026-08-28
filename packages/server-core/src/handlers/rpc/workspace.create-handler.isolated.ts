@@ -82,6 +82,7 @@ async function connectRemoteForTest(
 
 mock.module('@craft-agent/shared/config', () => ({
   getWorkspaceByNameOrId: (id: string) => createdWorkspaces.find(workspace => workspace.id === id) ?? null,
+  getWorkspaceCatalog: () => createdWorkspaces,
   getWorkspaces: () => createdWorkspaces,
   setActiveWorkspace: (workspaceId: string) => { activeWorkspaceIds.push(workspaceId) },
   updateWorkspaceRemoteServer: connectRemoteForTest,
@@ -105,7 +106,7 @@ mock.module('@craft-agent/shared/workspaces', () => ({
     workspace.rootPath = rootPath
     return { ...workspace, rootAvailable: true }
   },
-  resolveRuntimeWorkspace: (workspaceId: string) => workspaceId === FREE_CONVERSATION_WORKSPACE_ID
+  resolveRuntimeWorkspaceById: (workspaceId: string) => workspaceId === FREE_CONVERSATION_WORKSPACE_ID
     ? getFreeConversationWorkspace()
     : createdWorkspaces.find(workspace => workspace.id === workspaceId) ?? null,
   resolveProjectOwnedPath,

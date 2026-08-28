@@ -76,18 +76,18 @@ export interface ISessionManager {
   markSessionRead(sessionId: string): Promise<void>
   markSessionUnread(sessionId: string): Promise<void>
   markAllSessionsRead(workspaceId: string): Promise<void>
-  setActiveViewingSession(sessionId: string | null, workspaceId: string): void
+  setActiveViewingSession(sessionId: string | null, workspaceId: string): Promise<void>
   clearActiveViewingSession(workspaceId: string): void
 
   // ---------------------------------------------------------------------------
   // Session configuration
   // ---------------------------------------------------------------------------
 
-  setSessionPermissionMode(sessionId: string, mode: PermissionMode): void
-  setSessionThinkingLevel(sessionId: string, level: ThinkingLevel): void
-  updateWorkingDirectory(sessionId: string, path: string): void
+  setSessionPermissionMode(sessionId: string, mode: PermissionMode): Promise<void>
+  setSessionThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<void>
+  updateWorkingDirectory(sessionId: string, path: string): Promise<void>
   setSessionSources(sessionId: string, sourceSlugs: string[]): Promise<void>
-  setSessionLabels(sessionId: string, labels: string[]): void
+  setSessionLabels(sessionId: string, labels: string[]): Promise<void>
   setSessionConnection(sessionId: string, connectionSlug: string): Promise<void>
   updateSessionModel(sessionId: string, workspaceId: string, model: string | null, connection?: string): Promise<void>
 
@@ -101,7 +101,7 @@ export interface ISessionManager {
     attachments?: FileAttachment[],
     storedAttachments?: StoredAttachment[],
     options?: SendMessageOptions,
-    existingMessageId?: string,
+    existingMessageId?: string | null,
     onAck?: (messageId: string) => void,
   ): Promise<void>
   queryOnce(sessionId: string, request: OneShotLlmRequest): Promise<OneShotLlmResult>
@@ -111,14 +111,14 @@ export interface ISessionManager {
   removeQueuedMessage(sessionId: string, messageId: string): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
-  addMessageAnnotation(sessionId: string, messageId: string, annotation: AnnotationV1): void
-  removeMessageAnnotation(sessionId: string, messageId: string, annotationId: string): void
+  addMessageAnnotation(sessionId: string, messageId: string, annotation: AnnotationV1): Promise<void>
+  removeMessageAnnotation(sessionId: string, messageId: string, annotationId: string): Promise<void>
   updateMessageAnnotation(
     sessionId: string,
     messageId: string,
     annotationId: string,
     patch: Partial<AnnotationV1>,
-  ): void
+  ): Promise<void>
 
   // ---------------------------------------------------------------------------
   // Permissions & credentials

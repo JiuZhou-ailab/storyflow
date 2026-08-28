@@ -20,7 +20,8 @@ import {
   getLlmConnection,
   getLlmConnections,
   getMiniModel,
-  getWorkspaceByNameOrId,
+  getWorkspaceById,
+  getWorkspaces,
 } from '@craft-agent/shared/config'
 import { getDefaultSummarizationModel } from '@craft-agent/shared/config/models'
 import {
@@ -37,7 +38,13 @@ import {
   type StoredSession,
 } from '@craft-agent/shared/sessions'
 import { loadWorkspaceSources } from '@craft-agent/shared/sources'
-import { isFreeConversationWorkspaceId, loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
+import {
+  isFreeConversationWorkspaceId,
+  isWorkspaceRootAvailable,
+  loadWorkspaceConfig,
+  resolveRuntimeWorkspaceById,
+  resolveWorkspaceWorkingDirectory,
+} from '@craft-agent/shared/workspaces'
 import type { Workspace } from '@craft-agent/shared/config'
 import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { storedToMessage } from '@craft-agent/core/types'
@@ -89,7 +96,9 @@ export class ExportImport {
     if (messages.length === 0) return null
     const managedModelAccess = await this.deps.resolveManagedModelAccess(managed)
 
-    const workspaceRootPath = managed.workspace.rootPath
+    const workspace = resolveRuntimeWorkspaceById(managed.workspace.id)
+    if (!workspace) throw new Error(`Project ${managed.workspace.id} is unavailable`)
+    const workspaceRootPath = workspace.rootPath
     const wsConfig = loadWorkspaceConfig(workspaceRootPath)
     const defaultModel = wsConfig?.defaults?.model
     const backendContext = resolveBackendContext({
@@ -111,14 +120,14 @@ export class ExportImport {
       context: backendContext,
       hostRuntime: buildBackendHostRuntimeContext(),
       coreConfig: {
-        workspace: managed.workspace,
+        workspace,
         session: {
           id: `${managed.id}-remote-transfer-summary`,
           workspaceRootPath,
           createdAt: Date.now(),
           lastUsedAt: Date.now(),
-          workingDirectory: managed.workingDirectory,
-          sdkCwd: managed.sdkCwd,
+          workingDirectory: workspaceRootPath,
+          sdkCwd: undefined,
           model: managed.model,
           llmConnection: managed.llmConnection,
           permissionMode: managed.permissionMode,
@@ -254,7 +263,7 @@ export class ExportImport {
       throw new Error('Invalid session bundle')
     }
 
-    const workspace = getWorkspaceByNameOrId(workspaceId)
+    const workspace = getWorkspaceById(workspaceId)
     if (!workspace) {
       throw new Error(`Workspace ${workspaceId} not found`)
     }
@@ -265,7 +274,7 @@ export class ExportImport {
     const workspaceRootPath = workspace.rootPath
 
     // Determine session ID
-    const sessionId = mode === 'move'
+    let sessionId = mode === 'move'
       ? bundle.session.header.id
       : generateSessionId(workspaceRootPath)
 
@@ -280,8 +289,20 @@ export class ExportImport {
       throw new Error(`Session ${sessionId} already exists in target workspace`)
     }
 
-    // Create session directory with all subdirectories
-    const sessionDir = ensureSessionDir(workspaceRootPath, sessionId)
+    if (mode === 'move') {
+      const sourceIdIsHostUnique = getWorkspaces().every(candidate => (
+        candidate.id === workspace.id
+        || candidate.remoteServer
+        || (
+          isWorkspaceRootAvailable(candidate)
+          && !existsSync(getSessionStoragePath(candidate.rootPath, sessionId))
+        )
+      ))
+      if (!sourceIdIsHostUnique) {
+        sessionId = generateSessionId(workspaceRootPath)
+        warnings.push('Session ID was remapped because the source ID could not be proven unique on this Host.')
+      }
+    }
 
     // Build the stored session from bundle data
     const header = bundle.session.header
@@ -363,6 +384,21 @@ export class ExportImport {
       storedSession.workingDirectory = undefined
     }
 
+    if (!isFreeConversationWorkspaceId(workspace.id)) {
+      try {
+        storedSession.workingDirectory = resolveWorkspaceWorkingDirectory(
+          workspace,
+          storedSession.workingDirectory ?? workspaceRootPath,
+          true,
+        )
+      } catch {
+        storedSession.workingDirectory = resolveWorkspaceWorkingDirectory(workspace, workspaceRootPath)
+        if (mode === 'move' && header.workingDirectory) {
+          warnings.push('Working directory is not granted by the target Host; using the target Project root.')
+        }
+      }
+    }
+
     // Check source compatibility (before writing JSONL so fixes are persisted)
     if (storedSession.enabledSourceSlugs?.length) {
       const requestedSourceSlugs = storedSession.enabledSourceSlugs
@@ -401,6 +437,9 @@ export class ExportImport {
     } else if (mode === 'move' && !storedSession.llmConnection) {
       getSessionLog().info('[import] No LLM connection in bundle — will use default')
     }
+
+    // Create only after all target-Host compatibility checks have succeeded.
+    const sessionDir = ensureSessionDir(workspaceRootPath, sessionId)
 
     // Write JSONL file (after compatibility checks so remapped values are persisted)
     const sessionFile = getSessionFilePath(workspaceRootPath, sessionId)

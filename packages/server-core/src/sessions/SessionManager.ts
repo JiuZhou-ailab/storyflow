@@ -40,15 +40,17 @@ import {
   canonicalizeProjectRoot,
   isFreeConversationWorkspaceId,
   commitWorkspaceRootRelink,
+  discoverLegacyWorkingDirectoryRoots,
   isWorkspaceRootAvailable,
-  isPathWithinProjectRoot,
   listSessionWorkspaces,
   loadWorkspaceConfig,
+  migrateLegacyLocalProjectDirectoryIdentity,
   prepareWorkspaceRootRelink,
   rebaseWorkspaceDefaultWorkingDirectory,
   rebasePathWithinProjectRoot,
   registerLocalProject as registerStoredLocalProject,
-  resolveRuntimeWorkspace,
+  resolveRuntimeWorkspaceById,
+  resolveWorkspaceWorkingDirectory,
 } from '@craft-agent/shared/workspaces'
 import {
   // Session persistence functions
@@ -241,7 +243,31 @@ async function refreshExpiredCredentials(
 export { createManagedSession } from './managed-session'
 
 export class SessionManager implements ISessionManager {
+  constructor(
+    private readonly resolveSessionRuntimeWorkspace: (
+      workspaceId: string,
+      managed: ManagedSession,
+    ) => Workspace | null = workspaceId => resolveRuntimeWorkspaceById(workspaceId),
+  ) {}
+
   private sessions: Map<string, ManagedSession> = new Map()
+  /** Refresh the Host-owned Project snapshot before a Session operation or Pi lease. */
+  private refreshSessionWorkspace(managed: ManagedSession): boolean {
+    if (isFreeConversationWorkspaceId(managed.workspace.id)) return false
+    const previous = managed.workspace
+    const current = this.resolveSessionRuntimeWorkspace(previous.id, managed)
+    if (!current) {
+      throw new Error(`Project directory is unavailable; relink Project ${previous.id} before using this Session`)
+    }
+    const previousGrants = previous.grantedWorkingDirectoryRoots ?? []
+    const currentGrants = current.grantedWorkingDirectoryRoots ?? []
+    const runtimeChanged = previous.rootPath !== current.rootPath
+      || previous.directoryConfigId !== current.directoryConfigId
+      || previousGrants.length !== currentGrants.length
+      || previousGrants.some((root, index) => root !== currentGrants[index])
+    managed.workspace = current
+    return runtimeChanged
+  }
   private getMutableSession(sessionId: string): ManagedSession | undefined {
     const managed = this.sessions.get(sessionId)
     return managed?.runtimeState ? undefined : managed
@@ -265,7 +291,8 @@ export class SessionManager implements ISessionManager {
       this.configWatchers.get(workspaceRootPath)?.notifyFileChange(relativePath),
   })
   private authFlow = new AuthFlow({
-    getSession: id => this.sessions.get(id),
+    withSessionOperation: (sessionId, work) =>
+      this.withSessionOperation(sessionId, undefined, work),
     sendEvent: (event, workspaceId) => this.sendEvent(event, workspaceId),
     persistSession: managed => this.persistSession(managed),
     withAgentRuntimeLock: (managed, work, allowClosing) => this.withAgentRuntimeLock(managed, work, allowClosing),
@@ -299,7 +326,7 @@ export class SessionManager implements ISessionManager {
       for (const workspace of workspaces) {
         try {
           await this.withProjectLifecycleLock(workspace.id, async () => {
-            const current = resolveRuntimeWorkspace(workspace.id)
+            const current = resolveRuntimeWorkspaceById(workspace.id)
             if (current) this.setupConfigWatcher(current.rootPath, current.id)
           })
         } catch (error) {
@@ -359,6 +386,17 @@ export class SessionManager implements ISessionManager {
   // Per-session runtime mutex + shared-subprocess lease state live in AgentRuntimeLease.
   private agentLease = new AgentRuntimeLease({
     isSessionTracked: managed => this.sessions.get(managed.id) === managed,
+    refreshSessionWorkspace: managed => this.refreshSessionWorkspace(managed),
+    revalidateAgentWorkingDirectory: managed => {
+      if (isFreeConversationWorkspaceId(managed.workspace.id)) return false
+      const previous = managed.workingDirectory
+      managed.workingDirectory = resolveWorkspaceWorkingDirectory(
+        managed.workspace,
+        managed.workingDirectory,
+      )
+      return managed.workingDirectory !== previous
+    },
+    disposeAgentRuntime: (managed, reason) => this.disposeManagedAgentRuntime(managed, reason),
     getOrCreateAgent: managed => this.getOrCreateAgentLocked(managed),
   })
   // Pi subprocess lifecycle (create/refresh/rotate/dispose) lives in AgentRuntime.
@@ -644,11 +682,11 @@ export class SessionManager implements ISessionManager {
     projectId: string,
     work: (workspace: Workspace) => Promise<T>,
   ): Promise<T> {
-    const resolved = resolveRuntimeWorkspace(projectId)
+    const resolved = resolveRuntimeWorkspaceById(projectId)
     if (!resolved) throw new Error(`Project not found: ${projectId}`)
     const canonicalProjectId = resolved.id
     return this.withProjectLifecycleLock(canonicalProjectId, async () => {
-      const workspace = resolveRuntimeWorkspace(canonicalProjectId)
+      const workspace = resolveRuntimeWorkspaceById(canonicalProjectId)
       if (!workspace) throw new Error(`Project not found: ${projectId}`)
       return work(workspace)
     })
@@ -658,11 +696,11 @@ export class SessionManager implements ISessionManager {
     projectId: string,
     work: (workspace: Workspace) => Promise<T>,
   ): Promise<T> {
-    const resolved = resolveRuntimeWorkspace(projectId)
+    const resolved = resolveRuntimeWorkspaceById(projectId)
     if (!resolved) throw new Error(`Project not found: ${projectId}`)
     const canonicalProjectId = resolved.id
     const lease = await this.withProjectLifecycleLock(canonicalProjectId, async () => {
-      const workspace = resolveRuntimeWorkspace(canonicalProjectId)
+      const workspace = resolveRuntimeWorkspaceById(canonicalProjectId)
       if (!workspace) throw new Error(`Project not found: ${projectId}`)
       return {
         workspace,
@@ -680,11 +718,11 @@ export class SessionManager implements ISessionManager {
     projectId: string,
     work: (workspace: Workspace) => Promise<T>,
   ): Promise<T> {
-    const resolved = resolveRuntimeWorkspace(projectId)
+    const resolved = resolveRuntimeWorkspaceById(projectId)
     if (!resolved) throw new Error(`Project not found: ${projectId}`)
     const canonicalProjectId = resolved.id
     const transition = await this.withProjectLifecycleLock(canonicalProjectId, async () => {
-      const workspace = resolveRuntimeWorkspace(canonicalProjectId)
+      const workspace = resolveRuntimeWorkspaceById(canonicalProjectId)
       if (!workspace) throw new Error(`Project not found: ${projectId}`)
       const sessions = [...this.sessions.values()]
         .filter(managed => managed.workspace.id === canonicalProjectId)
@@ -925,7 +963,7 @@ export class SessionManager implements ISessionManager {
   setupConfigWatcher(workspaceRootPath: string, workspaceId: string): void {
     // Project roots are user-owned locators. Runtime observers must never recreate
     // a missing or invalid Project before the user explicitly relinks it.
-    const registeredWorkspace = resolveRuntimeWorkspace(workspaceId)
+    const registeredWorkspace = resolveRuntimeWorkspaceById(workspaceId)
       ?? getWorkspaces().find(candidate => candidate.id === workspaceId)
     if (
       !isFreeConversationWorkspaceId(workspaceId)
@@ -1024,51 +1062,54 @@ export class SessionManager implements ISessionManager {
       // Detects changes from both internal writes (self) and external sources
       // (other instances, scripts, manual edits).
       onSessionMetadataChange: (sessionId, header) => {
-        const managed = this.sessions.get(sessionId)
-        if (!managed) return
+        void this.withSessionOperation(sessionId, undefined, async managed => {
+          // Check if this is our own write echoing back via fs.watch().
+          // Self-writes don't need in-memory sync (already up to date), but
+          // still need to notify the automation system for event matching.
+          const incomingSignature = getHeaderMetadataSignature(header)
+          const lastWrittenSignature = sessionPersistenceQueue.getLastWrittenSignature(sessionId)
+          const isSelfWrite = !!(lastWrittenSignature && incomingSignature === lastWrittenSignature)
 
-        // Check if this is our own write echoing back via fs.watch().
-        // Self-writes don't need in-memory sync (already up to date), but
-        // still need to notify the automation system for event matching.
-        const incomingSignature = getHeaderMetadataSignature(header)
-        const lastWrittenSignature = sessionPersistenceQueue.getLastWrittenSignature(sessionId)
-        const isSelfWrite = !!(lastWrittenSignature && incomingSignature === lastWrittenSignature)
-
-        // For external writes: sync in-memory state + emit UI events.
-        // Skip for self-writes to avoid feedback loops (especially on Windows
-        // where fs.watch fires aggressively: unlink + rename = 2+ events).
-        if (!isSelfWrite) {
-          // Defer external metadata application when:
-          // 1. Session is actively processing (agent running), OR
-          // 2. Session was just written programmatically (set_session_status/labels tool)
-          //    — fs.watch fires during atomic write (unlink+rename) and can read stale data
-          const hasWriteGuard = managed._metadataWriteGuardUntil && Date.now() < managed._metadataWriteGuardUntil
-          if (managed.isProcessing || hasWriteGuard) {
-            managed.pendingExternalMetadata = header
-            if (hasWriteGuard) {
-              getSessionLog().info(`Deferred external metadata update for session ${sessionId} (recent programmatic write)`)
+          // For external writes: sync in-memory state + emit UI events.
+          // Skip for self-writes to avoid feedback loops (especially on Windows
+          // where fs.watch fires aggressively: unlink + rename = 2+ events).
+          if (!isSelfWrite) {
+            // Defer external metadata application when:
+            // 1. Session is actively processing (agent running), OR
+            // 2. Session was just written programmatically (set_session_status/labels tool)
+            //    — fs.watch fires during atomic write (unlink+rename) and can read stale data
+            const hasWriteGuard = managed._metadataWriteGuardUntil && Date.now() < managed._metadataWriteGuardUntil
+            if (managed.isProcessing || hasWriteGuard) {
+              managed.pendingExternalMetadata = header
+              if (hasWriteGuard) {
+                getSessionLog().info(`Deferred external metadata update for session ${sessionId} (recent programmatic write)`)
+              } else {
+                getSessionLog().info(`Deferred external metadata update for session ${sessionId} (processing active)`)
+              }
             } else {
-              getSessionLog().info(`Deferred external metadata update for session ${sessionId} (processing active)`)
+              this.applyExternalSessionMetadata(managed, header)
             }
-          } else {
-            this.applyExternalSessionMetadata(managed, header)
           }
-        }
 
-        // Always notify automation system — it does its own diffing and needs
-        // to see both self-writes and external changes for event matching.
-        const automationSystem = this.automationSystems.get(managed.workspace.rootPath)
-        if (automationSystem) {
-          automationSystem.updateSessionMetadata(sessionId, {
-            permissionMode: header.permissionMode,
-            labels: header.labels,
-            isFlagged: header.isFlagged,
-            sessionStatus: header.sessionStatus,
-            sessionName: header.name,
-          }).catch((error) => {
-            getSessionLog().error(`[Automations] Failed to update session metadata:`, error)
-          })
-        }
+          // Always notify automation system — it does its own diffing and needs
+          // to see both self-writes and external changes for event matching.
+          const automationSystem = this.automationSystems.get(managed.workspace.rootPath)
+          if (automationSystem) {
+            automationSystem.updateSessionMetadata(sessionId, {
+              permissionMode: header.permissionMode,
+              labels: header.labels,
+              isFlagged: header.isFlagged,
+              sessionStatus: header.sessionStatus,
+              sessionName: header.name,
+            }).catch((error) => {
+              getSessionLog().error(`[Automations] Failed to update session metadata:`, error)
+            })
+          }
+        }).catch(error => {
+          getSessionLog().warn(`Stopping stale ConfigWatcher for ${workspaceId}: ${error instanceof Error ? error.message : error}`)
+          this.configWatchers.get(workspaceRootPath)?.stop()
+          this.configWatchers.delete(workspaceRootPath)
+        })
       },
     }
 
@@ -1267,30 +1308,41 @@ export class SessionManager implements ISessionManager {
   // atomic write completes. See onSessionMetadataChange.
   private setMetadataWriteGuard(managed: ManagedSession): void {
     const guardUntil = Date.now() + METADATA_WRITE_GUARD_MS
+    const workspaceRootPath = managed.workspace.rootPath
     managed._metadataWriteGuardUntil = guardUntil
 
     const timer = setTimeout(() => {
-      if (this.sessions.get(managed.id) !== managed || managed._metadataWriteGuardUntil !== guardUntil) return
+      void this.withSessionOperation(managed.id, undefined, async current => {
+        if (
+          current !== managed
+          || current.workspace.rootPath !== workspaceRootPath
+          || current._metadataWriteGuardUntil !== guardUntil
+        ) return
 
-      managed._metadataWriteGuardUntil = undefined
-      if (!managed.pendingExternalMetadata) return
+        current._metadataWriteGuardUntil = undefined
+        if (!current.pendingExternalMetadata) return
 
-      // The deferred watcher payload may be an atomic-write echo. Re-read the
-      // final file instead of applying that possibly stale snapshot.
-      const header = readSessionHeader(getSessionFilePath(managed.workspace.rootPath, managed.id))
-      managed.pendingExternalMetadata = undefined
-      if (!header) {
-        getSessionLog().warn(`Could not reconcile deferred metadata for session ${managed.id}`)
-        return
-      }
+        // The deferred watcher payload may be an atomic-write echo. Re-read the
+        // final file instead of applying that possibly stale snapshot.
+        const header = readSessionHeader(getSessionFilePath(current.workspace.rootPath, current.id))
+        current.pendingExternalMetadata = undefined
+        if (!header) {
+          getSessionLog().warn(`Could not reconcile deferred metadata for session ${current.id}`)
+          return
+        }
 
-      if (managed.isProcessing) {
-        managed.pendingExternalMetadata = header
-        return
-      }
+        if (current.isProcessing) {
+          current.pendingExternalMetadata = header
+          return
+        }
 
-      getSessionLog().info(`Reconciling deferred metadata for idle session ${managed.id}`)
-      this.applyExternalSessionMetadata(managed, header)
+        getSessionLog().info(`Reconciling deferred metadata for idle session ${current.id}`)
+        this.applyExternalSessionMetadata(current, header)
+      }).catch(error => {
+        getSessionLog().warn(`Stopping stale ConfigWatcher for ${managed.workspace.id}: ${error instanceof Error ? error.message : error}`)
+        this.configWatchers.get(workspaceRootPath)?.stop()
+        this.configWatchers.delete(workspaceRootPath)
+      })
     }, METADATA_WRITE_GUARD_MS)
     timer.unref()
   }
@@ -1461,9 +1513,13 @@ export class SessionManager implements ISessionManager {
         }
         throw new Error('An existing local Project cannot be converted into a remote Project.')
       }
-      const workspace = registerStoredLocalProject(name, rootPath)
+      let workspace = registerStoredLocalProject(name, rootPath)
       return this.withLifecycleLockKey(`project:${workspace.id}`, async () => {
         this.assertProjectLifecycleAvailable(workspace.id, [rootKey])
+        if (!workspace.remoteServer && workspace.grantedWorkingDirectoryRoots === undefined) {
+          await migrateLegacyLocalProjectDirectoryIdentity(workspace.id)
+          workspace = getWorkspaces().find(candidate => candidate.id === workspace.id) ?? workspace
+        }
         if (remoteServer) {
           workspace.remoteServer = await updateWorkspaceRemoteServer(workspace.id, remoteServer)
         }
@@ -1477,7 +1533,7 @@ export class SessionManager implements ISessionManager {
 
   async activateProject(projectId: string): Promise<Workspace> {
     return this.withProjectLifecycleLock(projectId, async () => {
-      const workspace = resolveRuntimeWorkspace(projectId)
+      const workspace = resolveRuntimeWorkspaceById(projectId)
       if (!workspace) throw new Error(`Project not found: ${projectId}`)
       this.setupConfigWatcher(workspace.rootPath, workspace.id)
       return workspace
@@ -1664,6 +1720,12 @@ export class SessionManager implements ISessionManager {
     const projectId = plan.projectId
     const currentRoot = plan.currentRoot
     const previousRoot = plan.previousRoot
+    if (plan.workspace.grantedWorkingDirectoryRoots === undefined) {
+      plan.workspace.grantedWorkingDirectoryRoots = await discoverLegacyWorkingDirectoryRoots(
+        plan.workspace,
+        currentRoot,
+      )
+    }
 
     const staged = new Map<string, ManagedSession>()
     const watcher = this.configWatchers.get(previousRoot)
@@ -1775,7 +1837,7 @@ export class SessionManager implements ISessionManager {
     runtimeDispose?: Promise<void>
     projectTransition?: ProjectTransitionClaim
   } {
-    const workspace = resolveRuntimeWorkspace(projectId)
+    const workspace = resolveRuntimeWorkspaceById(projectId)
     if (!workspace || workspace.remoteServer) throw new Error(`Project not found: ${projectId}`)
 
     const hostConfig = loadStoredConfig()
@@ -1869,7 +1931,7 @@ export class SessionManager implements ISessionManager {
     await Promise.all(managedSessions.map(async managed => {
       try {
         await this.withAgentRuntimeLock(managed, async () => {
-          const workspace = resolveRuntimeWorkspace(projectId)
+          const workspace = resolveRuntimeWorkspaceById(projectId)
           const refs = workspace && !workspace.remoteServer
             ? workspace.defaultEnabledSourceRefs ?? []
             : []
@@ -2055,14 +2117,6 @@ export class SessionManager implements ISessionManager {
     let release: (() => void) | undefined
     try {
       release = this.beginSessionOperationLease(m)
-      const registeredWorkspace = getWorkspaces().find(workspace => workspace.id === m.workspace.id)
-      if (
-        registeredWorkspace
-        && !isFreeConversationWorkspaceId(registeredWorkspace.id)
-        && !isWorkspaceRootAvailable(registeredWorkspace)
-      ) {
-        throw new Error(`Project directory is unavailable; relink Project ${m.workspace.id} before loading a Session`)
-      }
       // Lazy-load messages from disk if not yet loaded
       await this.ensureMessagesLoaded(m)
       getSessionSpan.mark('messages.loaded')
@@ -2153,14 +2207,6 @@ export class SessionManager implements ISessionManager {
     work: (sessionPath: string) => Promise<T>,
   ): Promise<T> {
     return this.withRequiredSessionOperation(sessionId, async managed => {
-      const registeredWorkspace = getWorkspaces().find(workspace => workspace.id === managed.workspace.id)
-      if (
-        registeredWorkspace
-        && !isFreeConversationWorkspaceId(registeredWorkspace.id)
-        && !isWorkspaceRootAvailable(registeredWorkspace)
-      ) {
-        throw new Error(`Project directory is unavailable; relink Project ${managed.workspace.id} before accessing Session files`)
-      }
       return work(getSessionStoragePath(managed.workspace.rootPath, managed.id))
     })
   }
@@ -2173,7 +2219,7 @@ export class SessionManager implements ISessionManager {
   }
 
   private async createSessionLocked(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
-    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const workspace = resolveRuntimeWorkspaceById(workspaceId)
       ?? getWorkspaces().find(candidate => candidate.id === workspaceId)
     if (!workspace) {
       throw new Error(`Workspace ${workspaceId} not found`)
@@ -2255,18 +2301,9 @@ export class SessionManager implements ISessionManager {
     } else {
       resolvedWorkingDir = options.workingDirectory
     }
-    if (
-      resolvedWorkingDir
-      && !isFreeConversationWorkspaceId(workspace.id)
-      && !isPathWithinProjectRoot(workspaceRootPath, resolvedWorkingDir)
-    ) {
-      if (options?.workingDirectory && options.workingDirectory !== 'user_default') {
-        throw new Error('Working directory must stay inside the Project root.')
-      }
-      getSessionLog().warn('Ignoring Project-owned default cwd outside the Project root')
-      resolvedWorkingDir = workspaceRootPath
+    if (!isFreeConversationWorkspaceId(workspace.id) && resolvedWorkingDir) {
+      resolvedWorkingDir = resolveWorkspaceWorkingDirectory(workspace, resolvedWorkingDir)
     }
-
     // Validate branch request up-front so branch metadata is only set for valid branches.
     // This prevents creating sessions that claim to be branched but don't have copied history.
     let validatedBranch: {
@@ -2520,8 +2557,8 @@ export class SessionManager implements ISessionManager {
         // A branch is only valid if backend context can be established now,
         // not deferred to the first user message.
         try {
-          await this.withAgentRuntimeLock(managed, async () => {
-            const agent = await this.getOrCreateAgentLocked(managed)
+          await this.withAgentRuntimeLock(managed, async getOrCreateAgent => {
+            const agent = await getOrCreateAgent()
             await agent.ensureBranchReady()
           })
         } catch (error) {
@@ -2590,13 +2627,14 @@ export class SessionManager implements ISessionManager {
 
     return this.withAgentRuntimeLock(
       managed,
-      () => this.rewindUserMessageLocked(managed, userMessageId),
+      getOrCreateAgent => this.rewindUserMessageLocked(managed, userMessageId, getOrCreateAgent),
     )
   }
 
   private async rewindUserMessageLocked(
     managed: ManagedSession,
     userMessageId: string,
+    getOrCreateAgent: () => Promise<AgentInstance>,
   ): Promise<{ draftText: string }> {
     const sessionId = managed.id
 
@@ -2629,7 +2667,7 @@ export class SessionManager implements ISessionManager {
       // when a newly selected provider will require a restart on the next send.
       let agent = managed.agent
       if (!agent) {
-        agent = await this.getOrCreateAgentLocked(managed)
+        agent = await getOrCreateAgent()
       }
       try {
         await agent.rewindUserMessage(target.id)
@@ -2808,7 +2846,7 @@ export class SessionManager implements ISessionManager {
   /** Serialize exclusive control-plane mutations per session. (Delegates to AgentRuntimeLease.) */
   private async withAgentRuntimeLock<T>(
     managed: ManagedSession,
-    work: () => Promise<T>,
+    work: (getOrCreateAgent: () => Promise<AgentInstance>) => Promise<T>,
     allowClosing = false,
   ): Promise<T> {
     return this.agentLease.withAgentRuntimeLock(managed, work, allowClosing)
@@ -2886,27 +2924,32 @@ export class SessionManager implements ISessionManager {
 
   /** Flag a session (delegates to SessionCrudMetadata). */
   async flagSession(sessionId: string): Promise<void> {
-    await this.crudMetadata.flagSession(sessionId)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.flagSession(sessionId))
   }
 
   /** Unflag a session (delegates to SessionCrudMetadata). */
   async unflagSession(sessionId: string): Promise<void> {
-    await this.crudMetadata.unflagSession(sessionId)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.unflagSession(sessionId))
   }
 
   /** Archive a session (delegates to SessionCrudMetadata). */
   async archiveSession(sessionId: string): Promise<void> {
-    await this.crudMetadata.archiveSession(sessionId)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.archiveSession(sessionId))
   }
 
   /** Unarchive a session (delegates to SessionCrudMetadata). */
   async unarchiveSession(sessionId: string): Promise<void> {
-    await this.crudMetadata.unarchiveSession(sessionId)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.unarchiveSession(sessionId))
   }
 
   /** Set a session's workflow status (delegates to SessionCrudMetadata). */
   async setSessionStatus(sessionId: string, sessionStatus: SessionStatus): Promise<void> {
-    await this.crudMetadata.setSessionStatus(sessionId, sessionStatus)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.setSessionStatus(sessionId, sessionStatus))
   }
 
   /** Set the LLM connection for a not-yet-started session (delegates to SessionCrudMetadata). */
@@ -2961,7 +3004,7 @@ export class SessionManager implements ISessionManager {
     }
 
     if (managed.permissionMode === 'safe') {
-      this.setSessionPermissionMode(sessionId, 'allow-all')
+      await this.setSessionPermissionMode(sessionId, 'allow-all')
     }
 
     await this.sendMessage(sessionId, PLAN_APPROVAL_MESSAGE)
@@ -3080,8 +3123,14 @@ export class SessionManager implements ISessionManager {
   }
 
   /** Track which session the user is actively viewing (delegates to SessionCrudMetadata). */
-  setActiveViewingSession(sessionId: string | null, workspaceId: string): void {
-    this.crudMetadata.setActiveViewingSession(sessionId, workspaceId)
+  async setActiveViewingSession(sessionId: string | null, workspaceId: string): Promise<void> {
+    if (!sessionId) {
+      this.crudMetadata.setActiveViewingSession(null, workspaceId)
+      return
+    }
+    await this.withSessionOperation(sessionId, undefined, async () => {
+      this.crudMetadata.setActiveViewingSession(sessionId, workspaceId)
+    })
   }
 
   /** Clear the actively-viewed session for a workspace (delegates to SessionCrudMetadata). */
@@ -3098,22 +3147,36 @@ export class SessionManager implements ISessionManager {
 
   /** Mark a session as read (delegates to SessionCrudMetadata). */
   async markSessionRead(sessionId: string): Promise<void> {
-    await this.crudMetadata.markSessionRead(sessionId)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.markSessionRead(sessionId))
   }
 
   /** Mark a session as unread (delegates to SessionCrudMetadata). */
   async markSessionUnread(sessionId: string): Promise<void> {
-    await this.crudMetadata.markSessionUnread(sessionId)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.markSessionUnread(sessionId))
   }
 
   /** Mark all visible sessions in a workspace as read (delegates to SessionCrudMetadata). */
   async markAllSessionsRead(workspaceId: string): Promise<void> {
-    await this.crudMetadata.markAllSessionsRead(workspaceId)
+    await this.withProjectOperation(workspaceId, async workspace => {
+      const releases: Array<() => void> = []
+      try {
+        for (const managed of this.sessions.values()) {
+          if (managed.workspace.id !== workspace.id || managed.runtimeState) continue
+          releases.push(this.beginSessionOperationLease(managed))
+        }
+        await this.crudMetadata.markAllSessionsRead(workspace.id)
+      } finally {
+        for (const release of releases) release()
+      }
+    })
   }
 
   /** Rename a session (delegates to SessionCrudMetadata). */
   async renameSession(sessionId: string, name: string): Promise<void> {
-    await this.crudMetadata.renameSession(sessionId, name)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.renameSession(sessionId, name))
   }
 
   /**
@@ -3195,8 +3258,10 @@ export class SessionManager implements ISessionManager {
    * conversation starts would split tool execution from rendered file links.
    * (Delegates to SessionCrudMetadata.)
    */
-  updateWorkingDirectory(sessionId: string, path: string): void {
-    this.crudMetadata.updateWorkingDirectory(sessionId, path)
+  async updateWorkingDirectory(sessionId: string, path: string): Promise<void> {
+    await this.withRequiredSessionOperation(sessionId, async () => {
+      this.crudMetadata.updateWorkingDirectory(sessionId, path)
+    })
   }
 
   /**
@@ -3212,28 +3277,36 @@ export class SessionManager implements ISessionManager {
   }
 
   /** Update a message's content in place (delegates to MessageEdits). */
-  updateMessageContent(sessionId: string, messageId: string, content: string): void {
-    this.messageEdits.updateMessageContent(sessionId, messageId, content)
+  async updateMessageContent(sessionId: string, messageId: string, content: string): Promise<void> {
+    await this.withSessionOperation(sessionId, undefined, async () => {
+      this.messageEdits.updateMessageContent(sessionId, messageId, content)
+    })
   }
 
   /** Add an annotation to a message (delegates to MessageEdits). */
-  addMessageAnnotation(sessionId: string, messageId: string, annotation: NonNullable<Message['annotations']>[number]): void {
-    this.messageEdits.addMessageAnnotation(sessionId, messageId, annotation)
+  async addMessageAnnotation(sessionId: string, messageId: string, annotation: NonNullable<Message['annotations']>[number]): Promise<void> {
+    await this.withSessionOperation(sessionId, undefined, async () => {
+      this.messageEdits.addMessageAnnotation(sessionId, messageId, annotation)
+    })
   }
 
   /** Patch an existing annotation on a message (delegates to MessageEdits). */
-  updateMessageAnnotation(
+  async updateMessageAnnotation(
     sessionId: string,
     messageId: string,
     annotationId: string,
     patch: Partial<NonNullable<Message['annotations']>[number]>
-  ): void {
-    this.messageEdits.updateMessageAnnotation(sessionId, messageId, annotationId, patch)
+  ): Promise<void> {
+    await this.withSessionOperation(sessionId, undefined, async () => {
+      this.messageEdits.updateMessageAnnotation(sessionId, messageId, annotationId, patch)
+    })
   }
 
   /** Remove an annotation from a message (delegates to MessageEdits). */
-  removeMessageAnnotation(sessionId: string, messageId: string, annotationId: string): void {
-    this.messageEdits.removeMessageAnnotation(sessionId, messageId, annotationId)
+  async removeMessageAnnotation(sessionId: string, messageId: string, annotationId: string): Promise<void> {
+    await this.withSessionOperation(sessionId, undefined, async () => {
+      this.messageEdits.removeMessageAnnotation(sessionId, messageId, annotationId)
+    })
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -3407,7 +3480,7 @@ export class SessionManager implements ISessionManager {
     attachments?: FileAttachment[],
     storedAttachments?: StoredAttachment[],
     options?: SendMessageOptions,
-    existingMessageId?: string,
+    existingMessageId?: string | null,
     /**
      * Internal hook fired after the user message has been pushed to
      * `managed.messages` and persisted to disk, but before the model-streaming
@@ -3429,7 +3502,7 @@ export class SessionManager implements ISessionManager {
       storedAttachmentCount: storedAttachments?.length ?? 0,
       hiddenUserMessage: options?.hideUserMessage === true,
       hasOneTimeContext: !!(options?.oneTimeContext?.trim() || options?.workspaceFreshnessContext?.trim()),
-      existingMessage: !!existingMessageId,
+      existingMessage: existingMessageId !== undefined,
     })
     let acceptSpanEnded = false
     const ackAccepted = (messageId: string, status: 'accepted' | 'queued' | 'hidden'): void => {
@@ -3461,10 +3534,14 @@ export class SessionManager implements ISessionManager {
     }
 
     const hideUserMessage = options?.hideUserMessage === true
+    const isQueuedReplay = existingMessageId !== undefined
 
     // If currently processing, an ordinary send is only queued. The active
     // turn continues to natural completion; explicit interruption is reserved
     // for sendQueuedMessageNow().
+    if (managed.isProcessing && isQueuedReplay) {
+      throw new Error('Cannot replay a queued message while this conversation is processing')
+    }
     if (managed.isProcessing) {
       getSessionLog().info('mid-stream send', {
         sessionId,
@@ -3514,11 +3591,39 @@ export class SessionManager implements ISessionManager {
     let userMessage: Message | undefined
     let initialTitle: string | undefined
     let titleMessageToGenerate: string | undefined
-    if (existingMessageId) {
-      // Find existing message (already added when queued)
-      userMessage = managed.messages.find(m => m.id === existingMessageId)!
-      if (!userMessage) {
-        throw new Error(`Existing message ${existingMessageId} not found`)
+    if (isQueuedReplay) {
+      const queued = managed.messageQueue[0]
+      if (!queued || queued.messageId !== (existingMessageId ?? undefined)) {
+        throw new Error(`Queued message ${existingMessageId ?? '(hidden)'} is no longer next`)
+      }
+      managed.messageQueue.shift()
+
+      if (existingMessageId !== null) {
+        userMessage = managed.messages.find(m => m.id === existingMessageId)
+        if (!userMessage) {
+          throw new Error(`Existing message ${existingMessageId} not found`)
+        }
+        const existingIndex = managed.messages.indexOf(userMessage)
+        userMessage.isQueued = false
+        delete userMessage.queuedWorkspaceFreshnessContext
+        userMessage.timestamp = this.monotonic()
+        managed.messages.splice(existingIndex, 1)
+        managed.messages.push(userMessage)
+
+      }
+
+      this.persistSession(managed)
+      await this.flushSession(managed.id)
+      acceptSpan.mark('session.flushed')
+      ackAccepted(userMessage?.id ?? generateMessageId(), userMessage ? 'accepted' : 'hidden')
+      if (userMessage) {
+        this.sendEvent({
+          type: 'user_message',
+          sessionId,
+          message: userMessage,
+          status: 'processing',
+          optimisticMessageId: queued.optimisticMessageId,
+        }, managed.workspace.id)
       }
     } else if (!hideUserMessage) {
       // Prefer the renderer's optimistic id so UI and persisted transcript share one key.
@@ -3721,7 +3826,7 @@ export class SessionManager implements ISessionManager {
     const loadedSources: LoadedSource[] = hasSources
       ? getSourcesBySlugs(projectRoot, enabledSlugs, managed.workspace.id)
       : []
-    const currentWorkspace = resolveRuntimeWorkspace(managed.workspace.id) ?? managed.workspace
+    const currentWorkspace = resolveRuntimeWorkspaceById(managed.workspace.id) ?? managed.workspace
     const sources = !isFreeConversationWorkspaceId(currentWorkspace.id)
       ? loadedSources.filter(source => isSourceHostGranted(currentWorkspace.defaultEnabledSourceRefs, source))
       : loadedSources
@@ -4316,45 +4421,21 @@ export class SessionManager implements ISessionManager {
     const managed = this.sessions.get(sessionId)
     if (!managed || managed.runtimeState || managed.messageQueue.length === 0) return
 
-    const next = managed.messageQueue.shift()!
+    const next = managed.messageQueue[0]!
     getSessionLog().info('replay queued', {
       sessionId,
       messageId: next.messageId,
-      queueLengthAfterShift: managed.messageQueue.length,
+      queueLengthAfterShift: managed.messageQueue.length - 1,
     })
 
-    // Update UI: queued → processing
-    if (next.messageId) {
-      const existingIndex = managed.messages.findIndex(m => m.id === next.messageId)
-      const existingMessage = managed.messages[existingIndex]
-      if (existingMessage) {
-        // Replay starts a new turn after the response that just completed.
-        existingMessage.isQueued = false
-        delete existingMessage.queuedWorkspaceFreshnessContext
-        existingMessage.timestamp = this.monotonic()
-        managed.messages.splice(existingIndex, 1)
-        managed.messages.push(existingMessage)
-        this.persistSession(managed)
-
-        this.sendEvent({
-          type: 'user_message',
-          sessionId,
-          message: existingMessage,
-          status: 'processing',
-          optimisticMessageId: next.optimisticMessageId
-        }, managed.workspace.id)
-      }
-    }
-
-    // Process message (use setImmediate to allow current stack to clear)
-    setImmediate(() => {
-      this.sendMessage(
+    // sendMessage acquires the freshness lease synchronously before its first await.
+    void this.sendMessage(
         sessionId,
         next.message,
         next.attachments,
         next.storedAttachments,
         next.options,
-        next.messageId
+        next.messageId ?? null,
       ).catch(err => {
         getSessionLog().error('replay failed', {
           sessionId,
@@ -4377,12 +4458,12 @@ export class SessionManager implements ISessionManager {
             originalError: err instanceof Error ? err.message : String(err),
           },
         }, managed.workspace.id)
-        // Call onProcessingStopped to handle cleanup and check for more queued messages
-        void this.onProcessingStopped(sessionId, 'error').catch(error => {
-          getSessionLog().error('Failed to stop processing after queued message failure:', error)
-        })
+        if (managed.isProcessing) {
+          void this.onProcessingStopped(sessionId, 'error').catch(error => {
+            getSessionLog().error('Failed to stop processing after queued message failure:', error)
+          })
+        }
       })
-    })
   }
 
   async killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }> {
@@ -4579,8 +4660,10 @@ export class SessionManager implements ISessionManager {
   }
 
   /** Set the permission mode for a session (delegates to SessionCrudMetadata). */
-  setSessionPermissionMode(sessionId: string, mode: PermissionMode): void {
-    this.crudMetadata.setSessionPermissionMode(sessionId, mode)
+  async setSessionPermissionMode(sessionId: string, mode: PermissionMode): Promise<void> {
+    await this.withSessionOperation(sessionId, undefined, async () => {
+      this.crudMetadata.setSessionPermissionMode(sessionId, mode)
+    })
   }
 
   /** Read authoritative permission-mode diagnostics for a session (delegates to SessionCrudMetadata). */
@@ -4597,12 +4680,15 @@ export class SessionManager implements ISessionManager {
 
   /** Set labels for a session (delegates to SessionCrudMetadata). */
   async setSessionLabels(sessionId: string, labels: string[]): Promise<void> {
-    await this.crudMetadata.setSessionLabels(sessionId, labels)
+    await this.withSessionOperation(sessionId, undefined, () =>
+      this.crudMetadata.setSessionLabels(sessionId, labels))
   }
 
   /** Set the sticky thinking level for a session (delegates to SessionCrudMetadata). */
-  setSessionThinkingLevel(sessionId: string, level: ThinkingLevel): void {
-    this.crudMetadata.setSessionThinkingLevel(sessionId, level)
+  async setSessionThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<void> {
+    await this.withSessionOperation(sessionId, undefined, async () => {
+      this.crudMetadata.setSessionThinkingLevel(sessionId, level)
+    })
   }
 
   /**
@@ -5274,7 +5360,7 @@ export class SessionManager implements ISessionManager {
       telegramTopic,
     } = input
 
-    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const workspace = resolveRuntimeWorkspaceById(workspaceId)
     if (!workspace || workspace.rootPath !== workspaceRootPath) {
       throw new Error(`Automation workspace mismatch: ${workspaceId}`)
     }
@@ -5294,7 +5380,7 @@ export class SessionManager implements ISessionManager {
     const resolved = mentions
       ? await this.resolveAutomationMentions(workspaceRootPath, workspace.id, mentions)
       : undefined
-    const resolvedWorkspace = resolveRuntimeWorkspace(workspaceId)
+    const resolvedWorkspace = resolveRuntimeWorkspaceById(workspaceId)
     if (!resolvedWorkspace || resolvedWorkspace.rootPath !== workspaceRootPath) {
       throw new Error(`Automation workspace mismatch: ${workspaceId}`)
     }
@@ -5309,7 +5395,7 @@ export class SessionManager implements ISessionManager {
     // Revalidate the Host grant atomically with Session creation. Mention and
     // label resolution may have yielded while automations or Sources changed.
     const session = await this.withProjectLifecycleLock(workspaceId, async () => {
-      const currentWorkspace = resolveRuntimeWorkspace(workspaceId)
+      const currentWorkspace = resolveRuntimeWorkspaceById(workspaceId)
       if (!currentWorkspace || currentWorkspace.rootPath !== workspaceRootPath) {
         throw new Error(`Automation workspace mismatch: ${workspaceId}`)
       }
@@ -5414,7 +5500,8 @@ export class SessionManager implements ISessionManager {
 
   /** Export a summary payload for remote session transfer (delegates to ExportImport). */
   async exportRemoteSessionTransfer(sessionId: string, workspaceId: string): Promise<RemoteSessionTransferPayload | null> {
-    return this.exportImport.exportRemoteSessionTransfer(sessionId, workspaceId)
+    return this.withSessionOperation(sessionId, null, () =>
+      this.exportImport.exportRemoteSessionTransfer(sessionId, workspaceId))
   }
 
   /** Import a remote transfer payload as a new session (delegates to ExportImport). */
@@ -5432,7 +5519,8 @@ export class SessionManager implements ISessionManager {
    * Export a session as a portable SessionBundle. (Delegates to ExportImport.)
    */
   async exportSession(sessionId: string, workspaceId: string): Promise<SessionBundle | null> {
-    return this.exportImport.exportSession(sessionId, workspaceId)
+    return this.withSessionOperation(sessionId, null, () =>
+      this.exportImport.exportSession(sessionId, workspaceId))
   }
 
   /**

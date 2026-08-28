@@ -6,7 +6,7 @@ import { realpath } from 'fs/promises'
 import { isAbsolute, resolve } from 'path'
 import {
   isPathWithinProjectRoot,
-  resolveRuntimeWorkspace,
+  resolveRuntimeWorkspaceById,
 } from '@craft-agent/shared/workspaces'
 import { validateFilePath } from '@craft-agent/server-core/handlers'
 import type { RequestContext } from '@craft-agent/server-core/transport'
@@ -72,7 +72,7 @@ export function withWorkspaceMutation<T>(
 }
 
 function resolveContextWorkspace(deps: HandlerDeps, workspaceId: string) {
-  return deps.resolveRuntimeWorkspace?.(workspaceId) ?? resolveRuntimeWorkspace(workspaceId)
+  return deps.resolveRuntimeWorkspaceById?.(workspaceId) ?? resolveRuntimeWorkspaceById(workspaceId)
 }
 
 export async function validateWorkspaceFilePath(ctx: RequestContext, deps: HandlerDeps, path: string): Promise<string> {

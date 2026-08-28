@@ -227,12 +227,10 @@ export function readProjectContextFile(directory: string): { filename: string; c
  *
  * @param workingDirectory - The effective working directory path (where user wants to work)
  * @param isSessionRoot - If true, this is the session folder (not a user-specified project)
- * @param bashCwd - The actual bash shell cwd (may differ if working directory changed mid-session)
  */
 export function getWorkingDirectoryContext(
   workingDirectory?: string,
   isSessionRoot?: boolean,
-  bashCwd?: string
 ): string {
   if (!workingDirectory) {
     return '';
@@ -248,19 +246,7 @@ This is the session's root folder (default). It contains session files (conversa
 You can access any files the user attaches here. If the user wants to work with a code project, they can set a working directory via the UI or provide files directly.
 </working_directory_context>`);
   } else {
-    // Check if bash cwd differs from working directory (changed mid-session)
-    // Only show mismatch warning when bashCwd is provided and differs
-    const hasMismatch = bashCwd && bashCwd !== workingDirectory;
-
-    if (hasMismatch) {
-      // Working directory was changed mid-session - bash still runs from original location
-      parts.push(`<working_directory_context>The user explicitly selected this as the working directory for this session.
-
-Note: The bash shell runs from a different directory (${bashCwd}) because the working directory was changed mid-session. Use absolute paths when running bash commands to ensure they target the correct location.</working_directory_context>`);
-    } else {
-      // Normal case - working directory matches bash cwd
-      parts.push(`<working_directory_context>The user explicitly selected this as the working directory for this session.</working_directory_context>`);
-    }
+    parts.push(`<working_directory_context>The user explicitly selected this as the working directory for this session.</working_directory_context>`);
   }
 
   return parts.join('\n\n');

@@ -923,17 +923,17 @@ app.whenReady().then(async () => {
       // Transfer one immutable summary snapshot to a fresh session on another
       // server. Provider transcripts and workspace files never cross domains.
       ipcMain.handle('session:transferToRemoteWorkspace', async (_event, sessionId: string, targetWorkspaceId: string) => {
-        const { resolveRuntimeWorkspace } = await import('@craft-agent/shared/workspaces')
+        const { resolveRuntimeWorkspaceById } = await import('@craft-agent/shared/workspaces')
         const { connectToRemote } = await import('./handlers/workspace')
 
-        const targetWorkspace = resolveRuntimeWorkspace(targetWorkspaceId)
+        const targetWorkspace = resolveRuntimeWorkspaceById(targetWorkspaceId)
         if (!targetWorkspace) throw new Error(`Target workspace ${targetWorkspaceId} not found`)
         if (!sessionManager) throw new Error('Session manager not initialized')
 
         const sourceWorkspaceLocalId = windowManager?.getWorkspaceForWindow(_event.sender.id)
         if (!sourceWorkspaceLocalId) throw new Error('Unable to resolve source workspace for transfer')
 
-        const sourceWorkspace = resolveRuntimeWorkspace(sourceWorkspaceLocalId)
+        const sourceWorkspace = resolveRuntimeWorkspaceById(sourceWorkspaceLocalId)
         if (!sourceWorkspace) throw new Error(`Source workspace ${sourceWorkspaceLocalId} not found`)
 
         let transferPayload: import('@craft-agent/shared/protocol').RemoteSessionTransferPayload

@@ -73,6 +73,21 @@ describe('Session JSONL Project boundary', () => {
     expect(readFileSync(outsideFile, 'utf-8')).toBe('sentinel\n');
   });
 
+  it('does not let the synchronous writer follow a symlinked Session directory', () => {
+    const projectRoot = tempRoot('session-sync-parent-project-');
+    const outsideRoot = tempRoot('session-sync-parent-outside-');
+    const stored = session(projectRoot, `session_${randomUUID()}`);
+    const sessionsDir = join(projectRoot, '.craft-agent', 'sessions');
+    const outsideSessionDir = join(outsideRoot, stored.id);
+    mkdirSync(sessionsDir, { recursive: true });
+    mkdirSync(outsideSessionDir, { recursive: true });
+    symlinkSync(outsideSessionDir, join(sessionsDir, stored.id), 'dir');
+    const sessionFile = join(sessionsDir, stored.id, 'session.jsonl');
+
+    expect(() => writeSessionJsonl(sessionFile, stored, projectRoot)).toThrow(/symbolic link/);
+    expect(() => readFileSync(join(outsideSessionDir, 'session.jsonl'), 'utf-8')).toThrow();
+  });
+
   it('does not read a committed Session through an external symlink during recovery', () => {
     const projectRoot = tempRoot('session-recovery-project-');
     const outsideRoot = tempRoot('session-recovery-outside-');

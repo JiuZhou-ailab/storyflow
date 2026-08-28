@@ -168,14 +168,17 @@ it('indexes target Sessions immediately when relinking after restart', () => {
   const configDir = join(parent, 'host')
   const previousRoot = join(parent, 'moved-from')
   const currentRoot = join(parent, 'moved-to')
+  const externalCwd = join(parent, 'external-cwd')
   const sessionDir = join(currentRoot, '.craft-agent', 'sessions', 'session-after-restart')
   mkdirSync(sessionDir, { recursive: true })
+  mkdirSync(externalCwd)
   mkdirSync(configDir, { recursive: true })
   writeFileSync(join(currentRoot, '.craft-agent', 'config.json'), JSON.stringify({
     id: 'directory-restart', name: 'Project', slug: 'project', createdAt: 1, updatedAt: 1,
   }))
   writeFileSync(join(sessionDir, 'session.jsonl'), `${JSON.stringify({
     id: 'session-after-restart', workspaceRootPath: previousRoot,
+    workingDirectory: externalCwd,
     createdAt: 1, lastUsedAt: 1, lastMessageAt: 1, messageCount: 0,
   })}\n`)
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({
@@ -190,15 +193,18 @@ it('indexes target Sessions immediately when relinking after restart', () => {
     const run = Bun.spawnSync([
       process.execPath,
       '--eval',
-      `import { SessionManager } from '${SESSION_MANAGER_MODULE_PATH}'; const manager = new SessionManager(); await manager.rebindWorkspaceRoot('project-1', ${JSON.stringify(currentRoot)}); console.log('RESTART_RESULT=' + JSON.stringify(manager.getSessions('project-1').map(session => session.id))); manager.cleanup();`,
+      `import { SessionManager } from '${SESSION_MANAGER_MODULE_PATH}'; const manager = new SessionManager(); await manager.rebindWorkspaceRoot('project-1', ${JSON.stringify(currentRoot)}); console.log('RESTART_RESULT=' + JSON.stringify({ sessionIds: manager.getSessions('project-1').map(session => session.id), grants: manager.getWorkspaces()[0].grantedWorkingDirectoryRoots })); manager.cleanup();`,
     ], {
       env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
       stdout: 'pipe', stderr: 'pipe',
     })
     if (run.exitCode !== 0) throw new Error(run.stderr.toString())
-    const match = run.stdout.toString().match(/RESTART_RESULT=(\[.*\])/)
+    const match = run.stdout.toString().match(/RESTART_RESULT=(\{.*\})/)
     if (!match) throw new Error(`Missing restart result:\n${run.stdout.toString()}`)
-    expect(JSON.parse(match[1])).toEqual(['session-after-restart'])
+    expect(JSON.parse(match[1])).toEqual({
+      sessionIds: ['session-after-restart'],
+      grants: [realpathSync(externalCwd)],
+    })
   } finally {
     rmSync(parent, { recursive: true, force: true })
   }
@@ -232,6 +238,55 @@ it('rejects Session creation while the Project root is missing', () => {
     const result = JSON.parse(match[1])
     expect(result.error).toContain('relink Project')
     expect(result.oldExists).toBe(false)
+  } finally {
+    rmSync(parent, { recursive: true, force: true })
+  }
+})
+
+it('rejects Session writes and Pi leases after the registered Project is replaced in place', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-runtime-identity-'))
+  const configDir = join(parent, 'host')
+  const projectRoot = join(parent, 'project')
+  mkdirSync(join(projectRoot, '.craft-agent'), { recursive: true })
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(join(projectRoot, '.craft-agent', 'config.json'), JSON.stringify({
+    id: 'directory-original', name: 'Project', slug: 'project', createdAt: 1, updatedAt: 1,
+  }))
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({
+    workspaces: [{
+      id: 'project-1', name: 'Project', slug: 'project', rootPath: projectRoot,
+      createdAt: 1, directoryConfigId: 'directory-original', grantedWorkingDirectoryRoots: [],
+    }],
+    activeWorkspaceId: 'project-1', activeSessionId: null,
+  }))
+
+  try {
+    const result = runIsolatedJson<{ flagError?: string; runtimeError?: string; flagged: boolean; callbackRan: boolean }>(configDir, 'RUNTIME_IDENTITY_RESULT', `
+      import { writeFileSync } from 'node:fs';
+      import { join } from 'node:path';
+      import { SessionManager, createManagedSession } from '${SESSION_MANAGER_MODULE_PATH}';
+      const manager = new SessionManager();
+      const workspace = manager.getWorkspaces()[0];
+      const managed = createManagedSession({ id: 'session-1' }, workspace);
+      manager['sessions'].set(managed.id, managed);
+      manager['getOrCreateAgentLocked'] = async () => ({});
+      writeFileSync(join(${JSON.stringify(projectRoot)}, '.craft-agent', 'config.json'), JSON.stringify({
+        id: 'directory-replacement', name: 'Replacement', slug: 'replacement', createdAt: 2, updatedAt: 2,
+      }));
+      let flagError;
+      try { await manager.flagSession(managed.id); } catch (cause) { flagError = cause.message; }
+      let runtimeError;
+      let callbackRan = false;
+      try {
+        await manager['withAgentRuntimeLease'](managed, async () => { callbackRan = true; });
+      } catch (cause) { runtimeError = cause.message; }
+      console.log('RUNTIME_IDENTITY_RESULT=' + JSON.stringify({ flagError, runtimeError, flagged: !!managed.isFlagged, callbackRan }));
+      manager.cleanup();
+    `)
+    expect(result.flagged).toBeFalse()
+    expect(result.flagError).toContain('relink Project')
+    expect(result.callbackRan).toBeFalse()
+    expect(result.runtimeError).toContain('relink Project')
   } finally {
     rmSync(parent, { recursive: true, force: true })
   }

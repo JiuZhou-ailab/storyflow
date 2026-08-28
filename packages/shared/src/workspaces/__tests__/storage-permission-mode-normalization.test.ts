@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadWorkspaceConfig, saveWorkspaceConfig } from '../storage.ts';
@@ -40,6 +40,27 @@ describe('workspace storage: config normalization', () => {
     tempDirs.push(legacyRoot);
     writeFileSync(join(legacyRoot, 'config.json'), JSON.stringify(config, null, 2), 'utf-8');
     expect(loadWorkspaceConfig(legacyRoot)?.name).toBe('Hidden Config');
+  });
+
+  it('does not follow a Project-controlled atomic-write temp symlink', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'ws-config-temp-symlink-'));
+    const externalFile = join(workspaceRoot, '..', `${Date.now()}-external.txt`);
+    tempDirs.push(workspaceRoot, externalFile);
+    mkdirSync(join(workspaceRoot, '.craft-agent'));
+    writeFileSync(externalFile, 'keep');
+    symlinkSync(externalFile, join(workspaceRoot, '.craft-agent', 'config.json.tmp'));
+
+    saveWorkspaceConfig(workspaceRoot, {
+      id: 'ws_safe_write',
+      name: 'Safe Write',
+      slug: 'safe-write',
+      defaults: {},
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    expect(readFileSync(externalFile, 'utf8')).toBe('keep');
+    expect(lstatSync(join(workspaceRoot, '.craft-agent', 'config.json')).isSymbolicLink()).toBe(false);
   });
 
   it('maps canonical defaults.permissionMode and cyclablePermissionModes on read', () => {

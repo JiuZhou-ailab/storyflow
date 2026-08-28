@@ -7,7 +7,7 @@ import { CONFIG_DIR, loadStoredConfig, saveConfig } from '@craft-agent/shared/co
 import {
   isFreeConversationWorkspaceId,
   isLocalMcpEnabled,
-  resolveRuntimeWorkspace,
+  resolveRuntimeWorkspaceById,
 } from '@craft-agent/shared/workspaces'
 import {
   getSourceCredentialManager,
@@ -35,12 +35,12 @@ export const HANDLED_CHANNELS = [
 export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
   const log = deps.platform.logger
   type SourceScope = {
-    workspace: NonNullable<ReturnType<typeof resolveRuntimeWorkspace>>
+    workspace: NonNullable<ReturnType<typeof resolveRuntimeWorkspaceById>>
     projectRoot: string | undefined
     mutationRoot: string
   }
   const resolveSourceScope = (workspaceId: string): SourceScope | null => {
-    const workspace = resolveRuntimeWorkspace(workspaceId)
+    const workspace = resolveRuntimeWorkspaceById(workspaceId)
     if (!workspace) return null
     const projectRoot = workspace && !isFreeConversationWorkspaceId(workspace.id)
       ? workspace.rootPath
@@ -180,7 +180,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Get permissions config for a source (raw format for UI display)
   server.handle(RPC_CHANNELS.sources.GET_PERMISSIONS, async (_ctx, workspaceId: string, sourceSlug: string) => {
-    if (!resolveRuntimeWorkspace(workspaceId)) return null
+    if (!resolveRuntimeWorkspaceById(workspaceId)) return null
     return withSourceScope(workspaceId, async ({ mutationRoot }) => {
       const { loadRawSourcePermissions } = await import('@craft-agent/shared/agent')
       return loadRawSourcePermissions(mutationRoot, sourceSlug)
@@ -189,7 +189,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Get permissions config for a workspace (raw format for UI display)
   server.handle(RPC_CHANNELS.workspace.GET_PERMISSIONS, async (_ctx, workspaceId: string) => {
-    if (isFreeConversationWorkspaceId(workspaceId) || !resolveRuntimeWorkspace(workspaceId)) return null
+    if (isFreeConversationWorkspaceId(workspaceId) || !resolveRuntimeWorkspaceById(workspaceId)) return null
     return withSourceScope(workspaceId, async ({ projectRoot }) => {
       if (!projectRoot) return null
       const { loadRawWorkspacePermissions } = await import('@craft-agent/shared/agent')

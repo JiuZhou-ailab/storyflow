@@ -57,6 +57,8 @@ export interface Workspace extends WorkspaceInfo {
   defaultEnabledSourceRefs?: string[];
   /** Directory metadata fingerprint used only to verify explicit relink targets. */
   directoryConfigId?: string;
+  /** Canonical Host-granted roots that Project or Session metadata may request as Pi cwd. */
+  grantedWorkingDirectoryRoots?: string[];
   localMcpEnabled?: boolean;
   automationsEnabled?: boolean;
   /** Derived local runtime state. Never persisted and always available for remote workspaces. */

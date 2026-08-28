@@ -1,9 +1,9 @@
 // input: Host Project registrations, selected local roots, and project-owned Session metadata
-// output: Canonical local Project registration, compatibility identity restoration, availability, and explicit root relinking
+// output: Canonical Project registration, Host-owned Pi cwd grants, compatibility migration, availability, and relinking
 // pos: Product Host boundary that keeps stable Project identity separate from its filesystem locator
 
 import { existsSync, realpathSync, statSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { basename, dirname, relative, resolve } from 'node:path'
 import type { Workspace } from '@craft-agent/core/types'
 import {
   addWorkspace,
@@ -11,8 +11,8 @@ import {
   loadStoredConfig,
   saveConfig,
 } from '../config/storage.ts'
-import { listSessions } from '../sessions/storage.ts'
-import { normalizePathForComparison } from '../utils/paths.ts'
+import { listSessions, listSessionsAsync } from '../sessions/storage.ts'
+import { normalizePathForComparison, pathStartsWith } from '../utils/paths.ts'
 import { extractWorkspaceSlugFromPath } from '../utils/workspace-slug.ts'
 import { getWorkspaceConfigPath, rebasePathWithinProjectRoot } from './paths.ts'
 import {
@@ -25,15 +25,20 @@ import {
 
 export function canonicalizeProjectRoot(rootPath: string, allowMissing = false): string {
   const absolute = resolve(rootPath)
-  try {
-    if (!statSync(absolute).isDirectory()) {
-      throw new Error(`Not a directory: ${absolute}`)
+  let candidate = absolute
+  while (true) {
+    try {
+      if (!statSync(candidate).isDirectory()) {
+        throw new Error(`Not a directory: ${candidate}`)
+      }
+      return resolve(realpathSync(candidate), relative(candidate, absolute))
+    } catch (error) {
+      if (!allowMissing || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      const parent = dirname(candidate)
+      if (parent === candidate) return absolute
+      candidate = parent
     }
-  } catch (error) {
-    if (allowMissing && (error as NodeJS.ErrnoException).code === 'ENOENT') return absolute
-    throw error
   }
-  return realpathSync(absolute)
 }
 
 function sameRoot(left: string, right: string): boolean {
@@ -89,39 +94,217 @@ export function isWorkspaceRootAvailable(workspace: Workspace): boolean {
   return Boolean(config && workspace.directoryConfigId === config.id)
 }
 
-/** Pin a pre-fingerprint Project to its already trusted locator without inspecting Session content. */
-export function restoreLegacyLocalProjectDirectoryIdentity(projectId: string): Workspace {
+/** Resolve a Pi cwd only from the Project root or a canonical Host grant. */
+export function resolveWorkspaceWorkingDirectory(
+  workspace: Workspace,
+  requestedPath: string,
+  allowMissing = false,
+): string {
+  if (workspace.remoteServer) {
+    throw new Error('Remote Project working directories must be resolved by their Host.')
+  }
+
+  const canonicalRoot = canonicalizeProjectRoot(workspace.rootPath)
+  const directoryConfig = inspectWorkspaceStateConfig(canonicalRoot)
+  if (!directoryConfig || workspace.directoryConfigId !== directoryConfig.id) {
+    throw new Error(`Project directory is unavailable; relink Project ${workspace.id} before using a working directory.`)
+  }
+  return resolveVerifiedWorkspaceWorkingDirectoryFromRoot(
+    workspace,
+    canonicalRoot,
+    requestedPath,
+    allowMissing,
+  )
+}
+
+function resolveVerifiedWorkspaceWorkingDirectoryFromRoot(
+  workspace: Workspace,
+  canonicalRoot: string,
+  requestedPath: string,
+  allowMissing: boolean,
+): string {
+  const canonicalWorkingDirectory = canonicalizeProjectRoot(requestedPath, allowMissing)
+  const grantedRoots = workspace.grantedWorkingDirectoryRoots ?? []
+  if (
+    !pathStartsWith(canonicalWorkingDirectory, canonicalRoot)
+    && !grantedRoots.some(root => pathStartsWith(canonicalWorkingDirectory, root))
+  ) {
+    throw new Error('Working directory is not authorized for this Project. Select the folder again.')
+  }
+  return canonicalWorkingDirectory
+}
+
+/** Resolve cwd after the caller has already verified this exact Project snapshot. */
+export function resolveVerifiedWorkspaceWorkingDirectory(
+  workspace: Workspace,
+  requestedPath: string,
+  allowMissing = false,
+): string {
+  if (workspace.remoteServer) {
+    throw new Error('Remote Project working directories must be resolved by their Host.')
+  }
+  return resolveVerifiedWorkspaceWorkingDirectoryFromRoot(
+    workspace,
+    workspace.rootPath,
+    requestedPath,
+    allowMissing,
+  )
+}
+
+/** Persist one explicit Host authorization and return its canonical Pi cwd. */
+export function grantWorkspaceWorkingDirectory(projectId: string, requestedPath: string) {
   const config = loadStoredConfig()
   const project = config?.workspaces.find(workspace => workspace.id === projectId)
   if (!config || !project) throw new Error(`Project not found: ${projectId}`)
-  if (project.remoteServer) throw new Error('Remote Projects do not have local directory identity.')
-  if (project.directoryConfigId) throw new Error(`Project ${projectId} already has directory identity.`)
+  if (project.remoteServer) {
+    throw new Error('Remote Project working directories must be granted by their Host.')
+  }
 
   const canonicalRoot = canonicalizeProjectRoot(project.rootPath)
-  const inspectedConfig = inspectWorkspaceStateConfig(canonicalRoot)
-  if (!inspectedConfig) throw new Error(`Failed to verify Storyflow Project: ${canonicalRoot}`)
-  assertProjectDirectoryIsUnclaimed(inspectedConfig.id, project.id)
+  const canonicalWorkingDirectory = canonicalizeProjectRoot(requestedPath)
+  const grantedRoots = project.grantedWorkingDirectoryRoots ?? []
+  if (
+    pathStartsWith(canonicalWorkingDirectory, canonicalRoot)
+    || grantedRoots.some(root => pathStartsWith(canonicalWorkingDirectory, root))
+  ) {
+    return { workspace: { ...project }, workingDirectory: canonicalWorkingDirectory }
+  }
 
   const directoryConfig = inspectWorkspaceStateConfig(canonicalRoot)
-  if (!directoryConfig || directoryConfig.id !== inspectedConfig.id) {
-    throw new Error(`Failed to verify Storyflow Project: ${canonicalRoot}`)
+  if (!directoryConfig || project.directoryConfigId !== directoryConfig.id) {
+    throw new Error(`Project directory is unavailable; relink Project ${project.id} before selecting a working directory.`)
   }
 
-  const currentConfig = loadStoredConfig()
-  const currentProject = currentConfig?.workspaces.find(workspace => workspace.id === projectId)
-  if (
-    !currentConfig
-    || !currentProject
-    || currentProject.remoteServer
-    || currentProject.directoryConfigId
-    || !sameRoot(currentProject.rootPath, canonicalRoot)
-  ) {
-    throw new Error('The Project registration changed while the directory was being verified.')
+  project.grantedWorkingDirectoryRoots = [
+    ...grantedRoots.filter(root => !pathStartsWith(root, canonicalWorkingDirectory)),
+    canonicalWorkingDirectory,
+  ]
+  saveConfig(config)
+  return { workspace: { ...project }, workingDirectory: canonicalWorkingDirectory }
+}
+
+/** Discover legacy cwd capabilities before the Host commits a Project locator. */
+export async function discoverLegacyWorkingDirectoryRoots(project: Workspace, canonicalRoot: string): Promise<string[]> {
+  const directoryConfig = loadWorkspaceConfig(canonicalRoot)
+  if (!directoryConfig || directoryConfig.id !== project.directoryConfigId) {
+    throw new Error('stored locator changed while working directories were being migrated')
   }
-  assertProjectDirectoryIsUnclaimed(directoryConfig.id, currentProject.id)
-  currentProject.directoryConfigId = directoryConfig.id
-  saveConfig(currentConfig)
-  return { ...currentProject, rootAvailable: true }
+
+  const candidates = [
+    directoryConfig.defaults?.workingDirectory,
+    ...(await listSessionsAsync(canonicalRoot, false)).map(session => session.workingDirectory),
+  ]
+  const grantedRoots: string[] = []
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    const canonicalWorkingDirectory = canonicalizeProjectRoot(candidate, true)
+    if (pathStartsWith(canonicalWorkingDirectory, canonicalRoot)) continue
+    if (grantedRoots.some(root => pathStartsWith(canonicalWorkingDirectory, root))) continue
+    grantedRoots.splice(
+      0,
+      grantedRoots.length,
+      ...grantedRoots.filter(root => !pathStartsWith(root, canonicalWorkingDirectory)),
+      canonicalWorkingDirectory,
+    )
+  }
+  return grantedRoots
+}
+
+/** Upgrade one reachable v0.17 Host registration without holding a stale config across I/O. */
+export async function migrateLegacyLocalProjectDirectoryIdentity(projectId: string) {
+  const initialConfig = loadStoredConfig()
+  const initial = initialConfig?.workspaces.find(project => project.id === projectId)
+  if (!initialConfig || !initial) throw new Error(`Project not found: ${projectId}`)
+  if (initial.remoteServer) return { applied: false, restoredDirectoryIdentity: false }
+
+  const initialRoot = initial.rootPath
+  const canonicalRoot = canonicalizeProjectRoot(initialRoot)
+  if (
+    initialRoot === canonicalRoot
+    && initial.directoryConfigId
+    && initial.grantedWorkingDirectoryRoots !== undefined
+  ) return { applied: false, restoredDirectoryIdentity: false }
+  const directoryConfig = inspectWorkspaceStateConfig(canonicalRoot)
+  if (!directoryConfig) throw new Error('stored locator is not a valid Storyflow Project')
+  if (initial.directoryConfigId && initial.directoryConfigId !== directoryConfig.id) {
+    throw new Error('stored locator no longer matches the Project directory identity')
+  }
+  const initiallyClaimedBy = initialConfig.workspaces.find(project => (
+    project.id !== projectId && project.directoryConfigId === directoryConfig.id
+  ))
+  if (initiallyClaimedBy) {
+    throw new Error(`directory identity is already claimed by Project ${initiallyClaimedBy.id}`)
+  }
+
+  const directoryConfigId = initial.directoryConfigId ?? directoryConfig.id
+  let grantedRoots = initial.grantedWorkingDirectoryRoots
+  let unresolvedReason: string | undefined
+  if (grantedRoots === undefined) {
+    try {
+      grantedRoots = await discoverLegacyWorkingDirectoryRoots(
+        { ...initial, directoryConfigId },
+        canonicalRoot,
+      )
+    } catch (error) {
+      unresolvedReason = error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  const config = loadStoredConfig()
+  const project = config?.workspaces.find(candidate => candidate.id === projectId)
+  if (!config || !project || project.rootPath !== initialRoot || project.remoteServer) {
+    throw new Error('Project registration changed while its directory identity was being migrated')
+  }
+  if (project.directoryConfigId && project.directoryConfigId !== directoryConfig.id) {
+    throw new Error('Project directory identity changed while it was being migrated')
+  }
+  const currentDirectoryConfig = inspectWorkspaceStateConfig(canonicalRoot)
+  if (!currentDirectoryConfig || currentDirectoryConfig.id !== directoryConfig.id) {
+    throw new Error('stored locator changed while its directory identity was being migrated')
+  }
+  const claimedBy = config.workspaces.find(candidate => (
+    candidate.id !== projectId && candidate.directoryConfigId === directoryConfig.id
+  ))
+  if (claimedBy) {
+    throw new Error(`directory identity is already claimed by Project ${claimedBy.id}`)
+  }
+
+  const restoredDirectoryIdentity = !project.directoryConfigId
+  project.rootPath = canonicalRoot
+  project.slug = extractWorkspaceSlugFromPath(canonicalRoot, project.id)
+  project.directoryConfigId = directoryConfig.id
+  if (grantedRoots !== undefined) project.grantedWorkingDirectoryRoots ??= grantedRoots
+  saveConfig(config)
+  return { applied: true, restoredDirectoryIdentity, unresolvedReason }
+}
+
+/** Upgrade each reachable v0.17 Host registration; unresolved Projects retry next startup. */
+export async function migrateLegacyLocalProjectDirectoryIdentities() {
+  const config = loadStoredConfig()
+  if (!config) {
+    return { applied: false, restoredProjectIds: [], unresolvedProjects: [] }
+  }
+
+  const restoredProjectIds: string[] = []
+  const unresolvedProjects: Array<{ projectId: string; reason: string }> = []
+  let changed = false
+  for (const project of config.workspaces) {
+    try {
+      const result = await migrateLegacyLocalProjectDirectoryIdentity(project.id)
+      changed ||= result.applied
+      if (result.restoredDirectoryIdentity) restoredProjectIds.push(project.id)
+      if (result.unresolvedReason) {
+        unresolvedProjects.push({ projectId: project.id, reason: result.unresolvedReason })
+      }
+    } catch (error) {
+      unresolvedProjects.push({
+        projectId: project.id,
+        reason: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return { applied: changed, restoredProjectIds, unresolvedProjects }
 }
 
 /** Register a selected local directory without copying directory-owned identity into the Host identity. */
@@ -173,6 +356,7 @@ export function registerLocalProject(name: string, rootPath: string): Workspace 
     name: directoryConfig.name || name,
     rootPath: canonicalRoot,
     directoryConfigId: directoryConfig.id,
+    grantedWorkingDirectoryRoots: [],
   })
 }
 
@@ -264,11 +448,15 @@ export function commitWorkspaceRootRelink(plan: WorkspaceRootRelinkPlan): Worksp
     workspace.id !== plan.projectId && sameRoot(workspace.rootPath, plan.currentRoot)
   ))
   if (claimed) throw new Error(`This directory already belongs to "${claimed.name}".`)
+  if (plan.workspace.grantedWorkingDirectoryRoots === undefined) {
+    throw new Error('Legacy working-directory grants must be migrated before committing a Project relink.')
+  }
 
   project.rootPath = plan.currentRoot
   project.slug = plan.workspace.slug
   project.name = plan.workspace.name
   project.directoryConfigId = plan.directoryConfigId
+  project.grantedWorkingDirectoryRoots = [...plan.workspace.grantedWorkingDirectoryRoots]
   saveConfig(config)
 
   return { ...project, rootAvailable: true }
@@ -289,12 +477,18 @@ export function rebaseWorkspaceDefaultWorkingDirectory(plan: WorkspaceRootRelink
 }
 
 /** Compatibility wrapper for non-runtime callers. Runtime relink stages Session state first. */
-export function relinkWorkspaceRoot(
+export async function relinkWorkspaceRoot(
   projectId: string,
   rootPath: string,
   expectedSessionIds: readonly string[] = [],
-): Workspace {
+): Promise<Workspace> {
   const plan = prepareWorkspaceRootRelink(projectId, rootPath, expectedSessionIds)
+  if (plan.workspace.grantedWorkingDirectoryRoots === undefined) {
+    plan.workspace.grantedWorkingDirectoryRoots = await discoverLegacyWorkingDirectoryRoots(
+      plan.workspace,
+      plan.currentRoot,
+    )
+  }
   const workspace = commitWorkspaceRootRelink(plan)
   rebaseWorkspaceDefaultWorkingDirectory(plan)
   return workspace

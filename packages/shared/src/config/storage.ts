@@ -7,7 +7,7 @@ import { join, dirname, basename } from 'path';
 import { isDeepStrictEqual } from 'node:util';
 import { credentialIdToAccount, getCredentialManager } from '../credentials/index.ts';
 import {
-  inspectWorkspaceConfig,
+  inspectWorkspaceStateConfig,
   loadWorkspaceConfig,
   saveWorkspaceConfig,
 } from '../workspaces/storage.ts';
@@ -859,35 +859,20 @@ export async function migrateRemoteServerCredentialsOnStartup(): Promise<boolean
 
 export function getWorkspaces(): Workspace[] {
   const config = loadStoredConfig();
-  const workspaces = config?.workspaces || [];
-  let hostCacheChanged = false;
+  return (config?.workspaces ?? []).map(workspace => ({
+    ...workspace,
+    name: workspace.name || basename(workspace.rootPath) || 'Untitled',
+    slug: extractWorkspaceSlugFromPath(workspace.rootPath, workspace.id),
+  }));
+}
 
-  // Resolve workspace names from verified folder config and local icons.
-  // Reading the Project catalog must never migrate an unverified locator.
-  const resolved = workspaces.map(w => {
-    const wsConfig = inspectWorkspaceConfig(w.rootPath);
-    const configMatchesHost = Boolean(
-      wsConfig && w.directoryConfigId === wsConfig.id,
-    );
-    if (wsConfig && configMatchesHost && !w.remoteServer) {
-      if (wsConfig.name && w.name !== wsConfig.name) {
-        w.name = wsConfig.name;
-        hostCacheChanged = true;
-      }
-    }
-    const name = (configMatchesHost ? wsConfig?.name : undefined)
-      || w.name
-      || basename(w.rootPath)
-      || 'Untitled';
-
-    // If workspace has a stored iconUrl that's a remote URL, use it
-    // Otherwise check for local icon file
-    let iconUrl = w.iconUrl;
+/** Resolve optional filesystem display metadata only for an explicit catalog refresh. */
+export function getWorkspaceCatalog(): Workspace[] {
+  return getWorkspaces().map(workspace => {
+    let iconUrl = workspace.iconUrl;
     if (!iconUrl || (!iconUrl.startsWith('http://') && !iconUrl.startsWith('https://'))) {
-      const localIcon = findWorkspaceIcon(w.rootPath);
+      const localIcon = findWorkspaceIcon(workspace.rootPath);
       if (localIcon) {
-        // Convert absolute path to file:// URL for Electron renderer
-        // Append mtime as cache-buster so UI refreshes when icon changes
         try {
           const mtime = statSync(localIcon).mtimeMs;
           iconUrl = `file://${localIcon}?t=${mtime}`;
@@ -896,18 +881,8 @@ export function getWorkspaces(): Workspace[] {
         }
       }
     }
-
-    const slug = extractWorkspaceSlugFromPath(w.rootPath, w.id);
-    return {
-      ...w,
-      name,
-      slug,
-      iconUrl,
-      rootAvailable: Boolean(w.remoteServer || configMatchesHost),
-    };
+    return { ...workspace, iconUrl };
   });
-  if (hostCacheChanged && config) saveConfig(config);
-  return resolved;
 }
 
 export function getActiveWorkspace(): Workspace | null {
@@ -922,21 +897,35 @@ export function getActiveWorkspace(): Workspace | null {
  * Find a workspace by name (case-insensitive) or ID.
  * Useful for CLI -w flag to specify workspace.
  */
-export function getWorkspaceByNameOrId(nameOrId: string): Workspace | null {
-  const workspaces = getWorkspaces();
-  const workspace = workspaces.find(w =>
-    w.id === nameOrId ||
-    w.name.toLowerCase() === nameOrId.toLowerCase()
-  );
+function requireAvailableWorkspace(workspace: Workspace | undefined): Workspace | null {
   if (!workspace) return null;
 
-  if (workspace.rootAvailable === false) return null;
-
-  // The configured root is a reference, not an instruction to recreate user data.
-  // Remote workspaces resolve on their own server; local workspaces must still exist.
-  if (!workspace.remoteServer && !existsSync(workspace.rootPath)) return null;
+  if (!workspace.remoteServer) {
+    const directoryConfig = inspectWorkspaceStateConfig(workspace.rootPath);
+    if (!directoryConfig || workspace.directoryConfigId !== directoryConfig.id) return null;
+  }
 
   return workspace;
+}
+
+export function getWorkspaceById(workspaceId: string): Workspace | null {
+  return requireAvailableWorkspace(getWorkspaces().find(workspace => workspace.id === workspaceId));
+}
+
+export function getWorkspaceByNameOrId(nameOrId: string): Workspace | null {
+  const workspaces = getWorkspaces();
+  const workspace = workspaces.find(w => w.id === nameOrId)
+    ?? workspaces.find(w => w.name.toLowerCase() === nameOrId.toLowerCase());
+  return requireAvailableWorkspace(workspace);
+}
+
+/** Keep the Host registration name current when the explicit rename command succeeds. */
+export function updateWorkspaceName(workspaceId: string, name: string): void {
+  const config = loadStoredConfig();
+  const workspace = config?.workspaces.find(candidate => candidate.id === workspaceId);
+  if (!config || !workspace) throw new Error(`Workspace not found: ${workspaceId}`);
+  workspace.name = name;
+  saveConfig(config);
 }
 
 export async function updateWorkspaceRemoteServer(
@@ -948,7 +937,7 @@ export async function updateWorkspaceRemoteServer(
   const ws = config.workspaces.find(w => w.id === workspaceId);
   if (!ws) throw new Error('Workspace not found');
   if (!ws.remoteServer) {
-    const directoryConfig = inspectWorkspaceConfig(ws.rootPath);
+    const directoryConfig = inspectWorkspaceStateConfig(ws.rootPath);
     if (!ws.directoryConfigId || directoryConfig?.id !== ws.directoryConfigId) {
       throw new Error('Relink this Project before connecting it to a remote server.');
     }
@@ -1100,8 +1089,8 @@ export async function removeWorkspace(workspaceId: string): Promise<boolean> {
   return true;
 }
 
-// Note: renameWorkspace() was removed - workspace names are now stored only in folder config
-// Use updateWorkspaceSetting('name', ...) to rename workspaces via the folder config
+// Note: renameWorkspace() was removed. The explicit settings command updates
+// both directory metadata and the Host registration used by pure catalog reads.
 
 // ============================================
 // Session Input Drafts

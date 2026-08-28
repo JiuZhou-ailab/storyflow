@@ -525,15 +525,15 @@ describe('Project removal lifecycle', () => {
       expect(JSON.parse(match[1])).toEqual({
         removed: true,
         errors: {
-          loaded: expect.stringContaining('Project root does not exist'),
-          cold: expect.stringContaining('Project root does not exist'),
+          loaded: expect.stringContaining('relink Project'),
+          cold: expect.stringContaining('relink Project'),
           opened: expect.stringContaining('relink Project'),
         },
         coldStayedCold: true,
         openedStayedCold: true,
         queuedRecoveryCalls: 0,
-        loaded: { labels: ['latest-loaded'], messageIds: ['loaded-message'] },
-        cold: { labels: ['latest-cold'], messageIds: ['cold-message'], isQueued: true },
+        loaded: { messageIds: ['loaded-message'] },
+        cold: { messageIds: ['cold-message'], isQueued: true },
         opened: { messageIds: ['opened-message'] },
       })
     } finally {
@@ -557,22 +557,34 @@ describe('Project removal lifecycle', () => {
       }],
       activeWorkspaceId: 'project-old', activeSessionId: null,
     }))
-    // atomicWriteFileSync uses this exact temporary path; occupying it with a
-    // directory gives a deterministic Host pre-commit failure on every OS.
-    mkdirSync(join(configDir, 'config.json.tmp'))
-
     try {
       const run = Bun.spawnSync([
         process.execPath,
         '--eval',
         `
+          import { renameSync, unlinkSync, writeFileSync } from 'node:fs';
           import { SessionManager, createManagedSession } from '${SESSION_MANAGER_MODULE_PATH}';
           const manager = new SessionManager();
           const workspace = manager.getWorkspaces()[0];
           const managed = createManagedSession({ id: 'session-1' }, workspace, { messagesLoaded: true });
           manager.sessions.set(managed.id, managed);
+          let markFlushEntered;
+          const flushEntered = new Promise(resolve => { markFlushEntered = resolve; });
+          let releaseFlush;
+          manager.flushSession = () => new Promise(resolve => {
+            releaseFlush = resolve;
+            markFlushEntered();
+          });
+          const removal = manager.removeWorkspace('project-old');
+          await flushEntered;
+          const blockedConfigDir = ${JSON.stringify(configDir)} + '.blocked';
+          renameSync(${JSON.stringify(configDir)}, blockedConfigDir);
+          writeFileSync(${JSON.stringify(configDir)}, 'blocked');
+          releaseFlush();
           let error;
-          try { await manager.removeWorkspace('project-old'); } catch (cause) { error = cause.message; }
+          try { await removal; } catch (cause) { error = cause.message; }
+          unlinkSync(${JSON.stringify(configDir)});
+          renameSync(blockedConfigDir, ${JSON.stringify(configDir)});
           console.log('ROLLBACK_RESULT=' + JSON.stringify({
             error,
             runtimeCount: manager.getSessions('project-old').length,

@@ -31,5 +31,5 @@ export interface HandlerDeps<
   /** True only for a single-user host that can refresh its own managed model token. */
   managedModelAccessAvailable?: boolean
   /** Optional host/test override for resolving hidden and configured runtime workspaces. */
-  resolveRuntimeWorkspace?: (workspaceId: string) => Workspace | null
+  resolveRuntimeWorkspaceById?: (workspaceId: string) => Workspace | null
 }

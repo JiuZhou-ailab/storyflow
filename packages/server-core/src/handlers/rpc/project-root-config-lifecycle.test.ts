@@ -21,7 +21,7 @@ function writeProjectConfig(rootPath: string): void {
 }
 
 describe('Project-root config RPC lifecycle', () => {
-  it('canonicalizes a Project alias before serializing config IO with relink', () => {
+  it('serializes stable Project ID config IO with relink', () => {
     const parent = mkdtempSync(join(tmpdir(), 'storyflow-config-rpc-relink-'))
     const configDir = join(parent, 'host')
     const previousRoot = join(parent, 'previous')
@@ -58,7 +58,7 @@ describe('Project-root config RPC lifecycle', () => {
           let finishLifecycle;
           const lifecycleStarted = new Promise(resolve => { markLifecycleStarted = resolve; });
           const lifecycleGate = new Promise(resolve => { finishLifecycle = resolve; });
-          const relocation = manager.withProjectLifecycle('Project', async () => {
+          const relocation = manager.withProjectLifecycle('project-1', async () => {
             markLifecycleStarted();
             await lifecycleGate;
             const config = loadStoredConfig();

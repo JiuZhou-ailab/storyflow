@@ -6,13 +6,13 @@ import { join, resolve } from 'path'
 import { homedir } from 'os'
 import type { RemoteServerConnectionInput } from '@craft-agent/core/types'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { getWorkspaceByNameOrId, setActiveWorkspace, getWorkspaces } from '@craft-agent/shared/config'
+import { getWorkspaceByNameOrId, getWorkspaceCatalog, setActiveWorkspace, getWorkspaces } from '@craft-agent/shared/config'
 import {
   ensureProjectOwnedDirectory,
   isPathWithinProjectRoot,
   isWorkspaceRootAvailable,
   resolveProjectOwnedPath,
-  resolveRuntimeWorkspace,
+  resolveRuntimeWorkspaceById,
 } from '@craft-agent/shared/workspaces'
 import { perf } from '@craft-agent/shared/utils'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
@@ -58,7 +58,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
 
   // Get workspaces (LOCAL_ONLY — includes rootPath for local Electron renderer)
   server.handle(RPC_CHANNELS.workspaces.GET, async () => {
-    return sessionManager.getWorkspaces().map(workspace => ({
+    return getWorkspaceCatalog().map(workspace => ({
       ...workspace,
       rootAvailable: isWorkspaceRootAvailable(workspace),
     }))
@@ -134,7 +134,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   // Resolve hidden and configured runtime workspaces through one ID contract.
   server.handle(
     RPC_CHANNELS.window.RESOLVE_RUNTIME_WORKSPACE,
-    async (_ctx, workspaceId: string) => resolveRuntimeWorkspace(workspaceId),
+    async (_ctx, workspaceId: string) => resolveRuntimeWorkspaceById(workspaceId),
   )
 
   // Switch workspace in current window (in-window switching)

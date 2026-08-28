@@ -3,7 +3,7 @@
 // pos: SessionManager runtime-refresh contract tests
 
 import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { resolveBackendContext } from '@craft-agent/shared/agent/backend'
@@ -62,8 +62,9 @@ function injectSession(
   const workspace = {
     id: 'ws_test',
     name: 'Test Workspace',
-    rootPath: workspaceRoot,
+    rootPath: realpathSync(workspaceRoot),
     createdAt: Date.now(),
+    directoryConfigId: 'directory-test',
   }
   const managed = createManagedSession(
     { id, name: id, llmConnection },
@@ -117,7 +118,11 @@ describe('refreshConnectionRuntime', () => {
 
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-refresh-'))
-    sm = new SessionManager()
+    mkdirSync(join(tmpRoot, '.craft-agent'), { recursive: true })
+    writeFileSync(join(tmpRoot, '.craft-agent', 'config.json'), JSON.stringify({
+      id: 'directory-test', name: 'Test Workspace', slug: 'test-workspace', createdAt: 1, updatedAt: 1,
+    }))
+    sm = new SessionManager((_workspaceId, managed) => managed.workspace)
     setSessionRuntimeHooks({
       ensureManagedModelAccessToken: async () => ({
         token: 'managed-test-token',
@@ -453,7 +458,7 @@ describe('refreshConnectionRuntime', () => {
 
 describe('global config broadcasts', () => {
   it('coalesces the per-workspace watcher fanout into one client invalidation', async () => {
-    const sm = new SessionManager()
+    const sm = new SessionManager((_workspaceId, managed) => managed.workspace)
     const channels: string[] = []
     sm.setEventSink(((channel: string) => {
       channels.push(channel)

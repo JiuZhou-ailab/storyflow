@@ -21,6 +21,7 @@ export {
   getFreeConversationWorkspace,
   isFreeConversationWorkspaceId,
   resolveRuntimeWorkspace,
+  resolveRuntimeWorkspaceById,
   listSessionWorkspaces,
 } from './application-context.ts';
 export {
@@ -37,10 +38,15 @@ export {
   canonicalizeProjectRoot,
   isWorkspaceRootAvailable,
   commitWorkspaceRootRelink,
+  discoverLegacyWorkingDirectoryRoots,
   prepareWorkspaceRootRelink,
   rebaseWorkspaceDefaultWorkingDirectory,
   registerLocalProject,
-  restoreLegacyLocalProjectDirectoryIdentity,
+  grantWorkspaceWorkingDirectory,
+  migrateLegacyLocalProjectDirectoryIdentity,
+  migrateLegacyLocalProjectDirectoryIdentities,
+  resolveVerifiedWorkspaceWorkingDirectory,
+  resolveWorkspaceWorkingDirectory,
   relinkWorkspaceRoot,
 } from './project-registry.ts';
 export type { WorkspaceRootRelinkPlan } from './project-registry.ts';

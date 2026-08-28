@@ -26,6 +26,7 @@ import { getLegacyConflictRelativePath, loadWorkspaceConfig } from '../storage.t
 
 const REGISTRY_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'project-registry.ts')).href
 const CONFIG_STORAGE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'config', 'storage.ts')).href
+const APPLICATION_CONTEXT_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'application-context.ts')).href
 
 function writeProjectConfig(
   rootPath: string,
@@ -44,7 +45,13 @@ function writeProjectConfig(
 
 function writeHostConfig(
   configDir: string,
-  workspaces: Array<{ id: string; name: string; rootPath: string; directoryConfigId?: string }>,
+  workspaces: Array<{
+    id: string
+    name: string
+    rootPath: string
+    directoryConfigId?: string
+    grantedWorkingDirectoryRoots?: string[]
+  }>,
   activeWorkspaceId = workspaces[0]?.id ?? null,
 ): void {
   mkdirSync(configDir, { recursive: true })
@@ -106,6 +113,298 @@ function writeSessionHeader(rootPath: string, sessionId: string, header: Record<
 }
 
 describe('Project registry identity and locator', () => {
+  it('migrates every safe v0.17 directory identity once', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-identity-migration-'))
+    const configDir = join(parent, 'host')
+    const firstRoot = join(parent, 'first')
+    const secondRoot = join(parent, 'second')
+    const externalCwd = join(parent, 'external-cwd')
+    writeProjectConfig(firstRoot, { id: 'directory-first', name: 'First', workingDirectory: externalCwd })
+    writeProjectConfig(secondRoot, { id: 'directory-second', name: 'Second' })
+    writeHostConfig(configDir, [
+      { id: 'project-first', name: 'First', rootPath: firstRoot },
+      { id: 'project-second', name: 'Second', rootPath: secondRoot },
+    ])
+
+    try {
+      const first = runRegistry(configDir, 'await registry.migrateLegacyLocalProjectDirectoryIdentities()')
+      expect(first.result).toMatchObject({
+        applied: true,
+        restoredProjectIds: ['project-first', 'project-second'],
+        unresolvedProjects: [],
+      })
+      const migrated = JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8'))
+      expect(migrated.workspaces.map((workspace: { directoryConfigId?: string }) => workspace.directoryConfigId))
+        .toEqual(['directory-first', 'directory-second'])
+      expect(migrated.workspaces.map((workspace: { grantedWorkingDirectoryRoots?: string[] }) => workspace.grantedWorkingDirectoryRoots))
+        .toEqual([[join(realpathSync(parent), 'external-cwd')], []])
+      expect(migrated.migrationsApplied).toBeUndefined()
+
+      writeProjectConfig(firstRoot, { id: 'directory-replaced', name: 'Replaced' })
+      const second = runRegistry(configDir, 'await registry.migrateLegacyLocalProjectDirectoryIdentities()')
+      expect(second.result).toEqual({
+        applied: false,
+        restoredProjectIds: [],
+        unresolvedProjects: [],
+      })
+      expect(JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8')).workspaces[0].directoryConfigId)
+        .toBe('directory-first')
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('canonicalizes the v0.17 locator without trusting ordinary root Sessions for cwd grants', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-cwd-migration-boundary-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const projectAlias = join(parent, 'project-alias')
+    const trustedCwd = join(parent, 'trusted-cwd')
+    const ordinarySessionDir = join(projectRoot, 'sessions', 'ordinary-session')
+    writeProjectConfig(projectRoot, { id: 'directory-project', name: 'Project' })
+    writeSessionHeader(projectRoot, 'canonical-session', {
+      workspaceRootPath: projectRoot,
+      workingDirectory: trustedCwd,
+    })
+    mkdirSync(ordinarySessionDir, { recursive: true })
+    writeFileSync(join(ordinarySessionDir, 'session.jsonl'), `${JSON.stringify({
+      id: 'ordinary-session',
+      workspaceRootPath: projectRoot,
+      workingDirectory: parent,
+      createdAt: 1,
+      lastUsedAt: 1,
+      messageCount: 0,
+    })}\n`)
+    symlinkSync(projectRoot, projectAlias, 'dir')
+    writeHostConfig(configDir, [{
+      id: 'project-id', name: 'Project', rootPath: projectAlias,
+    }])
+
+    try {
+      const response = runRegistry(
+        configDir,
+        'await registry.migrateLegacyLocalProjectDirectoryIdentities()',
+      )
+      expect(response.error).toBeUndefined()
+      expect(JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8')).workspaces[0])
+        .toMatchObject({
+          rootPath: realpathSync(projectRoot),
+          grantedWorkingDirectoryRoots: [join(realpathSync(parent), 'trusted-cwd')],
+        })
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('canonicalizes a schema-complete Host locator only once', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-schema-complete-alias-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const projectAlias = join(parent, 'project-alias')
+    writeProjectConfig(projectRoot, { id: 'directory-project', name: 'Project' })
+    symlinkSync(projectRoot, projectAlias, 'dir')
+    writeHostConfig(configDir, [{
+      id: 'project-id',
+      name: 'Project',
+      rootPath: projectAlias,
+      directoryConfigId: 'directory-project',
+      grantedWorkingDirectoryRoots: [],
+    }])
+
+    try {
+      const first = runRegistry(configDir, 'await registry.migrateLegacyLocalProjectDirectoryIdentities()')
+      expect(first.result).toMatchObject({ applied: true, unresolvedProjects: [] })
+      expect(JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8')).workspaces[0].rootPath)
+        .toBe(realpathSync(projectRoot))
+
+      const second = runRegistry(configDir, 'await registry.migrateLegacyLocalProjectDirectoryIdentities()')
+      expect(second.result).toEqual({
+        applied: false,
+        restoredProjectIds: [],
+        unresolvedProjects: [],
+      })
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('retries only unresolved v0.17 Projects instead of globally completing migration', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-identity-retry-'))
+    const configDir = join(parent, 'host')
+    const onlineRoot = join(parent, 'online')
+    const offlineRoot = join(parent, 'offline')
+    writeProjectConfig(onlineRoot, { id: 'directory-online', name: 'Online' })
+    writeHostConfig(configDir, [
+      { id: 'project-online', name: 'Online', rootPath: onlineRoot },
+      { id: 'project-offline', name: 'Offline', rootPath: offlineRoot },
+    ])
+
+    try {
+      const first = runRegistry(configDir, 'await registry.migrateLegacyLocalProjectDirectoryIdentities()')
+      expect(first.result).toMatchObject({
+        applied: true,
+        restoredProjectIds: ['project-online'],
+        unresolvedProjects: [{ projectId: 'project-offline' }],
+      })
+
+      writeProjectConfig(offlineRoot, { id: 'directory-offline', name: 'Offline' })
+      const second = runRegistry(configDir, 'await registry.migrateLegacyLocalProjectDirectoryIdentities()')
+      expect(second.result).toMatchObject({
+        applied: true,
+        restoredProjectIds: ['project-offline'],
+        unresolvedProjects: [],
+      })
+
+      const migrated = JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8'))
+      expect(migrated.workspaces).toMatchObject([
+        { directoryConfigId: 'directory-online', grantedWorkingDirectoryRoots: [] },
+        { directoryConfigId: 'directory-offline', grantedWorkingDirectoryRoots: [] },
+      ])
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('requires a Host grant before Project metadata can select an external Pi cwd', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-cwd-grant-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const externalCwd = join(parent, 'external')
+    writeProjectConfig(projectRoot, { id: 'directory-project', name: 'Project', workingDirectory: externalCwd })
+    mkdirSync(externalCwd)
+    writeHostConfig(configDir, [{
+      id: 'project-id',
+      name: 'Project',
+      rootPath: projectRoot,
+      directoryConfigId: 'directory-project',
+      grantedWorkingDirectoryRoots: [],
+    }])
+
+    try {
+      const denied = runRegistry(
+        configDir,
+        `registry.resolveWorkspaceWorkingDirectory((await import('${CONFIG_STORAGE_MODULE_PATH}')).getWorkspaces()[0], ${JSON.stringify(externalCwd)})`,
+      )
+      expect(denied.error).toContain('not authorized')
+
+      const granted = runRegistry(
+        configDir,
+        `registry.grantWorkspaceWorkingDirectory('project-id', ${JSON.stringify(externalCwd)})`,
+      )
+      expect(granted.error).toBeUndefined()
+      expect(granted.result).toMatchObject({ workingDirectory: realpathSync(externalCwd) })
+
+      const resolved = runRegistry(
+        configDir,
+        `registry.resolveWorkspaceWorkingDirectory((await import('${CONFIG_STORAGE_MODULE_PATH}')).getWorkspaces()[0], ${JSON.stringify(externalCwd)})`,
+      )
+      expect(resolved.result).toBe(realpathSync(externalCwd))
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('resolves a runtime Project by its case-insensitive Host name without catalog scanning', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-name-resolution-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    writeProjectConfig(projectRoot, { id: 'directory-project', name: 'Directory Name' })
+    writeHostConfig(configDir, [{
+      id: 'project-id', name: 'Host Name', rootPath: projectRoot, directoryConfigId: 'directory-project',
+    }])
+
+    try {
+      const response = runRegistry(
+        configDir,
+        `(await import('${APPLICATION_CONTEXT_MODULE_PATH}')).resolveRuntimeWorkspace('host name')`,
+      )
+      expect(response.result).toMatchObject({ id: 'project-id', name: 'Host Name' })
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('prefers an exact Project ID when another Project has the same name', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-id-precedence-'))
+    const configDir = join(parent, 'host')
+    const namedRoot = join(parent, 'named')
+    const identifiedRoot = join(parent, 'identified')
+    writeProjectConfig(namedRoot, { id: 'directory-named', name: 'Named' })
+    writeProjectConfig(identifiedRoot, { id: 'directory-identified', name: 'Identified' })
+    writeHostConfig(configDir, [
+      { id: 'other-id', name: 'project-id', rootPath: namedRoot, directoryConfigId: 'directory-named' },
+      { id: 'project-id', name: 'Target', rootPath: identifiedRoot, directoryConfigId: 'directory-identified' },
+    ])
+
+    try {
+      const response = runRegistry(
+        configDir,
+        `(await import('${APPLICATION_CONTEXT_MODULE_PATH}')).resolveRuntimeWorkspaceById('project-id')`,
+      )
+      expect(response.result).toMatchObject({ id: 'project-id', name: 'Target' })
+
+      writeHostConfig(configDir, [
+        { id: 'other-id', name: 'project-id', rootPath: namedRoot, directoryConfigId: 'directory-named' },
+      ])
+      const removed = runRegistry(
+        configDir,
+        `(await import('${APPLICATION_CONTEXT_MODULE_PATH}')).resolveRuntimeWorkspaceById('project-id')`,
+      )
+      expect(removed.result).toBeNull()
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('does not restore runtime identity from an ordinary root config file', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-canonical-runtime-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    writeProjectConfig(projectRoot, { id: 'directory-project', name: 'Project' })
+    writeHostConfig(configDir, [{
+      id: 'project-id', name: 'Project', rootPath: projectRoot,
+      directoryConfigId: 'directory-project', grantedWorkingDirectoryRoots: [],
+    }])
+    rmSync(join(projectRoot, '.craft-agent'), { recursive: true, force: true })
+    writeFileSync(join(projectRoot, 'config.json'), JSON.stringify({
+      id: 'directory-project', name: 'Project', slug: 'project', createdAt: 1, updatedAt: 1,
+    }))
+
+    try {
+      const response = runRegistry(
+        configDir,
+        `(await import('${APPLICATION_CONTEXT_MODULE_PATH}')).resolveRuntimeWorkspace('project-id')`,
+      )
+      expect(response.result).toBeNull()
+      expect(existsSync(join(projectRoot, '.craft-agent'))).toBeFalse()
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the Host catalog read free of Project filesystem synchronization', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'storyflow-project-catalog-read-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    writeProjectConfig(projectRoot, { id: 'directory-id', name: 'Directory Name' })
+    writeHostConfig(configDir, [{
+      id: 'project-id', name: 'Host Name', rootPath: projectRoot, directoryConfigId: 'directory-id',
+    }])
+    const configPath = join(configDir, 'config.json')
+    const before = readFileSync(configPath, 'utf8')
+
+    try {
+      const response = runRegistry(
+        configDir,
+        `(await import('${CONFIG_STORAGE_MODULE_PATH}')).getWorkspaces()[0]`,
+      )
+      expect(response.result).toMatchObject({ id: 'project-id', name: 'Host Name' })
+      expect(readFileSync(configPath, 'utf8')).toBe(before)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
   it('derives a legal Windows fallback path for legacy conflicts', () => {
     expect(getLegacyConflictRelativePath(
       String.raw`C:\project`,
@@ -251,7 +550,7 @@ describe('Project registry identity and locator', () => {
     try {
       const response = runRegistry(
         configDir,
-        `registry.relinkWorkspaceRoot('project-stable', ${JSON.stringify(currentRoot)})`,
+        `await registry.relinkWorkspaceRoot('project-stable', ${JSON.stringify(currentRoot)})`,
       )
       expect(response.error).toBeUndefined()
 
@@ -282,7 +581,7 @@ describe('Project registry identity and locator', () => {
     try {
       const response = runRegistry(
         configDir,
-        `registry.relinkWorkspaceRoot('project-missing', ${JSON.stringify(aliasRoot)})`,
+        `await registry.relinkWorkspaceRoot('project-missing', ${JSON.stringify(aliasRoot)})`,
       )
       expect(response.error).toContain('already belongs')
     } finally {
@@ -356,7 +655,7 @@ describe('Project registry identity and locator', () => {
       expect(response.result).toMatchObject({
         available: false,
         runtimeLookup: null,
-        workspace: { name: 'Original', rootAvailable: false },
+        workspace: { name: 'Original' },
       })
       expect(JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8')).workspaces[0].name)
         .toBe('Original')
@@ -425,9 +724,12 @@ describe('Project registry identity and locator', () => {
     try {
       const before = runRegistry(
         configDir,
-        `(await import('${CONFIG_STORAGE_MODULE_PATH}')).getWorkspaces()[0]`,
+        `({ workspace: (await import('${CONFIG_STORAGE_MODULE_PATH}')).getWorkspaces()[0], available: registry.isWorkspaceRootAvailable((await import('${CONFIG_STORAGE_MODULE_PATH}')).getWorkspaces()[0]) })`,
       )
-      expect(before.result).toMatchObject({ id: 'project-stable', rootAvailable: false })
+      expect(before.result).toMatchObject({
+        available: false,
+        workspace: { id: 'project-stable' },
+      })
 
       const response = runRegistry(
         configDir,
@@ -535,7 +837,7 @@ describe('Project registry identity and locator', () => {
     try {
       const response = runRegistry(
         configDir,
-        `registry.relinkWorkspaceRoot('project-stable', ${JSON.stringify(projectRoot)})`,
+        `await registry.relinkWorkspaceRoot('project-stable', ${JSON.stringify(projectRoot)})`,
       )
       expect(response.error).toBeUndefined()
       expect(response.result).toMatchObject({
@@ -566,10 +868,11 @@ describe('Project registry identity and locator', () => {
     try {
       const response = runRegistry(
         configDir,
-        `(await import('${CONFIG_STORAGE_MODULE_PATH}')).getWorkspaces()[0]`,
+        `({ workspace: (await import('${CONFIG_STORAGE_MODULE_PATH}')).getWorkspaces()[0], available: registry.isWorkspaceRootAvailable((await import('${CONFIG_STORAGE_MODULE_PATH}')).getWorkspaces()[0]) })`,
       )
       expect(response.result).toMatchObject({
-        id: 'project-stable', name: 'Original', rootAvailable: false,
+        available: false,
+        workspace: { id: 'project-stable', name: 'Original' },
       })
       expect(existsSync(join(projectRoot, '.craft-agent'))).toBe(false)
       expect(readFileSync(join(projectRoot, 'sessions', 'session-legacy', 'keep.txt'), 'utf8'))
@@ -599,7 +902,7 @@ describe('Project registry identity and locator', () => {
     try {
       const response = runRegistry(
         configDir,
-        `registry.relinkWorkspaceRoot('project-stable', ${JSON.stringify(targetRoot)}, ['missing-session'])`,
+        `await registry.relinkWorkspaceRoot('project-stable', ${JSON.stringify(targetRoot)}, ['missing-session'])`,
       )
       expect(response.error).toContain('existing Storyflow Project')
       expect(readFileSync(join(targetRoot, 'README.md'), 'utf8')).toBe('unchanged')
@@ -627,7 +930,7 @@ describe('Project registry identity and locator', () => {
     try {
       const response = runRegistry(
         configDir,
-        `registry.relinkWorkspaceRoot('project-stable', ${JSON.stringify(targetRoot)})`,
+        `await registry.relinkWorkspaceRoot('project-stable', ${JSON.stringify(targetRoot)})`,
       )
       expect(response.error).toBeDefined()
       expect(readFileSync(join(outsideState, 'config.json'), 'utf8')).toBe(outsideConfig)
@@ -868,7 +1171,7 @@ describe('Project registry identity and locator', () => {
     try {
       const response = runRegistry(
         configDir,
-        `registry.relinkWorkspaceRoot('project-a', ${JSON.stringify(unrelatedRoot)})`,
+        `await registry.relinkWorkspaceRoot('project-a', ${JSON.stringify(unrelatedRoot)})`,
       )
       expect(response.error).toContain('different Storyflow Project')
       expect(JSON.parse(readFileSync(join(configDir, 'config.json'), 'utf8')).workspaces[0].rootPath)

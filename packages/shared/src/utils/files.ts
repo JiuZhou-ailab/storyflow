@@ -3,6 +3,7 @@
 // pos: Shared file boundary used before persistence and model-provider adaptation
 
 import { existsSync, readFileSync, statSync, writeFileSync, unlinkSync, mkdtempSync, renameSync } from 'fs';
+import { randomUUID } from 'node:crypto';
 import { extname, basename, resolve, join, relative } from 'path';
 import type { AttachmentRepresentationKind } from '@craft-agent/core/types';
 import type { FileAttachment } from '../protocol/dto.ts';
@@ -40,9 +41,9 @@ export function readJsonFileSync<T = unknown>(filePath: string): T {
  * Uses write-to-temp-then-rename pattern which is atomic on POSIX systems.
  */
 export function atomicWriteFileSync(filePath: string, data: string): void {
-  const tmpPath = filePath + '.tmp';
+  const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    writeFileSync(tmpPath, data);
+    writeFileSync(tmpPath, data, { flag: 'wx' });
     renameSync(tmpPath, filePath);
   } catch (error) {
     // Clean up temp file if rename failed

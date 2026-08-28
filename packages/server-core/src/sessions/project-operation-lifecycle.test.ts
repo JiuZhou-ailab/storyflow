@@ -44,7 +44,7 @@ describe('Project operation lifecycle', () => {
             return true;
           };
 
-          const operation = manager.withProjectOperation('Project', async workspace => {
+          const operation = manager.withProjectOperation('project-1', async workspace => {
             events.push('operation:start:' + workspace.rootPath);
             const reentrant = await Promise.race([
               manager.withProjectLifecycle('project-1', async () => 'ok'),

@@ -3,11 +3,11 @@
 // pos: Guards ManagedSession construction and its Project runtime-service boundary
 
 import { afterAll, describe, expect, it } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
-import { getSessionPath } from '@craft-agent/shared/sessions'
+import { getSessionPath, sessionPersistenceQueue } from '@craft-agent/shared/sessions'
 import { getSourceGrantRef } from '@craft-agent/shared/sources'
 import { createManagedSession, SessionManager } from './SessionManager.ts'
 import {
@@ -26,11 +26,16 @@ const source = (slug: string, origin: 'workspace' | 'craft-global') => ({
 
 describe('createManagedSession', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'storyflow-managed-session-'))
+  mkdirSync(join(workspaceRoot, '.craft-agent'), { recursive: true })
+  writeFileSync(join(workspaceRoot, '.craft-agent', 'config.json'), JSON.stringify({
+    id: 'directory-test', name: 'Test Workspace', slug: 'test-workspace', createdAt: 1, updatedAt: 1,
+  }))
   const workspace = {
     id: 'ws_test',
     name: 'Test Workspace',
     rootPath: workspaceRoot,
     createdAt: Date.now(),
+    directoryConfigId: 'directory-test',
   }
 
   afterAll(() => rmSync(workspaceRoot, { recursive: true, force: true }))
@@ -81,7 +86,7 @@ describe('createManagedSession', () => {
   it('does not recreate a missing Project root while setting up runtime observers', () => {
     const parent = mkdtempSync(join(tmpdir(), 'storyflow-missing-project-'))
     const missingRoot = join(parent, 'moved-project')
-    const sessionManager = new SessionManager()
+    const sessionManager = new SessionManager((_workspaceId, managed) => managed.workspace)
 
     try {
       sessionManager.setupConfigWatcher(missingRoot, 'project-moved')
@@ -158,10 +163,9 @@ describe('createManagedSession', () => {
     expect(managed.workingDirectory).toBe(workspace.rootPath)
   })
 
-  it('preserves an explicit project working directory', () => {
-    const rootPath = mkdtempSync(join(tmpdir(), 'storyflow-cwd-'))
-    const workingDirectory = join(rootPath, '第一卷')
-    mkdirSync(workingDirectory)
+  it('preserves an explicit Project cwd outside its Project root', () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'storyflow-project-root-'))
+    const workingDirectory = mkdtempSync(join(tmpdir(), 'storyflow-project-cwd-'))
     try {
       const managed = createManagedSession({
         id: 'session_explicit_project',
@@ -171,6 +175,7 @@ describe('createManagedSession', () => {
       expect(managed.workingDirectory).toBe(workingDirectory)
     } finally {
       rmSync(rootPath, { recursive: true, force: true })
+      rmSync(workingDirectory, { recursive: true, force: true })
     }
   })
 
@@ -189,8 +194,8 @@ describe('createManagedSession', () => {
     )
   })
 
-  it('rejects working-directory changes for Free Conversations', () => {
-    const sessionManager = new SessionManager()
+  it('rejects working-directory changes for Free Conversations', async () => {
+    const sessionManager = new SessionManager((_workspaceId, managed) => managed.workspace)
     const privateWorkingDirectory = '/tmp/storyflow-free/session/work'
     const managed = createManagedSession({
       id: 'session_free',
@@ -204,14 +209,14 @@ describe('createManagedSession', () => {
     ;(sessionManager as unknown as { sessions: Map<string, unknown> })
       .sessions.set(managed.id, managed)
 
-    sessionManager.updateWorkingDirectory(managed.id, '/tmp/a-project')
+    await sessionManager.updateWorkingDirectory(managed.id, '/tmp/a-project')
 
     expect(managed.workingDirectory).toBe(privateWorkingDirectory)
     expect(managed.sdkCwd).toBe(privateWorkingDirectory)
   })
 
-  it('keeps the Pi run cwd immutable after the conversation has started', () => {
-    const sessionManager = new SessionManager()
+  it('keeps the Pi run cwd immutable after the conversation has started', async () => {
+    const sessionManager = new SessionManager((_workspaceId, managed) => managed.workspace)
     const initialWorkingDirectory = workspace.rootPath
     const managed = createManagedSession({
       id: 'session_started',
@@ -227,25 +232,60 @@ describe('createManagedSession', () => {
     ;(sessionManager as unknown as { sessions: Map<string, unknown> })
       .sessions.set(managed.id, managed)
 
-    sessionManager.updateWorkingDirectory(managed.id, '/tmp')
+    await sessionManager.updateWorkingDirectory(managed.id, '/tmp')
 
     expect(managed.workingDirectory).toBe(initialWorkingDirectory)
     expect(managed.sdkCwd).toBe(initialWorkingDirectory)
   })
 
-  it('rejects an empty Project conversation cwd outside its Project root', () => {
-    const sessionManager = new SessionManager()
+  it('lets an empty Project conversation select an external Pi cwd', async () => {
+    const sessionManager = new SessionManager((_workspaceId, managed) => managed.workspace)
+    const workingDirectory = mkdtempSync(join(tmpdir(), 'storyflow-selected-cwd-'))
+    const canonicalWorkingDirectory = realpathSync(workingDirectory)
     const managed = createManagedSession({
       id: 'session_empty',
       workingDirectory: workspace.rootPath,
       sdkCwd: workspace.rootPath,
-    }, workspace as any)
+    }, {
+      ...workspace,
+      grantedWorkingDirectoryRoots: [canonicalWorkingDirectory],
+    } as any, { messagesLoaded: true })
     ;(sessionManager as unknown as { sessions: Map<string, unknown> })
       .sessions.set(managed.id, managed)
 
-    sessionManager.updateWorkingDirectory(managed.id, '/tmp')
+    try {
+      await sessionManager.updateWorkingDirectory(managed.id, workingDirectory)
 
-    expect(managed.workingDirectory).toBe(workspace.rootPath)
-    expect(managed.sdkCwd).toBe(workspace.rootPath)
+      expect(managed.workingDirectory).toBe(canonicalWorkingDirectory)
+      expect(managed.sdkCwd).toBe(workspace.rootPath)
+      await sessionPersistenceQueue.flush(managed.id)
+    } finally {
+      sessionManager.cleanup()
+      rmSync(workingDirectory, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a cwd update after Project invalidation has started', async () => {
+    const sessionManager = new SessionManager((_workspaceId, managed) => managed.workspace)
+    const workingDirectory = mkdtempSync(join(tmpdir(), 'storyflow-invalidating-cwd-'))
+    const canonicalWorkingDirectory = realpathSync(workingDirectory)
+    const managed = createManagedSession({
+      id: 'session_invalidating',
+      workingDirectory: workspace.rootPath,
+    }, {
+      ...workspace,
+      grantedWorkingDirectoryRoots: [canonicalWorkingDirectory],
+    } as any, { messagesLoaded: true })
+    managed.runtimeState = 'invalidating'
+    ;(sessionManager as unknown as { sessions: Map<string, unknown> })
+      .sessions.set(managed.id, managed)
+
+    try {
+      await expect(sessionManager.updateWorkingDirectory(managed.id, workingDirectory)).rejects.toThrow()
+      expect(managed.workingDirectory).toBe(workspace.rootPath)
+    } finally {
+      sessionManager.cleanup()
+      rmSync(workingDirectory, { recursive: true, force: true })
+    }
   })
 })

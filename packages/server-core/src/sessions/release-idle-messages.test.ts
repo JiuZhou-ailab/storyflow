@@ -20,7 +20,7 @@ describe('releaseIdleSessionMessages', () => {
 
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-release-msgs-'))
-    sm = new SessionManager()
+    sm = new SessionManager((_workspaceId, managed) => managed.workspace)
   })
 
   afterEach(() => {

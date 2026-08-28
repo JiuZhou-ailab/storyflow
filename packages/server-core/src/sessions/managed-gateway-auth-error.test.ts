@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, it, jest } from 'bun:test'
 import type { TypedError } from '@craft-agent/core/types'
+import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import { createManagedSession, SessionManager, setSessionRuntimeHooks } from './SessionManager.ts'
 import { normalizeManagedDefaultGatewayAuthError } from './managed-gateway-auth-error'
 
@@ -57,12 +58,12 @@ describe('managed default gateway auth error normalization', () => {
   })
 
   it('pushes explicit managed model access into matching live runtimes', async () => {
-    const sm = new SessionManager()
+    const sm = new SessionManager((_workspaceId, managed) => managed.workspace)
     const managed = createManagedSession({
       id: 'managed-credential-update',
       llmConnection: 'storyflow-managed',
     }, {
-      id: 'ws-test',
+      id: FREE_CONVERSATION_WORKSPACE_ID,
       name: 'Test',
       rootPath: '/tmp/managed-credential-update',
       createdAt: Date.now(),
@@ -80,12 +81,12 @@ describe('managed default gateway auth error normalization', () => {
   })
 
   it('renews managed access for the next operation without mutating the failed runtime', async () => {
-    const sm = new SessionManager()
+    const sm = new SessionManager((_workspaceId, managed) => managed.workspace)
     const managed = createManagedSession({
       id: 'managed-retry',
       llmConnection: 'storyflow-managed',
     }, {
-      id: 'ws-test',
+      id: FREE_CONVERSATION_WORKSPACE_ID,
       name: 'Test',
       rootPath: '/tmp/managed-retry',
       createdAt: Date.now(),
@@ -125,12 +126,12 @@ describe('managed default gateway auth error normalization', () => {
   })
 
   it('does not recycle an idle runtime until the next operation preflight', async () => {
-    const sm = new SessionManager()
+    const sm = new SessionManager((_workspaceId, managed) => managed.workspace)
     const managed = createManagedSession({
       id: 'managed-no-replay',
       llmConnection: 'storyflow-managed',
     }, {
-      id: 'ws-test',
+      id: FREE_CONVERSATION_WORKSPACE_ID,
       name: 'Test',
       rootPath: '/tmp/managed-no-replay',
       createdAt: Date.now(),
@@ -159,12 +160,12 @@ describe('managed default gateway auth error normalization', () => {
   })
 
   it('injects a renewed capability before reusing an idle runtime', async () => {
-    const sm = new SessionManager()
+    const sm = new SessionManager((_workspaceId, managed) => managed.workspace)
     const managed = createManagedSession({
       id: 'managed-operation-preflight',
       llmConnection: 'storyflow-managed',
     }, {
-      id: 'ws-test',
+      id: FREE_CONVERSATION_WORKSPACE_ID,
       name: 'Test',
       rootPath: '/tmp/managed-operation-preflight',
       createdAt: Date.now(),

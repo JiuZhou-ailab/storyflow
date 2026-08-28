@@ -9,7 +9,7 @@ import {
 } from '@craft-agent/shared/protocol'
 import {
   getWorkspaceSessionsPath,
-  resolveRuntimeWorkspace,
+  resolveRuntimeWorkspaceById,
 } from '@craft-agent/shared/workspaces'
 import {
   SearchUnavailableError,
@@ -33,7 +33,7 @@ export function registerSearchHandlers(server: RpcServer, deps: HandlerDeps): vo
       const workspaceId = resolveContextWorkspaceId(ctx, deps)
       if (!workspaceId) throw new Error('Search requires an active workspace')
 
-      const workspace = deps.resolveRuntimeWorkspace?.(workspaceId) ?? resolveRuntimeWorkspace(workspaceId)
+      const workspace = deps.resolveRuntimeWorkspaceById?.(workspaceId) ?? resolveRuntimeWorkspaceById(workspaceId)
       if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
 
       const searchId = request.requestId ?? Date.now().toString(36)

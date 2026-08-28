@@ -1,11 +1,60 @@
+// input: User file paths plus Project-owned defaults and Host-owned directory grants
+// output: Regression coverage for attachment path containment and sensitive-file blocking
+// pos: Guards the shared handler file-access trust boundary
+
 import { describe, it, expect } from 'bun:test'
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join, sep } from 'path'
+import { pathToFileURL } from 'url'
 import { validateFilePath } from '../utils'
 
 const home = homedir()
 const tmp = tmpdir()
+const UTILS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'utils.ts')).href
+
+describe('getWorkspaceAllowedDirs', () => {
+  it('uses Host grants instead of a Project-owned default cwd', () => {
+    const parent = mkdtempSync(join(tmp, 'craft-workspace-allowed-dirs-'))
+    const configDir = join(parent, 'host')
+    const projectRoot = join(parent, 'project')
+    const grantedCwd = join(parent, 'granted')
+    const projectOwnedCwd = join(parent, 'project-owned')
+    mkdirSync(join(projectRoot, '.craft-agent'), { recursive: true })
+    mkdirSync(configDir)
+    mkdirSync(grantedCwd)
+    mkdirSync(projectOwnedCwd)
+    const canonicalProjectRoot = realpathSync(projectRoot)
+    const canonicalGrantedCwd = realpathSync(grantedCwd)
+    writeFileSync(join(projectRoot, '.craft-agent', 'config.json'), JSON.stringify({
+      id: 'directory-id', name: 'Project', slug: 'project', createdAt: 1, updatedAt: 1,
+      defaults: { workingDirectory: projectOwnedCwd },
+    }))
+    writeFileSync(join(configDir, 'config.json'), JSON.stringify({
+      workspaces: [{
+        id: 'project-id', name: 'Project', slug: 'project', rootPath: canonicalProjectRoot,
+        createdAt: 1, directoryConfigId: 'directory-id',
+        grantedWorkingDirectoryRoots: [canonicalGrantedCwd],
+      }],
+      activeWorkspaceId: 'project-id', activeSessionId: null,
+    }))
+
+    try {
+      const run = Bun.spawnSync([
+        process.execPath,
+        '--eval',
+        `import { getWorkspaceAllowedDirs } from '${UTILS_MODULE_PATH}'; console.log(JSON.stringify(getWorkspaceAllowedDirs('project-id')));`,
+      ], {
+        env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      if (run.exitCode !== 0) throw new Error(run.stderr.toString())
+      expect(JSON.parse(run.stdout.toString())).toEqual([canonicalProjectRoot, canonicalGrantedCwd])
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('validateFilePath', () => {
   it('allows paths inside home directory', async () => {

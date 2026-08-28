@@ -7,16 +7,15 @@ import { homedir, tmpdir } from 'os'
 import { realpath } from 'fs/promises'
 import type { Workspace } from '@craft-agent/shared/config'
 import { isSensitiveFilePath } from '@craft-agent/shared/utils/file-safety'
-import { resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
-import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
+import { resolveRuntimeWorkspaceById } from '@craft-agent/shared/workspaces'
 import type { PlatformServices } from '../runtime/platform'
 
 /**
- * Get workspace by ID or name, throwing if not found.
+ * Get workspace by exact Host ID, throwing if not found.
  * Use this when a workspace must exist for the operation to proceed.
  */
 export function getWorkspaceOrThrow(workspaceId: string): Workspace {
-  const workspace = resolveRuntimeWorkspace(workspaceId)
+  const workspace = resolveRuntimeWorkspaceById(workspaceId)
   if (!workspace) {
     throw new Error(`Workspace not found: ${workspaceId}`)
   }
@@ -54,21 +53,14 @@ export function sanitizeFilename(name: string): string {
 }
 
 /**
- * Resolve allowed directories for a workspace: its root path and configured
- * working directory (if set). Returns an empty array if the workspace is
- * unknown or has no relevant paths.
+ * Resolve allowed directories from Host-owned Project registration only.
  */
 export function getWorkspaceAllowedDirs(workspaceId?: string | null): string[] {
   if (!workspaceId) return []
-  const workspace = resolveRuntimeWorkspace(workspaceId)
+  const workspace = resolveRuntimeWorkspaceById(workspaceId)
   if (!workspace) return []
 
-  const dirs: string[] = [workspace.rootPath]
-  const config = loadWorkspaceConfig(workspace.rootPath)
-  if (config?.defaults?.workingDirectory) {
-    dirs.push(config.defaults.workingDirectory)
-  }
-  return dirs
+  return [workspace.rootPath, ...(workspace.grantedWorkingDirectoryRoots ?? [])]
 }
 
 async function resolveRealPathWithMissingLeaf(filePath: string): Promise<string> {

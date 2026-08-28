@@ -12,7 +12,7 @@ import { seedDefaultAgentResources } from '@craft-agent/shared/agent-defaults'
 import { ensureConfigDir, loadStoredConfig, saveConfig } from '@craft-agent/shared/config'
 import { CONFIG_DIR } from '@craft-agent/shared/config/paths'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
-import { restoreLegacyLocalProjectDirectoryIdentity } from '@craft-agent/shared/workspaces'
+import { migrateLegacyLocalProjectDirectoryIdentities } from '@craft-agent/shared/workspaces'
 import { WsRpcServer, type WsRpcTlsOptions } from '../transport/server'
 import type { EventSink, RpcServer } from '../transport/types'
 import { createHeadlessPlatform } from '../runtime/platform-headless'
@@ -391,16 +391,14 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
   seedDefaultAgentResources()
   ensureGlobalConfigExists(platform)
 
-  // v0.17 already trusted each stored locator. Pin that existing content ID
-  // before the RPC catalog can expose v0.18's fail-closed availability state.
-  for (const project of loadStoredConfig()?.workspaces ?? []) {
-    if (project.remoteServer || project.directoryConfigId) continue
-    try {
-      restoreLegacyLocalProjectDirectoryIdentity(project.id)
-      platform.logger.info(`Restored directory identity for Project ${project.id}`)
-    } catch (error) {
-      platform.logger.warn(`Project ${project.id} still requires relinking:`, error)
-    }
+  // Transfer each reachable v0.17 locator and cwd into Host-owned grants.
+  // Unresolved Projects remain unmarked and retry on the next startup.
+  const directoryMigration = await migrateLegacyLocalProjectDirectoryIdentities()
+  for (const projectId of directoryMigration.restoredProjectIds) {
+    platform.logger.info(`Restored directory identity for Project ${projectId}`)
+  }
+  for (const unresolved of directoryMigration.unresolvedProjects) {
+    platform.logger.warn(`Project ${unresolved.projectId} still requires path recovery: ${unresolved.reason}`)
   }
 
   const modelRefreshService = options.initModelRefreshService()

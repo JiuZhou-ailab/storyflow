@@ -215,6 +215,9 @@ export interface CoreBackendConfig {
   /** Session configuration (for resume) */
   session?: Session;
 
+  /** Host-owned final cwd authorization, invoked immediately before Pi subprocess spawn. */
+  validateWorkingDirectory?: (path: string) => string;
+
   /** Initial model ID */
   model?: string;
 

@@ -4,7 +4,7 @@
 
 import { perf } from '@craft-agent/shared/utils'
 import type { Workspace } from '@craft-agent/shared/config'
-import { isFreeConversationWorkspaceId, isLocalMcpEnabled, resolveRuntimeWorkspace } from '@craft-agent/shared/workspaces'
+import { isFreeConversationWorkspaceId, isLocalMcpEnabled, resolveRuntimeWorkspaceById } from '@craft-agent/shared/workspaces'
 import {
   getSourceCredentialManager,
   getSourceServerBuilder,
@@ -30,7 +30,7 @@ export async function buildServersFromSources(
   workspace?: Pick<Workspace, 'id' | 'rootPath' | 'localMcpEnabled' | 'defaultEnabledSourceRefs'>,
 ) {
   const currentWorkspace = workspace && !isFreeConversationWorkspaceId(workspace.id)
-    ? resolveRuntimeWorkspace(workspace.id) ?? workspace
+    ? resolveRuntimeWorkspaceById(workspace.id) ?? workspace
     : workspace
   const resolvedSources = currentWorkspace && !isFreeConversationWorkspaceId(currentWorkspace.id)
     ? sources.filter(source => isSourceHostGranted(currentWorkspace.defaultEnabledSourceRefs, source))

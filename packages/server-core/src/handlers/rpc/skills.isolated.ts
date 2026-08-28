@@ -27,7 +27,7 @@ let lifecycleCalls = 0
 
 mock.module('@craft-agent/shared/workspaces', () => ({
   isFreeConversationWorkspaceId: (id: string) => id === FREE_CONVERSATION_WORKSPACE_ID,
-  resolveRuntimeWorkspace: (id: string) => id === 'workspace-1' || id === FREE_CONVERSATION_WORKSPACE_ID
+  resolveRuntimeWorkspaceById: (id: string) => id === 'workspace-1' || id === FREE_CONVERSATION_WORKSPACE_ID
     ? {
         id,
         name: 'Workspace',
