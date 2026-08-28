@@ -1,18 +1,18 @@
 {
-  "version": "0.18.2",
-  "digest": "cad89147f7c48798e44edede442ca466e3e9793c2365886c513d87bc8d414729",
-  "generatedAt": "2026-08-28T00:35:29.226Z",
-  "title": "Storyflow v0.18.2 更新说明",
-  "summary": "Storyflow 0.18.2 修复了 0.18 以来的项目路径兼容与性能问题，旧项目升级后无需反复校验目录。",
+  "version": "0.18.3",
+  "digest": "73df541790932fdf02424699d113a688ffca2dc7d63dd4a5da276706c6986b09",
+  "generatedAt": "2026-08-28T01:07:12.101Z",
+  "title": "Storyflow v0.18.3 更新说明",
+  "summary": "Storyflow 0.18.3 修复了 0.18 以来的项目路径兼容与性能问题，旧项目升级后无需反复校验目录。",
   "highlights": [
     "旧项目路径自动迁移：升级时一次性迁移旧目录和工作目录授权；项目移动或目录失效时，再提示重新选择。",
     "工作目录恢复自由选择：项目可以继续使用已选择的外部工作目录，重启、导入和重链后仍保持正确授权。",
     "Windows 操作更流畅：项目列表读取不再同步项目配置和会话目录，减少频繁的磁盘访问和卡顿。"
   ],
-  "accentColor": "#5a7b14",
+  "accentColor": "#7b7214",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 1,
+    "commitCount": 2,
     "userVisibleCommitCount": 0
   }
 }

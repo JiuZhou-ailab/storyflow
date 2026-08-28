@@ -9,6 +9,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -75,7 +76,7 @@ async function main(): Promise<void> {
       }`,
       [WORKSPACE_ID],
     )
-    assert.equal(workspace?.rootPath, fixture.workspaceRoot)
+    assert.equal(workspace?.rootPath, realpathSync(fixture.workspaceRoot))
     assert.equal(workspace?.directoryConfigId, WORKSPACE_ID, 'v0.17 Project identity was not upgraded')
     assert.equal(readFileSync(fixture.targetFile, 'utf8'), ORIGINAL, 'workspace changed during app startup')
 
