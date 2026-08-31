@@ -49,6 +49,7 @@ import type {
   SessionHeader,
   SessionStatus,
 } from './types.ts';
+import { SESSION_SCHEMA_VERSION } from './types.ts';
 import { validateSessionStatus } from '../statuses/validation.ts';
 import { debug } from '../utils/debug.ts';
 import { getStatusCategory } from '../statuses/storage.ts';
@@ -275,6 +276,7 @@ export async function createSession(
 
   const session: SessionConfig = {
     id: sessionId,
+    schemaVersion: SESSION_SCHEMA_VERSION,
     workspaceRootPath,
     name: options?.name,
     createdAt: now,
@@ -342,6 +344,7 @@ export async function getOrCreateSessionById(
 
   const session: SessionConfig = {
     id: sessionId,
+    schemaVersion: SESSION_SCHEMA_VERSION,
     workspaceRootPath,
     sdkCwd,
     createdAt: now,
@@ -529,6 +532,8 @@ export async function listSessionsAsync(
 function headerToMetadata(header: SessionHeader, workspaceRootPath: string): SessionMetadata | null {
   try {
     // Migration: accept old 'todoState' field from pre-rename session files
+    // SAFETY: legacy headers persisted todoState before the sessionStatus rename;
+    // the cast only widens the read and validateSessionStatus gates the value.
     const rawStatus = header.sessionStatus ?? (header as unknown as { todoState?: string }).todoState;
     // Validate sessionStatus against workspace status config
     const validatedStatus = validateSessionStatus(workspaceRootPath, rawStatus);

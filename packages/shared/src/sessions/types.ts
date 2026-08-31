@@ -29,7 +29,7 @@ import type { StoredAttachment, MessageRole, ToolStatus, AuthRequestType, AuthSt
  */
 export const SESSION_PERSISTENT_FIELDS = [
   // Identity
-  'id', 'workspaceRootPath', 'sdkSessionId', 'sdkCwd',
+  'id', 'workspaceRootPath', 'sdkSessionId', 'sdkCwd', 'schemaVersion',
   // Timestamps
   'createdAt', 'lastUsedAt', 'lastMessageAt',
   // Display
@@ -104,8 +104,20 @@ export type { StoredMessage } from '@craft-agent/core/types';
 /**
  * Session configuration (persisted metadata)
  */
+/**
+ * Storyflow session JSONL schema version.
+ *
+ * Data contract (ADR 0021): a header without schemaVersion is version 1 —
+ * every format shipped through 0.18.x. Bump this only together with a
+ * read-path migration keyed on the old version; readers must never
+ * fail-closed on an unknown or missing version.
+ */
+export const SESSION_SCHEMA_VERSION = 1;
+
 export interface SessionConfig {
   id: string;
+  /** Session JSONL schema version. Absent means 1 (pre-0.19 formats). */
+  schemaVersion?: number;
   /** SDK session ID (captured after first message) */
   sdkSessionId?: string;
   /** Workspace root path this session belongs to */
@@ -227,6 +239,8 @@ export interface StoredSession extends SessionConfig {
  */
 export interface SessionHeader {
   id: string;
+  /** Session JSONL schema version. Absent means 1 (pre-0.19 formats). */
+  schemaVersion?: number;
   /** SDK session ID (captured after first message) */
   sdkSessionId?: string;
   /** Legacy read-only marker retained for migration of pre-Pi headers. */
@@ -327,6 +341,8 @@ export interface SessionHeader {
  */
 export interface SessionMetadata {
   id: string;
+  /** Session JSONL schema version. Absent means 1 (pre-0.19 formats). */
+  schemaVersion?: number;
   workspaceRootPath: string;
   name?: string;
   createdAt: number;
