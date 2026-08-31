@@ -1,5 +1,5 @@
-# input: MySQL read-only credentials and origin-authenticated Catalog HTTP requests
-# output: Stable rankings, complete-series manifests, bounded video assets, and v1 compatibility
+# input: MySQL credentials, optional ReelShort search endpoint, and authenticated HTTP requests
+# output: Stable rankings, manifests, bounded video assets, live series matches, and v1 compatibility
 # pos: Private read-model API behind the Storyflow edge gateway
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import catalog_domain
 import catalog_sources
 import pymysql
 from pymysql.cursors import DictCursor
+from reelshort_search import ReelShortSearchClient, ReelShortSearchError
 
 MANIFEST_PATH = re.compile(
     r"/v2/series/(?P<source>[a-z0-9-]{1,32})/"
@@ -35,6 +36,7 @@ class Settings:
     origin_token: str
     host: str = "0.0.0.0"
     port: int = 8788
+    reelshort_search_url: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -56,12 +58,22 @@ class Settings:
             origin_token=required["ORIGIN_TOKEN"],
             host=os.environ.get("HOST", "0.0.0.0").strip() or "0.0.0.0",
             port=_integer_env("PORT", 8788, 1, 65535),
+            reelshort_search_url=os.environ.get("REELSHORT_SEARCH_URL", "").strip(),
         )
 
 
 class CatalogRepository:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        reelshort_search: ReelShortSearchClient | None = None,
+    ) -> None:
         self.settings = settings
+        self.reelshort_search = reelshort_search or (
+            ReelShortSearchClient(settings.reelshort_search_url)
+            if settings.reelshort_search_url
+            else None
+        )
 
     def _connect(self):
         # ponytail: one short-lived connection per operation; pool after measured demand.
@@ -94,9 +106,17 @@ class CatalogRepository:
         offset: int,
     ) -> dict[str, object]:
         with self._connect() as connection, connection.cursor() as cursor:
-            return catalog_sources.query_video_assets(
+            page = catalog_sources.query_video_assets(
                 cursor, source, search, source_series_id, limit, offset
             )
+        if (
+            source == "reelshort"
+            and search
+            and not source_series_id
+            and self.reelshort_search is not None
+        ):
+            page["seriesSearch"] = self.reelshort_search.search(search, limit)
+        return page
 
     def snapshots(self, source: str, ranking_kind: str) -> list[dict[str, object]]:
         with self._connect() as connection, connection.cursor() as cursor:
@@ -187,6 +207,11 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
         except ValueError as error:
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+        except ReelShortSearchError:
+            self._json(
+                HTTPStatus.BAD_GATEWAY,
+                {"version": 2, "error": "reelshort_search_unavailable"},
+            )
         except pymysql.MySQLError:
             self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "catalog_unavailable"})
 

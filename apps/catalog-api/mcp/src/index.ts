@@ -75,7 +75,7 @@ export function createMcpServer(
 
   server.registerTool('video_assets', {
     title: 'Video Assets',
-    description: 'Search one source for bounded episode or creative video assets. Direct files include downloadUrl; HLS assets use playbackUrl with downloadMethod=hls_remux.',
+    description: 'Search one source for bounded episode or creative video assets. ReelShort title queries also return live seriesSearch matches. Direct files include downloadUrl; HLS assets use playbackUrl with downloadMethod=hls_remux.',
     inputSchema: {
       source: z.enum(VIDEO_SOURCES),
       seriesId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
