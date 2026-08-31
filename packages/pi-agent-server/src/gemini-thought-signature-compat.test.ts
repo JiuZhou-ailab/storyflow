@@ -1,6 +1,8 @@
 // input: Pi cross-provider tool history and Google Gemini model metadata
 // output: Regression coverage for Gemini 3 unsigned function-call replay
-// pos: Dependency contract test for Pi's Google message adapter
+// pos: Dependency contract test pinning pi-ai's Google adapter replay behavior
+//      (explicit tool-call ids since 0.84.4; previously a Storyflow patch added
+//      the skip_thought_signature_validator sentinel to pi-ai 0.84.1)
 
 import { describe, expect, it } from 'bun:test'
 import type { Context, Model } from '@earendil-works/pi-ai'
@@ -67,16 +69,22 @@ function toolHistory(input: {
   }
 }
 
-function firstFunctionCallThoughtSignature(model: Model<'google-generative-ai'>, context: Context) {
+function firstFunctionCallPart(model: Model<'google-generative-ai'>, context: Context) {
   const contents = convertMessages(model, context)
   return contents
     .flatMap(content => content.parts ?? [])
     .find(part => part.functionCall)
-    ?.thoughtSignature
+}
+
+function firstFunctionCallThoughtSignature(model: Model<'google-generative-ai'>, context: Context) {
+  return firstFunctionCallPart(model, context)?.thoughtSignature
 }
 
 describe('Gemini thought-signature compatibility', () => {
-  it('uses the documented sentinel for every unsigned tool call replayed into Gemini 3', () => {
+  it('replays unsigned tool calls into Gemini 3 with explicit tool-call ids instead of signatures', () => {
+    // Since pi-ai 0.84.4, unsigned function calls rely on requiresToolCallId
+    // (explicit ids for Gemini >= 3) rather than the former
+    // skip_thought_signature_validator sentinel.
     const foreignContext = toolHistory({
       provider: 'deepseek',
       api: 'openai-completions',
@@ -88,13 +96,11 @@ describe('Gemini thought-signature compatibility', () => {
       model: 'gemini-3.1-pro-preview',
     })
 
-    expect(firstFunctionCallThoughtSignature(googleModel('gemini-3.1-pro-preview'), foreignContext))
-      .toBe('skip_thought_signature_validator')
-    expect(firstFunctionCallThoughtSignature(
-      googleModel('gemini-3.1-pro-preview', 'custom-endpoint'),
-      unsignedNativeContext,
-    ))
-      .toBe('skip_thought_signature_validator')
+    for (const context of [foreignContext, unsignedNativeContext]) {
+      const part = firstFunctionCallPart(googleModel('gemini-3.1-pro-preview'), context)
+      expect(part?.functionCall?.id).toBe('call-1')
+      expect(part?.thoughtSignature).toBeUndefined()
+    }
   })
 
   it('preserves genuine Gemini signatures and leaves pre-Gemini-3 history unchanged', () => {
