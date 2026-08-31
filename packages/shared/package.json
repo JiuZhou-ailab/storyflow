@@ -83,16 +83,16 @@
   "dependencies": {
     "@craft-agent/core": "workspace:*",
     "@craft-agent/session-tools-core": "workspace:*",
+    "@earendil-works/pi-agent-core": "0.84.1",
+    "@earendil-works/pi-ai": "0.84.1",
+    "@earendil-works/pi-coding-agent": "0.84.4",
     "@leeoniya/ufuzzy": "^1.0.19",
     "bash-parser": "^0.5.0",
     "croner": "^10.0.1",
     "date-fns": "^4.1.0",
     "i18next": "^26.0.3",
     "incr-regex-package": "^1.0.4",
-    "shell-quote": "^1.8.3",
-    "@earendil-works/pi-agent-core": "0.84.1",
-    "@earendil-works/pi-ai": "0.84.1",
-    "@earendil-works/pi-coding-agent": "0.84.1"
+    "shell-quote": "^1.8.3"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": ">=1.29.0",

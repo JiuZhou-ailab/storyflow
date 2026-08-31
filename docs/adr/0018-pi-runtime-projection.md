@@ -2,7 +2,7 @@
 
 状态：Accepted
 日期：2026-08-04
-修订：2026-08-16
+修订：2026-08-16、2026-08-31
 
 ## 背景
 
@@ -21,8 +21,13 @@ Agent runtime。产品必须投影 Pi 的公共契约，而不是镜像 Pi 的�
 - Pi 的 retry settings、Provider retry classifier、queued continuation、abort 与 settlement
   是同一个状态机。Storyflow 不覆盖 retry 次数，不改写错误来诱导 retry，也不根据静默时长
   猜测失败；产品层只保留 12 小时绝对安全上限，具体 Provider/Tool 超时归各自原生生命周期。
-- Pi 的 canonical `agentDir`、file-backed `SettingsManager`、`DefaultPackageManager`
-  与 `DefaultResourceLoader` 是用户资源、package 和 Extension 的唯一运行时事实源。
+- Pi 的 canonical `agentDir`、file-backed `SettingsManager` 与 `DefaultResourceLoader`
+  是用户资源、package 和 Extension 的唯一运行时事实源。Storyflow 只通过 Pi 公开导出
+  且文档化的契约面消费：`createAgentSession` options、`ResourceLoader` 接口、
+  `DefaultResourceLoader` 公开构造参数、`SettingsManager` 公开方法。禁止继承 Pi 的
+  实现类（组合优于继承），禁止 import Pi 未在主入口导出的内部模块。package 源的
+  增删通过 `SettingsManager.getPackages/setPackages` 表达，不直接操作
+  `DefaultPackageManager`。
 - Pi 的 System Prompt builder 是最终提示装配权威。Storyflow 只通过
   `DefaultResourceLoader.systemPromptOverride` 提供不可缺失的产品基础契约；用户全局指令、
   项目 `AGENTS.md` / `CLAUDE.md`、Skills、日期与工作目录仍由 Pi 原生装配。Storyflow 只用
@@ -59,6 +64,10 @@ Agent runtime。产品必须投影 Pi 的公共契约，而不是镜像 Pi 的�
 - Pi 内置 read/bash/edit/grep/find/ls 使用 SDK 原生实现。Storyflow 工具和权限通过 Pi 官方
   registry/Extension hooks 注入；唯一内置覆盖是 create-only write 数据安全契约，防止无损恢复
   之前覆盖已有文件。
+- 工具同名覆盖是 Pi 的职责，不是 Storyflow 的。`createAgentSession` 保证 `customTools`
+  对同名 Extension 工具的优先权（0.84.4 起已验证）；Storyflow 不维护保留工具名列表、
+  包级 denylist 或加载期冲突断言。全局 Extension 与产品工具重名时静默由产品工具胜出，
+  仅记录诊断日志，不使子进程启动失败。
 - Pi 会话树是 rewind/branch 的运行时事实源；Storyflow 只在 Pi Session 中保存稳定的
   产品消息边界，并在树导航成功后原子裁剪自己的消息投影。不存在边界映射时安全拒绝，
   不用易漂移的消息序号猜测。

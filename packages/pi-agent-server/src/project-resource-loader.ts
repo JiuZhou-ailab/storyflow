@@ -1,25 +1,23 @@
-// input: Pi cwd, project context boundary, canonical agent directory, bundled runtime, and legacy Skills
-// output: Bounded Pi-native instructions plus legacy Skill compatibility and Storyflow inline Extensions
-// pos: Thin product policy adapter over Pi's ResourceLoader and package ecosystem
+// input: Pi cwd, project boundary, agent directory, and legacy Skills
+// output: Pi ResourceLoader with Storyflow-specific context boundary and skill compatibility
+// pos: Minimal product adapter over Pi's public ResourceLoader options
 
-import { existsSync, realpathSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
-  DefaultPackageManager,
   DefaultResourceLoader,
   SettingsManager,
   type InlineExtension,
   type ResourceLoader,
-} from '@earendil-works/pi-coding-agent';
+} from "@earendil-works/pi-coding-agent";
 
-import { resolveResourceRoots } from '../../shared/src/resources/resolver.ts';
+import { resolveResourceRoots } from "../../shared/src/resources/resolver.ts";
 
 export const DEFAULT_PI_PACKAGE_SOURCES = [] as const;
 
-const DISABLED_PI_PACKAGE_SOURCES = [
-  'npm:@ayulab/pi-rewind',
-] as const;
+// ponytail: one-time migration; delete once installed clients no longer carry this package.
+const DISABLED_PI_PACKAGE_SOURCES = new Set(["npm:@ayulab/pi-rewind"]);
 
 export interface ProjectResourceLoaderOptions {
   cwd: string;
@@ -36,7 +34,7 @@ export interface ProjectResourceLoaderResult {
 }
 
 type AgentsFilesOverride = NonNullable<
-  ConstructorParameters<typeof DefaultResourceLoader>[0]['agentsFilesOverride']
+  ConstructorParameters<typeof DefaultResourceLoader>[0]["agentsFilesOverride"]
 >;
 
 function canonicalPath(path: string): string {
@@ -49,10 +47,11 @@ function canonicalPath(path: string): string {
 
 function isWithinPath(root: string, candidate: string): boolean {
   const pathFromRoot = relative(root, candidate);
-  return pathFromRoot === '' || (
-    pathFromRoot !== '..'
-    && !pathFromRoot.startsWith(`..${sep}`)
-    && !isAbsolute(pathFromRoot)
+  return (
+    pathFromRoot === "" ||
+    (pathFromRoot !== ".." &&
+      !pathFromRoot.startsWith(`..${sep}`) &&
+      !isAbsolute(pathFromRoot))
   );
 }
 
@@ -67,7 +66,7 @@ function resolveContextRoot(cwd: string, explicitRoot?: string): string {
 
   let candidate = canonicalCwd;
   while (true) {
-    if (existsSync(join(candidate, '.git'))) return candidate;
+    if (existsSync(join(candidate, ".git"))) return candidate;
     const parent = dirname(candidate);
     if (parent === candidate) return canonicalCwd;
     candidate = parent;
@@ -82,8 +81,8 @@ export function createBoundedAgentsFilesOverride(options: {
 }): AgentsFilesOverride {
   const agentDir = canonicalPath(options.agentDir);
   const contextRoot = resolveContextRoot(options.cwd, options.contextRoot);
-  return base => ({
-    agentsFiles: base.agentsFiles.filter(file => {
+  return (base) => ({
+    agentsFiles: base.agentsFiles.filter((file) => {
       const path = canonicalPath(file.path);
       return isWithinPath(agentDir, path) || isWithinPath(contextRoot, path);
     }),
@@ -91,44 +90,20 @@ export function createBoundedAgentsFilesOverride(options: {
 }
 
 async function seedDefaultPiPackages(
-  cwd: string,
-  agentDir: string,
   settingsManager: SettingsManager,
 ): Promise<void> {
   if (process.env.CRAFT_BUN && !settingsManager.getNpmCommand()?.length) {
-    settingsManager.setNpmCommand(['bun']);
+    settingsManager.setNpmCommand(["bun"]);
   }
 
-  const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
-  let changed = false;
-
-  for (const source of DISABLED_PI_PACKAGE_SOURCES) {
-    changed = packageManager.removeSourceFromSettings(source) || changed;
-  }
-  for (const source of DEFAULT_PI_PACKAGE_SOURCES) {
-    changed = packageManager.addSourceToSettings(source) || changed;
-  }
-  if (changed) await settingsManager.flush();
-}
-
-class StoryflowResourceLoader extends DefaultResourceLoader {
-  constructor(
-    options: ConstructorParameters<typeof DefaultResourceLoader>[0],
-    private readonly runtimeSettingsManager: SettingsManager,
-    private readonly skillLoader: DefaultResourceLoader,
-  ) {
-    super(options);
-  }
-
-  override async reload(
-    options?: Parameters<DefaultResourceLoader['reload']>[0],
-  ): Promise<void> {
-    await this.skillLoader.reload();
-    await super.reload(options);
-    this.runtimeSettingsManager.applyOverrides({
-      enableSkillCommands: true,
-      compaction: { enabled: true },
-    });
+  const packages = settingsManager.getPackages();
+  const kept = packages.filter((entry) => {
+    const source = typeof entry === "string" ? entry : entry.source;
+    return !DISABLED_PI_PACKAGE_SOURCES.has(source);
+  });
+  if (kept.length !== packages.length) {
+    settingsManager.setPackages(kept);
+    await settingsManager.flush();
   }
 }
 
@@ -136,8 +111,8 @@ class StoryflowResourceLoader extends DefaultResourceLoader {
  * Build the Pi resource boundary owned by Storyflow.
  *
  * Pi owns resource discovery, project trust, and package settings. Storyflow
- * contributes only its legacy Skill directory and product-specific inline
- * Extensions.
+ * contributes only its legacy Skill directory, context boundary, and product
+ * inline Extensions via public DefaultResourceLoader options.
  */
 export async function createProjectResourceLoader(
   options: ProjectResourceLoaderOptions,
@@ -146,16 +121,24 @@ export async function createProjectResourceLoader(
     globalRoot: options.globalRoot,
   });
 
-  const skillPaths = [roots.skillsPath]
-    .filter((path, index, paths) => existsSync(path) && paths.indexOf(path) === index);
+  const skillPaths = [roots.skillsPath].filter(
+    (path, index, paths) => existsSync(path) && paths.indexOf(path) === index,
+  );
 
-  const settingsManager = SettingsManager.create(options.cwd, options.agentDir, {
-    projectTrusted: false,
-  });
-  const skillSettingsManager = SettingsManager.create(options.cwd, options.agentDir, {
-    projectTrusted: true,
-  });
-  await seedDefaultPiPackages(options.cwd, options.agentDir, settingsManager);
+  const settingsManager = SettingsManager.create(
+    options.cwd,
+    options.agentDir,
+    { projectTrusted: false },
+  );
+  await seedDefaultPiPackages(settingsManager);
+
+  // Skills come from a project-trusted loader so legacy global Skills are
+  // discoverable without granting project trust to Extensions.
+  const skillSettingsManager = SettingsManager.create(
+    options.cwd,
+    options.agentDir,
+    { projectTrusted: true },
+  );
   const skillLoader = new DefaultResourceLoader({
     cwd: options.cwd,
     agentDir: options.agentDir,
@@ -166,21 +149,40 @@ export async function createProjectResourceLoader(
     noThemes: true,
     noContextFiles: true,
   });
-  const resourceLoader = new StoryflowResourceLoader(
-    {
-      cwd: options.cwd,
-      agentDir: options.agentDir,
-      settingsManager,
-      noSkills: false,
-      additionalSkillPaths: skillPaths,
-      extensionFactories: options.extensionFactories,
-      skillsOverride: () => skillLoader.getSkills(),
-      agentsFilesOverride: createBoundedAgentsFilesOverride(options),
-      systemPromptOverride: options.systemPromptOverride,
-    },
+
+  // Wrap reload so the skill loader stays in sync and product overrides are
+  // applied after each Pi-internal reload without subclassing.
+  const inner = new DefaultResourceLoader({
+    cwd: options.cwd,
+    agentDir: options.agentDir,
     settingsManager,
-    skillLoader,
-  );
+    additionalSkillPaths: skillPaths,
+    extensionFactories: options.extensionFactories,
+    skillsOverride: () => skillLoader.getSkills(),
+    agentsFilesOverride: createBoundedAgentsFilesOverride(options),
+    systemPromptOverride: options.systemPromptOverride,
+  });
+
+  const resourceLoader: ResourceLoader = {
+    async reload(reloadOptions?): Promise<void> {
+      await skillLoader.reload();
+      await inner.reload(reloadOptions);
+      settingsManager.applyOverrides({
+        enableSkillCommands: true,
+        compaction: { enabled: true },
+      });
+    },
+    getExtensions: () => inner.getExtensions(),
+    getSkills: () => inner.getSkills(),
+    getPrompts: () => inner.getPrompts(),
+    getThemes: () => inner.getThemes(),
+    getAgentsFiles: () => inner.getAgentsFiles(),
+    getSystemPrompt: () => inner.getSystemPrompt(),
+    getSystemPromptSource: () => inner.getSystemPromptSource(),
+    getAppendSystemPrompt: () => inner.getAppendSystemPrompt(),
+    getAppendSystemPromptSources: () => inner.getAppendSystemPromptSources(),
+    extendResources: (paths) => inner.extendResources(paths),
+  };
 
   // createAgentSession() does not reload a caller-provided ResourceLoader.
   await resourceLoader.reload();
@@ -189,13 +191,22 @@ export async function createProjectResourceLoader(
 }
 
 export async function createSkillCatalogResourceLoader(
-  options: Pick<ProjectResourceLoaderOptions, 'cwd' | 'globalRoot' | 'agentDir'>,
+  options: Pick<
+    ProjectResourceLoaderOptions,
+    "cwd" | "globalRoot" | "agentDir"
+  >,
 ): Promise<ResourceLoader> {
   const roots = resolveResourceRoots({ globalRoot: options.globalRoot });
-  const compatibilitySkillPaths = existsSync(roots.skillsPath) ? [roots.skillsPath] : [];
-  const settingsManager = SettingsManager.create(options.cwd, options.agentDir, {
-    projectTrusted: true,
-  });
+  const compatibilitySkillPaths = existsSync(roots.skillsPath)
+    ? [roots.skillsPath]
+    : [];
+  const settingsManager = SettingsManager.create(
+    options.cwd,
+    options.agentDir,
+    {
+      projectTrusted: true,
+    },
+  );
   const resourceLoader = new DefaultResourceLoader({
     cwd: options.cwd,
     agentDir: options.agentDir,
