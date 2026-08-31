@@ -16,7 +16,8 @@ import { resolveResourceRoots } from "../../shared/src/resources/resolver.ts";
 
 export const DEFAULT_PI_PACKAGE_SOURCES = [] as const;
 
-// ponytail: one-time migration; delete once installed clients no longer carry this package.
+// ponytail: one-time migration shipped in 0.18.x; delete after two client releases
+// (>= 0.20.0) once installed clients no longer carry this package in settings.
 const DISABLED_PI_PACKAGE_SOURCES = new Set(["npm:@ayulab/pi-rewind"]);
 
 export interface ProjectResourceLoaderOptions {
@@ -132,8 +133,10 @@ export async function createProjectResourceLoader(
   );
   await seedDefaultPiPackages(settingsManager);
 
-  // Skills come from a project-trusted loader so legacy global Skills are
-  // discoverable without granting project trust to Extensions.
+  // Skills come from a project-trusted loader so project-scoped Skill packages
+  // (non-executable resources) are discoverable without granting project trust
+  // to Extensions (executable code). Pi's single project-trust switch cannot
+  // express this split, so the second loader is load-bearing (ADR 0018).
   const skillSettingsManager = SettingsManager.create(
     options.cwd,
     options.agentDir,
