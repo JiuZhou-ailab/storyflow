@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import { decodeJwt, decodeProtectedHeader } from 'jose'
-import { verifySkillsMarketAuth } from './verify-auth-integration'
+import { verifySkillsMarketAuth } from '../verify-skills-market-auth'
 
 describe('verifySkillsMarketAuth', () => {
   it('uses a bounded client session and forwards the broker capability to Market', async () => {

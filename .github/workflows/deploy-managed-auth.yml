@@ -244,4 +244,4 @@ jobs:
         if: ${{ inputs.deploy }}
         env:
           STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
-        run: bun run apps/skills-market/scripts/verify-auth-integration.ts
+        run: bun run scripts/verify-skills-market-auth.ts

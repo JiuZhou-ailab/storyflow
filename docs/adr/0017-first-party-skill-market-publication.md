@@ -21,9 +21,10 @@ untrusted package.
 
 ## Decision
 
-1. The existing `apps/skills-market` Worker becomes Storyflow's first-party
-   catalog and distribution boundary. Pi remains the only Skill discovery and
-   execution authority.
+1. The independent `storyflow-hub/apps/skills-registry` Worker is Storyflow's
+   first-party catalog and distribution boundary. Pi remains the only Skill
+   discovery and execution authority; this desktop repository owns no Registry
+   deployment code.
 2. A Package Slug identifies the Market package and installed directory. It is
    independent from the Agent Skill `name` inside `SKILL.md`.
 3. Desktop publication uses a five-minute token issued from the existing client

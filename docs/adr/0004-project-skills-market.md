@@ -65,8 +65,8 @@ MVP 是一个 Worker：Static Assets + API，D1 保存身份、元数据与审�
 不引入 KV、Durable Objects、Vectorize、Workflows 或微服务。若未来审核出现长时间暂停、
 外部扫描或多阶段恢复，再引入 Queue/Workflows，而不是预先维护第二套状态机。
 
-当前部署资源由 `apps/skills-market/wrangler.resources.example.toml` 描述。资源创建和正式
-发布必须在有效 Cloudflare 登录后执行，staging 与 production 使用独立 binding。
+当前部署资源由独立 `storyflow-hub/apps/skills-registry` 描述和管理。Storyflow 仓库只保留
+客户端协议、安装与在线兼容性验证，不再拥有 Registry Worker 或 Cloudflare 部署入口。
 
 客户端入口的可见性与 registry 身份是两个正交维度：固定 origin 属于供应链信任边界，
 不可由构建参数替换；入口只在 `VITE_STORYFLOW_SKILLS_MARKET_ENABLED=true` 时显示。正式

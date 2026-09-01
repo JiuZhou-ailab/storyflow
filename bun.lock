@@ -187,16 +187,6 @@
         "jose": "^6.0.0",
       },
     },
-    "apps/skills-market": {
-      "name": "@craft-agent/skills-market",
-      "version": "0.19.0",
-      "dependencies": {
-        "@craft-agent/session-tools-core": "workspace:*",
-        "@craft-agent/shared": "workspace:*",
-        "fflate": "^0.8.2",
-        "jose": "^6.0.0",
-      },
-    },
     "apps/tool-gateway-worker": {
       "name": "@craft-agent/tool-gateway-worker",
       "version": "0.19.0",
@@ -585,8 +575,6 @@
     "@craft-agent/session-tools-core": ["@craft-agent/session-tools-core@workspace:packages/session-tools-core"],
 
     "@craft-agent/shared": ["@craft-agent/shared@workspace:packages/shared"],
-
-    "@craft-agent/skills-market": ["@craft-agent/skills-market@workspace:apps/skills-market"],
 
     "@craft-agent/tool-gateway-worker": ["@craft-agent/tool-gateway-worker@workspace:apps/tool-gateway-worker"],
 

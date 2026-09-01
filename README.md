@@ -30,7 +30,6 @@ storyflow/
 │   ├── feedback-worker/     # 用户反馈入口：截图上传和 GitHub issue 创建
 │   ├── marketing/           # Storyflow 官网和下载入口
 │   ├── model-gateway-worker/# 托管模型能力与上游模型凭证隔离
-│   ├── skills-market/       # Skills Market API、AI 审核和不可变包分发
 │   ├── tool-gateway-worker/ # 托管工具能力与上游工具凭证隔离
 │   ├── viewer/              # 共享会话记录查看器
 │   └── webui/               # 无头服务端的浏览器客户端
@@ -96,8 +95,7 @@ bun run electron:start
 | `bun run webui:dev` | 启动浏览器客户端 |
 | `bun run viewer:dev` | 启动会话查看器 |
 | `bun run marketing:dev` | 启动 Storyflow 官网 landing 页面 |
-| `bun run skills-market:dev` | 启动第一方 Skills Market 的本地 API 适配器 |
-| `bun run skills-market:test` | 验证 Market 的目录、发布审核、包校验与下载 API |
+| `bun run skills-market:verify` | 验证独立 Skills Registry 的在线包可被客户端校验、导入并发现 |
 | `bun run typecheck:all` | 对主要 packages 和 apps 做类型检查 |
 | `bun test` | 运行 Bun 测试 |
 | `bun run validate:ci` | 运行更完整的验证套件 |

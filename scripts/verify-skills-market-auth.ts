@@ -1,6 +1,6 @@
-// input: Client-session signing secret plus deployed Auth Broker and Skills Market origins
-// output: Proof that the broker-issued Market capability is accepted by the live Market
-// pos: Cross-service canary owned by managed-auth deployment, outside desktop product validation
+// input: Client-session signing secret plus deployed Auth Broker and Skills Registry origins
+// output: Proof that the broker-issued Registry capability is accepted by the live Registry
+// pos: Cross-service canary owned by managed-auth deployment, independent of Registry source code
 
 import { SignJWT } from 'jose'
 

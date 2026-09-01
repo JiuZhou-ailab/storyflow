@@ -133,13 +133,12 @@ describe('managed auth deployment', () => {
       env: {
         STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}',
       },
-      run: 'bun run apps/skills-market/scripts/verify-auth-integration.ts',
+      run: 'bun run scripts/verify-skills-market-auth.ts',
     })
   })
 
-  it('deploys Skills Market and validates Catalog outside desktop CI/CD', () => {
+  it('keeps Skills Registry deployment outside the desktop repository', () => {
     const managedAuthWorkflow = readRepoFile('.github/workflows/deploy-managed-auth.yml')
-    const marketWorkflow = readRepoFile('.github/workflows/deploy-skills-market.yml')
     const catalogWorkflow = readRepoFile('.github/workflows/validate-catalog.yml')
     const releaseWorkflow = readRepoFile('.github/workflows/release.yml')
     const packageManifest = JSON.parse(readRepoFile('package.json')) as {
@@ -149,24 +148,10 @@ describe('managed auth deployment', () => {
     expect(managedAuthWorkflow).not.toContain('Migrate and deploy Skills Market')
     expect(managedAuthWorkflow).toContain('Verify Skills Market auth integration')
     expect(managedAuthWorkflow).not.toContain('storyflow-skills.zjding.com')
-    expect(marketWorkflow).toContain('name: Skills Market')
-    expect(marketWorkflow).toContain('pull_request:')
-    expect(marketWorkflow).toContain('push:')
-    expect(marketWorkflow).toContain('workflow_dispatch:')
-    expect(marketWorkflow).toMatch(/uses: actions\/checkout@v5\n\s+with:\n\s+ref: \$\{\{ github\.sha \}\}/)
-    expect(marketWorkflow).toContain('test "$GITHUB_REF" = "refs/heads/main"')
-    expect(marketWorkflow).toContain('Migrate and deploy Skills Market')
-    expect(marketWorkflow).toContain('bun run skills-market:test')
-    expect(marketWorkflow).toContain('bun run skills-market:verify')
-    expect(marketWorkflow).not.toContain('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET')
-    expect(marketWorkflow).toContain('STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_SECRET')
-    expect(marketWorkflow).toContain('previous key id and secret must be configured together')
-    expect(marketWorkflow).toContain('secret list --format json')
-    expect(marketWorkflow).toContain('secret delete STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_SECRET')
-    expect(marketWorkflow.indexOf('- name: Checkout')).toBeLessThan(marketWorkflow.indexOf('- name: Verify deployment configuration'))
-    expect(marketWorkflow.indexOf('- name: Setup Bun')).toBeLessThan(marketWorkflow.indexOf('- name: Verify deployment configuration'))
-    expect(marketWorkflow).toContain('packages/shared/src/resources/**')
-    expect(marketWorkflow).toContain('packages/pi-agent-server/src/**')
+    expect(existsSync(join(ROOT, '.github/workflows/deploy-skills-market.yml'))).toBe(false)
+    expect(existsSync(join(ROOT, 'apps/skills-market'))).toBe(false)
+    expect(existsSync(join(ROOT, 'scripts/verify-skills-market.ts'))).toBe(true)
+    expect(existsSync(join(ROOT, 'scripts/verify-skills-market-auth.ts'))).toBe(true)
     expect(catalogWorkflow).toContain('name: Validate Catalog Data Source')
     expect(catalogWorkflow).toContain('uv run --frozen --project apps/catalog-api')
     expect(catalogWorkflow).toContain('working-directory: apps/catalog-api/mcp')
@@ -178,9 +163,8 @@ describe('managed auth deployment', () => {
     expect(releaseWorkflow).not.toContain('172.16.33.103')
     expect(packageManifest.scripts['validate:dev']).not.toContain('test:catalog-api')
     expect(packageManifest.scripts.test).toContain("':!apps/catalog-api/**'")
-    expect(packageManifest.scripts.test).toContain("':!apps/skills-market/**'")
-    expect(readRepoFile('apps/skills-market/package.json')).toContain('scripts/*.test.ts')
-    expect(readRepoFile('apps/skills-market/wrangler.toml')).toContain('STORYFLOW_SKILLS_MARKET_JWT_PREVIOUS_KEY_ID = ""')
+    expect(packageManifest.scripts.test).not.toContain('apps/skills-market')
+    expect(packageManifest.scripts['skills-market:verify']).toBe('bun run scripts/verify-skills-market.ts')
   })
 
   it('scopes marketing production authority to verification and deployment', () => {
@@ -211,7 +195,6 @@ describe('managed auth deployment', () => {
   it('keeps authenticated dependency installs from running lifecycle code', () => {
     const workflowPaths = [
       '.github/workflows/deploy-marketing.yml',
-      '.github/workflows/deploy-skills-market.yml',
       '.github/workflows/release.yml',
       '.github/workflows/validate-server.yml',
       '.github/workflows/validate.yml',

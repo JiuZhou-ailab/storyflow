@@ -32,6 +32,7 @@ Build, validation, packaging, install, and local development entry scripts for t
 - `test-workflow-local.sh` - local workflow test helper.
 - `upload-r2-release-assets.ts` - publish GitHub release assets to Cloudflare R2 with Wrangler.
 - `verify-skills-market.ts` - verify every live Market bundle imports and is discovered by Pi.
+- `verify-skills-market-auth.ts` - verify the Auth Broker capability is accepted by the independent Skills Registry.
 
 ## Release R2 publishing
 
