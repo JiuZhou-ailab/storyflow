@@ -19,11 +19,13 @@ import {
 import { buildGlobalSearchResults } from '@/lib/global-search'
 import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
 import { cn } from '@/lib/utils'
+import { highlightMatch } from '@/utils/session'
 
 export interface GlobalSearchDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   workspaceId?: string
+  workspaceLabel?: string
   remoteWorkspaceId?: string | null
   workspaces: Workspace[]
   novelFiles: NovelWorkspaceFile[]
@@ -60,20 +62,39 @@ function GlobalSearchDialogContent(props: GlobalSearchDialogProps) {
   const [query, setQuery] = React.useState('')
   const [isComposing, setIsComposing] = React.useState(false)
   const hasQuery = query.trim().length >= 2
+  const workspaceLabel = props.workspaceLabel?.trim() || t('globalSearch.currentWorkspace', 'Current workspace')
+  const scopeDescription = props.workspaceId
+    ? t('globalSearch.scopeHint', {
+        workspace: workspaceLabel,
+        defaultValue: 'Search all project names, plus conversations and files in “{{workspace}}”.',
+      })
+    : t('globalSearch.projectsOnlyHint', 'No workspace is open, so only project names are searched.')
 
   return (
-    <CommandDialog open={props.open} onOpenChange={props.onOpenChange} shouldFilter={false}>
+    <CommandDialog
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      shouldFilter={false}
+      title={t('globalSearch.dialogTitle', 'Application search')}
+      description={scopeDescription}
+    >
       <CommandInput
         value={query}
         onValueChange={setQuery}
         onCompositionStart={() => setIsComposing(true)}
         onCompositionEnd={() => setIsComposing(false)}
-        placeholder={t('globalSearch.placeholder', 'Search projects, conversations, and files...')}
+        placeholder={props.workspaceId
+          ? t('globalSearch.placeholder', {
+              workspace: workspaceLabel,
+              defaultValue: 'Search projects, or conversations and files in “{{workspace}}”...',
+            })
+          : t('globalSearch.projectsOnlyPlaceholder', 'Search projects...')}
       />
       <CommandList className="max-h-[min(520px,70vh)]">
         {!hasQuery ? (
-          <CommandEmpty className="py-8 text-xs text-muted-foreground">
-            {t('globalSearch.hint', 'Type at least 2 characters to search.')}
+          <CommandEmpty className="space-y-1 px-6 py-8 text-xs text-muted-foreground">
+            <div>{t('globalSearch.hint', 'Type at least 2 characters to search.')}</div>
+            <div className="text-[11px] text-muted-foreground/75">{scopeDescription}</div>
           </CommandEmpty>
         ) : (
           <GlobalSearchResults {...props} query={query} isComposing={isComposing} />
@@ -86,6 +107,7 @@ function GlobalSearchDialogContent(props: GlobalSearchDialogProps) {
 function GlobalSearchResults({
   workspaceId,
   remoteWorkspaceId,
+  workspaceLabel: workspaceLabelProp,
   workspaces,
   novelFiles,
   formatNovelFileTitle,
@@ -97,6 +119,8 @@ function GlobalSearchResults({
   isComposing,
 }: GlobalSearchDialogProps & { query: string; isComposing: boolean }) {
   const { t } = useTranslation()
+  const trimmedQuery = query.trim()
+  const workspaceLabel = workspaceLabelProp?.trim() || t('globalSearch.currentWorkspace', 'Current workspace')
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const [contentResults, setContentResults] = React.useState<Map<string, WorkspaceSearchHit>>(new Map())
   const [searchState, setSearchState] = React.useState<SearchState>('idle')
@@ -121,7 +145,6 @@ function GlobalSearchResults({
   }, [remoteWorkspaceId, sessionMetaMap, workspaceId])
 
   React.useEffect(() => {
-    const trimmedQuery = query.trim()
     if (isComposing || !workspaceId) {
       clearContentResults()
       setSearchState('idle')
@@ -150,7 +173,7 @@ function GlobalSearchResults({
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [isComposing, query, workspaceId, clearContentResults])
+  }, [isComposing, trimmedQuery, workspaceId, clearContentResults])
 
   const results = React.useMemo(
     () => buildGlobalSearchResults({
@@ -181,7 +204,7 @@ function GlobalSearchResults({
       ) : null}
 
       {results.workspaces.length > 0 ? (
-        <CommandGroup heading={t('workspace.projectLabel', 'Projects')}>
+        <CommandGroup heading={t('globalSearch.switchProjects', 'Switch projects')}>
           {results.workspaces.map(({ workspace }) => (
             <CommandItem
               key={`workspace:${workspace.id}`}
@@ -190,14 +213,19 @@ function GlobalSearchResults({
               className="gap-3 rounded-[6px] px-2.5 py-2"
             >
               <SearchResultIcon><FolderKanban className="h-4 w-4" /></SearchResultIcon>
-              <div className="min-w-0 flex-1 truncate text-sm font-medium">{workspace.name}</div>
+              <div className="min-w-0 flex-1 truncate text-sm font-medium">
+                {highlightMatch(workspace.name, trimmedQuery)}
+              </div>
             </CommandItem>
           ))}
         </CommandGroup>
       ) : null}
 
       {results.sessions.length > 0 && workspaceId ? (
-        <CommandGroup heading={t('globalSearch.sessions', 'Conversations')}>
+        <CommandGroup heading={t('globalSearch.sessionsInWorkspace', {
+          workspace: workspaceLabel,
+          defaultValue: '{{workspace}} · Conversations',
+        })}>
           {results.sessions.map(({ session, title, preview, matchCount }) => (
             <CommandItem
               key={`session:${session.id}`}
@@ -207,17 +235,29 @@ function GlobalSearchResults({
             >
               <SearchResultIcon><MessageSquareText className="h-4 w-4" /></SearchResultIcon>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{title}</div>
-                {preview ? <div className="mt-0.5 truncate text-xs text-muted-foreground">{preview}</div> : null}
+                <div className="truncate text-sm font-medium">{highlightMatch(title, trimmedQuery)}</div>
+                {preview ? (
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {highlightMatch(preview, trimmedQuery)}
+                  </div>
+                ) : null}
               </div>
-              {matchCount ? <MatchCount count={matchCount} /> : null}
+              {matchCount ? (
+                <MatchCount label={t('globalSearch.matchCount', {
+                  count: matchCount,
+                  defaultValue: '{{count}} matches',
+                })} />
+              ) : null}
             </CommandItem>
           ))}
         </CommandGroup>
       ) : null}
 
       {results.files.length > 0 ? (
-        <CommandGroup heading={t('globalSearch.writingFiles', 'Files')}>
+        <CommandGroup heading={t('globalSearch.filesInWorkspace', {
+          workspace: workspaceLabel,
+          defaultValue: '{{workspace}} · Files',
+        })}>
           {results.files.map(({ file, title, preview, matchCount, lineNumber }) => (
             <CommandItem
               key={`file:${file.path}`}
@@ -227,19 +267,32 @@ function GlobalSearchResults({
             >
               <SearchResultIcon><FileText className="h-4 w-4" /></SearchResultIcon>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{title}</div>
-                <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {preview || `${file.relativePath}${lineNumber ? `:${lineNumber}` : ''}`}
+                <div className="truncate text-sm font-medium">{highlightMatch(title, trimmedQuery)}</div>
+                {preview ? (
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {highlightMatch(preview, trimmedQuery)}
+                  </div>
+                ) : null}
+                <div className="mt-0.5 truncate text-[11px] text-muted-foreground/75">
+                  {file.relativePath}{lineNumber ? `:${lineNumber}` : ''}
                 </div>
               </div>
-              {matchCount ? <MatchCount count={matchCount} /> : null}
+              {matchCount ? (
+                <MatchCount label={t('globalSearch.matchCount', {
+                  count: matchCount,
+                  defaultValue: '{{count}} matches',
+                })} />
+              ) : null}
             </CommandItem>
           ))}
         </CommandGroup>
       ) : null}
 
       {searchState === 'searching' ? (
-        <SearchStatus>{t('globalSearch.searchingContent', 'Searching current project content...')}</SearchStatus>
+        <SearchStatus>{t('globalSearch.searchingContent', {
+          workspace: workspaceLabel,
+          defaultValue: 'Searching content in “{{workspace}}”...',
+        })}</SearchStatus>
       ) : null}
       {searchState === 'unavailable' || searchState === 'error' ? (
         <SearchStatus>{t('common.unavailable', 'Content search is temporarily unavailable.')}</SearchStatus>
@@ -248,10 +301,13 @@ function GlobalSearchResults({
   )
 }
 
-function MatchCount({ count }: { count: number }) {
+function MatchCount({ label }: { label: string }) {
   return (
-    <span className="mt-1 shrink-0 rounded-[4px] bg-foreground/[0.05] px-1.5 py-0.5 text-[11px] text-muted-foreground">
-      {count}
+    <span
+      className="mt-1 shrink-0 rounded-[4px] bg-foreground/[0.05] px-1.5 py-0.5 text-[11px] text-muted-foreground"
+      title={label}
+    >
+      {label}
     </span>
   )
 }

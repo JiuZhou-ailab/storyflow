@@ -105,6 +105,12 @@ const OUTDATED_CATALOG_MCP_URLS = new Set([
   'http://172.16.33.66:8789/mcp',
   'http://172.16.33.103:8789/mcp',
   'http://120.27.207.223:7844/hot-drama/mcp',
+  'https://script.duanju.com/hot-drama/mcp',
+]);
+
+const OUTDATED_CATALOG_TAGLINES = new Set([
+  '红果、GoodShort、ReelShort 与 DataEye 的来源内榜单和媒资覆盖证据',
+  '红果、GoodShort、ReelShort 与 DataEye 的榜单和媒资数据',
 ]);
 
 function isOutdatedCatalogConfig(value: unknown): value is Record<string, unknown> {
@@ -144,7 +150,7 @@ function migrateLegacyCatalog(sourceRoot: string, targetRoot: string): boolean {
       enabled: current.enabled ?? bundled.enabled,
       ...(current.name !== 'Storyflow Catalog' ? { name: current.name } : {}),
       ...(current.icon !== '🎬' ? { icon: current.icon } : {}),
-      ...(current.tagline !== '红果、GoodShort、ReelShort 与 DataEye 的来源内榜单和媒资覆盖证据'
+      ...(typeof current.tagline === 'string' && !OUTDATED_CATALOG_TAGLINES.has(current.tagline)
         ? { tagline: current.tagline }
         : {}),
     };

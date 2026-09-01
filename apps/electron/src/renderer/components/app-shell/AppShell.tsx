@@ -5520,6 +5520,7 @@ function AppShellContent({
         open={globalSearchOpen}
         onOpenChange={setGlobalSearchOpen}
         workspaceId={activeWorkspaceId ?? undefined}
+        workspaceLabel={activeWorkspace?.name}
         remoteWorkspaceId={remoteWorkspaceId}
         workspaces={workspaces}
         novelFiles={novelWorkspaceFiles}

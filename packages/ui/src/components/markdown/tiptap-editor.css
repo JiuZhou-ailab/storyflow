@@ -579,6 +579,39 @@
   text-underline-offset: 2px;
 }
 
+/* Tables */
+.tiptap-editor .tiptap-prose .tableWrapper {
+  margin: 0.75rem 0;
+  overflow-x: auto;
+}
+
+.tiptap-editor .tiptap-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+}
+
+.tiptap-editor .tiptap-prose th,
+.tiptap-editor .tiptap-prose td {
+  min-width: 6rem;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  padding: 0.5rem 0.75rem;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.tiptap-editor .tiptap-prose th {
+  background: color-mix(in oklch, var(--foreground) 4%, transparent);
+  font-weight: 600;
+  text-align: left;
+}
+
+.tiptap-editor .tiptap-prose th p,
+.tiptap-editor .tiptap-prose td p {
+  margin: 0;
+}
+
 /* Images */
 .tiptap-editor .tiptap-prose img {
   display: block;

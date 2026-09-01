@@ -7,6 +7,7 @@ import TaskItem from '@tiptap/extension-task-item'
 import Image from '@tiptap/extension-image'
 import { Markdown } from '@tiptap/markdown'
 import {
+  createTiptapTableKit,
   preprocessMarkdownForOfficial,
   postprocessMarkdownFromOfficial,
 } from '../TiptapMarkdownEditor'
@@ -158,6 +159,72 @@ describe('official markdown + mathematics foundation', () => {
     expect(md).toContain('- [ ] Draft release notes')
     expect(md).toContain('- [x] Ship task list slash command')
     expect(md).toContain('  - [ ] Add follow-up docs')
+
+    editor.destroy()
+  })
+
+  it('round-trips GFM tables without dropping cells', () => {
+    const source = [
+      '| Name | Value |',
+      '| --- | --- |',
+      '| Alpha | 1 |',
+    ].join('\n')
+
+    const editor = new Editor({
+      extensions: [
+        StarterKit,
+        ...createTiptapTableKit(),
+        Markdown.configure({ markedOptions: { gfm: true } }),
+      ],
+      content: source,
+      contentType: 'markdown',
+    })
+
+    editor.commands.insertContentAt(editor.state.doc.content.size, {
+      type: 'paragraph',
+      content: [{ type: 'text', text: 'After edit' }],
+    })
+
+    const jsonText = JSON.stringify(editor.getJSON())
+    const markdown = editor.getMarkdown()
+
+    expect(jsonText).toContain('"type":"table"')
+    expect(jsonText).toContain('Alpha')
+    expect(markdown).toMatch(/\|\s*Alpha\s*\|\s*1\s*\|/)
+    expect(markdown).toContain('After edit')
+
+    editor.destroy()
+  })
+
+  it('preserves GFM table column alignment after editing', () => {
+    const source = [
+      '| Left | Center | Right |',
+      '| :--- | :---: | ---: |',
+      '| A | B | C |',
+    ].join('\n')
+
+    const editor = new Editor({
+      extensions: [
+        StarterKit,
+        ...createTiptapTableKit(),
+        Markdown.configure({ markedOptions: { gfm: true } }),
+      ],
+      content: source,
+      contentType: 'markdown',
+    })
+
+    editor.commands.insertContentAt(editor.state.doc.content.size, {
+      type: 'paragraph',
+      content: [{ type: 'text', text: 'After edit' }],
+    })
+
+    const jsonText = JSON.stringify(editor.getJSON())
+    const separator = editor.getMarkdown().split('\n').find((line) => line.includes('---'))
+
+    expect(jsonText).toContain('"align":"left"')
+    expect(jsonText).toContain('"align":"center"')
+    expect(jsonText).toContain('"align":"right"')
+    expect(separator).toMatch(/^\|\s*:-{3,}\s*\|\s*:-{3,}:\s*\|\s*-{3,}:\s*\|$/)
 
     editor.destroy()
   })

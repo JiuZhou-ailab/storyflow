@@ -11,7 +11,9 @@ import TaskItem from './extensions/AnimatedTaskItem'
 import { Mathematics } from '@tiptap/extension-mathematics'
 import Image from '@tiptap/extension-image'
 import FileHandler from '@tiptap/extension-file-handler'
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table'
 import { Markdown as OfficialMarkdown } from '@tiptap/markdown'
+import type { MarkdownToken } from '@tiptap/core'
 import type { Editor } from '@tiptap/react'
 import { EditorState } from '@tiptap/pm/state'
 import {
@@ -49,6 +51,90 @@ import { cn } from '../../lib/utils'
 import 'katex/dist/katex.min.css'
 import './tiptap-editor.css'
 import './extensions/animated-task-item.css'
+
+type TableAlignment = 'left' | 'center' | 'right' | null
+
+type GfmTableToken = MarkdownToken & {
+  align?: TableAlignment[]
+  header?: Array<{ tokens: MarkdownToken[] }>
+  rows?: Array<Array<{ tokens: MarkdownToken[] }>>
+}
+
+function normalizeTableAlignment(value: unknown): TableAlignment {
+  return value === 'left' || value === 'center' || value === 'right' ? value : null
+}
+
+const tableAlignmentAttribute = {
+  default: null,
+  parseHTML: (element: HTMLElement) => normalizeTableAlignment(element.style.textAlign || element.getAttribute('align')),
+  renderHTML: ({ align }: { align?: unknown }) => {
+    const value = normalizeTableAlignment(align)
+    return value ? { style: `text-align: ${value}` } : {}
+  },
+}
+
+const GfmTableCell = TableCell.extend({
+  addAttributes() {
+    return { ...this.parent?.(), align: tableAlignmentAttribute }
+  },
+})
+
+const GfmTableHeader = TableHeader.extend({
+  addAttributes() {
+    return { ...this.parent?.(), align: tableAlignmentAttribute }
+  },
+})
+
+const GfmTable = Table.extend({
+  parseMarkdown(token, h) {
+    const table = token as GfmTableToken
+    const createCell = (type: 'tableHeader' | 'tableCell', cell: { tokens: MarkdownToken[] }, column: number) => (
+      h.createNode(type, { align: normalizeTableAlignment(table.align?.[column]) }, [
+        h.createNode('paragraph', {}, h.parseInline(cell.tokens)),
+      ])
+    )
+    const rows = []
+
+    if (table.header) {
+      rows.push(h.createNode('tableRow', {}, table.header.map((cell, column) => createCell('tableHeader', cell, column))))
+    }
+    for (const row of table.rows ?? []) {
+      rows.push(h.createNode('tableRow', {}, row.map((cell, column) => createCell('tableCell', cell, column))))
+    }
+
+    return h.createNode('table', undefined, rows)
+  },
+
+  renderMarkdown(node, h, context) {
+    const markdown = Table.config.renderMarkdown?.(node, h, context) ?? ''
+    const alignments = node.content?.[0]?.content?.map((cell) => normalizeTableAlignment(cell.attrs?.align)) ?? []
+    if (!alignments.some(Boolean)) return markdown
+
+    const lines = markdown.split('\n')
+    const separatorIndex = lines.findIndex((line) => /^\|\s*-{3,}(?:\s*\|\s*-{3,})+\s*\|$/.test(line))
+    if (separatorIndex < 0) return markdown
+
+    const separators = lines[separatorIndex]!.slice(1, -1).split('|').map((cell) => cell.trim())
+    lines[separatorIndex] = `| ${separators.map((separator, column) => {
+      const dashes = '-'.repeat(Math.max(3, separator.length))
+      if (alignments[column] === 'left') return `:${dashes}`
+      if (alignments[column] === 'center') return `:${dashes}:`
+      if (alignments[column] === 'right') return `${dashes}:`
+      return dashes
+    }).join(' | ')} |`
+
+    return lines.join('\n')
+  },
+})
+
+export function createTiptapTableKit() {
+  return [
+    GfmTable.configure({ renderWrapper: true }),
+    GfmTableCell,
+    GfmTableHeader,
+    TableRow,
+  ]
+}
 
 function useEditorToolbarRefresh(editor: Editor) {
   const [, setVersion] = React.useState(0)
@@ -464,6 +550,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         inline: false,
         allowBase64: true,
       }),
+      ...createTiptapTableKit(),
       FileHandler.configure({
         onPaste: async (editor, files) => {
           if (!editor.isEditable || files.length === 0) return

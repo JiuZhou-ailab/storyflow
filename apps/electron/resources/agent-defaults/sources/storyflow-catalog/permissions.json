@@ -1,9 +1,10 @@
 {
   "allowedMcpPatterns": [
-    { "pattern": "catalog_sources", "comment": "读取证据来源" },
-    { "pattern": "ranking_snapshots", "comment": "读取榜单快照" },
-    { "pattern": "rankings", "comment": "只读查询来源内榜单" },
-    { "pattern": "video_assets", "comment": "只读查询视频媒资" },
-    { "pattern": "series_manifest", "comment": "读取已验证的转剧本 manifest" }
+    { "pattern": "^short2api_health$", "comment": "检查短剧服务状态" },
+    { "pattern": "^short2api_providers$", "comment": "读取支持的平台" },
+    { "pattern": "^short2api_languages$", "comment": "读取支持的语言" },
+    { "pattern": "^short2api_search$", "comment": "只读搜索短剧" },
+    { "pattern": "^short2api_short_detail$", "comment": "读取剧目和分集列表" },
+    { "pattern": "^short2api_episode_detail$", "comment": "读取单集和播放地址" }
   ]
 }

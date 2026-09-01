@@ -114,9 +114,8 @@ describe('default agent resources', () => {
       type: 'mcp',
       mcp: {
         transport: 'http',
-        url: 'https://script.duanju.com/hot-drama/mcp',
+        url: 'http://47.91.2.252:9000/mcp',
         authType: 'none',
-        headers: { Authorization: 'Bearer test-shared-token-at-least-32-characters' },
       },
     };
     const legacyConfig = {
@@ -143,7 +142,7 @@ describe('default agent resources', () => {
     const permissionsPath = join(agentRootDir, 'sources', 'storyflow-catalog', 'permissions.json');
     writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'config.json'), `${JSON.stringify(bundledConfig)}\n`);
     writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'guide.md'), 'new MCP guide');
-    writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'permissions.json'), '{"allowedMcpPatterns":["rankings"]}\n');
+    writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'permissions.json'), '{"allowedMcpPatterns":[{"pattern":"^short2api_search$"}]}\n');
     writeFile(configPath, `${JSON.stringify(legacyConfig)}\n`);
     writeFile(guidePath, 'customized legacy API guide');
     writeFile(permissionsPath, '{"allowedMcpPatterns":["list"]}\n');
@@ -156,9 +155,13 @@ describe('default agent resources', () => {
     expect(migrated.type).toBe('mcp');
     expect(migrated.enabled).toBe(true);
     expect(migrated.api).toBeUndefined();
-    expect(migrated.mcp.url).toBe('https://script.duanju.com/hot-drama/mcp');
+    expect(migrated.mcp.url).toBe('http://47.91.2.252:9000/mcp');
+    expect(migrated.mcp.headers).toBeUndefined();
     expect(readFileSync(guidePath, 'utf8')).toBe('new MCP guide');
-    expect(readFileSync(permissionsPath, 'utf8')).toContain('rankings');
+    const permissions = JSON.parse(readFileSync(permissionsPath, 'utf8'));
+    const patterns = permissions.allowedMcpPatterns.map(({ pattern }: { pattern: string }) => pattern);
+    expect(patterns).toContain('^short2api_search$');
+    expect(patterns.some((pattern: string) => new RegExp(pattern).test('short2api_search_and_delete'))).toBe(false);
   });
 
   it('migrates an outdated built-in MCP endpoint without re-enabling a disabled Source', () => {
@@ -168,12 +171,19 @@ describe('default agent resources', () => {
     const installedDir = join(agentRootDir, 'sources', 'storyflow-catalog');
     const bundled = {
       id: 'builtin-storyflow-catalog', slug: 'storyflow-catalog', provider: 'storyflow', type: 'mcp', enabled: true,
-      mcp: { transport: 'http', url: 'https://script.duanju.com/hot-drama/mcp', authType: 'none' },
+      tagline: 'ReelShort、DramaBox 与 NetShort 的剧目、分集和播放数据',
+      mcp: { transport: 'http', url: 'http://47.91.2.252:9000/mcp', authType: 'none' },
     };
     const installed = {
       ...bundled,
       enabled: false,
-      mcp: { transport: 'http', url: 'http://120.27.207.223:7844/hot-drama/mcp', authType: 'none' },
+      tagline: '红果、GoodShort、ReelShort 与 DataEye 的榜单和媒资数据',
+      mcp: {
+        transport: 'http',
+        url: 'https://script.duanju.com/hot-drama/mcp',
+        authType: 'none',
+        headers: { Authorization: 'Bearer old-shared-token' },
+      },
     };
     writeFile(join(bundledDir, 'config.json'), `${JSON.stringify(bundled)}\n`);
     writeFile(join(bundledDir, 'guide.md'), 'new guide');
@@ -186,7 +196,9 @@ describe('default agent resources', () => {
 
     const migrated = JSON.parse(readFileSync(join(installedDir, 'config.json'), 'utf8'));
     expect(migrated.enabled).toBe(false);
-    expect(migrated.mcp.url).toBe('https://script.duanju.com/hot-drama/mcp');
+    expect(migrated.tagline).toBe('ReelShort、DramaBox 与 NetShort 的剧目、分集和播放数据');
+    expect(migrated.mcp.url).toBe('http://47.91.2.252:9000/mcp');
+    expect(migrated.mcp.headers).toBeUndefined();
   });
 
   it('does not throw when the Craft root is not writable as a directory', () => {
@@ -278,8 +290,8 @@ describe('default agent resources', () => {
     expect(catalogConfig).toContain('"type": "mcp"');
     const parsedCatalogConfig = JSON.parse(catalogConfig);
     expect(parsedCatalogConfig.mcp.authType).toBe('none');
-    expect(parsedCatalogConfig.mcp.headers.Authorization).toMatch(/^Bearer .{32,}$/);
-    expect(catalogConfig).toContain('"url": "https://script.duanju.com/hot-drama/mcp"');
+    expect(parsedCatalogConfig.mcp.headers).toBeUndefined();
+    expect(catalogConfig).toContain('"url": "http://47.91.2.252:9000/mcp"');
     expect(catalogConfig).not.toContain('MODEL_ACCESS_BROKER_TOKEN');
     expect(validateSourceConfig(JSON.parse(catalogConfig)).valid).toBe(true);
     expect(validatePermissionsContent(catalogPermissions).valid).toBe(true);

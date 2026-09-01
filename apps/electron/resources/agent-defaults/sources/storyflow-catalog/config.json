@@ -6,14 +6,11 @@
   "provider": "storyflow",
   "type": "mcp",
   "icon": "🎬",
-  "tagline": "红果、GoodShort、ReelShort 与 DataEye 的榜单和媒资数据",
+  "tagline": "ReelShort、DramaBox 与 NetShort 的剧目、分集和播放数据",
   "mcp": {
     "transport": "http",
-    "url": "https://script.duanju.com/hot-drama/mcp",
-    "authType": "none",
-    "headers": {
-      "Authorization": "Bearer 8f3cc530f70e0e435302a4b57b4192f4aa8d7763f7156235bd4d0c42aca4296f"
-    }
+    "url": "http://47.91.2.252:9000/mcp",
+    "authType": "none"
   },
   "createdAt": 1786118400000,
   "updatedAt": 1787068800000,

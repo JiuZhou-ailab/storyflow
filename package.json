@@ -142,6 +142,7 @@
     "@tiptap/extension-image": "^3.20.0",
     "@tiptap/extension-mathematics": "^3.20.0",
     "@tiptap/extension-placeholder": "^3.20.0",
+    "@tiptap/extension-table": "3.20.0",
     "@tiptap/extension-task-item": "^3.20.0",
     "@tiptap/extension-task-list": "^3.20.0",
     "@tiptap/markdown": "^3.20.0",
