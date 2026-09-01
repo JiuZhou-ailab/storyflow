@@ -1,8 +1,9 @@
-// input: Pi-native installed Skills, authenticated Skills Market catalog data, and the active workspace
-// output: Uninstalled popularity-ranked discovery plus installed Skill management and publication actions
+// input: Pi-native Skills/Sources, authenticated Skills Market details, and the active workspace
+// output: Discovery, dependency-safe installation guidance, installed Skill management, and publication actions
 // pos: Default Skills route; local Pi catalog remains the authority for installed state
 
 import * as React from 'react'
+import type { TFunction } from 'i18next'
 import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import {
@@ -13,6 +14,7 @@ import {
   ExternalLink,
   MoreHorizontal,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   Upload,
@@ -21,7 +23,9 @@ import {
 import { toast } from 'sonner'
 import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults/skills'
 import type { MarketSkillDetail, MarketSkillSummary } from '@craft-agent/shared/skills/marketplace'
+import type { SkillInstallReceipt } from '@craft-agent/shared/resources'
 import { skillsAtom } from '@/atoms/skills'
+import { sourcesAtom } from '@/atoms/sources'
 import { windowRuntimeWorkspaceAtom, windowWorkspaceIdAtom } from '@/atoms/sessions'
 import { AddSkillPopover } from '@/components/app-shell/AddSkillPopover'
 import { PublishSkillDialog } from '@/components/app-shell/PublishSkillDialog'
@@ -46,14 +50,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Info_Markdown } from '@/components/info'
 import { navigate, routes } from '@/lib/navigate'
 import { cn } from '@/lib/utils'
-import type { LoadedSkill } from '../../shared/types'
+import type { LoadedSkill, LoadedSource } from '../../shared/types'
 import {
   filterMarketSkills,
   getInstalledMarketSlug,
+  hasMarketSkillUpdate,
   isInstallableMarketSkill,
   normalizeMarketSkillExternalUrl,
+  normalizeRequiredSourceSlugs,
+  resolveRequiredSources,
   stripSkillFrontmatter,
   type CatalogView,
+  type RequiredSourceDependency,
 } from './skills-hub-logic'
 
 type SkillsTab = 'discover' | 'installed'
@@ -65,6 +73,7 @@ export function getMarketSkillVisual(skill: MarketSkillSummary) {
 export default function SkillsHubPage() {
   const { t } = useTranslation()
   const skills = useAtomValue(skillsAtom)
+  const sources = useAtomValue(sourcesAtom)
   const workspaceId = useAtomValue(windowWorkspaceIdAtom)
   const workspace = useAtomValue(windowRuntimeWorkspaceAtom)
   const currentWorkspaceId = React.useRef(workspaceId)
@@ -79,6 +88,9 @@ export default function SkillsHubPage() {
   const [query, setQuery] = React.useState('')
   const [catalogView, setCatalogView] = React.useState<CatalogView>('featured')
   const [installingSlug, setInstallingSlug] = React.useState<string | null>(null)
+  const [upgradingSlug, setUpgradingSlug] = React.useState<string | null>(null)
+  const [installReceipts, setInstallReceipts] = React.useState<SkillInstallReceipt[]>([])
+  const [receiptReloadToken, setReceiptReloadToken] = React.useState(0)
   const [selectedMarketSkill, setSelectedMarketSkill] = React.useState<MarketSkillSummary | null>(null)
   const [marketSkillDetail, setMarketSkillDetail] = React.useState<MarketSkillDetail | null>(null)
   const [marketSkillDetailLoading, setMarketSkillDetailLoading] = React.useState(false)
@@ -104,12 +116,32 @@ export default function SkillsHubPage() {
     return () => { active = false }
   }, [reloadToken])
 
+  React.useEffect(() => {
+    if (!workspaceId) {
+      setInstallReceipts([])
+      return
+    }
+    let active = true
+    void window.electronAPI.listSkillInstallReceipts(workspaceId, 'project')
+      .then(receipts => { if (active) setInstallReceipts(receipts) })
+      .catch(() => { if (active) setInstallReceipts([]) })
+    return () => { active = false }
+  }, [receiptReloadToken, workspaceId])
+
   const installedBySlug = React.useMemo(
     () => new Map(skills.flatMap(skill => {
       const marketSlug = getInstalledMarketSlug(skill)
       return marketSlug ? [[marketSlug, skill] as const] : []
     })),
     [skills],
+  )
+  const installReceiptsBySlug = React.useMemo(
+    () => new Map(installReceipts.map(receipt => [receipt.slug, receipt])),
+    [installReceipts],
+  )
+  const marketBySlug = React.useMemo(
+    () => new Map(marketSkills.map(skill => [skill.slug, skill])),
+    [marketSkills],
   )
   const filteredInstalledSkills = React.useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase()
@@ -186,10 +218,19 @@ export default function SkillsHubPage() {
         targetWorkspaceId,
         downloaded.bundle,
         'skip',
-        { skillScope: 'project' },
+        {
+          skillScope: 'project',
+          installArtifact: {
+            slug: skill.slug,
+            version: skill.version,
+            sha256: downloaded.sha256,
+            raw: downloaded.raw,
+          },
+        },
       )
       const bucket = result.skills
       if (bucket.imported.includes(skill.slug)) {
+        setReceiptReloadToken(value => value + 1)
         toast.success(t('skillsMarket.imported', { slug: skill.slug }))
         return
       }
@@ -207,6 +248,41 @@ export default function SkillsHubPage() {
       setInstallingSlug(null)
     }
   }, [installingSlug, t, workspaceId])
+
+  const upgradeSkill = React.useCallback(async (
+    skill: MarketSkillSummary,
+    receipt: SkillInstallReceipt,
+  ) => {
+    if (!workspaceId || upgradingSlug) return
+    const targetWorkspaceId = workspaceId
+    setUpgradingSlug(skill.slug)
+    try {
+      const [current, target] = await Promise.all([
+        window.electronAPI.downloadSkillFromMarket(receipt),
+        window.electronAPI.downloadSkillFromMarket(skill),
+      ])
+      if (currentWorkspaceId.current !== targetWorkspaceId) {
+        throw new Error(t('skillsMarket.runtimeChanged'))
+      }
+      const result = await window.electronAPI.upgradeInstalledSkill(
+        targetWorkspaceId,
+        { slug: receipt.slug, version: receipt.version, sha256: current.sha256, raw: current.raw },
+        { slug: skill.slug, version: skill.version, sha256: target.sha256, raw: target.raw },
+        receipt.scope,
+      )
+      setReceiptReloadToken(value => value + 1)
+      toast.success(t('skillsMarket.updated', { slug: skill.slug }))
+      if (result.preservedPaths.length > 0) {
+        toast.info(t('skillsMarket.localChangesPreserved', { count: result.preservedPaths.length }))
+      }
+    } catch (error) {
+      toast.error(t('skillsMarket.updateFailed', { slug: skill.slug }), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setUpgradingSlug(null)
+    }
+  }, [t, upgradingSlug, workspaceId])
 
   return (
     <main className="h-full min-h-0 overflow-y-auto bg-background text-foreground">
@@ -315,7 +391,12 @@ export default function SkillsHubPage() {
         <TabsContent value="installed" className="mt-5">
           {filteredInstalledSkills.length > 0 ? (
             <div id="installed-skills-grid" className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
-              {filteredInstalledSkills.map(skill => (
+              {filteredInstalledSkills.map(skill => {
+                const marketSlug = getInstalledMarketSlug(skill)
+                const receipt = marketSlug ? installReceiptsBySlug.get(marketSlug) : undefined
+                const marketSkill = marketSlug ? marketBySlug.get(marketSlug) : undefined
+                const updateAvailable = Boolean(receipt && marketSkill && hasMarketSkillUpdate(receipt, marketSkill))
+                return (
                 <article key={skill.slug} className="flex min-w-0 items-start gap-3 border-b border-border/60 py-4">
                   <button
                     type="button"
@@ -332,6 +413,19 @@ export default function SkillsHubPage() {
                       </span>
                     </span>
                   </button>
+                  {updateAvailable && receipt && marketSkill ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      disabled={upgradingSlug !== null}
+                      onClick={() => void upgradeSkill(marketSkill, receipt)}
+                    >
+                      <RefreshCw aria-hidden="true" className={cn(upgradingSlug === marketSlug && 'animate-spin motion-reduce:animate-none')} />
+                      {upgradingSlug === marketSlug ? t('skillsMarket.updating') : t('skillsMarket.update')}
+                    </Button>
+                  ) : null}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
@@ -364,7 +458,8 @@ export default function SkillsHubPage() {
                     </StyledDropdownMenuContent>
                   </DropdownMenu>
                 </article>
-              ))}
+                )
+              })}
             </div>
           ) : (
             <p className="mt-3 rounded-lg border border-dashed border-border/80 px-4 py-5 text-sm text-muted-foreground">
@@ -481,7 +576,7 @@ export default function SkillsHubPage() {
                           variant="outline"
                           className="shrink-0"
                           disabled={!workspaceId || installingSlug !== null}
-                          onClick={() => void installSkill(skill)}
+                          onClick={() => void openMarketSkill(skill)}
                         >
                           <Download aria-hidden="true" />
                           {installing
@@ -509,6 +604,7 @@ export default function SkillsHubPage() {
         loading={marketSkillDetailLoading}
         error={marketSkillDetailError}
         installed={selectedMarketSkill ? installedBySlug.get(selectedMarketSkill.slug) : undefined}
+        sources={sources}
         installing={selectedMarketSkill?.slug === installingSlug}
         canInstall={Boolean(workspaceId && marketSkillDetail && !marketSkillDetailError)}
         onOpenChange={open => { if (!open) closeMarketSkill() }}
@@ -518,9 +614,28 @@ export default function SkillsHubPage() {
           if (installTarget) void installSkill(installTarget)
         }}
         onOpenUrl={openMarketSkillUrl}
+        onOpenManagedAccount={() => {
+          closeMarketSkill()
+          navigate(routes.view.settings('app'))
+        }}
         onOpenInstalled={(skill) => {
           closeMarketSkill()
           openSkill(skill)
+        }}
+        onOpenRequiredSource={(dependency) => {
+          closeMarketSkill()
+          if (dependency.access === 'managed') {
+            navigate(routes.view.settings('app'))
+            return
+          }
+          if (dependency.source) {
+            navigate(routes.view.sources({
+              sourceSlug: dependency.source.config.slug,
+              type: dependency.source.config.type,
+            }))
+            return
+          }
+          navigate(routes.view.sources())
         }}
       />
 
@@ -550,26 +665,32 @@ function MarketSkillDetailDialog({
   loading,
   error,
   installed,
+  sources,
   installing,
   canInstall,
   onOpenChange,
   onRetry,
   onInstall,
   onOpenUrl,
+  onOpenManagedAccount,
   onOpenInstalled,
+  onOpenRequiredSource,
 }: {
   skill: MarketSkillSummary | null
   detail: MarketSkillDetail | null
   loading: boolean
   error: string | null
   installed?: LoadedSkill
+  sources: LoadedSource[]
   installing: boolean
   canInstall: boolean
   onOpenChange: (open: boolean) => void
   onRetry: () => void
   onInstall: () => void
   onOpenUrl: (url: string) => void
+  onOpenManagedAccount: () => void
   onOpenInstalled: (skill: LoadedSkill) => void
+  onOpenRequiredSource: (dependency: RequiredSourceDependency) => void
 }) {
   const { t } = useTranslation()
   if (!skill) return null
@@ -578,7 +699,13 @@ function MarketSkillDetailDialog({
   const instructions = detail && isInstallableMarketSkill(detail)
     ? stripSkillFrontmatter(detail.skillMarkdown)
     : ''
-  const showInstructions = loading || Boolean(error) || Boolean(instructions)
+  const requiredSources = resolveRequiredSources(
+    normalizeRequiredSourceSlugs(detail?.manifest.contributes?.requiredSources),
+    sources,
+  )
+  const requiresStoryflowLogin = detail?.requiresStoryflowLogin === true
+  const showContent = loading || Boolean(error) || Boolean(instructions)
+    || requiredSources.length > 0 || requiresStoryflowLogin
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -586,7 +713,7 @@ function MarketSkillDetailDialog({
         size="xl"
         className={cn(
           'max-h-[82vh] gap-0 overflow-hidden p-0',
-          showInstructions ? 'grid-rows-[auto_minmax(0,1fr)_auto]' : 'grid-rows-[auto_auto]',
+          showContent ? 'grid-rows-[auto_minmax(0,1fr)_auto]' : 'grid-rows-[auto_auto]',
         )}
       >
         <DialogHeader className="px-6 pb-5 pt-6 pr-12">
@@ -606,7 +733,7 @@ function MarketSkillDetailDialog({
           </div>
         </DialogHeader>
 
-        {showInstructions ? (
+        {showContent ? (
           <div className="min-h-0 overflow-y-auto border-y border-border/60 px-6 py-5">
             {loading ? (
               <div className="space-y-3" aria-label={t('skillsHub.loadingDetail', '正在加载 Skill 内容')}>
@@ -623,11 +750,36 @@ function MarketSkillDetailDialog({
                   {t('common.retry', '重试')}
                 </Button>
               </div>
-            ) : instructions ? (
-              <Info_Markdown mode="full" className="px-0 pb-0" allowImages={false} onUrlClick={onOpenUrl}>
-                {instructions}
-              </Info_Markdown>
-            ) : null}
+            ) : (
+              <div className="space-y-5">
+                {requiresStoryflowLogin && (
+                  <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-3">
+                    <div>
+                      <h3 className="text-sm font-medium text-foreground">
+                        {t('settings.app.account.title')}
+                      </h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {t('skillManagement.managedBySource', { source: 'Storyflow' })}
+                      </p>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" onClick={onOpenManagedAccount}>
+                      {t('settings.app.account.title')}
+                    </Button>
+                  </section>
+                )}
+                {requiredSources.length > 0 && (
+                  <RequiredSourcesSection
+                    dependencies={requiredSources}
+                    onOpenRequiredSource={onOpenRequiredSource}
+                  />
+                )}
+                {instructions && (
+                  <Info_Markdown mode="full" className="px-0 pb-0" allowImages={false} onUrlClick={onOpenUrl}>
+                    {instructions}
+                  </Info_Markdown>
+                )}
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -658,6 +810,70 @@ function MarketSkillDetailDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+function RequiredSourcesSection({
+  dependencies,
+  onOpenRequiredSource,
+}: {
+  dependencies: RequiredSourceDependency[]
+  onOpenRequiredSource: (dependency: RequiredSourceDependency) => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <section aria-labelledby="market-skill-required-sources">
+      <h3 id="market-skill-required-sources" className="text-sm font-medium text-foreground">
+        {t('skillInfo.requiredSources')}
+      </h3>
+      <ul className="mt-3 divide-y divide-border/50 rounded-lg border border-border/60">
+        {dependencies.map(dependency => (
+          <li key={dependency.slug} className="flex flex-wrap items-center justify-between gap-3 px-3 py-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-foreground">
+                {dependency.source?.config.name ?? dependency.slug}
+              </div>
+              <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                {dependency.slug}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {getRequiredSourceAccessCopy(dependency.access, t)}
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              onClick={() => onOpenRequiredSource(dependency)}
+            >
+              {dependency.access === 'managed'
+                ? t('settings.app.account.title')
+                : dependency.source
+                  ? t('common.open')
+                  : t('sidebar.sources')}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function getRequiredSourceAccessCopy(
+  access: RequiredSourceDependency['access'],
+  t: TFunction,
+): string {
+  switch (access) {
+    case 'managed':
+      return t('skillManagement.managedBySource', { source: 'Storyflow' })
+    case 'byok':
+      return `BYOK · ${t('sourcesList.statusAuthRequired')}`
+    case 'no-auth':
+      return t('skillManagement.managedBySource', { source: t('common.source') })
+    case 'missing':
+      return t('auth.connectionRequired')
+  }
 }
 
 function CatalogSkeleton() {

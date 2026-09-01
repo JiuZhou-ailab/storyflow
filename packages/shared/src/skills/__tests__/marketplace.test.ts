@@ -20,7 +20,9 @@ const manifest = {
   summary: 'Alternate goal-driven scenes with reflective sequels.',
   license: 'CC-BY-4.0',
   author: { name: 'Storyflow' },
-  contributes: { projectLayout: { roots: [{ path: 'scenes', create: true }] } },
+  contributes: {
+    projectLayout: { roots: [{ path: 'scenes', create: true }] },
+  },
 }
 
 describe('Skills Market contract', () => {
@@ -30,6 +32,10 @@ describe('Skills Market contract', () => {
       ...manifest,
       contributes: { projectLayout: { roots: [{ path: '../outside' }] } },
     })).toContain('roots[0].path must be a safe project-relative path')
+    expect(validateStoryflowSkillManifest({
+      ...manifest,
+      contributes: { requiredSources: ['valid-source', '../outside'] },
+    })).toContain('contributes.requiredSources must contain unique Source slugs')
   })
 
   test('builds an inert deep link without an arbitrary download URL', () => {
@@ -52,6 +58,7 @@ describe('Skills Market contract', () => {
       tags: ['故事'],
       roots: ['scenes'],
       downloadCount: 12,
+      requiresStoryflowLogin: true,
       recommendation: {
         order: 1,
         label: '2.8M installs on skills.sh',
@@ -67,6 +74,7 @@ describe('Skills Market contract', () => {
     }
     expect(parseMarketSkillDetail(detail)).toMatchObject({
       downloadCount: 12,
+      requiresStoryflowLogin: true,
       recommendation: { order: 1, sourceName: 'skills.sh' },
     })
     expect(() => parseMarketSkillDetail({

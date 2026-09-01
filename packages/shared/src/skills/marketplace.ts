@@ -56,6 +56,7 @@ export interface MarketSkillSummary {
   tags: string[]
   roots: string[]
   downloadCount: number
+  requiresStoryflowLogin?: boolean
   featured?: boolean
   recommendation?: {
     order: number
@@ -137,6 +138,7 @@ function parseMarketSkillSummary(value: unknown): MarketSkillSummary {
       || skill.downloadCount < 0
     ))
     || (skill.featured !== undefined && typeof skill.featured !== 'boolean')
+    || (skill.requiresStoryflowLogin !== undefined && typeof skill.requiresStoryflowLogin !== 'boolean')
     || !isRecommendation(skill.recommendation)
     || (skill.publishedAt !== undefined && typeof skill.publishedAt !== 'string')
   ) {
@@ -162,6 +164,7 @@ function parseMarketSkillSummary(value: unknown): MarketSkillSummary {
     roots: skill.roots as string[],
     downloadCount: typeof skill.downloadCount === 'number' ? skill.downloadCount : 0,
     ...(typeof skill.featured === 'boolean' ? { featured: skill.featured } : {}),
+    ...(skill.requiresStoryflowLogin === true ? { requiresStoryflowLogin: true } : {}),
     ...(skill.recommendation ? { recommendation: skill.recommendation as MarketSkillSummary['recommendation'] } : {}),
     ...(typeof skill.publishedAt === 'string' ? { publishedAt: skill.publishedAt } : {}),
     sha256: skill.sha256 as string,
@@ -284,6 +287,23 @@ export function validateStoryflowSkillManifest(value: unknown): string[] {
     errors.push('tags must contain at most 12 non-empty strings of 32 characters or less')
   }
   const contributes = manifest.contributes
+  if (contributes !== undefined && (
+    !contributes
+    || typeof contributes !== 'object'
+    || Array.isArray(contributes)
+  )) {
+    errors.push('contributes must be an object')
+  }
+  const requiredSources = contributes && typeof contributes === 'object'
+    ? (contributes as Record<string, unknown>).requiredSources
+    : undefined
+  if (requiredSources !== undefined && (
+    !Array.isArray(requiredSources)
+    || requiredSources.some(source => typeof source !== 'string' || !SLUG_PATTERN.test(source))
+    || new Set(requiredSources).size !== requiredSources.length
+  )) {
+    errors.push('contributes.requiredSources must contain unique Source slugs')
+  }
   const projectLayout = contributes && typeof contributes === 'object'
     ? (contributes as Record<string, unknown>).projectLayout
     : undefined

@@ -22,3 +22,20 @@ describe('writing route', () => {
     expect(buildRouteFromNavigationState({ navigator: 'writing' })).toBe('writing')
   })
 })
+
+describe('MCP discovery route', () => {
+  it('round-trips inside the MCP Sources filter', () => {
+    const state = {
+      navigator: 'sources' as const,
+      filter: { kind: 'type' as const, sourceType: 'mcp' as const },
+      details: { type: 'mcp-market' as const },
+    }
+    expect(parseCompoundRoute('sources/mcp/discover')).toEqual({
+      navigator: 'sources',
+      sourceFilter: { kind: 'type', sourceType: 'mcp' },
+      details: { type: 'mcp-market', id: 'discover' },
+    })
+    expect(parseRouteToNavigationState('sources/mcp/discover')).toEqual(state)
+    expect(buildRouteFromNavigationState(state)).toBe('sources/mcp/discover')
+  })
+})

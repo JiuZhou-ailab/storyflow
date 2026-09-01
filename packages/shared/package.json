@@ -34,6 +34,7 @@
     "./prompts": "./src/prompts/index.ts",
     "./sessions": "./src/sessions/index.ts",
     "./sources": "./src/sources/index.ts",
+    "./sources/marketplace": "./src/sources/marketplace.ts",
     "./sources/types": "./src/sources/types.ts",
     "./skills": "./src/skills/index.ts",
     "./skills/marketplace": "./src/skills/marketplace.ts",

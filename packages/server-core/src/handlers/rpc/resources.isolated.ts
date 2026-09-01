@@ -1,13 +1,14 @@
-// input: Resource import RPC, a portable Skill bundle, and temporary project/user/free-runtime roots
-// output: Regression proof that explicit install scope and hidden runtime resolution select the only write root
-// pos: Isolated transport-boundary check for Market and cross-workspace Skill installation
+// input: Resource RPCs, verified Skill artifacts, and temporary project/user/free-runtime roots
+// output: Regression proof for scoped installs, durable receipts, and local-edit-preserving upgrades
+// pos: Isolated transport-boundary check for Market and cross-workspace Skill lifecycle
 
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it, mock } from 'bun:test'
 import { FREE_CONVERSATION_WORKSPACE_ID, RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import type { ResourceBundle } from '@craft-agent/shared/resources'
+import type { ResourceBundle, SkillInstallArtifact } from '@craft-agent/shared/resources'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -33,6 +34,8 @@ const { registerResourcesHandlers } = await import('./resources')
 
 function createHarness(): {
   importResources: HandlerFn
+  listSkillInstallReceipts: HandlerFn
+  upgradeInstalledSkill: HandlerFn
   ctx: RequestContext
   pushedEvents: Array<{ channel: string, args: unknown[] }>
 } {
@@ -59,9 +62,15 @@ function createHarness(): {
   } as unknown as HandlerDeps
   registerResourcesHandlers(server, deps)
   const importResources = handlers.get(RPC_CHANNELS.resources.IMPORT)
-  if (!importResources) throw new Error('Resources import handler not registered')
+  const listSkillInstallReceipts = handlers.get(RPC_CHANNELS.resources.LIST_INSTALL_RECEIPTS)
+  const upgradeInstalledSkill = handlers.get(RPC_CHANNELS.resources.UPGRADE_SKILL)
+  if (!importResources || !listSkillInstallReceipts || !upgradeInstalledSkill) {
+    throw new Error('Resources handlers not registered')
+  }
   return {
     importResources,
+    listSkillInstallReceipts,
+    upgradeInstalledSkill,
     ctx: { clientId: 'client-1', workspaceId: 'workspace-1', webContentsId: 1 },
     pushedEvents,
   }
@@ -77,6 +86,30 @@ function skillBundle(slug: string): ResourceBundle {
       slug,
       files: [{ relativePath: 'SKILL.md', contentBase64: bytes.toString('base64'), size: bytes.byteLength }],
     }] },
+  }
+}
+
+function skillArtifact(slug: string, version: string, body: string): {
+  bundle: ResourceBundle
+  artifact: SkillInstallArtifact
+} {
+  const bundle = skillBundle(slug)
+  const content = `---\nname: ${slug}\ndescription: test\n---\n\n${body}\n`
+  const bytes = Buffer.from(content)
+  bundle.resources.skills![0]!.files = [{
+    relativePath: 'SKILL.md',
+    contentBase64: bytes.toString('base64'),
+    size: bytes.byteLength,
+  }]
+  const raw = JSON.stringify(bundle)
+  return {
+    bundle,
+    artifact: {
+      slug,
+      version,
+      sha256: createHash('sha256').update(raw).digest('hex'),
+      raw,
+    },
   }
 }
 
@@ -118,5 +151,47 @@ describe('Resources Skill install scope', () => {
       channel: RPC_CHANNELS.skills.CHANGED,
       args: [FREE_CONVERSATION_WORKSPACE_ID],
     })
+  })
+
+  it('records verified installs and explicitly upgrades without replacing local edits', async () => {
+    const {
+      importResources,
+      listSkillInstallReceipts,
+      upgradeInstalledSkill,
+      ctx,
+      pushedEvents,
+    } = createHarness()
+    const current = skillArtifact('tracked-market-skill', '1.0.0', 'Original body.')
+    const target = skillArtifact('tracked-market-skill', '2.0.0', 'Upstream body.')
+
+    await importResources(
+      ctx,
+      'workspace-1',
+      current.bundle,
+      'skip',
+      { skillScope: 'project', installArtifact: current.artifact },
+    )
+    const skillPath = join(workspaceRoot, '.pi', 'skills', 'tracked-market-skill', 'SKILL.md')
+    writeFileSync(skillPath, '---\nname: tracked-market-skill\ndescription: test\n---\n\nLocal body.\n')
+
+    expect(await listSkillInstallReceipts(ctx, 'workspace-1', 'project')).toEqual([{
+      kind: 'skill',
+      slug: 'tracked-market-skill',
+      version: '1.0.0',
+      sha256: current.artifact.sha256,
+      scope: 'project',
+    }])
+    const upgraded = await upgradeInstalledSkill(
+      ctx,
+      'workspace-1',
+      current.artifact,
+      target.artifact,
+      'project',
+    )
+
+    expect(upgraded.receipt.version).toBe('2.0.0')
+    expect(upgraded.preservedPaths).toEqual(['SKILL.md'])
+    expect(readFileSync(skillPath, 'utf8')).toContain('Local body.')
+    expect(pushedEvents.filter(event => event.channel === RPC_CHANNELS.skills.CHANGED)).toHaveLength(2)
   })
 })

@@ -45,6 +45,7 @@ import { sourceSelection, automationSelection } from '@/hooks/useEntitySelection
 import { extractLabelId } from '@craft-agent/shared/labels'
 import type { SessionStatusId } from '@/config/session-status-config'
 import SourceInfoPage from '@/pages/SourceInfoPage'
+import McpHubPage from '@/pages/McpHubPage'
 import SkillInfoPage from '@/pages/SkillInfoPage'
 import SkillsHubPage from '@/pages/SkillsHubPage'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
@@ -211,7 +212,14 @@ export function MainContentPanel({
         </Panel>
       )
     }
-    if (navState.details) {
+    if (navState.details?.type === 'mcp-market') {
+      return wrapWithStoplight(
+        <Panel variant="grow" className={className}>
+          <McpHubPage workspaceId={activeWorkspaceId || ''} />
+        </Panel>
+      )
+    }
+    if (navState.details?.type === 'source') {
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
           <SourceInfoPage

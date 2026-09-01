@@ -82,6 +82,7 @@ export function isCompoundRoute(route: string): boolean {
  *   'sources' -> { navigator: 'sources', details: null }
  *   'sources/api' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'api' }, details: null }
  *   'sources/mcp' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'mcp' }, details: null }
+ *   'sources/mcp/discover' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'mcp' }, details: { type: 'mcp-market', id: 'discover' } }
  *   'sources/local' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'local' }, details: null }
  *   'sources/source/github' -> { navigator: 'sources', details: { type: 'source', id: 'github' } }
  *   'sources/api/source/gmail' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'api' }, details: { type: 'source', id: 'gmail' } }
@@ -119,6 +120,14 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
     if (validSourceTypes.includes(segments[1])) {
       const sourceType = segments[1] as 'api' | 'mcp' | 'local'
       const sourceFilter: SourceFilter = { kind: 'type', sourceType }
+
+      if (sourceType === 'mcp' && segments.length === 3 && segments[2] === 'discover') {
+        return {
+          navigator: 'sources',
+          sourceFilter,
+          details: { type: 'mcp-market', id: 'discover' },
+        }
+      }
 
       // Check for source selection within filtered view: sources/api/source/{sourceSlug}
       if (segments[2] === 'source' && segments[3]) {
@@ -273,6 +282,7 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
       base = `sources/${parsed.sourceFilter.sourceType}`
     }
     if (!parsed.details) return base
+    if (parsed.details.type === 'mcp-market') return `${base}/discover`
     return `${base}/source/${parsed.details.id}`
   }
 
@@ -522,7 +532,9 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
     return {
       navigator: 'sources',
       filter: compound.sourceFilter,
-      details: { type: 'source', sourceSlug: compound.details.id },
+      details: compound.details.type === 'mcp-market'
+        ? { type: 'mcp-market' }
+        : { type: 'source', sourceSlug: compound.details.id },
     }
   }
 
@@ -722,7 +734,11 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
     return {
       navigator: 'sources',
       sourceFilter: state.filter ?? undefined,
-      details: state.details ? { type: 'source', id: state.details.sourceSlug } : null,
+      details: state.details
+        ? state.details.type === 'mcp-market'
+          ? { type: 'mcp-market', id: 'discover' }
+          : { type: 'source', id: state.details.sourceSlug }
+        : null,
     }
   }
 

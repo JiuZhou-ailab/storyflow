@@ -888,7 +888,13 @@ export function NavigationProvider({
                   }
                   const importToastId = toast.loading(t('skillsMarket.importing', { slug }))
                   void window.electronAPI.importResources(
-                    targetRuntimeWorkspaceId, downloaded.bundle, 'skip', { skillScope: 'project' },
+                    targetRuntimeWorkspaceId,
+                    downloaded.bundle,
+                    'skip',
+                    {
+                      skillScope: 'project',
+                      installArtifact: { slug, version, sha256: downloaded.sha256, raw: downloaded.raw },
+                    },
                   )
                     .then(result => {
                       const bucket = result.skills

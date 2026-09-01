@@ -404,6 +404,8 @@ export const RPC_CHANNELS = {
   resources: {
     EXPORT: 'resources:export',
     IMPORT: 'resources:import',
+    LIST_INSTALL_RECEIPTS: 'resources:listInstallReceipts',
+    UPGRADE_SKILL: 'resources:upgradeSkill',
   },
   messaging: {
     // Gateway → UI clients (broadcast)

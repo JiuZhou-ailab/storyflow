@@ -1,5 +1,5 @@
-// input: Workspace resources, portable bundle content, and caller-selected Skill placement
-// output: ResourceBundle DTOs plus explicit export/import contracts
+// input: Workspace resources, portable bundle content, verified Skill artifacts, and install placement
+// output: ResourceBundle DTOs plus import, receipt, and explicit-upgrade contracts
 // pos: Shared wire model for local and remote resource transfer
 
 /**
@@ -94,12 +94,46 @@ export type ResourceImportMode = 'skip' | 'overwrite'
 /** The host-selected destination for imported Agent Skills. */
 export type SkillInstallScope = 'project' | 'user'
 
+export const SKILL_INSTALL_RECEIPT_FILE = '.storyflow-install.json'
+export const MAX_SKILL_INSTALL_ARTIFACT_BYTES = 5 * 1024 * 1024
+
+/** Durable provenance for a Skill installed from the Storyflow Market. */
+export interface SkillInstallReceipt {
+  kind: 'skill'
+  slug: string
+  version: string
+  sha256: string
+  scope: SkillInstallScope
+}
+
+/** Immutable Market bytes required to verify and merge an explicit upgrade. */
+export interface SkillInstallArtifact {
+  slug: string
+  version: string
+  sha256: string
+  raw: string
+}
+
+export interface SkillUpgradeResult {
+  receipt: SkillInstallReceipt
+  /** Local edits, additions, or deletions kept during the three-way merge. */
+  preservedPaths: string[]
+}
+
+export interface SkillUpgradeOptions {
+  scope: SkillInstallScope
+  /** Required for project-scoped Skills so symlink ancestors stay inside the project. */
+  projectRootPath?: string
+}
+
 /**
  * Import placement is transport policy, not package metadata. Bundles without
  * Skills may omit this; callers importing Skills must choose explicitly.
  */
 export interface ResourceImportOptions {
   skillScope?: SkillInstallScope
+  /** Present only for a checksum-verified Market install; receipt fields are derived from it. */
+  installArtifact?: SkillInstallArtifact
 }
 
 /**

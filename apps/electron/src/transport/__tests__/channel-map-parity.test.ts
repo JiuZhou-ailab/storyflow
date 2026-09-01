@@ -37,6 +37,7 @@ type ApiToChannelMapKeys = Exclude<
   | 'resendClientVerificationEmail' // direct IPC to main process — Neon Auth email OTP resend
   | 'signInWithFeishuClient' // direct IPC to main process — Feishu OAuth login
   | 'submitFeedbackIssue' // direct IPC to main process — feedback endpoint/GitHub token stay out of renderer
+  | 'listMcpServersFromMarket' // direct IPC to main process — fixed-origin read-only registry request
   | 'listSkillsFromMarket' // direct IPC to main process — authenticated company catalog reads
   | 'getSkillDetailFromMarket' // direct IPC to main process — authenticated Skill detail reads
   | 'downloadSkillFromMarket' // direct IPC to main process — authenticated bundle download and verification

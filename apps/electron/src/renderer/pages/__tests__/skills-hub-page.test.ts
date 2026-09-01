@@ -8,8 +8,11 @@ import type { MarketSkillSummary } from '@craft-agent/shared/skills/marketplace'
 import {
   filterMarketSkills,
   getInstalledMarketSlug,
+  hasMarketSkillUpdate,
   isInstallableMarketSkill,
+  normalizeRequiredSourceSlugs,
   normalizeMarketSkillExternalUrl,
+  resolveRequiredSources,
   stripSkillFrontmatter,
 } from '../skills-hub-logic'
 
@@ -51,8 +54,22 @@ describe('SkillsHubPage contracts', () => {
   it('validates downloads and imports only into the active project', () => {
     expect(source).toContain('window.electronAPI.downloadSkillFromMarket(skill)')
     expect(source).toContain("'skip',")
-    expect(source).toContain("{ skillScope: 'project' }")
+    expect(source).toContain("skillScope: 'project'")
+    expect(source).toContain('installArtifact:')
+    expect(source).toContain('raw: downloaded.raw')
     expect(source).toContain('currentWorkspaceId.current !== targetWorkspaceId')
+  })
+
+  it('offers explicit tracked upgrades without generic overwrite', () => {
+    expect(source).toContain("window.electronAPI.listSkillInstallReceipts(workspaceId, 'project')")
+    expect(source).toContain('window.electronAPI.upgradeInstalledSkill(')
+    expect(source).toContain('window.electronAPI.downloadSkillFromMarket(receipt)')
+    expect(source).not.toContain("downloaded.bundle,\n        'overwrite'")
+    const receipt = {
+      kind: 'skill', slug: marketSkill.slug, version: '0.9.0', sha256: 'b'.repeat(64), scope: 'project',
+    } as const
+    expect(hasMarketSkillUpdate(receipt, marketSkill)).toBe(true)
+    expect(hasMarketSkillUpdate({ ...receipt, version: marketSkill.version, sha256: marketSkill.sha256 }, marketSkill)).toBe(false)
   })
 
   it('keeps reference-only recommendations visible without synthetic Markdown instructions', () => {
@@ -62,7 +79,7 @@ describe('SkillsHubPage contracts', () => {
     expect(source).toContain("t('skillsHub.referenceOnly', '仅供参考')")
     expect(source).toContain("t('skillsHub.openSource', '查看来源')")
     expect(source).toContain('detail && isInstallableMarketSkill(detail)')
-    expect(source).toContain("showInstructions ? 'grid-rows-[auto_minmax(0,1fr)_auto]' : 'grid-rows-[auto_auto]'")
+    expect(source).toContain("showContent ? 'grid-rows-[auto_minmax(0,1fr)_auto]' : 'grid-rows-[auto_auto]'")
     expect(isInstallableMarketSkill(marketSkill)).toBe(true)
     expect(isInstallableMarketSkill({ ...marketSkill, sha256: '' })).toBe(false)
   })
@@ -107,6 +124,73 @@ describe('SkillsHubPage contracts', () => {
     expect(source).toContain('setSelectedMarketSkill(detail)')
     expect(source).toContain('const installTarget = marketSkillDetail ?? selectedMarketSkill')
     expect(stripSkillFrontmatter('---\nname: test\n---\n\n# Instructions')).toBe('# Instructions')
+  })
+
+  it('shows manifest Source dependencies without handling credentials in the Skill surface', () => {
+    expect(source).toContain("import { sourcesAtom } from '@/atoms/sources'")
+    expect(source).toContain("t('skillInfo.requiredSources')")
+    expect(source).toContain('detail?.manifest.contributes?.requiredSources')
+    expect(source).toContain('detail?.requiresStoryflowLogin === true')
+    expect(source).toContain("routes.view.settings('app')")
+    expect(source).toContain('routes.view.sources({')
+    expect(source).not.toContain('saveSourceCredentials')
+    expect(source).not.toContain('API_KEY')
+  })
+
+  it('opens details before installing so runtime requirements stay visible', () => {
+    expect(source).toContain('onClick={() => void openMarketSkill(skill)}')
+  })
+
+  it('normalizes untrusted manifest dependencies and resolves local auth ownership', () => {
+    expect(normalizeRequiredSourceSlugs([
+      ' linear ',
+      'storyflow-catalog',
+      'linear',
+      '',
+      '../escape',
+      42,
+    ])).toEqual(['linear', 'storyflow-catalog'])
+
+    const managed = {
+      origin: 'craft-global',
+      config: {
+        id: 'builtin-storyflow-catalog',
+        slug: 'storyflow-catalog',
+        provider: 'storyflow',
+        type: 'api',
+        api: { authType: 'managed' },
+      },
+    }
+    const byok = {
+      origin: 'craft-global',
+      config: {
+        id: 'linear',
+        slug: 'linear',
+        provider: 'linear',
+        type: 'mcp',
+        mcp: { authType: 'bearer' },
+      },
+    }
+    const publicSource = {
+      origin: 'craft-global',
+      config: {
+        id: 'public-docs',
+        slug: 'public-docs',
+        provider: 'docs',
+        type: 'mcp',
+        mcp: { authType: 'none' },
+      },
+    }
+
+    expect(resolveRequiredSources(
+      ['storyflow-catalog', 'linear', 'public-docs', 'missing'],
+      [managed, byok, publicSource] as never,
+    ).map(item => [item.slug, item.access])).toEqual([
+      ['storyflow-catalog', 'managed'],
+      ['linear', 'byok'],
+      ['public-docs', 'no-auth'],
+      ['missing', 'missing'],
+    ])
   })
 
   it('uses the installed Skill avatar UI for catalog icons', () => {

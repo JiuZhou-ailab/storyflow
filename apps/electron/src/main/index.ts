@@ -19,7 +19,7 @@ import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@cra
 import { registerAllRpcHandlers } from './handlers/index'
 import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import type { PlatformServices } from '@craft-agent/server-core/runtime'
-import { CLIENT_AUTH_IPC_CHANNELS, SKILLS_MARKET_IPC_CHANNELS } from '../shared/types'
+import { CLIENT_AUTH_IPC_CHANNELS, MCP_MARKET_IPC_CHANNELS, SKILLS_MARKET_IPC_CHANNELS } from '../shared/types'
 import type { SkillMarketPublishInput } from '@craft-agent/shared/skills/marketplace'
 import { createElectronPlatform } from './platform'
 import type { HandlerDeps } from './handlers/handler-deps'
@@ -99,6 +99,7 @@ import {
   listSkillsFromMarket,
   publishSkillToMarket,
 } from './skills-market-client'
+import { listMcpServersFromMarket } from './mcp-market-client'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -613,6 +614,11 @@ app.whenReady().then(async () => {
       return publishSkillToMarket(input, {
         author: { name: user.name ?? user.email ?? user.userId },
         token,
+        fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
+      })
+    })
+    ipcMain.handle(MCP_MARKET_IPC_CHANNELS.LIST, async (_event, search: string) => {
+      return listMcpServersFromMarket(typeof search === 'string' ? search : '', {
         fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
       })
     })

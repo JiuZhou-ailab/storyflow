@@ -201,6 +201,8 @@ const EXPECTED_CHANNELS: string[] = [
   'remote:testConnection',
   'resources:export',
   'resources:import',
+  'resources:listInstallReceipts',
+  'resources:upgradeSkill',
   'search:queryWorkspace',
   'server:createWorkspace',
   'server:getActiveSessions',

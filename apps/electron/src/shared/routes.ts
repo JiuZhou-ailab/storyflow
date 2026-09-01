@@ -148,6 +148,9 @@ export const routes = {
         ? `sources/mcp/source/${sourceSlug}` as const
         : 'sources/mcp' as const,
 
+    /** Read-only MCP Registry discovery inside the Sources domain. */
+    mcpMarket: () => 'sources/mcp/discover' as const,
+
     /** Local folder sources view (sources navigator, local filter) */
     sourcesLocal: (sourceSlug?: string) =>
       sourceSlug

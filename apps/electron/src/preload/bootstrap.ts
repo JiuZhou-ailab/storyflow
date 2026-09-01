@@ -38,7 +38,7 @@ import {
 import type { ConfirmDialogSpec, FileDialogSpec } from '@craft-agent/server-core/transport'
 import type { RpcClient } from '@craft-agent/server-core/transport'
 import type { RemoteServerConfig, RemoteServerConnectionInput } from '@craft-agent/core/types'
-import { CLIENT_AUTH_IPC_CHANNELS, RPC_CHANNELS, SKILLS_MARKET_IPC_CHANNELS, type ClientAuthState, type ElectronAPI } from '../shared/types'
+import { CLIENT_AUTH_IPC_CHANNELS, MCP_MARKET_IPC_CHANNELS, RPC_CHANNELS, SKILLS_MARKET_IPC_CHANNELS, type ClientAuthState, type ElectronAPI } from '../shared/types'
 
 // ---------------------------------------------------------------------------
 // Client interface — common surface for both RoutedClient and WsRpcClient
@@ -465,6 +465,7 @@ client.onConnectionStateChanged((state) => {
 ;(api as ElectronAPI).getSkillDetailFromMarket = (skillSlug) => ipcRenderer.invoke(SKILLS_MARKET_IPC_CHANNELS.DETAIL, skillSlug)
 ;(api as ElectronAPI).downloadSkillFromMarket = (input) => ipcRenderer.invoke(SKILLS_MARKET_IPC_CHANNELS.DOWNLOAD, input)
 ;(api as ElectronAPI).publishSkillToMarket = (input) => ipcRenderer.invoke(SKILLS_MARKET_IPC_CHANNELS.PUBLISH, input)
+;(api as ElectronAPI).listMcpServersFromMarket = (search = '') => ipcRenderer.invoke(MCP_MARKET_IPC_CHANNELS.LIST, search)
 ;(api as ElectronAPI).cancelFeishuSignInClient = async () => {
   await ipcRenderer.invoke(CLIENT_AUTH_IPC_CHANNELS.CANCEL_FEISHU_SIGN_IN)
 }

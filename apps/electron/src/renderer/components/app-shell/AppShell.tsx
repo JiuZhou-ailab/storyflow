@@ -5326,7 +5326,8 @@ function AppShellContent({
                 workspaces={workspaces}
                 onDeleteSource={handleDeleteSource}
                 onSourceClick={handleSourceSelect}
-                selectedSourceSlug={isSourcesNavigation(navState) && navState.details ? navState.details.sourceSlug : null}
+                onDiscoverMcp={() => navigate(routes.view.mcpMarket())}
+                selectedSourceSlug={isSourcesNavigation(navState) && navState.details?.type === 'source' ? navState.details.sourceSlug : null}
                 localMcpEnabled={localMcpEnabled}
               />
             )}

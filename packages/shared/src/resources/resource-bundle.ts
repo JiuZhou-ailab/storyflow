@@ -4,7 +4,8 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'fs'
 import { join, basename, resolve } from 'path'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
+import { isDeepStrictEqual } from 'node:util'
 import {
   type BundleFile,
   MAX_BUNDLE_SIZE_BYTES,
@@ -36,17 +37,21 @@ import { portablePathCollisionKey } from './portable-path.ts'
 
 import type { FolderSourceConfig } from '../sources/types.ts'
 import type { AutomationMatcher } from '../automations/types.ts'
-import type {
-  ResourceBundle,
-  SourceBundleEntry,
-  SkillBundleEntry,
-  AutomationBundleEntry,
-  ExportResourcesOptions,
-  ExportResult,
-  ResourceImportMode,
-  ResourceImportResult,
-  ImportBucketResult,
-  ResourceImportDeps,
+import {
+  MAX_SKILL_INSTALL_ARTIFACT_BYTES,
+  SKILL_INSTALL_RECEIPT_FILE,
+  type ResourceImportOptions,
+  type SkillInstallReceipt,
+  type ResourceBundle,
+  type SourceBundleEntry,
+  type SkillBundleEntry,
+  type AutomationBundleEntry,
+  type ExportResourcesOptions,
+  type ExportResult,
+  type ResourceImportMode,
+  type ResourceImportResult,
+  type ImportBucketResult,
+  type ResourceImportDeps,
 } from './types.ts'
 
 function listResourceSlugs(dir: string): string[] {
@@ -536,8 +541,17 @@ export function validateResourceBundle(bundle: unknown): { valid: boolean; error
           const hasSkillMd = (e.files as BundleFile[]).some(f =>
             typeof f === 'object' && f && (f as BundleFile).relativePath === 'SKILL.md',
           )
+          const hasInstallReceipt = (e.files as unknown[]).some(file =>
+            typeof file === 'object'
+              && file !== null
+              && typeof (file as Record<string, unknown>).relativePath === 'string'
+              && portablePathCollisionKey((file as BundleFile).relativePath)
+                === portablePathCollisionKey(SKILL_INSTALL_RECEIPT_FILE),
+          )
           if (!hasSkillMd) {
             errors.push(`${prefix}: missing SKILL.md`)
+          } else if (hasInstallReceipt) {
+            errors.push(`${prefix}: ${SKILL_INSTALL_RECEIPT_FILE} is reserved for local install metadata`)
           } else {
             const skillFile = (e.files as BundleFile[]).find(file => file.relativePath === 'SKILL.md')
             if (skillFile) {
@@ -660,17 +674,18 @@ export async function importResources(
   mode: ResourceImportMode,
   deps: ResourceImportDeps,
   skillsRootPath = getWorkspaceSkillsPath(workspaceRootPath),
+  options: ResourceImportOptions = {},
 ): Promise<ResourceImportResult> {
   // Validate bundle first
   const validation = validateResourceBundle(bundle)
   if (!validation.valid) {
     const errorMsg = `Invalid bundle: ${validation.errors.join('; ')}`
-    const failedBucket = { imported: [], skipped: [], failed: [{ id: '*', error: errorMsg }], warnings: [] }
-    return {
-      sources: { ...failedBucket },
-      skills: { ...failedBucket },
-      automations: { ...failedBucket },
-    }
+    return failedImportResult(errorMsg)
+  }
+
+  const install = validateImportArtifact(bundle, mode, options)
+  if (install.error) {
+    return failedImportResult(install.error)
   }
 
   const workspaceId = basename(workspaceRootPath)
@@ -688,6 +703,7 @@ export async function importResources(
         resolve(skillsRootPath) === resolve(getWorkspaceSkillsPath(workspaceRootPath))
           ? workspaceRootPath
           : undefined,
+        install.receipt,
       )
     : emptyBucketResult()
 
@@ -699,6 +715,69 @@ export async function importResources(
     sources: sourcesResult,
     skills: skillsResult,
     automations: automationsResult,
+  }
+}
+
+function failedImportResult(error: string): ResourceImportResult {
+  const failedBucket = { imported: [], skipped: [], failed: [{ id: '*', error }], warnings: [] }
+  return {
+    sources: { ...failedBucket },
+    skills: { ...failedBucket },
+    automations: { ...failedBucket },
+  }
+}
+
+function validateImportArtifact(
+  bundle: ResourceBundle,
+  mode: ResourceImportMode,
+  options: ResourceImportOptions,
+): { receipt?: SkillInstallReceipt; error?: string } {
+  const artifact = options.installArtifact
+  if (!artifact) return {}
+  if (
+    !isValidSkillSlug(artifact.slug)
+    || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(artifact.version)
+    || !/^[a-f0-9]{64}$/.test(artifact.sha256)
+    || typeof artifact.raw !== 'string'
+  ) return { error: 'Invalid Skill install artifact' }
+  if (Buffer.byteLength(artifact.raw) > MAX_SKILL_INSTALL_ARTIFACT_BYTES) {
+    return { error: 'Skill install artifact exceeds 5 MB' }
+  }
+  if (mode !== 'skip') {
+    return { error: 'Market install receipts require explicit upgrade, not generic overwrite' }
+  }
+  if (options.skillScope !== 'project' && options.skillScope !== 'user') {
+    return { error: 'Skill install artifact requires an explicit import scope' }
+  }
+  if (createHash('sha256').update(artifact.raw).digest('hex') !== artifact.sha256) {
+    return { error: 'Skill install artifact checksum mismatch' }
+  }
+  let artifactBundle: ResourceBundle
+  try {
+    artifactBundle = JSON.parse(artifact.raw) as ResourceBundle
+  } catch {
+    return { error: 'Skill install artifact is not valid JSON' }
+  }
+  const artifactValidation = validateResourceBundle(artifactBundle)
+  if (!artifactValidation.valid || !isDeepStrictEqual(artifactBundle, bundle)) {
+    return { error: 'Skill install artifact does not match the imported bundle' }
+  }
+  const skills = artifactBundle.resources.skills
+  if (
+    !Array.isArray(skills)
+    || skills.length !== 1
+    || skills[0]?.slug !== artifact.slug
+    || artifactBundle.resources.sources !== undefined
+    || artifactBundle.resources.automations !== undefined
+  ) return { error: 'Skill install artifact requires exactly one matching Skill' }
+  return {
+    receipt: {
+      kind: 'skill',
+      slug: artifact.slug,
+      version: artifact.version,
+      sha256: artifact.sha256,
+      scope: options.skillScope,
+    },
   }
 }
 
@@ -799,6 +878,7 @@ function importSkills(
   entries: SkillBundleEntry[],
   mode: ResourceImportMode,
   projectRootPath?: string,
+  installReceipt?: SkillInstallReceipt,
 ): ImportBucketResult {
   const result = emptyBucketResult()
 
@@ -834,6 +914,14 @@ function importSkills(
           result.failed.push({ id: entry.slug, error: 'SKILL.md missing after restore' })
           rmSync(tmpDir, { recursive: true })
           continue
+        }
+
+        if (installReceipt) {
+          writeFileSync(
+            join(tmpDir, SKILL_INSTALL_RECEIPT_FILE),
+            `${JSON.stringify(installReceipt, null, 2)}\n`,
+            { flag: 'wx' },
+          )
         }
 
         // On overwrite: remove old dir

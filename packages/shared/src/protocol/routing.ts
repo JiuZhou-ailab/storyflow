@@ -376,6 +376,8 @@ export const CHANNEL_ROUTING = {
 
   'resources:export': 'REMOTE_ELIGIBLE',
   'resources:import': 'REMOTE_ELIGIBLE',
+  'resources:listInstallReceipts': 'REMOTE_ELIGIBLE',
+  'resources:upgradeSkill': 'REMOTE_ELIGIBLE',
 
   'messaging:bindingChanged': 'REMOTE_ELIGIBLE',
   'messaging:platformStatus': 'REMOTE_ELIGIBLE',

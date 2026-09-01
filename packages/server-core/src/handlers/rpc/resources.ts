@@ -1,6 +1,6 @@
-// input: Workspace identity, portable resource bundles, and explicit Skill install scope
-// output: Resource export/import RPCs rooted in the selected project or user Skill store
-// pos: Server-side trust boundary for portable source, Skill, and automation bundles
+// input: Workspace identity, portable bundles, verified Skill artifacts, and explicit install scope
+// output: Resource import/export plus tracked Skill receipt and upgrade RPCs
+// pos: Server-side trust boundary for portable resources and modification-preserving Market upgrades
 
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getSourceCredentialManager, loadSource } from '@craft-agent/shared/sources'
@@ -12,12 +12,23 @@ import type {
   ResourceImportMode,
   ResourceImportOptions,
   ExportResourcesOptions,
+  SkillInstallArtifact,
+  SkillInstallScope,
 } from '@craft-agent/shared/resources'
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.resources.EXPORT,
   RPC_CHANNELS.resources.IMPORT,
+  RPC_CHANNELS.resources.LIST_INSTALL_RECEIPTS,
+  RPC_CHANNELS.resources.UPGRADE_SKILL,
 ] as const
+
+function normalizeSkillScope(workspaceId: string, scope: SkillInstallScope | undefined): SkillInstallScope {
+  if (scope !== 'project' && scope !== 'user') {
+    throw new Error('Skill operation requires an explicit project or user scope')
+  }
+  return isFreeConversationWorkspaceId(workspaceId) ? 'user' : scope
+}
 
 export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Export workspace resources to a portable bundle
@@ -53,12 +64,7 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
       options: ResourceImportOptions = {},
     ) => deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
       const hasSkills = Boolean(bundle.resources.skills?.length)
-      if (hasSkills && options.skillScope !== 'project' && options.skillScope !== 'user') {
-        throw new Error('Skill import requires an explicit project or user scope')
-      }
-      const skillScope = hasSkills && isFreeConversationWorkspaceId(workspaceId)
-        ? 'user'
-        : options.skillScope
+      const skillScope = hasSkills ? normalizeSkillScope(workspaceId, options.skillScope) : undefined
 
       const { importResources } = await import('@craft-agent/shared/resources')
       const { getPiUserSkillsDir } = await import('@craft-agent/shared/skills')
@@ -73,7 +79,7 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
           const source = loadSource(workspace.rootPath, sourceSlug, workspace.id)
           if (source) await getSourceCredentialManager().deleteAll(source)
         },
-      }, skillsRootPath)
+      }, skillsRootPath, hasSkills ? { ...options, skillScope } : options)
 
       deps.platform.logger?.info(
         `RESOURCES_IMPORT: Imported into ${workspaceId} (mode=${mode}): ` +
@@ -94,6 +100,54 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
         server.push(RPC_CHANNELS.skills.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
       }
 
+      return result
+    }),
+  )
+
+  server.handle(
+    RPC_CHANNELS.resources.LIST_INSTALL_RECEIPTS,
+    async (_ctx, workspaceId: string, requestedScope: SkillInstallScope) =>
+      deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
+        const scope = normalizeSkillScope(workspaceId, requestedScope)
+        const { listSkillInstallReceipts } = await import('@craft-agent/shared/resources')
+        const { getPiUserSkillsDir } = await import('@craft-agent/shared/skills')
+        const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
+        const skillsRootPath = scope === 'project'
+          ? getWorkspaceSkillsPath(workspace.rootPath)
+          : getPiUserSkillsDir()
+        return listSkillInstallReceipts(skillsRootPath).filter(receipt => receipt.scope === scope)
+      }),
+  )
+
+  server.handle(
+    RPC_CHANNELS.resources.UPGRADE_SKILL,
+    async (
+      _ctx,
+      workspaceId: string,
+      current: SkillInstallArtifact,
+      target: SkillInstallArtifact,
+      requestedScope: SkillInstallScope,
+    ) => deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
+      const scope = normalizeSkillScope(workspaceId, requestedScope)
+      const { upgradeInstalledSkill } = await import('@craft-agent/shared/resources')
+      const { getPiUserSkillsDir } = await import('@craft-agent/shared/skills')
+      const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
+      const skillsRootPath = scope === 'project'
+        ? getWorkspaceSkillsPath(workspace.rootPath)
+        : getPiUserSkillsDir()
+      const result = upgradeInstalledSkill(
+        skillsRootPath,
+        current,
+        target,
+        scope === 'project'
+          ? { scope, projectRootPath: workspace.rootPath }
+          : { scope },
+      )
+      server.push(RPC_CHANNELS.skills.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
+      deps.platform.logger?.info(
+        `RESOURCES_SKILL_UPGRADE: Upgraded ${current.slug} in ${workspaceId} `
+        + `(${current.version} -> ${target.version}, preserved=${result.preservedPaths.length})`,
+      )
       return result
     }),
   )

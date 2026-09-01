@@ -406,6 +406,8 @@ export const CHANNEL_MAP = {
   // Resources (cross-workspace export/import)
   exportResources: invoke(RPC_CHANNELS.resources.EXPORT),
   importResources: invoke(RPC_CHANNELS.resources.IMPORT),
+  listSkillInstallReceipts: invoke(RPC_CHANNELS.resources.LIST_INSTALL_RECEIPTS),
+  upgradeInstalledSkill: invoke(RPC_CHANNELS.resources.UPGRADE_SKILL),
 
   // Messaging gateway
   getMessagingConfig: invoke(RPC_CHANNELS.messaging.GET_CONFIG),

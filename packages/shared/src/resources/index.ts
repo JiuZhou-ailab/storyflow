@@ -1,5 +1,5 @@
-// input: Resource resolver and portable resource-bundle modules
-// output: Stable shared exports for resolution, import, and export
+// input: Resource resolver, portable bundles, and local install provenance
+// output: Stable shared exports for resolution, import/export, receipt queries, and Skill upgrades
 // pos: Public entrypoint for Storyflow-owned resource contracts
 
 /**
@@ -13,6 +13,10 @@ export type {
   AutomationBundleEntry,
   ResourceImportMode,
   SkillInstallScope,
+  SkillInstallReceipt,
+  SkillInstallArtifact,
+  SkillUpgradeResult,
+  SkillUpgradeOptions,
   ResourceImportOptions,
   ExportResourcesOptions,
   ExportResult,
@@ -21,11 +25,19 @@ export type {
   ResourceImportDeps,
 } from './types.ts'
 
+export { MAX_SKILL_INSTALL_ARTIFACT_BYTES, SKILL_INSTALL_RECEIPT_FILE } from './types.ts'
+
 export {
   exportResources,
   importResources,
   validateResourceBundle,
 } from './resource-bundle.ts'
+
+export {
+  readSkillInstallReceipt,
+  listSkillInstallReceipts,
+  upgradeInstalledSkill,
+} from './install-receipts.ts'
 
 export {
   resolveResourceRoots,

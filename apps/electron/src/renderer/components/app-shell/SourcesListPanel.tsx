@@ -4,7 +4,7 @@
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { DatabaseZap, FolderOpen } from 'lucide-react'
+import { Compass, DatabaseZap, FolderOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { deriveConnectionStatus } from '@/components/ui/source-status-indicator'
@@ -50,6 +50,7 @@ export interface SourcesListPanelProps {
   workspaces?: Workspace[]
   onDeleteSource: (sourceSlug: string) => void
   onSourceClick: (source: LoadedSource) => void
+  onDiscoverMcp?: () => void
   selectedSourceSlug?: string | null
   localMcpEnabled?: boolean
   className?: string
@@ -64,6 +65,7 @@ export function SourcesListPanel({
   workspaces = [],
   onDeleteSource,
   onSourceClick,
+  onDiscoverMcp,
   selectedSourceSlug,
   localMcpEnabled = true,
   className,
@@ -174,6 +176,18 @@ export function SourcesListPanel({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {sourceFilter?.sourceType === 'mcp' && onDiscoverMcp ? (
+          <div className="shrink-0 border-b border-border/60 px-3 py-2">
+            <button
+              type="button"
+              onClick={onDiscoverMcp}
+              className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs font-medium text-foreground/85 outline-none transition-colors hover:bg-foreground/[0.05] focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <Compass className="size-3.5" aria-hidden="true" />
+              {t('mcpHub.discoverAction')}
+            </button>
+          </div>
+        ) : null}
         <EntityPanel<LoadedSource>
           items={filteredSources}
           getId={(s) => s.config.slug}

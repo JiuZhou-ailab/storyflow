@@ -128,6 +128,22 @@ export {
 // API Tools (types)
 export type { SummarizeCallback } from './api-tools.ts';
 export { createApiServer } from './api-tools.ts';
+
+export {
+  DEFAULT_MCP_REGISTRY_ORIGIN,
+  getMcpRegistryExternalUrl,
+  getMcpRegistryInstallDecision,
+  parseMcpRegistryListResponse,
+  parseMcpRegistryServerResponse,
+} from './marketplace.ts';
+export type {
+  McpRegistryInstallDecision,
+  McpRegistryListResponse,
+  McpRegistryRemote,
+  McpRegistryServer,
+  McpRegistryServerResponse,
+  McpRegistryStatus,
+} from './marketplace.ts';
 export { materializeApiOperationRequest } from './api-path.ts';
 
 // Token Refresh Manager (handles OAuth token refresh with rate limiting)

@@ -211,6 +211,11 @@ export const SKILLS_MARKET_IPC_CHANNELS = {
   PUBLISH: 'skills-market:publish',
 } as const
 
+/** Desktop-local read boundary for the independent MCP subregistry. */
+export const MCP_MARKET_IPC_CHANNELS = {
+  LIST: 'mcp-market:list',
+} as const
+
 export interface ClientAuthUser {
   provider: 'neon' | 'feishu'
   userId: string
@@ -639,6 +644,7 @@ export interface ElectronAPI {
   getSkillDetailFromMarket(skillSlug: string): Promise<import('@craft-agent/shared/skills/marketplace').MarketSkillDetail>
   downloadSkillFromMarket(input: Pick<import('@craft-agent/shared/skills/marketplace').MarketSkillSummary, 'slug' | 'version' | 'sha256'>): Promise<import('@craft-agent/shared/skills/marketplace').DownloadedMarketSkill>
   publishSkillToMarket(input: import('@craft-agent/shared/skills/marketplace').SkillMarketPublishInput): Promise<import('@craft-agent/shared/skills/marketplace').SkillMarketPublishResult>
+  listMcpServersFromMarket(search?: string): Promise<import('@craft-agent/shared/sources/marketplace').McpRegistryListResponse>
   createSkill(workspaceId: string, skillSlug: string, content: string): Promise<LoadedSkill>
   deleteSkill(workspaceId: string, skillSlug: string): Promise<void>
   openSkillInEditor(workspaceId: string, skillSlug: string): Promise<void>
@@ -811,6 +817,8 @@ export interface ElectronAPI {
   // Resources (cross-workspace export/import)
   exportResources(workspaceId: string, options: ExportResourcesOptions): Promise<ExportResult>
   importResources(workspaceId: string, bundle: ResourceBundle, mode: ResourceImportMode, options?: import('@craft-agent/shared/resources').ResourceImportOptions): Promise<ResourceImportResult>
+  listSkillInstallReceipts(workspaceId: string, skillScope: import('@craft-agent/shared/resources').SkillInstallScope): Promise<import('@craft-agent/shared/resources').SkillInstallReceipt[]>
+  upgradeInstalledSkill(workspaceId: string, current: import('@craft-agent/shared/resources').SkillInstallArtifact, target: import('@craft-agent/shared/resources').SkillInstallArtifact, skillScope: import('@craft-agent/shared/resources').SkillInstallScope): Promise<import('@craft-agent/shared/resources').SkillUpgradeResult>
 
   // Messaging gateway — workspaceId is taken from the client handshake (ctx.workspaceId)
   getMessagingConfig(): Promise<{
@@ -975,7 +983,7 @@ export interface AutomationFilter {
 export interface SourcesNavigationState {
   navigator: 'sources'
   filter?: SourceFilter
-  details: { type: 'source'; sourceSlug: string } | null
+  details: { type: 'source'; sourceSlug: string } | { type: 'mcp-market' } | null
   rightSidebar?: RightSidebarPanel
 }
 
