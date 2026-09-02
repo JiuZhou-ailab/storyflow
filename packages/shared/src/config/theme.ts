@@ -230,7 +230,7 @@ export function themeToCSS(theme: ThemeOverrides, isDark: boolean = false): stri
  * that visually match the DEFAULT_THEME oklch colors.
  */
 export const BACKGROUND_HEX = {
-  light: '#faf9fb', // matches oklch(0.98 0.003 265)
+  light: '#f7f6f2', // matches oklch(0.973 0.005 95)
   dark: '#302f33', // matches oklch(0.2 0.005 270)
 } as const;
 
@@ -246,7 +246,7 @@ export function getBackgroundColor(isDark: boolean): string {
  * Default theme values (matches current index.css)
  */
 export const DEFAULT_THEME: ThemeOverrides = {
-  background: 'oklch(0.98 0.003 265)',
+  background: 'oklch(0.973 0.005 95)',
   foreground: 'oklch(0.185 0.01 270)',
   accent: 'oklch(0.58 0.22 293)',
   info: 'oklch(0.75 0.16 70)',

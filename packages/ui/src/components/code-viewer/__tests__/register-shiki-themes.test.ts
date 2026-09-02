@@ -6,7 +6,7 @@ import { describe, expect, it } from 'bun:test'
 import { resolveTheme } from '@pierre/diffs'
 import { registerCraftShikiThemes } from '../registerShikiThemes'
 
-const DEFAULT_LIGHT_BACKGROUND = '#faf9fb'
+const DEFAULT_LIGHT_BACKGROUND = '#f7f6f2'
 const MIN_TEXT_CONTRAST = 4.5
 
 function hexToRgb(hex: string): [number, number, number] {

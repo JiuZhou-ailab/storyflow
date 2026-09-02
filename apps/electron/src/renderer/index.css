@@ -34,7 +34,7 @@
 @property --background {
   syntax: "<color>";
   inherits: true;
-  initial-value: oklch(0.98 0.003 265);
+  initial-value: oklch(0.973 0.005 95);
 }
 
 @property --foreground {
@@ -88,7 +88,7 @@
 /* Light Mode */
 :root {
   /* === 6 BASE COLORS === */
-  --background: oklch(0.98 0.003 265);
+  --background: oklch(0.973 0.005 95);
   --foreground: oklch(0.185 0.01 270);
   --foreground-dimmed: color-mix(in srgb, var(--foreground) 80%, var(--background)); /* unfocused panel text */
   --foreground-rgb: 38, 36, 42;             /* RGB for shadow borders */
@@ -108,28 +108,14 @@
   --shadow-blur-opacity: 0.06;              /* Blur/spread shadow opacity */
 
   /* === SHADOW VALUES (reusable across utility classes and component overrides) === */
-  --shadow-minimal:
-    rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-    rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-    rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px,
-    rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 1px 1px -0.5px,
-    rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 3px 3px -1.5px;
+  /* Default controls stay flat; elevation is reserved for floating surfaces. */
+  --shadow-minimal-flat: none;
 
-  /* Minimal shadow without blur layers — just the border ring */
-  --shadow-minimal-flat:
-    rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-    rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-    rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px;
+  --shadow-minimal: var(--shadow-minimal-flat);
 
   --shadow-modal-small:
-    rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-    rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-    rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px,
-    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 1px 1px -0.5px,
-    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 3px 3px 0px,
-    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 6px 6px 0px,
-    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 12px 12px 0px,
-    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 24px 24px 0px;
+    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0 4px 12px -6px,
+    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0 16px 32px -16px;
 
   /* === MIX VARIANTS (solid interpolation toward background) === */
   /* Use -2, -3, -5, -10, -20, ..., -90, -95 for solid colors (e.g., separators, Explore mode) */
@@ -580,23 +566,9 @@ html[data-font="inter"] {
     -webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 32px), transparent 100%);
   }
 
-  /* Custom shadow utilities
-     - Border layer (1px ring) uses foreground color with --shadow-border-opacity
-     - Blur/spread layers use black with --shadow-blur-opacity
-     - Dark mode has stronger values for visibility */
-  .shadow-thin {
-    box-shadow:
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px;
-  }
-
-  /* Semantic inset separators for table rows/headers (border-like, but shadow-based) */
+  /* Content surfaces are flat; only semantic and floating surfaces retain depth. */
+  /* Semantic 1px inset separator for table rows and headers. */
   .shadow-bottom-border {
-    box-shadow: inset 0 -1.5px 0 var(--color-border);
-  }
-
-  .shadow-bottom-border-thin {
     box-shadow: inset 0 -1px 0 var(--color-border);
   }
 
@@ -605,13 +577,7 @@ html[data-font="inter"] {
   }
 
   .shadow-middle {
-    box-shadow:
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px,
-      rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 1px 1px -0.5px,
-      rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 3px 3px -1.5px,
-      rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 6px 6px -3px;
+    box-shadow: none;
   }
 
   /* Tinted shadow using CSS variable - use with style={{ '--shadow-color': 'r, g, b' }} */
@@ -640,54 +606,8 @@ html[data-font="inter"] {
 
   .shadow-strong {
     box-shadow:
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px,
-      rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 1px 1px -0.5px,
-      rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 3px 3px -1.5px,
-      rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 6px 6px -3px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 12px 12px -6px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 24px 24px -12px;
-  }
-
-  .shadow-panel-focused {
-    position: relative;
-    box-shadow:
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 1px 1px -0.5px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 3px 3px 1px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.5)) 0px 6px 6px 2px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.5)) 0px 12px 12px 3px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 24px 24px 4px;
-  }
-
-  /* Gradient border: lighter at top, stronger at bottom */
-  .shadow-panel-focused::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    background: linear-gradient(
-      to bottom,
-      rgba(var(--foreground-rgb), 0.1),
-      rgba(var(--foreground-rgb), 0.3)
-    );
-    -webkit-mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
-    z-index: 1;
-  }
-
-  /* Ensure content sits above the ::before pseudo-element */
-  .shadow-panel-focused > * {
-    position: relative;
-    z-index: 2;
+      rgba(0, 0, 0, var(--shadow-blur-opacity)) 0 8px 24px -12px,
+      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0 24px 48px -24px;
   }
 
   .shadow-modal-small {
@@ -717,15 +637,7 @@ html[data-font="inter"] {
     color: var(--foreground);
     border-radius: 8px;
     border: none;
-    box-shadow:
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 1px 1px -0.5px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 3px 3px 0px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 6px 6px 0px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 12px 12px 0px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 24px 24px 0px;
+    box-shadow: var(--shadow-modal-small);
   }
 }
 
@@ -770,42 +682,6 @@ html[data-scenic] .shadow-strong {
 html[data-scenic] .input-container {
   background: rgba(0, 0, 0, 0.15);
 }
-
-/* Scenic mode: Gradient border effect for glass panels
-   Uses a pseudo-element with a white linear gradient (40% at top, 5% at bottom).
-   The mask-composite technique creates a border-only effect from a filled gradient. */
-html[data-scenic] .shadow-middle::before,
-html[data-scenic] .shadow-strong::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.3),
-    rgba(255, 255, 255, 0.1)
-  );
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 1;
-  mix-blend-mode: soft-light;
-}
-
-/* Scenic mode: Ensure panel content is above the gradient border pseudo-element.
-   Without this, interactive elements (buttons, dropdowns) in the header area
-   can be visually obscured or have click issues due to stacking context with backdrop-filter.
-   Creates explicit stacking for direct children so they sit above ::before (z-index: 1). */
-html[data-scenic] .shadow-middle > *,
-html[data-scenic] .shadow-strong > * {
-  position: relative;
-  z-index: 2;
-}
-
 
 /* Scenic mode: Popovers get glass effect too */
 html[data-scenic] .popover-styled {

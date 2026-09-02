@@ -1,3 +1,7 @@
+// input: Native button props, Radix Slot composition, and variant selection
+// output: Flat renderer button primitives with tonal states and accessible focus rings
+// pos: Shared button styling foundation for the Electron renderer
+
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
@@ -13,7 +17,7 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline:
-          "border border-foreground/15 bg-background hover:bg-foreground/3",
+          "bg-foreground/[0.035] hover:bg-foreground/[0.07]",
         secondary:
           "bg-foreground/5 text-foreground hover:bg-foreground/10",
         ghost: "hover:bg-foreground/3",

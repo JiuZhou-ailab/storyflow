@@ -206,19 +206,16 @@ interface AllowedShadowVariant {
 const allowedShadowVariants: AllowedShadowVariant[] = [
   { className: 'shadow-none', note: 'No shadow — explicit opt-out.' },
   { className: 'shadow-xs', note: 'Very subtle elevation from base Tailwind token.' },
-  { className: 'shadow-minimal', note: 'Design-system default panel elevation.' },
+  { className: 'shadow-minimal', note: 'No default elevation; retained as the flat compatibility token.' },
   { className: 'shadow-tinted', note: 'Tinted elevation using --shadow-color (semantic/accent contexts).' },
-  { className: 'shadow-thin', note: 'Thin border + light blur stack.' },
-  { className: 'shadow-middle', note: 'Mid-depth layered elevation for larger surfaces.' },
+  { className: 'shadow-middle', note: 'Flat content-layer surface.' },
   { className: 'shadow-strong', note: 'High-elevation layered shadow.' },
-  { className: 'shadow-panel-focused', note: 'Focus-like elevated treatment with emphasis ring.' },
   { className: 'shadow-modal-small', note: 'Modal/dropdown depth profile.' },
-  { className: 'shadow-bottom-border', note: 'Inset bottom separator (1.5px).' },
-  { className: 'shadow-bottom-border-thin', note: 'Inset bottom separator (1px).' },
+  { className: 'shadow-bottom-border', note: 'Inset bottom separator (1px).' },
 ]
 
 function VariantPreview({ variant }: { variant: AllowedShadowVariant }) {
-  if (variant.className === 'shadow-bottom-border' || variant.className === 'shadow-bottom-border-thin') {
+  if (variant.className === 'shadow-bottom-border') {
     return (
       <div className="rounded-[8px] border border-border bg-background overflow-hidden">
         <div className={cn('px-3 py-2 text-sm', variant.className)}>Row 1</div>

@@ -1,3 +1,7 @@
+// input: Native table element props and renderer class overrides
+// output: Table primitives with a single 1px semantic row separator
+// pos: Shared table styling foundation for the Electron renderer
+
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
@@ -84,7 +88,7 @@ function TableCell({ className, ...props }: React.ComponentProps<'td'>) {
   return (
     <td
       className={cn(
-        'p-1.5 align-middle [&:has([role=checkbox])]:pr-0 shadow-bottom-border-thin',
+        'p-1.5 align-middle [&:has([role=checkbox])]:pr-0 shadow-bottom-border',
         className
       )}
       {...props}

@@ -31,6 +31,7 @@ const panelHeaderSource = readFileSync(new URL('../PanelHeader.tsx', import.meta
 const resizableColumnSource = readFileSync(new URL('../ResizableColumn.tsx', import.meta.url), 'utf8')
 const resizeGradientSource = readFileSync(new URL('../../../hooks/useResizeGradient.ts', import.meta.url), 'utf8')
 const rendererCssSource = readFileSync(new URL('../../../index.css', import.meta.url), 'utf8')
+const inputContainerSource = readFileSync(new URL('../input/InputContainer.tsx', import.meta.url), 'utf8')
 const editorPanelSource = readFileSync(
   new URL('../../writing/NovelDocumentEditorPanel.tsx', import.meta.url),
   'utf8',
@@ -326,20 +327,26 @@ describe('app shell layout defaults', () => {
     expect(panelStackSource).not.toContain('shadow-middle')
     expect(panelStackSource).not.toContain('borderRadius')
     expect(panelSlotSource).not.toContain('shadow-middle')
-    expect(panelSlotSource).not.toContain('shadow-panel-focused')
     expect(panelSlotSource).not.toContain('borderRadius')
     expect(resizableColumnSource).not.toContain('shadow-middle')
     expect(resizeGradientSource).toContain('var(--foreground) 6%')
     expect(panelHeaderSource).toContain('border-b border-foreground/[0.06]')
     expect(panelSlotSource).toContain('bg-background')
     expect(panelSlotSource).not.toContain('background-elevated')
-    expect(activityRailSource).toContain('border-r border-foreground/[0.06]')
+    expect(activityRailSource).not.toContain('border-r')
     expect(tiptapEditorStyles).toContain('background: var(--background)')
     expect(tiptapEditorStyles).not.toContain('--tiptap-manuscript-paper')
     expect(rendererCssSource).toContain('[data-panel-role="navigator"]')
     expect(rendererCssSource).toContain('[data-panel-role="content"]')
     expect(rendererCssSource).toContain('[data-panel-role="document"]')
     expect(rendererCssSource).toContain('[data-panel-role="directory"]')
+  })
+
+  it('keeps the shell edge flat while preserving the composer boundary', () => {
+    expect(inputContainerSource).toContain('border border-foreground/[0.07]')
+    expect(inputContainerSource).toContain('focus-within:border-foreground/[0.12]')
+    expect(inputContainerSource).toContain('bg-foreground/[0.025]')
+    expect(inputContainerSource).not.toContain('isFocusedPanel ? "shadow-middle" : "shadow-minimal"')
   })
 
   it('folds the directory inside a stable shared writing workspace header', () => {

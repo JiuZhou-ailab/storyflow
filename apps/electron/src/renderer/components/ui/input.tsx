@@ -1,3 +1,7 @@
+// input: Native input props and optional consumer class overrides
+// output: Flat tonal input primitive with an accessible keyboard focus ring
+// pos: Shared text-input styling foundation for the Electron renderer
+
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
@@ -10,7 +14,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentPropsWithoutRef<
         data-slot="input"
         autoCapitalize={autoCapitalize}
         className={cn(
-          "flex h-9 w-full rounded-md border border-foreground/15 bg-transparent px-3 py-1 text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+          "flex h-9 w-full rounded-md bg-foreground/[0.025] px-3 py-1 text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/30 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
           className
         )}
         {...props}

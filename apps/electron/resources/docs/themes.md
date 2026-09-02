@@ -178,7 +178,7 @@ Scenic mode benefits from semi-transparent surface colors:
 The built-in default theme uses OKLCH colors optimized for accessibility:
 
 **Light Mode:**
-- Background: `oklch(0.98 0.003 265)` - Very light gray with slight purple tint
+- Background: `oklch(0.973 0.005 95)` - Soft warm paper neutral
 - Foreground: `oklch(0.185 0.01 270)` - Near-black for high contrast
 - Accent: `oklch(0.58 0.22 293)` - Vibrant purple
 - Info: `oklch(0.75 0.16 70)` - Warm amber

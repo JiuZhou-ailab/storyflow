@@ -162,7 +162,7 @@ export function ShikiCodeEditor({
   }, [resolvedLang, theme, highlight, highlightedCode])
 
   // Background color (must match CSS --background values)
-  const backgroundColor = isDark ? '#302f33' : '#faf9fb'
+  const backgroundColor = isDark ? '#302f33' : '#f7f6f2'
   const textColor = isDark ? '#d4d4d4' : '#1f1f1f'
   const placeholderColor = isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'
 
