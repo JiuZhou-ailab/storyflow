@@ -41,11 +41,12 @@ describe('managed connection runtime availability', () => {
   })
 })
 
-describe('managed session model connection switching', () => {
-  it('allows protocol changes only within the app-managed model catalog after lock', () => {
+describe('session model connection switching', () => {
+  it('keeps model switches on the same effective connection after lock', () => {
     expect(canSwitchSessionModelConnection(false, 'pi-api-key', 'anthropic-api')).toBe(true)
-    expect(canSwitchSessionModelConnection(true, 'storyflow-managed', 'storyflow-managed-anthropic')).toBe(true)
-    expect(canSwitchSessionModelConnection(true, 'storyflow-managed-anthropic', 'storyflow-managed-gemini')).toBe(true)
+    expect(canSwitchSessionModelConnection(true, 'storyflow-managed', 'storyflow-managed')).toBe(true)
+    expect(canSwitchSessionModelConnection(true, 'storyflow-managed', 'storyflow-managed-anthropic')).toBe(false)
+    expect(canSwitchSessionModelConnection(true, 'storyflow-managed-anthropic', 'storyflow-managed-gemini')).toBe(false)
     expect(canSwitchSessionModelConnection(true, 'storyflow-managed', 'pi-api-key')).toBe(false)
     expect(canSwitchSessionModelConnection(true, 'pi-api-key', 'storyflow-managed')).toBe(false)
     expect(canSwitchSessionModelConnection(true, 'pi-api-key', 'anthropic-api')).toBe(false)

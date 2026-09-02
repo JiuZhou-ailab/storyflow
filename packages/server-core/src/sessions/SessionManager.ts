@@ -3285,8 +3285,8 @@ export class SessionManager implements ISessionManager {
   /**
    * Update the model for a session
    * Pass null to clear the session-specific model (will use global config)
-   * @param connection - Optional LLM connection slug. Locked sessions may only
-   * switch between transports in the app-managed model catalog.
+   * @param connection - Optional LLM connection slug. Started sessions must
+   * keep the effective connection that owns their history.
    * (Delegates to SessionCrudMetadata.)
    */
   async updateSessionModel(sessionId: string, workspaceId: string, model: string | null, connection?: string): Promise<void> {

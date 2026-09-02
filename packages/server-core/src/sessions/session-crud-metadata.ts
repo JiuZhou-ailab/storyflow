@@ -9,7 +9,7 @@ import {
   getPermissionModeDiagnostics,
   type PermissionMode,
 } from '@craft-agent/shared/agent'
-import { resolveSessionConnection } from '@craft-agent/shared/agent/backend'
+import { resolveBackendContext } from '@craft-agent/shared/agent/backend'
 import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
 import { updateSessionMetadata, type SessionStatus } from '@craft-agent/shared/sessions'
 import {
@@ -347,35 +347,67 @@ export class SessionCrudMetadata {
   /**
    * Update the model for a session
    * Pass null to clear the session-specific model (will use global config)
-   * @param connection - Optional LLM connection slug. Locked sessions may only
-   * switch between transports in the app-managed model catalog.
+   * @param connection - Optional LLM connection slug. Started sessions must
+   * keep the effective connection that owns their history.
    */
   async updateSessionModel(sessionId: string, workspaceId: string, model: string | null, connection?: string): Promise<void> {
     getSessionLog().info(`[updateSessionModel] sessionId=${sessionId}, model=${model}, connection=${connection}`)
     const managed = this.deps.getSession(sessionId)
     if (managed) {
+      if (connection) {
+        const { getLlmConnection } = await import('@craft-agent/shared/config/storage')
+        if (!getLlmConnection(connection)) {
+          throw new Error(`LLM connection "${connection}" not found`)
+        }
+      }
+
+      const wsConfig = loadWorkspaceConfig(managed.workspace.rootPath)
+      const workspaceDefaultConnectionSlug = wsConfig?.defaults?.defaultLlmConnection
+      const currentContext = resolveBackendContext({
+        sessionConnectionSlug: managed.llmConnection,
+        workspaceDefaultConnectionSlug,
+        managedModel: managed.model,
+      })
+      const targetContext = resolveBackendContext({
+        sessionConnectionSlug: connection ?? managed.llmConnection,
+        workspaceDefaultConnectionSlug,
+        managedModel: model ?? wsConfig?.defaults?.model,
+      })
+      const currentConnection = currentContext.connection?.slug
+      const targetConnection = targetContext.connection?.slug
+      const connectionLocked = !!managed.connectionLocked
+        || managed.messages.length > 0
+        || (managed.messageCount ?? 0) > 0
+        || !!managed.sdkSessionId
+
+      if (targetConnection && !canSwitchSessionModelConnection(
+        connectionLocked,
+        currentConnection,
+        targetConnection,
+      )) {
+        getSessionLog().warn('[updateSessionModel] Cannot switch effective connection after session has started', {
+          sessionId,
+          currentConnection,
+          targetConnection,
+        })
+        throw new Error('Cannot switch model connection after session has started')
+      }
+
+      const connectionChanged = !!targetConnection && targetConnection !== currentConnection
+      const shouldUpdateConnection = !!targetConnection && targetConnection !== managed.llmConnection
       managed.model = model ?? undefined
-      const connectionChanged = !!connection
-        && connection !== managed.llmConnection
-        && canSwitchSessionModelConnection(!!managed.connectionLocked, managed.llmConnection, connection)
-      const shouldUpdateConnection = !!connection && (
-        connection === managed.llmConnection || connectionChanged
-      )
       if (shouldUpdateConnection) {
-        managed.llmConnection = connection
+        managed.llmConnection = targetConnection
       }
       const updates: { model?: string; llmConnection?: string } = { model: model ?? undefined }
       if (shouldUpdateConnection) {
-        updates.llmConnection = connection
+        updates.llmConnection = targetConnection
       }
       await updateSessionMetadata(managed.workspace.rootPath, sessionId, updates)
-      // A protocol change is refreshed by getOrCreateAgent after auth is
+      // A connection change is refreshed by getOrCreateAgent after auth is
       // reinitialized. Do not transiently apply the new model to the old runtime.
       if (managed.agent && !connectionChanged) {
-        // Fallback chain: session model > workspace default > connection default
-        const wsConfig = loadWorkspaceConfig(managed.workspace.rootPath)
-        const sessionConn = resolveSessionConnection(managed.llmConnection, wsConfig?.defaults?.defaultLlmConnection)
-        const effectiveModel = model ?? wsConfig?.defaults?.model ?? sessionConn?.defaultModel!
+        const effectiveModel = targetContext.resolvedModel
         getSessionLog().info(`[updateSessionModel] Calling agent.setModel(${effectiveModel}) [agent exists=${!!managed.agent}, connectionLocked=${managed.connectionLocked}]`)
         managed.agent.setModel(effectiveModel)
       } else {
@@ -383,11 +415,11 @@ export class SessionCrudMetadata {
       }
       // Notify renderer of the model change
       this.deps.sendEvent({ type: 'session_model_changed', sessionId, model }, managed.workspace.id)
-      if (connectionChanged) {
+      if (connectionChanged && targetConnection) {
         this.deps.sendEvent({
           type: 'connection_changed',
           sessionId,
-          connectionSlug: connection!,
+          connectionSlug: targetConnection,
           supportsBranching: resolveSupportsBranching(managed),
         }, managed.workspace.id)
       }

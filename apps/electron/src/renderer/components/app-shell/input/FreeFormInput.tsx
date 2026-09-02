@@ -2337,7 +2337,7 @@ export function FreeFormInput({
                     </React.Fragment>
                   ))}
                 </>
-              ) : isManagedEffectiveConnection ? (
+              ) : isEmptySession && isManagedEffectiveConnection ? (
                 managedModelSeries.map(({ connection, series }) => renderModelSeries({
                   series,
                   connection,

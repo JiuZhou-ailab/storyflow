@@ -355,7 +355,7 @@ describe('FreeFormInput model menu', () => {
     expect(source).not.toContain('getThinkingLevelNameKey')
   })
 
-  it('projects managed protocol connections as GPT, Claude, Gemini, and DeepSeek series', () => {
+  it('projects every managed model family only before the session starts', () => {
     const source = readFileSync(new URL('../FreeFormInput.tsx', import.meta.url), 'utf-8')
 
     expect(source).toContain('if (isManagedLlmConnectionSlug(conn.slug)) return null')
@@ -365,6 +365,7 @@ describe('FreeFormInput model menu', () => {
     expect(source).toContain('selectModel: modelId => onModelChange(modelId, connection.slug)')
     expect(source).toContain('const customConnectionsByProvider = React.useMemo')
     expect(source).toContain('!isManagedLlmConnectionSlug(currentConnectionDetails.slug)')
+    expect(source).toContain(') : isEmptySession && isManagedEffectiveConnection ? (')
   })
 
   it('keeps the full model name and thinking strength visible in the bottom toolbar', () => {
