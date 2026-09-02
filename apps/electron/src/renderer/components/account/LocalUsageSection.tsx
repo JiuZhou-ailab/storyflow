@@ -1,10 +1,11 @@
-// input: Current runtime workspace and its persisted per-session token totals
-// output: Read-only token totals and composition for the active project
+// input: Current runtime workspace and its persisted per-session and daily token totals
+// output: Read-only token totals, composition, and activity calendar for the active project
 // pos: Current-project usage section inside global App settings
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Spinner } from '@craft-agent/ui'
 import { useTranslation } from 'react-i18next'
+import HeatMap from '@uiw/react-heat-map'
 
 import {
   SettingsCard,
@@ -12,39 +13,84 @@ import {
   SettingsSection,
 } from '@/components/settings'
 import { useAccountSettings } from '@/context/AppShellContext'
-import type { Session } from '../../../shared/types'
-import { summarizeLocalUsage, type LocalUsageSummary } from './local-usage'
+import type { Message, Session } from '../../../shared/types'
+import {
+  buildUsageCalendar,
+  summarizeLocalUsage,
+  summarizeUsageActivity,
+  type LocalUsageSummary,
+} from './local-usage'
 
-const COMPACT_NUMBER = new Intl.NumberFormat('zh-CN', {
-  notation: 'compact',
-  maximumFractionDigits: 1,
-})
+// @uiw selects the first threshold greater than the count, so 0 and 1 must
+// both be neutral for empty days to stay visibly gray.
+const ACTIVITY_COLORS = {
+  0: 'var(--foreground-5)',
+  1: 'var(--foreground-5)',
+  2: 'color-mix(in oklab, oklch(0.72 0.12 255) 36%, var(--background))',
+  3: 'color-mix(in oklab, oklch(0.68 0.15 255) 58%, var(--background))',
+  4: 'color-mix(in oklab, oklch(0.63 0.18 255) 78%, var(--background))',
+  5: 'oklch(0.58 0.21 255)',
+}
+const ACTIVITY_CELL_SIZE = 9
+const ACTIVITY_CELL_GAP = 3
+const ACTIVITY_CELL_STEP = ACTIVITY_CELL_SIZE + ACTIVITY_CELL_GAP
+const usageSummaryLoads = new Map<string, Promise<LocalUsageSummary>>()
+
+function loadUsageSummary(
+  workspaceId: string,
+  sessions: Array<Pick<Session, 'id' | 'tokenUsage'>>,
+): Promise<LocalUsageSummary> {
+  const existing = usageSummaryLoads.get(workspaceId)
+  if (existing) return existing
+
+  const load = (async () => {
+    const toolMessages: Message[] = []
+    for (const session of sessions) {
+      try {
+        const loaded = await window.electronAPI.getSessionMessages(session.id)
+        toolMessages.push(...(loaded?.messages ?? []).filter(message => message.role === 'tool'))
+      } catch (error) {
+        console.warn(`[LocalUsageSection] Failed to read tools for session ${session.id}:`, error)
+      } finally {
+        await window.electronAPI.releaseSessionMessages(session.id).catch(() => false)
+      }
+    }
+    return summarizeLocalUsage(sessions, toolMessages)
+  })()
+  usageSummaryLoads.set(workspaceId, load)
+  void load.then(
+    () => usageSummaryLoads.delete(workspaceId),
+    () => usageSummaryLoads.delete(workspaceId),
+  )
+  return load
+}
 
 export function LocalUsageSection() {
   const { runtimeWorkspace } = useAccountSettings()
   const { t } = useTranslation()
-  const [summary, setSummary] = useState<LocalUsageSummary | null>(null)
-  const [loadError, setLoadError] = useState(false)
+  const [result, setResult] = useState<{
+    workspaceId: string
+    summary?: LocalUsageSummary
+    error?: true
+  } | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    setSummary(null)
-    setLoadError(false)
-
-    if (!runtimeWorkspace) {
-      setLoadError(true)
-      return () => {
-        cancelled = true
-      }
-    }
+    if (!runtimeWorkspace) return
+    const workspaceId = runtimeWorkspace.id
 
     void (async () => {
       try {
-        const sessions: Array<Pick<Session, 'tokenUsage'>> = await window.electronAPI.listSessionsByWorkspace(runtimeWorkspace.id)
-        if (!cancelled) setSummary(summarizeLocalUsage(sessions))
+        const sessions: Array<Pick<Session, 'id' | 'tokenUsage'>> = await window.electronAPI.listSessionsByWorkspace(workspaceId)
+        if (!cancelled) setResult({ workspaceId, summary: summarizeLocalUsage(sessions) })
+
+        const summary = await loadUsageSummary(workspaceId, sessions)
+        if (!cancelled) {
+          setResult({ workspaceId, summary })
+        }
       } catch (error) {
         console.error('[LocalUsageSection] Failed to load workspace usage:', error)
-        if (!cancelled) setLoadError(true)
+        if (!cancelled) setResult({ workspaceId, error: true })
       }
     })()
 
@@ -53,6 +99,8 @@ export function LocalUsageSection() {
     }
   }, [runtimeWorkspace])
 
+  const currentResult = result?.workspaceId === runtimeWorkspace?.id ? result : null
+
   return (
     <SettingsSection
       title={t('settings.app.localUsage.title')}
@@ -60,9 +108,9 @@ export function LocalUsageSection() {
     >
       <SettingsCard divided={false}>
         <SettingsCardContent className="p-5">
-          {summary ? (
-            <UsageContent summary={summary} />
-          ) : loadError ? (
+          {currentResult?.summary ? (
+            <UsageContent summary={currentResult.summary} />
+          ) : !runtimeWorkspace || currentResult?.error ? (
             <p className="text-sm text-muted-foreground">{t('settings.app.localUsage.unavailable')}</p>
           ) : (
             <div className="flex min-h-32 items-center justify-center" aria-label={t('settings.app.localUsage.loading')}>
@@ -76,40 +124,173 @@ export function LocalUsageSection() {
 }
 
 function UsageContent({ summary }: { summary: LocalUsageSummary }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const [hoveredDay, setHoveredDay] = useState<{
+    date: string
+    tokens: number
+    column: number
+    row: number
+  } | null>(null)
   const compositionTotal = summary.inputTokens + summary.outputTokens
   const inputPercent = compositionTotal > 0
     ? (summary.inputTokens / compositionTotal) * 100
     : 0
   const outputPercent = compositionTotal > 0 ? 100 - inputPercent : 0
+  const locale = i18n.resolvedLanguage ?? i18n.language
+  const endDate = useMemo(() => new Date(), [])
+  const startDate = useMemo(() => {
+    const date = new Date(endDate)
+    date.setDate(date.getDate() - 364)
+    return date
+  }, [endDate])
+  const calendar = useMemo(
+    () => buildUsageCalendar(summary.dailyUsage, endDate).map(day => ({
+      date: day.date,
+      count: day.level,
+      content: String(day.count),
+    })),
+    [endDate, summary.dailyUsage],
+  )
+  const trackedTokens = summary.dailyUsage.reduce((total, day) => total + day.totalTokens, 0)
+  const historicalTokens = Math.max(0, summary.totalTokens - trackedTokens)
+  const calendarTrackedTokens = calendar.reduce((total, day) => total + Number(day.content), 0)
+  const dateFormatter = useMemo(
+    () => new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric' }),
+    [locale],
+  )
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale])
+  const compactNumberFormatter = useMemo(
+    () => new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }),
+    [locale],
+  )
+  const months = useMemo(
+    () => Array.from({ length: 12 }, (_, month) => new Intl.DateTimeFormat(locale, { month: 'short' }).format(new Date(2024, month, 1))),
+    [locale],
+  )
+  const activity = useMemo(
+    () => summarizeUsageActivity(summary.dailyUsage, endDate),
+    [endDate, summary.dailyUsage],
+  )
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <UsageMetric label={t('settings.app.localUsage.totalTokens')} value={summary.totalTokens} />
-        <UsageMetric label={t('settings.app.localUsage.input')} value={summary.inputTokens} />
-        <UsageMetric label={t('settings.app.localUsage.output')} value={summary.outputTokens} />
-        <UsageMetric label={t('settings.app.localUsage.sessions')} value={summary.sessionCount} compact={false} />
+    <div className="space-y-8">
+      <div className="grid grid-cols-2 overflow-hidden rounded-[16px] border border-border/70 sm:grid-cols-5 sm:divide-x sm:divide-border/70">
+        <UsageMetric
+          label={t('settings.app.localUsage.totalTokens')}
+          value={compactNumberFormatter.format(summary.totalTokens)}
+          title={numberFormatter.format(summary.totalTokens)}
+        />
+        <UsageMetric
+          label={t('settings.app.localUsage.peakTokens')}
+          value={compactNumberFormatter.format(activity.peakTokens)}
+          title={numberFormatter.format(activity.peakTokens)}
+        />
+        <UsageMetric
+          label={t('settings.app.localUsage.activeDays')}
+          value={t('time.compact.days', { count: activity.activeDays })}
+        />
+        <UsageMetric
+          label={t('settings.app.localUsage.currentStreak')}
+          value={t('time.compact.days', { count: activity.currentStreak })}
+        />
+        <UsageMetric
+          label={t('settings.app.localUsage.longestStreak')}
+          value={t('time.compact.days', { count: activity.longestStreak })}
+        />
       </div>
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
-          <span>{t('settings.app.localUsage.composition')}</span>
-          <span>{t('settings.app.localUsage.compositionSummary', {
-            input: Math.round(inputPercent),
-            output: Math.round(outputPercent),
-          })}</span>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-4 text-xs">
+          <span className="font-medium text-foreground">{t('settings.app.localUsage.dailyTitle')}</span>
+          <span className="font-medium text-foreground">{t('settings.app.localUsage.daily')}</span>
         </div>
-        <div
-          className="flex h-2 overflow-hidden rounded-full bg-foreground-2"
-          role="img"
-          aria-label={t('settings.app.localUsage.compositionAria', {
-            input: summary.inputTokens.toLocaleString(),
-            output: summary.outputTokens.toLocaleString(),
-          })}
-        >
-          <div className="bg-foreground/70" style={{ width: `${inputPercent}%` }} />
-          <div className="bg-accent" style={{ width: `${outputPercent}%` }} />
+        <div className="text-muted-foreground">
+          <div className="relative w-[650px] pt-7">
+            <HeatMap
+              aria-label={t('settings.app.localUsage.dailyAria', {
+                tokens: numberFormatter.format(calendarTrackedTokens),
+              })}
+              endDate={endDate}
+              height={110}
+              legendCellSize={0}
+              monthLabels={months}
+              monthPlacement="bottom"
+              panelColors={ACTIVITY_COLORS}
+              rectProps={{ rx: 3, ry: 3 }}
+              rectRender={(props, activity) => (
+                <rect
+                  {...props}
+                  className="outline-none transition-opacity hover:opacity-80"
+                  onPointerEnter={() => setHoveredDay({
+                    date: activity.date,
+                    tokens: Number(activity.content ?? 0),
+                    column: activity.column,
+                    row: activity.row,
+                  })}
+                  onPointerLeave={() => setHoveredDay(null)}
+                />
+              )}
+              rectSize={ACTIVITY_CELL_SIZE}
+              role="img"
+              space={ACTIVITY_CELL_GAP}
+              startDate={startDate}
+              style={{ color: 'var(--muted-foreground)' }}
+              value={calendar}
+              weekLabels={false}
+              width={650}
+            />
+            {hoveredDay ? (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute z-tooltip whitespace-nowrap rounded-[8px] border border-border/50 bg-background/90 px-2.5 py-1.5 text-xs text-foreground shadow-modal-small backdrop-blur-xl"
+                style={{
+                  left: Math.min(568, Math.max(82, 10 + hoveredDay.column * ACTIVITY_CELL_STEP)),
+                  top: 33 + hoveredDay.row * ACTIVITY_CELL_STEP,
+                  transform: 'translate(-50%, calc(-100% - 6px))',
+                }}
+              >
+                {t('settings.app.localUsage.dayTooltip', {
+                  date: dateFormatter.format(new Date(`${hoveredDay.date}T12:00:00`)),
+                  tokens: numberFormatter.format(hoveredDay.tokens),
+                })}
+              </div>
+            ) : null}
+          </div>
         </div>
+        {historicalTokens > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {t('settings.app.localUsage.historicalUnattributed', {
+              tokens: numberFormatter.format(historicalTokens),
+            })}
+          </p>
+        )}
+      </div>
+
+      <div className="grid gap-8 md:grid-cols-2">
+        <UsageList title={t('settings.app.localUsage.insights')}>
+          <UsageListRow label={t('settings.app.localUsage.inputShare')} value={`${Math.round(inputPercent)}%`} />
+          <UsageListRow label={t('settings.app.localUsage.outputShare')} value={`${Math.round(outputPercent)}%`} />
+          <UsageListRow label={t('settings.app.localUsage.sessions')} value={numberFormatter.format(summary.sessionCount)} />
+          <UsageListRow label={t('settings.app.localUsage.toolCalls')} value={numberFormatter.format(summary.toolCalls)} />
+          <UsageListRow label={t('settings.app.localUsage.uniqueTools')} value={numberFormatter.format(summary.uniqueTools)} />
+        </UsageList>
+
+        <UsageList title={t('settings.app.localUsage.topTools')}>
+          {summary.topTools.length > 0 ? summary.topTools.map(tool => (
+            <div key={tool.name} className="flex min-w-0 items-center justify-between gap-4 py-1.5 text-sm">
+              <div className="flex min-w-0 items-center gap-2">
+                {tool.iconDataUrl?.startsWith('data:image/') ? (
+                  <img src={tool.iconDataUrl} alt="" className="h-5 w-5 shrink-0 rounded-[5px]" />
+                ) : null}
+                <span className="truncate text-foreground">{tool.name}</span>
+              </div>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {t('settings.app.localUsage.runs', { count: tool.count })}
+              </span>
+            </div>
+          )) : (
+            <p className="py-1.5 text-sm text-muted-foreground">{t('settings.app.localUsage.noToolCalls')}</p>
+          )}
+        </UsageList>
       </div>
 
     </div>
@@ -119,18 +300,36 @@ function UsageContent({ summary }: { summary: LocalUsageSummary }) {
 function UsageMetric({
   label,
   value,
-  compact = true,
+  title,
 }: {
   label: string
-  value: number
-  compact?: boolean
+  value: string
+  title?: string
 }) {
   return (
-    <div className="min-w-0">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-xl font-semibold tabular-nums text-foreground" title={value.toLocaleString()}>
-        {compact ? COMPACT_NUMBER.format(value) : value.toLocaleString()}
+    <div className="min-w-0 px-3 py-4 text-center">
+      <p className="truncate text-lg font-medium tabular-nums text-foreground" title={title}>
+        {value}
       </p>
+      <p className="mt-0.5 truncate text-xs text-muted-foreground">{label}</p>
+    </div>
+  )
+}
+
+function UsageList({ title, children }: { title: string, children: ReactNode }) {
+  return (
+    <section className="min-w-0">
+      <h4 className="mb-2 text-sm font-semibold text-foreground">{title}</h4>
+      {children}
+    </section>
+  )
+}
+
+function UsageListRow({ label, value }: { label: string, value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-1.5 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="tabular-nums text-foreground">{value}</span>
     </div>
   )
 }

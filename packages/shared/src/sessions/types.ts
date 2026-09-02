@@ -91,6 +91,12 @@ export interface SessionTokenUsage {
   costUsd: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  /** Local-calendar totals recorded when each turn completes. */
+  byDay?: Record<string, {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  }>;
   /** Model's context window size in tokens (from SDK modelUsage) */
   contextWindow?: number;
 }

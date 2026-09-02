@@ -242,6 +242,13 @@ async function refreshExpiredCredentials(
 // Managed-session factory moved to managed-session.ts; re-exported for host/test compatibility.
 export { createManagedSession } from './managed-session'
 
+function localDateKey(timestamp: number): string {
+  const date = new Date(timestamp)
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
 export class SessionManager implements ISessionManager {
   constructor(
     private readonly resolveSessionRuntimeWorkspace: (
@@ -1365,7 +1372,7 @@ export class SessionManager implements ISessionManager {
     await this.persistence.flushAllSessions()
   }
 
-  private accumulateTurnUsage(managed: ManagedSession, usage?: TurnUsage): void {
+  private accumulateTurnUsage(managed: ManagedSession, usage?: TurnUsage, timestamp = Date.now()): void {
     if (!usage) return
     managed.tokenUsage ??= {
       inputTokens: 0,
@@ -1380,6 +1387,17 @@ export class SessionManager implements ISessionManager {
     managed.tokenUsage.costUsd += usage.costUsd ?? 0
     managed.tokenUsage.cacheReadTokens = (managed.tokenUsage.cacheReadTokens ?? 0) + (usage.cacheReadTokens ?? 0)
     managed.tokenUsage.cacheCreationTokens = (managed.tokenUsage.cacheCreationTokens ?? 0) + (usage.cacheCreationTokens ?? 0)
+    const date = localDateKey(timestamp)
+    const dailyUsage = managed.tokenUsage.byDay?.[date] ?? {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+    }
+    dailyUsage.inputTokens += usage.inputTokens
+    dailyUsage.outputTokens += usage.outputTokens
+    dailyUsage.totalTokens = dailyUsage.inputTokens + dailyUsage.outputTokens
+    managed.tokenUsage.byDay ??= {}
+    managed.tokenUsage.byDay[date] = dailyUsage
     if (usage.contextTokens !== undefined) managed.tokenUsage.contextTokens = usage.contextTokens
     if (usage.contextWindow) managed.tokenUsage.contextWindow = usage.contextWindow
   }
@@ -1420,7 +1438,7 @@ export class SessionManager implements ISessionManager {
       managed.messages.push(planMessage)
       managed.lastMessageRole = 'plan'
       const turnUsage = managed.agent?.getCurrentTurnUsage()
-      this.accumulateTurnUsage(managed, turnUsage)
+      this.accumulateTurnUsage(managed, turnUsage, planMessage.timestamp)
       this.attachTurnMetrics(managed, planMessage, turnUsage)
 
       this.persistSession(managed)
@@ -5258,15 +5276,14 @@ export class SessionManager implements ISessionManager {
       case 'complete':
         // Projected Pi completion - accumulate usage from this turn
         // Actual 'complete' sent to renderer comes from the finally block in sendMessage
-        this.accumulateTurnUsage(managed, event.usage)
-
         {
           const finalMessageId = getLastFinalOutputMessageId(managed.messages)
-          if (finalMessageId && finalMessageId !== managed.turnStartFinalMessageId) {
-            const finalMessage = managed.messages.findLast(message => message.id === finalMessageId)
-            if (finalMessage) {
-              this.attachTurnMetrics(managed, finalMessage, event.usage)
-            }
+          const finalMessage = finalMessageId && finalMessageId !== managed.turnStartFinalMessageId
+            ? managed.messages.findLast(message => message.id === finalMessageId)
+            : undefined
+          this.accumulateTurnUsage(managed, event.usage, finalMessage?.timestamp)
+          if (finalMessage) {
+            this.attachTurnMetrics(managed, finalMessage, event.usage)
           }
         }
         break

@@ -798,5 +798,10 @@ describe('plan submission durability', () => {
       outputTokens: 3,
       totalTokens: 15,
     }))
+    expect(Object.values(managed.tokenUsage?.byDay ?? {})).toEqual([{
+      inputTokens: 12,
+      outputTokens: 3,
+      totalTokens: 15,
+    }])
   })
 })

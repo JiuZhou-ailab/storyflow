@@ -13,6 +13,7 @@ import {
   pickSessionFields,
   type LegacyAgentRuntime,
   type SessionHeader,
+  type SessionTokenUsage,
 } from '@craft-agent/shared/sessions';
 import { getSourceCredentialManager, TokenRefreshManager } from '@craft-agent/shared/sources';
 import type { Message, StoredAttachment, TurnMetrics } from '@craft-agent/core/types';
@@ -110,16 +111,7 @@ export interface ManagedSession {
   mcpPool?: McpClientPool;
   sdkSessionId?: string;
   needsPiMigrationSeed: boolean;
-  tokenUsage?: {
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-    contextTokens: number;
-    costUsd: number;
-    cacheReadTokens?: number;
-    cacheCreationTokens?: number;
-    contextWindow?: number;
-  };
+  tokenUsage?: SessionTokenUsage;
   sessionStatus?: string;
   lastReadMessageId?: string;
   hasUnread?: boolean;
