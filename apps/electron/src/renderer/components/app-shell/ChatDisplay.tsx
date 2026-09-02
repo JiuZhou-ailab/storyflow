@@ -1971,7 +1971,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
                     // Assistant turns - render with TurnCard (buffered streaming)
                     const assistantUiKey = getAssistantTurnUiKey(turn, index)
-                    const turnFileChanges = turn.isComplete
+                    const isTurnComplete = turn.isComplete || !session.isProcessing
+                    const turnFileChanges = isTurnComplete
                       ? collectTurnFileChanges(turn.activities).filter(change => !change.error)
                       : []
                     return (
@@ -1994,11 +1995,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         response={turn.response}
                         intent={turn.intent}
                         isStreaming={turn.isStreaming}
-                        isComplete={turn.isComplete}
+                        isComplete={isTurnComplete}
                         metrics={turn.metrics}
-                        isExpanded={isTurnExpanded(assistantUiKey, turn.isComplete)}
+                        isExpanded={isTurnExpanded(assistantUiKey, isTurnComplete)}
                         onExpandedChange={(expanded) =>
-                          toggleTurn(assistantUiKey, turn.isComplete, expanded)
+                          toggleTurn(assistantUiKey, isTurnComplete, expanded)
                         }
                         expandedActivityGroups={expandedActivityGroups}
                         onExpandedActivityGroupsChange={setExpandedActivityGroups}

@@ -38,6 +38,14 @@ describe('ChatDisplay scroll layout', () => {
     expect(chatInputZoneSource).toContain("t('chat.queuedBadge')")
   })
 
+  it('ends turn-card thinking when the session lifecycle is idle', () => {
+    expect(chatDisplaySource).toContain('const isTurnComplete = turn.isComplete || !session.isProcessing')
+    expect(chatDisplaySource).toContain('const turnFileChanges = isTurnComplete')
+    expect(chatDisplaySource).toContain('isComplete={isTurnComplete}')
+    expect(chatDisplaySource).toContain('isTurnExpanded(assistantUiKey, isTurnComplete)')
+    expect(chatDisplaySource).toContain('toggleTurn(assistantUiKey, isTurnComplete, expanded)')
+  })
+
   it('never exposes an action that interrupts the active answer from the queue preview', () => {
     expect(chatInputZoneSource).not.toContain('onSendQueuedMessageNow')
     expect(chatInputZoneSource).not.toContain("t('chat.sendQueuedNow')")
