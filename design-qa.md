@@ -129,6 +129,101 @@ Fidelity checks:
 
 final result: passed
 
+## Settings sidebar density alignment — 2026-09-03
+
+### Sources
+
+- Main-sidebar and previous settings state:
+  `/Users/dingzhijian/.codex/visualizations/2026/09/03/token-activity-qa-v2/storyflow-token-activity-final.png`
+- 208 px intermediate implementation:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/com.openai.sky.CUAService/Electron Screenshot 2026-09-03 at 2.20.54 AM.jpeg`
+- Final Electron implementation:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/com.openai.sky.CUAService/Electron Screenshot 2026-09-03 at 2.21.58 AM.jpeg`
+
+The final capture is 1098 × 736 px in the same light-theme account-settings
+state. The earlier capture and final implementation were reviewed together.
+
+### Findings and fixes
+
+- P2: settings navigation used 44 px rows, 14 px labels, 12 px gaps, and a
+  2 px focus ring; the main activity rail uses a visibly tighter 32 px / 13 px
+  navigation rhythm. The settings rows now use that same contract.
+- P2: the first compact pass left the settings rail at 208 px. The final rail is
+  160 px while retaining the existing 56 px compact breakpoint. The longest
+  label truncates instead of changing row geometry.
+- Selection, hover, active, focus, radius, and sidebar background now reuse the
+  activity rail's existing semantic token values.
+- No P0, P1, or P2 visual differences remain within the requested sidebar
+  density and style scope.
+
+The 208 px and 160 px captures were compared at the same 1098 × 736 viewport,
+theme, route, and selection state. Focused inspection was not needed because
+the changed rail boundary and label truncation are legible in the full view.
+Electron TypeScript, the production renderer build, focused Electron ESLint,
+and `git diff --check` passed.
+
+final result: passed
+
+## Token activity and window shadow QA — 2026-09-03
+
+### Sources
+
+- Existing Storyflow window edge:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-d7861b06-65a8-4975-bf34-5b1251fc0498.png`
+- Codex token activity reference:
+  `/var/folders/jk/7_pcx4cd3y94_lwnf7hbxcv80000gn/T/codex-clipboard-efdbe0a5-4549-4cab-8b12-f7f368e0ab9a.png`
+- Final default state:
+  `/Users/dingzhijian/.codex/visualizations/2026/09/03/token-activity-qa-v2/storyflow-token-activity-final.png`
+- Final hover state:
+  `/Users/dingzhijian/.codex/visualizations/2026/09/03/token-activity-qa-v2/storyflow-token-activity-hover.png`
+
+The implementation is a 3208 × 2406 Retina capture of the 1604 × 1203 CSS-pixel
+Electron window. State: light theme, App settings, free-conversation workspace;
+daily history is empty while persisted all-time usage and tool calls exist.
+
+### Root fixes and evidence
+
+- The macOS native window shadow is disabled at BrowserWindow construction and
+  again before first paint; a 1 px low-contrast inside edge retains separation
+  without recreating the dark outside band.
+- The 365-day activity map uses the existing open-source `@uiw/react-heat-map`.
+  Its strict threshold lookup previously mapped count 0 to the first blue level;
+  a second neutral threshold now keeps every zero day gray.
+- The five-column summary, compact rounded cells, bottom month labels, activity
+  insights, and top-tool counts follow the supplied Codex reference. Tool counts
+  are derived from persisted tool messages in the active workspace. The final
+  UI total of 893 matches the 893 durable tool records on disk; reads are
+  serialized and deduplicated so transcript release cannot race the aggregate.
+- Pointer hover dims the active cell and shows its localized date and exact
+  Token total immediately above the cell; the captured empty day reads 0 Token.
+- A width correction removed the transient horizontal scrollbar and invalid
+  non-image icon data is no longer rendered as a broken asset.
+- Historical totals collected before daily tracking remain explicitly
+  separated instead of being assigned to fabricated dates.
+- Weekly, monthly, and cumulative views were not represented as inert controls;
+  they remain deferred until they have real aggregation semantics and enough
+  tracked daily history.
+
+### Required fidelity surfaces
+
+- Typography: existing Storyflow type system, weight hierarchy aligned to the
+  reference summary and two-column statistics layout.
+- Spacing and layout: five equal summary cells, one-year grid, month labels,
+  insights, and top tools fit the settings content without clipping or scroll.
+- Colors and shadows: empty activity is neutral gray; non-zero levels use four
+  blue intensities; native outer window shadow is absent.
+- Assets: no new decorative assets; tool icons render only from valid embedded
+  image data.
+- Copy: visible labels and hover content are localized.
+
+No actionable P0, P1, or P2 visual or interaction difference remains within
+the implemented daily-activity scope.
+
+Focused tests, Electron TypeScript, Electron lint, renderer production build,
+and `git diff --check` passed. Existing repository lint warnings are unchanged.
+
+final result: passed
+
 ## Activity rail help menu QA — 2026-08-06
 
 ### Sources
