@@ -88,6 +88,7 @@
     "marketing:build": "bun run scripts/build-marketing.ts",
     "marketing:preview": "vite preview --config apps/marketing/vite.config.ts",
     "skills-market:verify": "bun run scripts/verify-skills-market.ts",
+    "mcp-market:verify": "bun run scripts/verify-mcp-market.ts",
     "release:upload-r2": "bun run scripts/upload-r2-release-assets.ts",
     "release:whats-new": "bun run scripts/generate-whats-new.ts",
     "docs:dev": "cd apps/online-docs && npm install && npx mintlify dev",

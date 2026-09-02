@@ -1,5 +1,5 @@
 // input: Bundled product Skills, default Sources, and optional resource-root overrides
-// output: Best-effort Pi user Skill and Storyflow Source seeding
+// output: Best-effort Pi user Skill and Storyflow Source seeding; legacy Catalog migration with a hidden per-Source backup
 // pos: Resource bootstrap for the minimal Storyflow product defaults
 
 import {
@@ -144,6 +144,9 @@ function migrateLegacyCatalog(sourceRoot: string, targetRoot: string): boolean {
 
     const current = installed as Record<string, unknown>;
     const bundled = JSON.parse(readFileSync(join(bundledDir, 'config.json'), 'utf8')) as Record<string, unknown>;
+    // Only product-known outdated shapes reach this point (see isOutdatedCatalogConfig),
+    // so config-level auth fields are product-shipped and intentionally dropped:
+    // an old shared token must not be sent to the new endpoint.
     const migrated = {
       ...bundled,
       createdAt: current.createdAt ?? bundled.createdAt,
@@ -154,6 +157,13 @@ function migrateLegacyCatalog(sourceRoot: string, targetRoot: string): boolean {
         ? { tagline: current.tagline }
         : {}),
     };
+    // guide.md and permissions.json may carry user edits. Keep a copy before the
+    // product version replaces them. Hidden so Source export never ships it.
+    const backupDir = join(installedDir, '.migration-backup');
+    for (const file of ['config.json', 'guide.md', 'permissions.json']) {
+      const installedPath = join(installedDir, file);
+      if (existsSync(installedPath)) backupFile(installedPath, backupDir, file);
+    }
     for (const file of ['guide.md', 'permissions.json']) {
       cpSync(join(bundledDir, file), join(installedDir, file));
     }
@@ -163,6 +173,15 @@ function migrateLegacyCatalog(sourceRoot: string, targetRoot: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+function backupFile(sourcePath: string, backupDir: string, fileName: string): void {
+  try {
+    mkdirSync(backupDir, { recursive: true });
+    cpSync(sourcePath, join(backupDir, fileName), { force: true });
+  } catch {
+    // A failed backup must not abort the migration; the Source stays retryable.
   }
 }
 

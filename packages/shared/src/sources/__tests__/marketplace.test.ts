@@ -70,4 +70,63 @@ describe('MCP marketplace Source mapping', () => {
     expect(getMcpRegistryInstallDecision(server({ type: 'streamable-http', url: 'https://fc.example.com/mcp' })).installable)
       .toBe(true)
   })
+
+  test('tolerates an empty optional repository object without failing the catalog', () => {
+    const parsed = parseMcpRegistryListResponse({
+      servers: [{
+        server: {
+          name: 'ai.agentrapay/agentra',
+          description: 'Agentra',
+          version: '1.0.0',
+          repository: {},
+          remotes: [{ type: 'streamable-http', url: 'https://mcp.agentra.ai/mcp' }],
+        },
+        _meta: {
+          'io.modelcontextprotocol.registry/official': {
+            status: 'active',
+            publishedAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-02T00:00:00Z',
+            isLatest: true,
+          },
+        },
+      }],
+      metadata: { count: 1 },
+    })
+    expect(parsed.servers[0]!.server.repository).toBeUndefined()
+    expect(getMcpRegistryInstallDecision(parsed.servers[0]!)).toEqual({
+      installable: true,
+      endpoint: 'https://mcp.agentra.ai/mcp',
+      input: {
+        name: 'ai.agentrapay/agentra',
+        provider: 'ai.agentrapay/agentra',
+        type: 'mcp',
+        enabled: true,
+        mcp: { transport: 'http', url: 'https://mcp.agentra.ai/mcp', authType: 'none' },
+      },
+    })
+  })
+
+  test('keeps a well-formed optional repository when present', () => {
+    const parsed = parseMcpRegistryListResponse({
+      servers: [{
+        server: {
+          name: 'com.example/remote',
+          description: 'Example',
+          version: '1.0.0',
+          repository: { url: 'https://github.com/example/remote', source: 'github' },
+          remotes: [{ type: 'streamable-http', url: 'https://mcp.example.com/mcp' }],
+        },
+        _meta: {
+          'io.modelcontextprotocol.registry/official': {
+            status: 'active',
+            publishedAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-02T00:00:00Z',
+            isLatest: true,
+          },
+        },
+      }],
+      metadata: { count: 1 },
+    })
+    expect(parsed.servers[0]!.server.repository).toEqual({ url: 'https://github.com/example/remote', source: 'github' })
+  })
 })

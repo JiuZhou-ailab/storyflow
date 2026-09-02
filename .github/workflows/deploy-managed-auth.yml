@@ -11,6 +11,11 @@ on:
         required: false
         default: true
         type: boolean
+      verify_skills_market_auth:
+        description: "Run the Broker → Skills Registry positive auth canary even without deploying"
+        required: false
+        default: false
+        type: boolean
     secrets:
       CLOUDFLARE_API_TOKEN:
         required: false
@@ -26,6 +31,11 @@ on:
         description: "Deploy managed services before running live verification"
         required: false
         default: true
+        type: boolean
+      verify_skills_market_auth:
+        description: "Run the Broker → Skills Registry positive auth canary even without deploying"
+        required: false
+        default: false
         type: boolean
 
 permissions:
@@ -241,7 +251,7 @@ jobs:
           '
 
       - name: Verify Skills Market auth integration
-        if: ${{ inputs.deploy }}
+        if: ${{ inputs.deploy || inputs.verify_skills_market_auth }}
         env:
           STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
         run: bun run scripts/verify-skills-market-auth.ts

@@ -81,13 +81,8 @@ export function parseMcpRegistryServerResponse(value: unknown): McpRegistryServe
   }
   if (server.title !== undefined && typeof server.title !== 'string') throw new Error('MCP Registry returned an invalid title')
   if (server.websiteUrl !== undefined && !isHttpUrl(server.websiteUrl)) throw new Error('MCP Registry returned an invalid website URL')
-  if (server.repository !== undefined) {
-    const repository = asRecord(server.repository, 'MCP Registry repository')
-    if (!isHttpUrl(repository.url) || typeof repository.source !== 'string') {
-      throw new Error('MCP Registry returned an invalid repository')
-    }
-  }
   if (server.packages !== undefined && !Array.isArray(server.packages)) throw new Error('MCP Registry returned invalid packages')
+  const repository = parseOptionalRepository(server.repository)
   const remotes = server.remotes === undefined ? undefined : parseRemotes(server.remotes)
   return {
     server: {
@@ -96,12 +91,24 @@ export function parseMcpRegistryServerResponse(value: unknown): McpRegistryServe
       description: server.description as string,
       ...(typeof server.title === 'string' ? { title: server.title } : {}),
       ...(typeof server.websiteUrl === 'string' ? { websiteUrl: server.websiteUrl } : {}),
-      ...(server.repository ? { repository: server.repository as McpRegistryServer['repository'] } : {}),
+      ...(repository ? { repository } : {}),
       ...(remotes ? { remotes } : {}),
       ...(Array.isArray(server.packages) ? { packages: server.packages } : {}),
     },
     _meta: response._meta as McpRegistryServerResponse['_meta'],
   }
+}
+
+/**
+ * `repository` is display-only metadata. The official Registry emits `{}` and
+ * partial objects for some entries, so anything short of a usable link is
+ * dropped rather than failing the whole catalog.
+ */
+function parseOptionalRepository(value: unknown): McpRegistryServer['repository'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const repository = value as Record<string, unknown>
+  if (!isHttpUrl(repository.url) || typeof repository.source !== 'string') return undefined
+  return { url: repository.url, source: repository.source }
 }
 
 export function getMcpRegistryInstallDecision(response: McpRegistryServerResponse): McpRegistryInstallDecision {

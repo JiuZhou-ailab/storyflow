@@ -129,12 +129,30 @@ describe('managed auth deployment', () => {
       STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}',
     })
     expect(findStep(deploy, 'Verify Skills Market auth integration')).toMatchObject({
-      if: '${{ inputs.deploy }}',
+      if: '${{ inputs.deploy || inputs.verify_skills_market_auth }}',
       env: {
         STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}',
       },
       run: 'bun run scripts/verify-skills-market-auth.ts',
     })
+  })
+
+  it('gates desktop release on live market consumer contracts and the positive auth canary', () => {
+    const releaseWorkflow = readRepoFile('.github/workflows/release.yml')
+    const jobs = readWorkflowJobs('.github/workflows/release.yml')
+
+    // The positive Broker → Skills Registry canary must run on every release,
+    // not only when managed auth is redeployed.
+    expect(releaseWorkflow).toMatch(/verify-managed-auth:[\s\S]*?with:\n\s+deploy: false\n\s+verify_skills_market_auth: true/)
+
+    const marketContracts = jobs['verify-market-contracts']
+    expect(marketContracts).toBeDefined()
+    expect(findStep(marketContracts ?? {}, 'Verify live Skills Market consumer contract').run)
+      .toBe('bun run scripts/verify-skills-market.ts')
+    expect(findStep(marketContracts ?? {}, 'Verify live MCP Market consumer contract').run)
+      .toBe('bun run scripts/verify-mcp-market.ts')
+    expect(releaseWorkflow).toMatch(/verify-release:\n\s+needs:\n\s+- validate\n\s+- verify-managed-auth\n\s+- verify-market-contracts/)
+    expect(existsSync(join(ROOT, 'scripts/verify-mcp-market.ts'))).toBe(true)
   })
 
   it('keeps Skills Registry deployment outside the desktop repository', () => {

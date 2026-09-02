@@ -162,6 +162,11 @@ describe('default agent resources', () => {
     const patterns = permissions.allowedMcpPatterns.map(({ pattern }: { pattern: string }) => pattern);
     expect(patterns).toContain('^short2api_search$');
     expect(patterns.some((pattern: string) => new RegExp(pattern).test('short2api_search_and_delete'))).toBe(false);
+    // The customized legacy guide is recoverable from the hidden backup.
+    const backupDir = join(agentRootDir, 'sources', 'storyflow-catalog', '.migration-backup');
+    expect(readFileSync(join(backupDir, 'guide.md'), 'utf8')).toBe('customized legacy API guide');
+    expect(readFileSync(join(backupDir, 'permissions.json'), 'utf8')).toBe('{"allowedMcpPatterns":["list"]}\n');
+    expect(JSON.parse(readFileSync(join(backupDir, 'config.json'), 'utf8')).type).toBe('api');
   });
 
   it('migrates an outdated built-in MCP endpoint without re-enabling a disabled Source', () => {
@@ -198,7 +203,14 @@ describe('default agent resources', () => {
     expect(migrated.enabled).toBe(false);
     expect(migrated.tagline).toBe('ReelShort、DramaBox 与 NetShort 的剧目、分集和播放数据');
     expect(migrated.mcp.url).toBe('http://47.91.2.252:9000/mcp');
+    // The old shared token belonged to the retired endpoint and must not be forwarded.
     expect(migrated.mcp.headers).toBeUndefined();
+    // Every replaced user-visible file is preserved in a hidden backup.
+    const backupDir = join(installedDir, '.migration-backup');
+    expect(JSON.parse(readFileSync(join(backupDir, 'config.json'), 'utf8')).mcp.headers)
+      .toEqual({ Authorization: 'Bearer old-shared-token' });
+    expect(readFileSync(join(backupDir, 'guide.md'), 'utf8')).toBe('old guide');
+    expect(readFileSync(join(backupDir, 'permissions.json'), 'utf8')).toBe('{}\n');
   });
 
   it('does not throw when the Craft root is not writable as a directory', () => {
