@@ -67,12 +67,12 @@ function SettingsItemRow({ item, isSelected, nested = false, onSelect }: Setting
       onClick={onSelect}
       aria-current={isSelected ? 'page' : undefined}
       className={cn(
-        'flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm outline-none max-[640px]:justify-center max-[640px]:gap-0 max-[640px]:px-0',
-        'transition-colors duration-75 focus-visible:ring-2 focus-visible:ring-ring',
-        nested && 'pl-8 max-[640px]:pl-0',
+        'flex h-8 w-full items-center gap-2 rounded-[8px] px-2.5 text-left text-[13px] outline-none max-[640px]:justify-center max-[640px]:gap-0 max-[640px]:px-0',
+        'transition-colors duration-75 focus-visible:ring-1 focus-visible:ring-ring',
+        nested && 'pl-[30px] max-[640px]:pl-0',
         isSelected
-          ? 'bg-foreground/6 text-foreground'
-          : 'text-foreground/75 hover:bg-foreground/3 hover:text-foreground'
+          ? 'bg-foreground/[0.07] text-foreground'
+          : 'text-foreground/75 hover:bg-foreground/[0.045] hover:text-foreground'
       )}
     >
       <Icon
@@ -148,8 +148,8 @@ export default function SettingsNavigator({
               <button
                 type="button"
                 className={cn(
-                  'flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm outline-none max-[640px]:justify-center max-[640px]:gap-0 max-[640px]:px-0',
-                  'text-foreground/75 transition-colors duration-75 hover:bg-foreground/3 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:bg-foreground/5',
+                  'flex h-8 w-full items-center gap-2 rounded-[8px] px-2.5 text-left text-[13px] outline-none max-[640px]:justify-center max-[640px]:gap-0 max-[640px]:px-0',
+                  'text-foreground/75 transition-colors duration-75 hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring active:bg-foreground/[0.07]',
                   hasSelectedProjectItem && 'text-foreground'
                 )}
                 aria-expanded={isProjectGroupOpen}
@@ -212,7 +212,7 @@ export function SettingsDialog({
         <DialogTitle className="sr-only">{t('sidebar.settings')}</DialogTitle>
         <DialogDescription className="sr-only">配置 Storyflow 应用与工作区偏好</DialogDescription>
         <div className="flex h-full min-h-0">
-          <aside className="flex w-[228px] shrink-0 flex-col border-r border-border/60 bg-foreground-2 max-[720px]:w-[208px] max-[640px]:w-14">
+          <aside className="flex w-[160px] shrink-0 flex-col border-r border-border/60 bg-foreground-1.5 max-[640px]:w-14">
             <div className="flex h-12 shrink-0 items-center border-b border-border/60 px-4">
               <h2 className="text-[14px] font-semibold text-foreground max-[640px]:sr-only">{t('sidebar.settings')}</h2>
             </div>
