@@ -938,8 +938,6 @@ function AppShellContent({
     storage.remove(storage.KEYS.focusModeEnabled)
   }, [])
 
-  const isSidebarAndNavigatorHidden = false
-
   // Auto-compact mode: shell width below mobile threshold hides sidebar/navigator
   // and switches to single-panel mode. Works in both webui (narrow viewport) and
   // desktop (narrow window or small screen).
@@ -948,7 +946,7 @@ function AppShellContent({
   const MOBILE_THRESHOLD = 768
   const isAutoCompact = shellWidth > 0 && shellWidth < MOBILE_THRESHOLD
 
-  const effectiveSidebarAndNavigatorHidden = isSidebarAndNavigatorHidden || isAutoCompact
+  const effectiveSidebarAndNavigatorHidden = isAutoCompact
   // Foundation layer: activity rail is always available (not tied to sidebar/navigator chrome).
   const showActivityRail = true
   const activityRailOffset = isActivityRailVisible ? ACTIVITY_RAIL_WIDTH : 0
@@ -1019,6 +1017,8 @@ function AppShellContent({
         || (isProjectRuntime && isWritingNavigation(navState))
       )
     )
+  const contentNeedsStoplightCompensation = isAutoCompact
+    || (!isActivityRailVisible && hideSessionListNavigator)
   const visibleSessionListWidth = hideSessionListNavigator ? 0 : sessionListWidth
 
   const store = useStore()
@@ -4704,7 +4704,7 @@ function AppShellContent({
               <>
             <PanelHeader
               title={isSidebarVisible ? listTitle : undefined}
-              compensateForStoplight={!isSidebarVisible}
+              compensateForStoplight={!isActivityRailVisible}
               badge={automationFilter?.automationType === 'scheduled' ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -5440,7 +5440,7 @@ function AppShellContent({
               </div>
             </div>
           ) : null}
-          isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
+          isSidebarAndNavigatorHidden={contentNeedsStoplightCompensation}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
           hidePanelCloseButton={showPrimarySidebar}

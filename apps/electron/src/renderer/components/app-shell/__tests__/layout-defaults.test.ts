@@ -293,6 +293,11 @@ describe('app shell layout defaults', () => {
     expect(appShellSource).not.toContain('data-testid="activity-rail-collapsed"')
     expect(appShellSource).not.toContain('data-activity-rail-collapsed')
     expect(rendererCssSource).not.toContain("html[data-activity-rail-collapsed='true']")
+    expect(appShellSource).toContain('const contentNeedsStoplightCompensation = isAutoCompact')
+    expect(appShellSource).toContain('|| (!isActivityRailVisible && hideSessionListNavigator)')
+    expect(appShellSource).toContain('isSidebarAndNavigatorHidden={contentNeedsStoplightCompensation}')
+    expect(appShellSource).toContain('compensateForStoplight={!isActivityRailVisible}')
+    expect(appShellSource).not.toContain('const isSidebarAndNavigatorHidden = false')
     expect(activityRailControlsSource).toContain('fixed left-0 top-0')
     expect(activityRailControlsSource).toContain('justify-end')
     expect(activityRailControlsSource).toContain('px-2')
@@ -315,6 +320,9 @@ describe('app shell layout defaults', () => {
     expect(appShellSource).not.toContain('activityRailLeadingAction')
     expect(activityRailSource).toContain('className="titlebar-drag-region shrink-0"')
     expect(windowManagerSource).toContain('const MACOS_TRAFFIC_LIGHT_POSITION = { x: 17, y: 13 }')
+    expect(windowManagerSource).toContain('hasShadow: false')
+    expect(windowManagerSource).toContain('window.setHasShadow(false)')
+    expect(rendererCssSource).toContain('html[data-platform="darwin"] body::after')
   })
 
   it('renders structural panes as one continuous workbench with parent-owned seams', () => {
