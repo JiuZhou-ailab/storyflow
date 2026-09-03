@@ -104,8 +104,8 @@
   --destructive-rgb: 180, 60, 50;           /* RGB for shadow-tinted */
 
   /* === SHADOW OPACITY (light mode = subtle, dark mode = stronger) === */
-  --shadow-border-opacity: 0.08;            /* Border ring opacity */
-  --shadow-blur-opacity: 0.06;              /* Blur/spread shadow opacity */
+  --shadow-border-opacity: 0.1;             /* Border ring opacity */
+  --shadow-blur-opacity: 0.09;              /* Blur/spread shadow opacity */
 
   /* === SHADOW VALUES (reusable across utility classes and component overrides) === */
   /* Default controls stay flat; elevation is reserved for floating surfaces. */
@@ -150,7 +150,7 @@
   --card-foreground: var(--foreground);
   --popover: var(--background);
   --popover-foreground: var(--foreground);
-  --border: oklch(from var(--foreground) l c h / 0.05);
+  --border: oklch(from var(--foreground) l c h / 0.08);
   --input: oklch(from var(--foreground) l c h / 0.1);
   --ring: oklch(from var(--foreground) l c h / 0.25);
   --ring-width: 1px;
@@ -243,8 +243,8 @@
   --destructive-rgb: 200, 70, 60;            /* RGB for shadow-tinted */
 
   /* === SHADOW OPACITY (stronger in dark mode for visibility) === */
-  --shadow-border-opacity: 0.15;
-  --shadow-blur-opacity: 0.12;
+  --shadow-border-opacity: 0.18;
+  --shadow-blur-opacity: 0.18;
 
   /* === MIX VARIANTS === */
   --foreground-1\.5: color-mix(in srgb, var(--foreground) 1.5%, var(--background));
@@ -277,7 +277,7 @@
   --card-foreground: var(--foreground);
   --popover: var(--background);
   --popover-foreground: var(--foreground);
-  --border: oklch(from var(--foreground) l c h / 0.05);
+  --border: oklch(from var(--foreground) l c h / 0.08);
   --input: oklch(from var(--foreground) l c h / 0.1);
   --ring: oklch(from var(--foreground) l c h / 0.25);
 
@@ -315,7 +315,7 @@ html[data-platform="darwin"] body::after {
   inset: 0;
   z-index: 99999;
   pointer-events: none;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 9%, transparent);
 }
 
 /* =============================================================================
