@@ -24,6 +24,25 @@ import { validateSkillDocumentForSlug } from '../../skills/storage.ts';
 
 let tempDir: string;
 
+const LEGACY_PRODUCT_CATALOG_CONFIG = {
+  id: 'builtin-storyflow-catalog',
+  name: '爆款短剧数据',
+  slug: 'storyflow-catalog',
+  enabled: false,
+  provider: 'storyflow',
+  type: 'mcp',
+  icon: '🎬',
+  tagline: '红果、GoodShort、ReelShort 与 DataEye 的榜单和媒资数据',
+  mcp: {
+    transport: 'http',
+    url: 'http://172.16.33.103:8789/mcp',
+    authType: 'none',
+  },
+  createdAt: 1786118400000,
+  updatedAt: 1787068800000,
+  connectionStatus: 'untested',
+};
+
 function writeFile(path: string, content: string): void {
   mkdirSync(join(path, '..'), { recursive: true });
   writeFileSync(path, content);
@@ -102,7 +121,7 @@ describe('default agent resources', () => {
     expect(existsSync(join(agentRootDir, 'sources', 'demo-source', 'config.json'))).toBe(true);
   });
 
-  it('migrates the built-in legacy Catalog API to the public MCP endpoint', () => {
+  it('does not overwrite a customized built-in legacy Catalog', () => {
     const assetsDir = join(tempDir, 'resources', 'agent-defaults');
     const agentRootDir = join(tempDir, '.craft-agent');
     const bundledConfig = {
@@ -148,28 +167,15 @@ describe('default agent resources', () => {
     writeFile(permissionsPath, '{"allowedMcpPatterns":["list"]}\n');
 
     const result = seedDefaultAgentResources({ assetsDir, agentRootDir });
-    const migrated = JSON.parse(readFileSync(configPath, 'utf8'));
-
-    expect(result.sources.imported).toEqual(['storyflow-catalog']);
-    expect(result.sources.skipped).toEqual([]);
-    expect(migrated.type).toBe('mcp');
-    expect(migrated.enabled).toBe(true);
-    expect(migrated.api).toBeUndefined();
-    expect(migrated.mcp.url).toBe('http://47.91.2.252:9000/mcp');
-    expect(migrated.mcp.headers).toBeUndefined();
-    expect(readFileSync(guidePath, 'utf8')).toBe('new MCP guide');
-    const permissions = JSON.parse(readFileSync(permissionsPath, 'utf8'));
-    const patterns = permissions.allowedMcpPatterns.map(({ pattern }: { pattern: string }) => pattern);
-    expect(patterns).toContain('^short2api_search$');
-    expect(patterns.some((pattern: string) => new RegExp(pattern).test('short2api_search_and_delete'))).toBe(false);
-    // The customized legacy guide is recoverable from the hidden backup.
-    const backupDir = join(agentRootDir, 'sources', 'storyflow-catalog', '.migration-backup');
-    expect(readFileSync(join(backupDir, 'guide.md'), 'utf8')).toBe('customized legacy API guide');
-    expect(readFileSync(join(backupDir, 'permissions.json'), 'utf8')).toBe('{"allowedMcpPatterns":["list"]}\n');
-    expect(JSON.parse(readFileSync(join(backupDir, 'config.json'), 'utf8')).type).toBe('api');
+    expect(result.sources.imported).toEqual([]);
+    expect(result.sources.skipped).toEqual(['storyflow-catalog']);
+    expect(JSON.parse(readFileSync(configPath, 'utf8'))).toEqual(legacyConfig);
+    expect(readFileSync(guidePath, 'utf8')).toBe('customized legacy API guide');
+    expect(readFileSync(permissionsPath, 'utf8')).toBe('{"allowedMcpPatterns":["list"]}\n');
+    expect(existsSync(join(agentRootDir, 'sources', 'storyflow-catalog', '.migration-backup'))).toBe(false);
   });
 
-  it('migrates an outdated built-in MCP endpoint without re-enabling a disabled Source', () => {
+  it('migrates an unmodified product-owned MCP endpoint without re-enabling a disabled Source', () => {
     const assetsDir = join(tempDir, 'resources', 'agent-defaults');
     const agentRootDir = join(tempDir, '.craft-agent');
     const bundledDir = join(assetsDir, 'sources', 'storyflow-catalog');
@@ -179,22 +185,12 @@ describe('default agent resources', () => {
       tagline: 'ReelShort、DramaBox 与 NetShort 的剧目、分集和播放数据',
       mcp: { transport: 'http', url: 'http://47.91.2.252:9000/mcp', authType: 'none' },
     };
-    const installed = {
-      ...bundled,
-      enabled: false,
-      tagline: '红果、GoodShort、ReelShort 与 DataEye 的榜单和媒资数据',
-      mcp: {
-        transport: 'http',
-        url: 'https://script.duanju.com/hot-drama/mcp',
-        authType: 'none',
-        headers: { Authorization: 'Bearer old-shared-token' },
-      },
-    };
+    const installed = LEGACY_PRODUCT_CATALOG_CONFIG;
     writeFile(join(bundledDir, 'config.json'), `${JSON.stringify(bundled)}\n`);
     writeFile(join(bundledDir, 'guide.md'), 'new guide');
     writeFile(join(bundledDir, 'permissions.json'), '{}\n');
     writeFile(join(installedDir, 'config.json'), `${JSON.stringify(installed)}\n`);
-    writeFile(join(installedDir, 'guide.md'), 'old guide');
+    writeFile(join(installedDir, 'guide.md'), 'new guide');
     writeFile(join(installedDir, 'permissions.json'), '{}\n');
 
     seedDefaultAgentResources({ assetsDir, agentRootDir });
@@ -203,14 +199,8 @@ describe('default agent resources', () => {
     expect(migrated.enabled).toBe(false);
     expect(migrated.tagline).toBe('ReelShort、DramaBox 与 NetShort 的剧目、分集和播放数据');
     expect(migrated.mcp.url).toBe('http://47.91.2.252:9000/mcp');
-    // The old shared token belonged to the retired endpoint and must not be forwarded.
     expect(migrated.mcp.headers).toBeUndefined();
-    // Every replaced user-visible file is preserved in a hidden backup.
-    const backupDir = join(installedDir, '.migration-backup');
-    expect(JSON.parse(readFileSync(join(backupDir, 'config.json'), 'utf8')).mcp.headers)
-      .toEqual({ Authorization: 'Bearer old-shared-token' });
-    expect(readFileSync(join(backupDir, 'guide.md'), 'utf8')).toBe('old guide');
-    expect(readFileSync(join(backupDir, 'permissions.json'), 'utf8')).toBe('{}\n');
+    expect(existsSync(join(installedDir, '.migration-backup'))).toBe(false);
   });
 
   it('does not throw when the Craft root is not writable as a directory', () => {
@@ -240,21 +230,17 @@ describe('default agent resources', () => {
     const agentRootDir = join(tempDir, '.craft-agent');
     const installedDir = join(agentRootDir, 'sources', 'storyflow-catalog');
     const configPath = join(installedDir, 'config.json');
-    const legacyConfig = {
-      id: 'builtin-storyflow-catalog', slug: 'storyflow-catalog', provider: 'storyflow', type: 'api',
-      api: { baseUrl: 'https://storyflow-model.zjding.com', authType: 'managed' },
-    };
 
     writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'config.json'), '{"type":"mcp"}\n');
     writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'guide.md'), 'new guide');
     writeFile(join(assetsDir, 'sources', 'storyflow-catalog', 'permissions.json'), '{}\n');
-    writeFile(configPath, `${JSON.stringify(legacyConfig)}\n`);
-    writeFile(join(installedDir, 'guide.md'), 'old guide');
+    writeFile(configPath, `${JSON.stringify(LEGACY_PRODUCT_CATALOG_CONFIG)}\n`);
+    writeFile(join(installedDir, 'guide.md'), 'new guide');
     mkdirSync(join(installedDir, 'permissions.json'), { recursive: true });
 
     seedDefaultAgentResources({ assetsDir, agentRootDir });
 
-    expect(JSON.parse(readFileSync(configPath, 'utf8')).type).toBe('api');
+    expect(JSON.parse(readFileSync(configPath, 'utf8')).mcp.url).toBe('http://172.16.33.103:8789/mcp');
   });
 
   it('ships reviewable default resources without local runtime state', () => {
