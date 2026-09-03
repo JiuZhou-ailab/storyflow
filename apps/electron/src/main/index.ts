@@ -479,6 +479,14 @@ app.whenReady().then(async () => {
       }
     })
 
+    // Renderer React crash report — the root error boundary forwards the thrown
+    // error and component stack here so it lands in main.log even though the
+    // renderer tree is already in a failed state. Read the file once to get the
+    // exact component that threw; refresh resets the tree.
+    ipcMain.on('__renderer:crash', (_event, payload: unknown) => {
+      mainLog.error('[renderer-crash] Root React tree crashed', payload)
+    })
+
     // Dialog bridge — preload capability handlers use ipcRenderer.invoke to
     // call main-process-only dialog APIs (dialog, BrowserWindow).
     ipcMain.handle('__dialog:showMessageBox', async (event, spec) => {

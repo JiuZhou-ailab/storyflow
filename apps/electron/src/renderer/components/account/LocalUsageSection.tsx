@@ -16,6 +16,7 @@ import { useAccountSettings } from '@/context/AppShellContext'
 import type { Message, Session } from '../../../shared/types'
 import {
   buildUsageCalendar,
+  parseHeatMapDate,
   summarizeLocalUsage,
   summarizeUsageActivity,
   type LocalUsageSummary,
@@ -125,8 +126,11 @@ export function LocalUsageSection() {
 
 function UsageContent({ summary }: { summary: LocalUsageSummary }) {
   const { t, i18n } = useTranslation()
+  // `date` is kept as a real Date: @uiw hands rectRender its own `YYYY/M/D`
+  // string, which is not ISO and would make `new Date(\`${date}T12:00:00\`)`
+  // an Invalid Date that throws RangeError inside Intl.DateTimeFormat.format.
   const [hoveredDay, setHoveredDay] = useState<{
-    date: string
+    date: Date
     tokens: number
     column: number
     row: number
@@ -220,12 +224,16 @@ function UsageContent({ summary }: { summary: LocalUsageSummary }) {
                 <rect
                   {...props}
                   className="outline-none transition-opacity hover:opacity-80"
-                  onPointerEnter={() => setHoveredDay({
-                    date: activity.date,
-                    tokens: Number(activity.content ?? 0),
-                    column: activity.column,
-                    row: activity.row,
-                  })}
+                  onPointerEnter={() => {
+                    const date = parseHeatMapDate(activity.date)
+                    if (!date) return
+                    setHoveredDay({
+                      date,
+                      tokens: Number(activity.content ?? 0),
+                      column: activity.column,
+                      row: activity.row,
+                    })
+                  }}
                   onPointerLeave={() => setHoveredDay(null)}
                 />
               )}
@@ -249,7 +257,7 @@ function UsageContent({ summary }: { summary: LocalUsageSummary }) {
                 }}
               >
                 {t('settings.app.localUsage.dayTooltip', {
-                  date: dateFormatter.format(new Date(`${hoveredDay.date}T12:00:00`)),
+                  date: dateFormatter.format(hoveredDay.date),
                   tokens: numberFormatter.format(hoveredDay.tokens),
                 })}
               </div>

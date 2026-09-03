@@ -147,8 +147,25 @@ function localDateKey(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`
 }
 
-function isLocalDateKey(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  const date = new Date(`${value}T12:00:00`)
-  return !Number.isNaN(date.getTime()) && localDateKey(date) === value
+/**
+ * Parse the date string @uiw/react-heat-map hands back from rectRender.
+ * The library re-serializes every cell as unpadded `YYYY/M/D`, not the ISO
+ * `YYYY-MM-DD` we feed it, so it must be parsed by components rather than
+ * through the Date constructor. Returns null for anything unparseable.
+ */
+export function parseHeatMapDate(value: string): Date | null {
+  const match = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.exec(value)
+  if (!match) return null
+  const [, year, month, day] = match.map(Number)
+  const date = new Date(year, month - 1, day, 12)
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+    ? date
+    : null
+}
+
+export function isLocalDateKey(value: string): boolean {
+  // Local usage keys are always canonical padded ISO. Reuse the same strict
+  // parser as parseHeatMapDate so a non-existent date (e.g. Feb 31) stays out.
+  const date = parseHeatMapDate(value)
+  return date !== null && localDateKey(date) === value
 }

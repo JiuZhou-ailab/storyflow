@@ -428,6 +428,9 @@ client.onConnectionStateChanged((state) => {
 
 // App lifecycle — direct IPC (not WS RPC) since it restarts the server itself
 ;(api as ElectronAPI).relaunchApp = () => ipcRenderer.invoke('app:relaunch')
+;(api as ElectronAPI).reportRendererCrash = (payload) => {
+  ipcRenderer.send('__renderer:crash', payload)
+}
 ;(api as ElectronAPI).setWorkspaceArchived = async (workspaceId: string, archived: boolean) => {
   return ipcRenderer.invoke('workspace:setArchived', workspaceId, archived)
 }

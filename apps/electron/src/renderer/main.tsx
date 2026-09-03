@@ -59,6 +59,13 @@ class RootErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('[renderer] Root React tree crashed', error, info.componentStack)
+    // Forward the crash to main.log so the exact throwing component can be
+    // recovered after the fact — the fallback UI itself gives no clue.
+    window.electronAPI?.reportRendererCrash?.({
+      error: error?.message ?? String(error),
+      stack: error?.stack,
+      componentStack: info.componentStack ?? undefined,
+    })
   }
 
   render() {

@@ -48,6 +48,7 @@ type ApiToChannelMapKeys = Exclude<
   | 'transferSessionToWorkspace' // direct IPC to main process — orchestrated remote transfer
   | 'changeLanguage' // direct IPC to main process — syncs i18n language
   | 'getFilePath' // renderer-local — webUtils.getPathForFile, no IPC round-trip
+  | 'reportRendererCrash' // direct IPC to main process — crash diagnostic must reach main.log
 > | BrowserPaneKeys
 type ChannelMapKeys = keyof typeof CHANNEL_MAP & string
 

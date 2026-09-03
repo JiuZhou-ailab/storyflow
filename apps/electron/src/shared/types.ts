@@ -470,6 +470,10 @@ export interface ElectronAPI {
   listServerDirectory(dirPath: string): Promise<DirectoryListingResult>
   // Debug: send renderer logs to main process log file
   debugLog(...args: unknown[]): void
+  // Diagnostic: report an uncaught renderer React crash so the stack lands in main.log.
+  // Direct IPC (not WS RPC) — the renderer is already in a failed state, and this must
+  // reach main synchronously via ipcRenderer.send.
+  reportRendererCrash(payload: { error: string; stack?: string; componentStack?: string }): void
 
   // Theme
   getSystemTheme(): Promise<boolean>
