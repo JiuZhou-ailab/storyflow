@@ -4643,7 +4643,7 @@ function AppShellContent({
               animate={{ width: ACTIVITY_RAIL_WIDTH }}
               exit={{ width: 0 }}
               transition={shouldReduceMotion ? { duration: 0 } : PANEL_SPRING}
-              className="h-full min-w-0 shrink-0 overflow-hidden"
+              className="h-full min-w-0 shrink-0 overflow-hidden border-r border-border"
             >
               <ActivityRail
                 activeItem={activeActivityRailItem}
