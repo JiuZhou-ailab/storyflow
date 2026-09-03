@@ -21,6 +21,7 @@ import {
   type PiSubagentTaskResult,
   type PiSubagentUsage,
 } from '../../shared/src/agent/backend/pi/subagent-contract.ts';
+import { createOpenAIEncryptedReasoningCompat } from './openai-encrypted-reasoning-compat.ts';
 
 const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'web_search', 'web_fetch'] as const;
 const WORKSPACE_WRITE_TOOLS = [...READ_ONLY_TOOLS, 'edit', 'write', 'bash'] as const;
@@ -220,6 +221,7 @@ export function createSubagentExtension(
                 settingsManager,
                 extensionFactories: [
                   ...(options.providerHooks ? [options.providerHooks] : []),
+                  createOpenAIEncryptedReasoningCompat(),
                   options.createSessionHooks(hookContext),
                 ],
                 noExtensions: true,

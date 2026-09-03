@@ -5,36 +5,44 @@
 import { describe, expect, it } from 'bun:test';
 import {
   createPromptAttemptState,
-  recordPromptAttemptEvent,
-  shouldSuppressRetryablePromptFailure,
+  routePromptAttemptEvent,
 } from './prompt-retry.ts';
 
 describe('Pi prompt retry presentation', () => {
-  it('suppresses a retryable failure while Pi still has budget', () => {
+  it('forwards a non-retryable failure immediately', () => {
     const state = createPromptAttemptState();
-    expect(shouldSuppressRetryablePromptFailure('HTTP 524', state)).toBe(true);
-    expect(shouldSuppressRetryablePromptFailure('400 response_format is unavailable', state)).toBe(false);
+    const failure = {
+      type: 'message_end',
+      message: { role: 'assistant', stopReason: 'error', errorMessage: 'invalid request' },
+    } as any;
+    expect(routePromptAttemptEvent(failure, state)).toEqual([failure]);
   });
 
-  it('exposes the final failed attempt once Pi exhausts retry budget', () => {
+  it('drops a deferred failure only after agent_end confirms a retry', () => {
     const state = createPromptAttemptState();
-    recordPromptAttemptEvent(state, {
-      type: 'auto_retry_start',
-      attempt: 1,
-      maxAttempts: 1,
-    });
-    expect(shouldSuppressRetryablePromptFailure('HTTP 524', state)).toBe(false);
-    recordPromptAttemptEvent(state, { type: 'auto_retry_end', success: false });
-    expect(shouldSuppressRetryablePromptFailure('HTTP 524', state)).toBe(false);
+    const failure = {
+      type: 'message_end',
+      message: { role: 'assistant', stopReason: 'error', errorMessage: 'HTTP 524' },
+    } as any;
+    const turnEnd = { type: 'turn_end' } as any;
+    const agentEnd = { type: 'agent_end', willRetry: true } as any;
+
+    expect(routePromptAttemptEvent(failure, state)).toEqual([]);
+    expect(routePromptAttemptEvent(turnEnd, state)).toEqual([]);
+    expect(routePromptAttemptEvent(agentEnd, state)).toEqual([agentEnd]);
   });
 
-  it('continues suppressing while additional Pi retries remain', () => {
+  it('restores deferred events when agent_end confirms no retry', () => {
     const state = createPromptAttemptState();
-    recordPromptAttemptEvent(state, {
-      type: 'auto_retry_start',
-      attempt: 1,
-      maxAttempts: 3,
-    });
-    expect(shouldSuppressRetryablePromptFailure('network error', state)).toBe(true);
+    const failure = {
+      type: 'message_end',
+      message: { role: 'assistant', stopReason: 'error', errorMessage: 'HTTP 524' },
+    } as any;
+    const turnEnd = { type: 'turn_end' } as any;
+    const agentEnd = { type: 'agent_end', willRetry: false } as any;
+
+    expect(routePromptAttemptEvent(failure, state)).toEqual([]);
+    expect(routePromptAttemptEvent(turnEnd, state)).toEqual([]);
+    expect(routePromptAttemptEvent(agentEnd, state)).toEqual([failure, turnEnd, agentEnd]);
   });
 });

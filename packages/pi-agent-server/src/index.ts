@@ -79,8 +79,7 @@ import {
 } from './pi-session-sanitizer.ts';
 import {
   createPromptAttemptState,
-  recordPromptAttemptEvent,
-  shouldSuppressRetryablePromptFailure,
+  routePromptAttemptEvent,
   type PromptAttemptState,
 } from './prompt-retry.ts';
 
@@ -239,30 +238,17 @@ async function runMiniCompletion(prompt: string): Promise<string | null> {
 // Event Handling
 // ============================================================
 
-function getAssistantErrorMessage(event: AgentSessionEvent): string | null {
-  if (event.type !== 'message_end') return null;
-
-  const msg = event.message as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
-  if (msg?.role !== 'assistant' || msg.stopReason !== 'error' || !msg.errorMessage) {
-    return null;
-  }
-
-  return msg.errorMessage;
-}
-
 function handleSessionEvent(event: AgentSessionEvent): void {
   const promptAttemptState = currentPromptAttemptState;
-  if (promptAttemptState) {
-    recordPromptAttemptEvent(promptAttemptState, event as unknown as Record<string, unknown>);
-
-    const assistantErrorMessage = getAssistantErrorMessage(event);
-    if (assistantErrorMessage && shouldSuppressRetryablePromptFailure(assistantErrorMessage, promptAttemptState)) {
-      debugLog(`Suppressing retryable stream failure before automatic retry: ${assistantErrorMessage}`);
-      return;
-    }
-
+  const routedEvents = promptAttemptState
+    ? routePromptAttemptEvent(event, promptAttemptState)
+    : [event];
+  for (const routedEvent of routedEvents) {
+    forwardSessionEvent(routedEvent);
   }
+}
 
+function forwardSessionEvent(event: AgentSessionEvent): void {
   if (event.type === 'message_start' && event.message.role === 'assistant' && pendingProductRewindBoundary && piSession) {
     const boundary = createProductRewindBoundary(
       piSession.sessionManager.getBranch(),

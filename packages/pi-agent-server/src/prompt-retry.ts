@@ -4,34 +4,42 @@
 
 import { isRetryableAssistantError } from '@earendil-works/pi-ai/compat';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
+import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent';
 
 export interface PromptAttemptState {
-  canRetry: boolean;
+  deferredEvents: AgentSessionEvent[];
 }
 
 export function createPromptAttemptState(): PromptAttemptState {
   return {
-    canRetry: true,
+    deferredEvents: [],
   };
 }
 
-export function shouldSuppressRetryablePromptFailure(
-  message: unknown,
-  state: PromptAttemptState,
-): boolean {
-  if (typeof message !== 'string' || !state.canRetry) return false;
+function isRetryableFailure(event: AgentSessionEvent): boolean {
+  if (event.type !== 'message_end') return false;
+  const message = event.message as AssistantMessage;
   return isRetryableAssistantError({
-    stopReason: 'error',
-    errorMessage: message,
+    stopReason: message.stopReason,
+    errorMessage: message.errorMessage,
   } as AssistantMessage);
 }
 
-export function recordPromptAttemptEvent(state: PromptAttemptState, event: Record<string, unknown>): void {
-  if (event.type === 'auto_retry_start') {
-    const attempt = typeof event.attempt === 'number' ? event.attempt : 0;
-    const maxAttempts = typeof event.maxAttempts === 'number' ? event.maxAttempts : 0;
-    state.canRetry = attempt < maxAttempts;
-  } else if (event.type === 'auto_retry_end') {
-    state.canRetry = false;
+export function routePromptAttemptEvent(
+  event: AgentSessionEvent,
+  state: PromptAttemptState,
+): AgentSessionEvent[] {
+  if (state.deferredEvents.length > 0) {
+    if (event.type === 'agent_end') {
+      const deferredEvents = state.deferredEvents;
+      state.deferredEvents = [];
+      return event.willRetry ? [event] : [...deferredEvents, event];
+    }
+    state.deferredEvents.push(event);
+    return [];
   }
+
+  if (!isRetryableFailure(event)) return [event];
+  state.deferredEvents.push(event);
+  return [];
 }

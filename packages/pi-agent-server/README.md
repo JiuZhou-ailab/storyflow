@@ -18,6 +18,7 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 - `src/product-rewind.ts` — Durable Pi user-entry to Storyflow transcript-cut mapping.
 - `src/tool-hooks.ts` — Pi-native permission and result hooks.
 - `src/provider-hooks.ts` — Narrow Pi-native request-header and response diagnostics hooks; retry remains Pi-owned.
+- `src/openai-encrypted-reasoning-compat.ts` — Session-local recovery for stale OpenAI Responses encrypted reasoning without rewriting persisted history.
 - `src/gemini-thought-signature-compat.test.ts` — Pins Pi's Gemini 3 cross-provider tool-history compatibility contract.
 - `src/network-proxy.ts` — Transport-only proxy routing for the Bun subprocess.
 - `src/tools/` — built-in web and search tool definitions.

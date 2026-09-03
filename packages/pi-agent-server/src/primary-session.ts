@@ -30,6 +30,7 @@ import { createProjectResourceLoader } from "./project-resource-loader.ts";
 import { createExtensionUIContext } from "./extension-ui.ts";
 import { createSystemPromptOverride } from "./system-prompt-override.ts";
 import { createProviderHooks } from "./provider-hooks.ts";
+import { createOpenAIEncryptedReasoningCompat } from "./openai-encrypted-reasoning-compat.ts";
 import { findProductRewindBoundary } from "./product-rewind.ts";
 import {
   createSubagentExtension,
@@ -207,6 +208,7 @@ export async function createPrimaryPiSession(
       extensionFactories: [
         systemPromptOverride.extension,
         providerHooks,
+        createOpenAIEncryptedReasoningCompat(),
         toolHooks,
         subagentExtension,
       ],
