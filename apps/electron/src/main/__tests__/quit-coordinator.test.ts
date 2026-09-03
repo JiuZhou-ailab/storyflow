@@ -58,3 +58,54 @@ describe('quit coordinator', () => {
     expect(exit).not.toHaveBeenCalled()
   })
 })
+
+describe('quit coordinator exit guarantees', () => {
+  it('still exits when preparation throws', async () => {
+    const exit = mock(() => {})
+    const incomplete = mock(() => {})
+    const coordinator = createQuitCoordinator({
+      isUpdating: () => false,
+      prepare: async () => { throw new Error('cleanup exploded') },
+      exit,
+      onPrepareIncomplete: incomplete,
+    })
+
+    await coordinator.handleBeforeQuit({ preventDefault: () => {} })
+
+    expect(exit).toHaveBeenCalledWith(0)
+    expect(incomplete).toHaveBeenCalledWith('failed', expect.any(Error))
+  })
+
+  it('exits once the deadline elapses even if preparation never settles', async () => {
+    const exit = mock(() => {})
+    const incomplete = mock(() => {})
+    const coordinator = createQuitCoordinator({
+      isUpdating: () => false,
+      prepare: () => new Promise(() => {}),
+      exit,
+      deadlineMs: 20,
+      onPrepareIncomplete: incomplete,
+    })
+
+    await coordinator.handleBeforeQuit({ preventDefault: () => {} })
+
+    expect(exit).toHaveBeenCalledWith(0)
+    expect(incomplete).toHaveBeenCalledWith('timed-out')
+  })
+
+  it('does not report a timeout after preparation completed', async () => {
+    const incomplete = mock(() => {})
+    const coordinator = createQuitCoordinator({
+      isUpdating: () => false,
+      prepare: async () => {},
+      exit: () => {},
+      deadlineMs: 10,
+      onPrepareIncomplete: incomplete,
+    })
+
+    await coordinator.prepare()
+    await new Promise(resolve => setTimeout(resolve, 30))
+
+    expect(incomplete).not.toHaveBeenCalled()
+  })
+})

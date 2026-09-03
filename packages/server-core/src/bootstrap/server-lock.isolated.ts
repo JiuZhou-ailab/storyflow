@@ -64,6 +64,26 @@ test('uses the heartbeat lease instead of a reused PID', async () => {
   expect(JSON.parse(readFileSync(lockPath, 'utf-8')).pid).toBe(process.pid)
 })
 
+test('reclaims a fresh lease whose owner process no longer exists', async () => {
+  releaseServerLock()
+  writeFileSync(lockPath, JSON.stringify({ pid: 2_147_483_647, startedAt: Date.now() - 600_000, leaseVersion: 1 }))
+  mkdirSync(leasePath)
+
+  await acquireServerLock(logger)
+
+  expect(JSON.parse(readFileSync(lockPath, 'utf-8')).pid).toBe(process.pid)
+  expect(lstatSync(leasePath).isDirectory()).toBe(true)
+})
+
+test('does not steal a fresh lease from a live owner', async () => {
+  releaseServerLock()
+  writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, startedAt: Date.now(), leaseVersion: 1 }))
+  mkdirSync(leasePath)
+
+  await expect(acquireServerLock(logger)).rejects.toThrow('is active')
+  rmSync(leasePath, { recursive: true, force: true })
+})
+
 test('does not steal a fresh compatibility lock while its owner is starting', async () => {
   releaseServerLock()
   writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, startedAt: Date.now(), leaseVersion: 1 }))

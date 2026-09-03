@@ -1,5 +1,5 @@
 // input: Electron quit state plus application cleanup and exit callbacks
-// output: Idempotent quit preparation and updater-safe before-quit handling
+// output: Idempotent, deadline-bounded quit preparation and updater-safe before-quit handling
 // pos: Owns the boundary between Storyflow cleanup and Electron's native quit flow
 
 interface BeforeQuitEvent {
@@ -10,6 +10,9 @@ interface QuitCoordinatorOptions {
   isUpdating(): boolean
   prepare(): Promise<void>
   exit(code: number): void
+  /** Upper bound for cleanup. Exit proceeds when it elapses, whatever is still in flight. */
+  deadlineMs?: number
+  onPrepareIncomplete?(reason: 'failed' | 'timed-out', error?: unknown): void
 }
 
 export interface QuitCoordinator {
@@ -17,11 +20,32 @@ export interface QuitCoordinator {
   handleBeforeQuit(event: BeforeQuitEvent): Promise<void>
 }
 
+const DEFAULT_DEADLINE_MS = 5_000
+
+/**
+ * Exit is unconditional; cleanup is best-effort within a deadline.
+ * `prepare` therefore never rejects and never outlives `deadlineMs`, so every
+ * exit path (Cmd+Q, SIGTERM, updater handoff) reaches `exit`.
+ */
 export function createQuitCoordinator(options: QuitCoordinatorOptions): QuitCoordinator {
+  const deadlineMs = options.deadlineMs ?? DEFAULT_DEADLINE_MS
   let preparation: Promise<void> | null = null
 
   const prepare = (): Promise<void> => {
-    preparation ??= options.prepare()
+    preparation ??= new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        options.onPrepareIncomplete?.('timed-out')
+        resolve()
+      }, deadlineMs)
+      options.prepare().then(
+        () => { clearTimeout(timer); resolve() },
+        (error) => {
+          clearTimeout(timer)
+          options.onPrepareIncomplete?.('failed', error)
+          resolve()
+        },
+      )
+    })
     return preparation
   }
 
@@ -31,8 +55,11 @@ export function createQuitCoordinator(options: QuitCoordinatorOptions): QuitCoor
       if (options.isUpdating()) return
 
       event.preventDefault()
-      await prepare()
-      options.exit(0)
+      try {
+        await prepare()
+      } finally {
+        options.exit(0)
+      }
     },
   }
 }

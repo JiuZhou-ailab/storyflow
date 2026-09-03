@@ -235,11 +235,19 @@ function prepareCompatibilityLock(logger: PlatformServices['logger']): void {
       realpath: false,
       stale: LOCK_STALE_MS,
     })
-    if (leaseActive) {
+    const ownerAlive = isLiveForeignOwner(legacyLock)
+    if (leaseActive && ownerAlive) {
       throw new Error(`Another Storyflow server instance is active (PID ${legacyLock.pid}). Close it and retry.`)
     }
-    if (isLiveForeignOwner(legacyLock) && stats.mtimeMs >= Date.now() - LOCK_STALE_MS) {
+    if (!leaseActive && ownerAlive && stats.mtimeMs >= Date.now() - LOCK_STALE_MS) {
       throw new Error('Another Storyflow server instance may be starting. Retry shortly.')
+    }
+    // Only the owner process heartbeats the lease. A fresh lease whose owner
+    // PID is gone was orphaned by an abrupt exit within the last stale window;
+    // reclaim it now instead of forcing the user to wait out the heartbeat.
+    if (leaseActive) {
+      rmSync(LEASE_PATH, { recursive: true, force: true })
+      logger.warn(`[bootstrap] Reclaimed orphaned server lease from exited PID ${legacyLock.pid}`)
     }
   } else if (isLiveForeignOwner(legacyLock)) {
     throw new Error(

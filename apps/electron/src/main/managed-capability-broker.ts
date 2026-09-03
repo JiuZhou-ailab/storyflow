@@ -77,6 +77,9 @@ export async function startManagedCapabilityBroker(
     },
     close: () => new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve())
+      // In-flight upstream proxies can take up to 80s; the broker dies with
+      // the app, so cut them rather than let a quit wait on a remote gateway.
+      server.closeAllConnections()
     }),
   }
 }

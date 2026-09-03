@@ -248,6 +248,8 @@ app.on('open-url', (event, url) => {
 // Handle deeplink on Windows/Linux (single instance check)
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
+  // stderr, not mainLog: the logger may not be ready and the process exits at once.
+  console.error('[storyflow] Another instance holds the single-instance lock; handing off and exiting.')
   app.quit()
 } else {
   app.on('second-instance', (_event, commandLine, _workingDirectory) => {
@@ -1238,23 +1240,27 @@ app.on('window-all-closed', () => {
   }
 })
 
+/**
+ * Cleanup steps are independent: one failing step must not skip the rest, and
+ * none of them may block exit. Ordering only encodes data dependencies
+ * (window state before session flush, lock release last).
+ */
+async function runQuitStep(name: string, step: () => void | Promise<void>): Promise<void> {
+  try {
+    await step()
+  } catch (error) {
+    mainLog.warn(`[quit] ${name} failed:`, error instanceof Error ? error.message : error)
+  }
+}
+
 const quitCoordinator = createQuitCoordinator({
   isUpdating,
   prepare: async () => {
     // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
     windowManager?.setAppQuitting(true)
-    await managedCapabilityBroker?.close().catch(error => {
-      mainLog.warn('[managed-capability] Failed to close local capability broker:', error)
-    })
-    managedCapabilityBroker = null
-    delete process.env[MODEL_ACCESS_BROKER_URL_ENV]
-    delete process.env[MODEL_ACCESS_BROKER_TOKEN_ENV]
-    delete process.env[TOOL_BROKER_URL_ENV]
-    delete process.env[TOOL_BROKER_TOKEN_ENV]
-    clientAuthService?.dispose()
-    clientAuthService = null
 
-    if (windowManager) {
+    await runQuitStep('window-state', () => {
+      if (!windowManager) return
       // Get full window states (includes bounds, type, and query)
       const windows = windowManager.getWindowStates()
       // Get the focused window's workspace as last focused
@@ -1265,46 +1271,53 @@ const quitCoordinator = createQuitCoordinator({
       }
 
       if (shouldSaveOpenWindowsOnQuit(windows.length)) {
-        saveWindowState({
-          windows,
-          lastFocusedWorkspaceId,
-        })
+        saveWindowState({ windows, lastFocusedWorkspaceId })
         mainLog.info('Saved window state:', windows.length, 'windows')
       } else {
         mainLog.info('Preserved last closed window state for next launch')
       }
-    }
+    })
 
-    if (sessionManager) {
-      try {
-        await sessionManager.flushAllSessions()
-        mainLog.info('Flushed all pending session writes')
-      } catch (error) {
-        mainLog.error('Failed to flush sessions:', error)
-      }
-      sessionManager.cleanup()
-    }
+    // Session data is the only step whose loss is user-visible; run it first
+    // so it gets the largest share of the quit deadline.
+    await runQuitStep('session-flush', async () => {
+      if (!sessionManager) return
+      await sessionManager.flushAllSessions()
+      mainLog.info('Flushed all pending session writes')
+    })
+    await runQuitStep('session-cleanup', () => sessionManager?.cleanup())
 
-    browserPaneManager?.destroyAll()
-    oauthFlowStore?.dispose()
-    getModelRefreshService().stopAll()
-
+    await runQuitStep('capability-broker', async () => {
+      await managedCapabilityBroker?.close()
+      managedCapabilityBroker = null
+      delete process.env[MODEL_ACCESS_BROKER_URL_ENV]
+      delete process.env[MODEL_ACCESS_BROKER_TOKEN_ENV]
+      delete process.env[TOOL_BROKER_URL_ENV]
+      delete process.env[TOOL_BROKER_TOKEN_ENV]
+    })
+    await runQuitStep('client-auth', () => {
+      clientAuthService?.dispose()
+      clientAuthService = null
+    })
+    await runQuitStep('browser-panes', () => browserPaneManager?.destroyAll())
+    await runQuitStep('oauth-flows', () => oauthFlowStore?.dispose())
+    await runQuitStep('model-refresh', () => getModelRefreshService().stopAll())
     // Stop messaging gateways so the WhatsApp worker subprocess exits cleanly.
-    if (messagingHandle) {
-      try {
-        await messagingHandle.dispose()
-      } catch (err) {
-        mainLog.error('[messaging] dispose failed:', err)
-      }
-    }
-
-    const { cleanup: cleanupPowerManager } = await import('./power-manager')
-    cleanupPowerManager()
-
-    // Release the server lock file so the next launch doesn't see a stale PID.
-    releaseServerLock()
+    await runQuitStep('messaging', () => messagingHandle?.dispose())
+    await runQuitStep('power-manager', async () => {
+      const { cleanup: cleanupPowerManager } = await import('./power-manager')
+      cleanupPowerManager()
+    })
   },
-  exit: code => app.exit(code),
+  onPrepareIncomplete: (reason, error) => {
+    mainLog.warn(`[quit] cleanup ${reason}; exiting anyway`, error instanceof Error ? error.message : error ?? '')
+  },
+  exit: (code) => {
+    // Always release the server lease, even when cleanup timed out, so the
+    // next launch never waits on a lease this process can no longer heartbeat.
+    releaseServerLock()
+    app.exit(code)
+  },
 })
 
 // The updater must finish the same cleanup before it takes ownership of the

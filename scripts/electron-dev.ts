@@ -662,7 +662,9 @@ async function main(): Promise<void> {
         // Context may already be disposed
       }
     }
-    // Kill subprocesses
+    // Terminate subprocesses and wait for them: Electron runs its quit
+    // cleanup on SIGTERM and must finish releasing the server lease and the
+    // single-instance lock before the next `electron:dev` can start.
     for (const proc of processes) {
       try {
         proc.kill();
@@ -670,6 +672,11 @@ async function main(): Promise<void> {
         // Process may already be dead
       }
     }
+    await Promise.all(processes.map(async (proc) => {
+      const timeout = setTimeout(() => { try { proc.kill("SIGKILL"); } catch { /* dead */ } }, 8000);
+      await proc.exited;
+      clearTimeout(timeout);
+    }));
     process.exit(0);
   };
 
