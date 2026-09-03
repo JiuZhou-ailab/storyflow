@@ -1,19 +1,19 @@
 {
-  "version": "0.19.0",
-  "digest": "a6ca2526b3b039d55ee7d397b35ff88980d1f506397c247ba1fa85e1f1de81e3",
-  "generatedAt": "2026-08-31T16:30:03.535Z",
-  "title": "Storyflow v0.19.0 更新说明",
-  "summary": "Storyflow 0.19.0 升级了 Agent 内核并加强了历史数据保护，会话更稳定，历史项目与对话始终可用。",
+  "version": "0.20.0",
+  "digest": "7075a5246bcdb911f91cd20b25ced74ee6c2dc5ec2bbd591bca49d15506e4010",
+  "generatedAt": "2026-09-03T08:11:26.152Z",
+  "title": "Storyflow v0.20.0 更新说明",
+  "summary": "Storyflow 0.20.0 接入 MCP 与 Skills Hub 客户端闭环，补充用量统计与市场能力，并加固历史数据保护。",
   "highlights": [
-    "修复插件冲突导致会话无法启动：全局安装的 Pi 插件与内置工具重名时不再报错中断，内置工具自动优先，其余插件功能照常可用。",
-    "修复对话卡在\"思考中\"：升级 Agent 内核到 Pi 0.84.4，修复长任务中途压缩被跳过、超大工具结果直发模型和截断响应误判导致的转圈不结束问题。",
-    "会话恢复更可靠：修复恢复历史会话时因文件结尾缺少换行导致后续记录损坏的问题。",
-    "历史对话保护加强：建立持久化数据读取契约，旧版本创建的项目和会话在任何升级后保持可见、可打开，并有专门测试防止回归。"
+    "项目用量统计：新增项目用量活动统计，直观查看各项目的使用情况。",
+    "MCP 与 Skills Hub 闭环：接入第三方 MCP 服务与 Skills 市场客户端，移除内嵌 Skills Registry，转向 Hub 管理。",
+    "MCP 市场入口：MCP 数据源页新增市场入口，可查看服务端点并在明确确认后添加到本机。",
+    "搜索范围更清楚：左上角搜索会明确区分跨项目跳转与当前工作区内容，文件结果也会显示命中路径和位置。"
   ],
-  "accentColor": "#9e6d1a",
+  "accentColor": "#af1d4e",
   "accentTextColor": "#ffffff",
   "source": {
-    "commitCount": 6,
+    "commitCount": 15,
     "userVisibleCommitCount": 0
   }
 }
