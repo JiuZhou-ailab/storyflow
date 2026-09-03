@@ -113,7 +113,7 @@ export const StyledDropdownMenuContent = React.forwardRef<
       sideOffset={sideOffset}
       className={cn(
         // shadcn base layer
-        'popover-styled overflow-x-hidden overflow-y-auto p-1 z-dropdown',
+        'popover-styled overflow-x-hidden overflow-y-auto p-1 z-floating-menu',
         'max-h-(--radix-dropdown-menu-content-available-height)',
         'origin-(--radix-dropdown-menu-content-transform-origin)',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
@@ -214,7 +214,7 @@ export const StyledDropdownMenuSubContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        'popover-styled w-fit font-sans whitespace-nowrap text-xs flex flex-col gap-0.5 z-dropdown overflow-x-hidden overflow-y-auto p-1',
+        'popover-styled w-fit font-sans whitespace-nowrap text-xs flex flex-col gap-0.5 z-floating-menu overflow-x-hidden overflow-y-auto p-1',
         'max-h-(--radix-dropdown-menu-content-available-height)',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
