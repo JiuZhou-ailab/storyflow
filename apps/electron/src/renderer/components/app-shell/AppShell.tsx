@@ -69,6 +69,7 @@ import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { PanelStackContainer } from "./PanelStackContainer"
 import { ResizableColumn } from "./ResizableColumn"
 import { WorkspaceDockLayout } from '../workspace/WorkspaceDockLayout'
+import { WorkspaceFileHeaderActions } from '../workspace/WorkspaceFileHeaderActions'
 import { WORKSPACE_DIRECTORY_MIN_WIDTH, WORKSPACE_DIRECTORY_MAX_WIDTH, WORKSPACE_DIRECTORY_DEFAULT_WIDTH } from './panel-constants'
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
@@ -4571,6 +4572,7 @@ function AppShellContent({
                 />
               ) : (
                 <FileViewer
+                  key={`${selectedNovelFile.path}:${novelDocumentReloadVersion}`}
                   path={selectedNovelFile.path}
                   searchTarget={novelSearchTarget?.path === selectedNovelFile.path ? novelSearchTarget : undefined}
                   onClose={() => { void handleCloseNovelFileTab(selectedNovelFile.path) }}
@@ -4625,6 +4627,21 @@ function AppShellContent({
       onOpenStart={() => { void handleOpenNovelWorkspaceStart() }}
       trailingActions={(
         <>
+          {selectedNovelFile && <WorkspaceFileHeaderActions
+            path={selectedNovelFile.path}
+            busy={!!selectedNovelDocumentPath && (novelDocumentLoading || novelDocumentSaving)}
+            beforeOpen={ensureNovelDocumentSaved}
+            onRefresh={async () => {
+              if (!await ensureNovelDocumentSaved()) return
+              // A delayed save must not reload a different document or newer edits.
+              if (latestNovelDocumentPathRef.current !== selectedNovelDocumentPath || isCurrentNovelDocumentDirty()) return
+              if (selectedNovelDocumentPath) {
+                setLoadedNovelDocumentPath(null)
+                setNovelDocumentLoading(true)
+              }
+              setNovelDocumentReloadVersion(version => version + 1)
+            }}
+          />}
           {directoryToggleButton}
           {rightWorkspaceToggleButton}
         </>

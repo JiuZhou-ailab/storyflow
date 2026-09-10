@@ -4,7 +4,7 @@
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { ExternalLink, FolderOpen, PanelRightClose, PanelRightOpen, RefreshCw } from 'lucide-react'
+import { FolderOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import type { ConversationFile, ConversationFiles } from '../../../shared/types'
 import { FileViewer } from '../files/FileViewer'
 import { HeaderIconButton } from '../ui/HeaderIconButton'
@@ -12,6 +12,7 @@ import { ResizableColumn } from '../app-shell/ResizableColumn'
 import { PANEL_MIN_WIDTH, WORKSPACE_DIRECTORY_DEFAULT_WIDTH } from '../app-shell/panel-constants'
 import { DEFAULT_WORKSPACE_WIDTH } from '../app-shell/layout-defaults'
 import { WorkspaceDockLayout } from '../workspace/WorkspaceDockLayout'
+import { WorkspaceFileHeaderActions } from '../workspace/WorkspaceFileHeaderActions'
 import { NovelDocumentTabStrip } from '../writing/NovelDocumentTabStrip'
 import { Button } from '../ui/button'
 import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
@@ -215,11 +216,7 @@ function ConversationFilesContent({ sessionId, requestedFile, onClose, compact }
     activePath={selectedPath ?? null} onActivate={file => setSelectedPath(file.path)}
     onClose={() => setSelectedPath(undefined)} onOpenStart={() => setSelectedPath(undefined)}
     trailingActions={<>
-      {selected && !selected.unavailable && <>
-        <HeaderIconButton icon={<RefreshCw className="h-4 w-4" />} tooltip={t('conversationFiles.retry')} aria-label={t('conversationFiles.retry')} onClick={() => setRevision(value => value + 1)} />
-        {!selected.readOnly && <HeaderIconButton icon={<ExternalLink className="h-4 w-4" />} tooltip={t('common.open')} aria-label={t('common.open')} onClick={() => { void window.electronAPI.openFile(selected.path) }} />}
-        <HeaderIconButton icon={<FolderOpen className="h-4 w-4" />} tooltip={t('conversationFiles.reveal')} aria-label={t('conversationFiles.reveal')} onClick={() => reveal(selected.path)} />
-      </>}
+      {selected && !selected.unavailable && <WorkspaceFileHeaderActions path={selected.path} readOnly={selected.readOnly} onRefresh={() => setRevision(value => value + 1)} />}
       <HeaderIconButton icon={<FolderOpen className="h-4 w-4" strokeWidth={1.7} />} tooltip={directoryLabel} aria-label={directoryLabel} aria-expanded={directoryVisible} data-state={directoryVisible ? 'open' : 'closed'} onClick={() => setDirectoryVisible(value => !value)} className="h-[26px] w-[26px] rounded-lg" />
       {onClose && <HeaderIconButton icon={<PanelRightClose className="h-4 w-4" />} tooltip={t('conversationFiles.collapse')} aria-label={t('conversationFiles.collapse')} aria-expanded onClick={onClose} className="h-[26px] w-[26px] rounded-lg" />}
     </>}

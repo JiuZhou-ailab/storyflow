@@ -4,6 +4,7 @@
 
 - `WorkspaceSurface.tsx`：延迟装载 AppShell 与编辑器专用主题 Provider。
 - `WorkspaceDockLayout.tsx`：项目和自由对话共用的文件标签栏、内容区及右侧可折叠目录布局。
+- `WorkspaceFileHeaderActions.tsx`：项目和自由对话共用的刷新、系统打开及文件定位按钮；调用方提供刷新动作和保存前置检查，附件可隐藏系统打开。
 - `WorkspaceEmptyState.tsx`：在共享文件标签栏下提供不写入磁盘的创建、导入与 Skills 开始页。
 - `WorkspaceProjectSidebar.tsx`：延迟装载真实项目文件树，并呈现空白项目提示。
 - `WorkspaceFileTree.tsx`：受控、虚拟化的文件树；仅在提供相应回调时启用拖动、重命名和删除。

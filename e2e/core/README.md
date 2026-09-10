@@ -8,6 +8,8 @@
 
 `file-link-context-menu.ts` verifies that right-clicking a percent-encoded Chinese file link offers “打开文件”, “打开文件位置”, and “复制文件路径”: side-panel preview, correct Finder selection, and the decoded absolute clipboard path relative to the conversation's working directory. Run `bun e2e/core/file-link-context-menu.ts` on macOS after building Electron; optionally set `CRAFT_E2E_SCREENSHOTS` to an existing directory. It uses an offline temporary project, captures clipboard writes without changing the system clipboard, and closes its Finder window afterward.
 
+The same check verifies the project header's refresh, system-open, reveal, directory and sidebar buttons. It exercises refresh against a real disk change and a failed save, and captures header OS actions at the preload boundary to prove system-open saves pending edits first and uses the selected file path.
+
 `user-question-recovery.ts` uses a local model stub to exercise the real question tool, renderer reload, project return, transport reconnect, visible answer submission, and Pi resume. Run `bun e2e/core/user-question-recovery.ts` after building Electron main and renderer; set `CRAFT_E2E_SCREENSHOTS` to an existing directory to save the recovered prompt. It uses isolated temporary data and no external model calls.
 
 `run.ts` drives the built desktop app through its public preload API against a deterministic local model stub.

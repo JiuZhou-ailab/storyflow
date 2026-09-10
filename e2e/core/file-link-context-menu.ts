@@ -3,7 +3,7 @@
 // pos: Desktop regression check for file actions linked in chat messages
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { launchApp, evalOn, waitFor, sleep, type LaunchedApp } from '../perf/launch'
@@ -77,6 +77,61 @@ try {
   }
   assert.equal(selected, filePath, 'Finder selects the decoded file in the conversation cwd, not the workspace root')
   console.log('PASS: three file actions → side-panel preview, decoded absolute clipboard path, correct Finder selection')
+  // Header actions use the same paths, without launching another system editor/Finder.
+  const contexts: Array<{ id: number; name: string }> = []
+  live.cdp.on('Runtime.executionContextCreated', event => contexts.push(event.context))
+  await live.cdp.send('Runtime.disable', {}, live.sid)
+  await live.cdp.send('Runtime.enable', {}, live.sid)
+  const preload = contexts.find(context => context.name === 'Electron Isolated Context')
+  assert.ok(preload)
+  const captured = await live.cdp.send('Runtime.evaluate', { contextId: preload.id, expression: `(() => {
+    globalThis.__fileActions = [];
+    const send = WebSocket.prototype.send;
+    WebSocket.prototype.send = function(data) {
+      const message = JSON.parse(data);
+      if (message.type === 'request' && ['shell:openFile','shell:showInFolder'].includes(message.channel)) {
+        globalThis.__fileActions.push({channel:message.channel,args:message.args});
+        queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', {data:JSON.stringify({id:message.id,type:'response',result:undefined})})));
+        return;
+      }
+      return send.call(this,data);
+    };
+  })()` }, live.sid)
+  assert.equal(captured.exceptionDetails, undefined)
+  const headerButton = (label: string) => `document.querySelector('[data-panel-role="writing-file-tabs"] button[aria-label="${label}"]')`
+  for (const label of ['重试', '打开', '打开文件位置', '收起目录', '收起右侧栏']) {
+    assert.ok(await evalOn(live, `!!${headerButton(label)}`), `Project header includes ${label}`)
+  }
+  writeFileSync(filePath, '# 刷新后的节拍表\n')
+  await evalOn(live, `${headerButton('重试')}.click()`)
+  await waitFor(live, `document.querySelector('.ProseMirror')?.textContent.includes('刷新后的节拍表')`)
+  chmodSync(filePath, 0o444)
+  try {
+    await evalOn(live, `(() => { const editor=document.querySelector('.ProseMirror'); editor.focus(); const range=document.createRange(); range.selectNodeContents(editor); range.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(range) })()`)
+    await live.cdp.send('Input.insertText', {text:' 未保存的修改'}, live.sid)
+    await evalOn(live, `${headerButton('重试')}.click()`)
+    await waitFor(live, `document.body.textContent.includes('自动保存失败') || document.body.textContent.includes('EACCES')`)
+    assert.ok(await evalOn(live, `document.querySelector('.ProseMirror').textContent.includes('未保存的修改')`), 'Failed save must not discard edits during refresh')
+    await waitFor(live, `!${headerButton('打开')}.disabled`)
+    await evalOn(live, `${headerButton('打开')}.click()`)
+    await sleep(300)
+    const blocked = await live.cdp.send('Runtime.evaluate', {contextId:preload.id, expression:'globalThis.__fileActions', returnByValue:true},live.sid)
+    assert.deepEqual(blocked.result.value, [], 'Failed save must not open a stale disk file')
+    assert.ok(!readFileSync(filePath, 'utf8').includes('未保存的修改'))
+  } finally { chmodSync(filePath, 0o644) }
+  await waitFor(live, `!${headerButton('打开')}.disabled`)
+  await evalOn(live, `${headerButton('打开')}.click()`)
+  await waitFor(live, `!${headerButton('打开')}.disabled`)
+  await evalOn(live, `${headerButton('打开文件位置')}.click()`)
+  await sleep(300)
+  const actions = await live.cdp.send('Runtime.evaluate', {contextId:preload.id, expression:'globalThis.__fileActions', returnByValue:true},live.sid)
+  assert.deepEqual(actions.result.value, [
+    {channel:'shell:openFile',args:[filePath]},
+    {channel:'shell:showInFolder',args:[filePath]},
+  ])
+  assert.ok(readFileSync(filePath, 'utf8').includes('未保存的修改'), 'System open persists the editor buffer first')
+  console.log('PASS: project header matches conversation actions; refresh and system-open preserve unsaved edits')
+
 } catch (error) {
   if (app) {
     console.error(await evalOn(app, `({text:document.body.innerText.slice(-7000),viewers:Array.from(document.querySelectorAll('[data-file-viewer-kind]')).map(e=>e.outerHTML.slice(0,500))})`))
