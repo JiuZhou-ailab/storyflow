@@ -81,6 +81,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   } = platform
   const {
     onOpenFile,
+    conversationFileRequest,
     onCreateSession,
     onSendMessage,
     onRespondToPermission,
@@ -454,6 +455,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
     return (
       <SessionInfoPopover
+        conversationFiles={activeWorkspaceId === FREE_CONVERSATION_WORKSPACE_ID}
+        requestedFile={conversationFileRequest?.sessionId === sessionId ? conversationFileRequest : undefined}
         sessionId={sessionId}
         sessionFolderPath={session?.sessionFolderPath}
         presentation="drawer"
@@ -467,7 +470,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         )}
       />
     )
-  }, [handleOpenFile, isCompactMode, onRenameSession, sessionId, session?.sessionFolderPath, sessionMeta])
+  }, [activeWorkspaceId, conversationFileRequest, handleOpenFile, isCompactMode, onRenameSession, sessionId, session?.sessionFolderPath, sessionMeta, t])
 
   const headerLeadingAction = React.useMemo(() => leadingAction, [leadingAction])
   const headerActions = isCompactMode ? compactInfoButton : undefined

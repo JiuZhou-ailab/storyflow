@@ -238,9 +238,9 @@ export const mockElectronAPI = {
   },
 
   // Session files API used by SessionFilesSection (Info popover)
-  getSessionFiles: async (sessionId: string) => {
+  getSessionFiles: async (sessionId: string, view?: 'conversation') => {
     console.log('[Playground] getSessionFiles called:', sessionId)
-    return []
+    return view === 'conversation' ? { groups: [], truncated: false } : []
   },
 
   watchSessionFiles: (sessionId: string) => {

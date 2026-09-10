@@ -7,6 +7,7 @@ import { useAtomValue } from 'jotai'
 import { sessionMetaAtomFamily } from '@/atoms/sessions'
 import { cn } from '@/lib/utils'
 import { SessionFilesSection } from '../right-sidebar/SessionFilesSection'
+import { ConversationFilesPanel } from '../right-sidebar/ConversationFilesPanel'
 
 interface SessionInfoPopoverProps {
   sessionId: string
@@ -19,6 +20,8 @@ interface SessionInfoPopoverProps {
   presentation?: 'popover' | 'drawer'
   onRenameSession: (sessionId: string, name: string) => void
   onOpenFile: (path: string) => void
+  conversationFiles?: boolean
+  requestedFile?: { path: string }
 }
 
 const DEFAULT_POPOVER_CONTENT_CLASS = 'w-[360px] h-[460px] min-w-[200px] max-w-[420px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small p-0'
@@ -41,8 +44,12 @@ export function SessionInfoPopover({
   presentation = 'popover',
   onRenameSession,
   onOpenFile,
+  conversationFiles = false,
+  requestedFile,
 }: SessionInfoPopoverProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
+  React.useEffect(() => { if (conversationFiles && requestedFile) setOpen(true) }, [conversationFiles, requestedFile])
 
   const handleOpenChange = React.useCallback((nextOpen: boolean) => {
     setOpen(nextOpen)
@@ -69,15 +76,15 @@ export function SessionInfoPopover({
           }}
         >
           <DrawerHeader className="border-b border-border/50 px-4 py-3 group-data-[vaul-drawer-direction=bottom]/drawer-content:text-left">
-            <DrawerTitle className="text-sm font-medium">Session info</DrawerTitle>
+            <DrawerTitle className="text-sm font-medium">{t('chat.sessionInfo')}</DrawerTitle>
           </DrawerHeader>
           <div className="flex-1 min-h-0 overflow-hidden">
-            <SessionInfoPopoverContent
+            {conversationFiles ? <ConversationFilesPanel sessionId={sessionId} requestedFile={requestedFile} compact /> : <SessionInfoPopoverContent
               sessionId={sessionId}
               sessionFolderPath={sessionFolderPath}
               onRenameSession={onRenameSession}
               onOpenFile={onOpenFile}
-            />
+            />}
           </div>
         </DrawerContent>
       </Drawer>

@@ -1,6 +1,6 @@
-// input: Selected project file path, optional Search Hit, and explicit system-open action
-// output: Bounded inline preview for the shared project document tab
-// pos: Read-only counterpart to the writing editor for non-editable project files
+// input: Selected file path, optional Search Hit and explicit system-open capability
+// output: Bounded read-only preview for project tabs and conversation files
+// pos: Shared file presentation, independent of project editing and version management
 
 import { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -21,13 +21,14 @@ interface FileViewerProps {
   searchTarget?: DocumentSearchTarget
   onOpenExternal?: (path: string) => void
   onClose?: () => void
+  externalPreviewHint?: string
 }
 
 function getFileName(path: string): string {
   return path.replace(/\\/g, '/').split('/').pop() ?? path
 }
 
-export function FileViewer({ path, searchTarget, onOpenExternal, onClose }: FileViewerProps) {
+export function FileViewer({ path, searchTarget, onOpenExternal, onClose, externalPreviewHint }: FileViewerProps) {
   const { t } = useTranslation()
   const { isDark } = useTheme()
   const [content, setContent] = useState<string>('')
@@ -196,7 +197,7 @@ export function FileViewer({ path, searchTarget, onOpenExternal, onClose }: File
           </div>
           <p className="max-w-md truncate text-sm font-medium text-foreground/80">{fileName}</p>
           <p className="max-w-md text-xs leading-5">
-            {t('fileViewer.externalPreviewHint')}
+            {externalPreviewHint ?? t('fileViewer.externalPreviewHint')}
           </p>
         </div>
       ) : (

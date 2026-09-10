@@ -207,7 +207,7 @@ describe('session file watcher isolation', () => {
     cleanupSessionFileWatchForClient('client-a')
   })
 
-  it('ignores internal session.jsonl and hidden files', async () => {
+  it('ignores hidden files but refreshes persisted attachment metadata', async () => {
     const dir = makeTempSessionDir()
     const sessionPaths = new Map([['s1', dir]])
     const { server, deps, handlers, pushCalls } = createTestHarness(sessionPaths)
@@ -218,12 +218,15 @@ describe('session file watcher isolation', () => {
     const watchHandler = handlers.get(RPC_CHANNELS.sessions.WATCH_FILES)!
     await watchHandler(makeCtx('client-a'), 's1')
 
-    // Write internal files — should be ignored
-    writeFileSync(join(dir, 'session.jsonl'), 'log entry')
+    // Hidden files never appear in either file view.
     writeFileSync(join(dir, '.hidden'), 'secret')
     await new Promise(r => setTimeout(r, WATCH_QUIET_WINDOW_MS))
 
     expect(pushCalls.length).toBe(0)
+
+    writeFileSync(join(dir, 'session.jsonl'), 'log entry')
+    await waitFor(() => pushCalls.length > 0)
+    pushCalls.length = 0
 
     // Write a normal file — should trigger notification
     writeFileSync(join(dir, 'result.txt'), 'output')

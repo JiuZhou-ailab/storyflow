@@ -1,5 +1,7 @@
 # Core Electron E2E
 
+`conversation-files.ts` checks Spec #38 through the real desktop UI and session file RPC: zero-project entry, empty state, file creation/update/deletion, sent original attachments, list/read retry, conversation-switch isolation, repeated chat links, stable previews and the compact drawer. OS action RPCs are captured at the preload transport to verify exact paths without opening system applications. Run `bun e2e/core/conversation-files.ts` after building Electron main and renderer. The fixture is temporary and offline, uses real files, and makes no model calls; it saves a desktop screenshot to `/tmp/storyflow-38-conversation-files.png`.
+
 `activity-rail-resize.ts` samples every animation frame during native rapid sidebar expansion/contraction and rejects any rail/container width gap. It also checks collapse/reopen and width persistence across reload. Run `bun e2e/core/activity-rail-resize.ts` after building Electron; optionally set `CRAFT_E2E_SCREENSHOTS` to an existing directory. The fixture is offline and temporary.
 
 `input-add-menu.ts` checks desktop plus-menu skill/source hover expansion and descriptions, search, draft-preserving skill insertion, persistent source selection, and keyboard navigation. Run `bun e2e/core/input-add-menu.ts` after building Electron; optionally set `CRAFT_E2E_SCREENSHOTS` to an existing directory. It uses a temporary offline project and makes no model calls.

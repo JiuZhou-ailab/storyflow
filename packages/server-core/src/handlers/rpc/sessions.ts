@@ -1,8 +1,9 @@
 // input: Session RPC requests, session manager state, filesystem session folders, and transport clients
-// output: Session RPC handlers with authoritative mode versions on scoped list responses
+// output: Session RPC handlers, scoped content views and independent file-watch consumers
 // pos: Server-side session RPC boundary shared by Electron and server runtimes
 
 import { readFile, writeFile } from 'fs/promises'
+import { watch } from 'fs'
 import { join } from 'path'
 import { RPC_CHANNELS, type FileAttachment, type NovelSelectionRewriteRequest, type SendMessageOptions, type SessionEvent, type SessionFile, type SessionRewindResult } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
@@ -14,6 +15,7 @@ const VALID_THINKING_LEVELS_LIST = THINKING_LEVEL_IDS.map(id => `'${id}'`).join(
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { setTransferableHandler } from './transfer'
+import { getConversationFiles } from './session-conversation-files'
 
 interface ClientSessionWatchState {
   watcher: import('fs').FSWatcher
@@ -21,8 +23,8 @@ interface ClientSessionWatchState {
   debounceTimer: ReturnType<typeof setTimeout> | null
 }
 
-// Per-client session file watcher state (supports concurrent windows/clients safely)
-const clientSessionWatches = new Map<string, ClientSessionWatchState>()
+// Independent consumers cannot cancel each other's subscriptions, including across sessions.
+const clientSessionWatches = new Map<string, Map<string, ClientSessionWatchState>>()
 
 const SESSION_GET_LOG_ID_LIMIT = 25
 const SESSION_FILE_TREE_MAX_ENTRIES = 500
@@ -50,17 +52,16 @@ function sessionWorkspaceDistribution(sessions: Array<{ workspaceId?: string }>)
  * Clean up session file watcher for a client.
  * Called from main process disconnect hooks to prevent watcher leaks.
  */
-export function cleanupSessionFileWatchForClient(clientId: string): void {
-  const state = clientSessionWatches.get(clientId)
-  if (!state) return
-
-  if (state.debounceTimer) {
-    clearTimeout(state.debounceTimer)
-    state.debounceTimer = null
+export function cleanupSessionFileWatchForClient(clientId: string, consumerId?: string): void {
+  const consumers = clientSessionWatches.get(clientId)
+  if (!consumers) return
+  for (const [id, state] of consumers) {
+    if (consumerId !== undefined && id !== consumerId) continue
+    if (state.debounceTimer) clearTimeout(state.debounceTimer)
+    state.watcher.close()
+    consumers.delete(id)
   }
-
-  state.watcher.close()
-  clientSessionWatches.delete(clientId)
+  if (consumers.size === 0) clientSessionWatches.delete(clientId)
 }
 
 // Recursive directory scanner for session files.
@@ -524,7 +525,11 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Get files in session directory (recursive tree structure)
-  server.handle(RPC_CHANNELS.sessions.GET_FILES, async (_ctx, sessionId: string) => {
+  server.handle(RPC_CHANNELS.sessions.GET_FILES, async (_ctx, sessionId: string, view?: 'conversation') => {
+    if (view !== undefined && view !== 'conversation') throw new Error('Invalid session files view')
+    if (view === 'conversation') {
+      return sessionManager.withSessionPathOperation(sessionId, getConversationFiles)
+    }
     try {
       return await sessionManager.withSessionPathOperation(
         sessionId,
@@ -537,16 +542,16 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Start watching a session directory for file changes (per client)
-  server.handle(RPC_CHANNELS.sessions.WATCH_FILES, async (ctx, sessionId: string) => {
+  server.handle(RPC_CHANNELS.sessions.WATCH_FILES, async (ctx, sessionId: string, consumerId = 'legacy') => {
+    if (typeof consumerId !== 'string' || !consumerId || consumerId.length > 128) throw new Error('Invalid file watch consumer')
     const clientId = ctx.clientId
-    cleanupSessionFileWatchForClient(clientId)
+    if (clientSessionWatches.get(clientId)?.get(consumerId)?.sessionId === sessionId) return
+    cleanupSessionFileWatchForClient(clientId, consumerId)
 
     const sessionPath = sessionManager.getSessionPath(sessionId)
     if (!sessionPath) return
 
     try {
-      const { watch } = await import('fs')
-
       const state: ClientSessionWatchState = {
         watcher: null as unknown as import('fs').FSWatcher,
         sessionId,
@@ -554,8 +559,8 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
       }
 
       state.watcher = watch(sessionPath, { recursive: true }, (_eventType, filename) => {
-        // Ignore internal files and hidden files
-        if (filename && (filename.includes('session.jsonl') || filename.startsWith('.'))) {
+        // Hidden files stay out; transcript changes refresh persisted attachment membership.
+        if (filename && filename.startsWith('.')) {
           return
         }
 
@@ -569,15 +574,18 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
         }, SESSION_FILE_WATCH_DEBOUNCE_MS)
       })
 
-      clientSessionWatches.set(clientId, state)
+      const consumers = clientSessionWatches.get(clientId) ?? new Map<string, ClientSessionWatchState>()
+      consumers.set(consumerId, state)
+      clientSessionWatches.set(clientId, consumers)
     } catch (error) {
       log.error('Failed to start session file watcher:', error)
+      if (consumerId !== 'legacy') throw error
     }
   })
 
   // Stop watching session files for the calling client
-  server.handle(RPC_CHANNELS.sessions.UNWATCH_FILES, async (ctx) => {
-    cleanupSessionFileWatchForClient(ctx.clientId)
+  server.handle(RPC_CHANNELS.sessions.UNWATCH_FILES, async (ctx, consumerId = 'legacy') => {
+    cleanupSessionFileWatchForClient(ctx.clientId, consumerId)
   })
 
   // Get session notes (reads notes.md from session directory)

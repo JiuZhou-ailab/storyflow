@@ -449,6 +449,19 @@ export interface SessionFile {
   children?: SessionFile[]
 }
 
+/** User-facing files owned by one conversation, not its runtime storage tree. */
+export interface ConversationFile extends SessionFile {
+  modifiedAt?: number
+  children?: ConversationFile[]
+  readOnly?: boolean
+  unavailable?: boolean
+}
+
+export interface ConversationFiles {
+  groups: Array<{ kind: 'work' | 'downloads' | 'attachments'; files: ConversationFile[] }>
+  truncated: boolean
+}
+
 export interface FileSearchResult {
   name: string
   path: string

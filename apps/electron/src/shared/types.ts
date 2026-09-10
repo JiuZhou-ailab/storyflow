@@ -6,7 +6,7 @@
 // Protocol re-exports (channels, DTOs, events, wire types)
 // =============================================================================
 export * from '@craft-agent/shared/protocol'
-import type { SessionRewindResult, UserQuestionResponse } from '@craft-agent/shared/protocol'
+import type { ConversationFiles, SessionRewindResult, UserQuestionResponse } from '@craft-agent/shared/protocol'
 
 // =============================================================================
 // Package re-exports (convenience for renderer imports)
@@ -611,10 +611,11 @@ export interface ElectronAPI {
 
   // Session Info Panel
   getSessionFiles(sessionId: string): Promise<SessionFile[]>
+  getSessionFiles(sessionId: string, view: 'conversation'): Promise<ConversationFiles>
   getSessionNotes(sessionId: string): Promise<string>
   setSessionNotes(sessionId: string, content: string): Promise<void>
-  watchSessionFiles(sessionId: string): Promise<void>
-  unwatchSessionFiles(): Promise<void>
+  watchSessionFiles(sessionId: string, consumerId?: string): Promise<void>
+  unwatchSessionFiles(consumerId?: string): Promise<void>
   onSessionFilesChanged(callback: (sessionId: string) => void): () => void
 
   // Sources

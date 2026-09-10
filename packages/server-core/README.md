@@ -9,6 +9,7 @@ Reusable WS/headless server infrastructure extracted from `apps/electron`.
 - Generic handler dependency contracts
 - Reusable headless bootstrap orchestration
 - Session lifecycle orchestration and its runtime state/persistence projections
+- Session file RPCs with a bounded conversation-content projection and independent per-client file-watch consumers
 
 ## Out of scope
 

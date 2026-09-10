@@ -8,6 +8,7 @@ import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-c
 import type { HandlerDeps } from '../handler-deps'
 
 const searchCalls: Array<{ query: string; sessionsDir: string }> = []
+const workspaceExports = await import('@craft-agent/shared/workspaces')
 
 mock.module('@craft-agent/shared/config', () => ({
   getWorkspaceByNameOrId: (idOrName: string) => idOrName === 'Workspace'
@@ -16,6 +17,7 @@ mock.module('@craft-agent/shared/config', () => ({
 }))
 
 mock.module('@craft-agent/shared/workspaces', () => ({
+  ...workspaceExports,
   getWorkspaceSessionsPath: (rootPath: string) => `${rootPath}/.craft-agent/sessions`,
 }))
 

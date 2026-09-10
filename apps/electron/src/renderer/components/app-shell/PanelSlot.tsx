@@ -100,7 +100,8 @@ export function PanelSlot({
     rightSidebarButton: rightSidebarButton ?? closeButton,
     leadingAction: backButton,
     isFocusedPanel,
-  }), [backButton, closeButton, isFocusedPanel, rightSidebarButton])
+    isCompactMode: isCompact,
+  }), [backButton, closeButton, isFocusedPanel, isCompact, rightSidebarButton])
 
   const handlePointerDown = useCallback(() => {
     if (!isFocusedPanel) {

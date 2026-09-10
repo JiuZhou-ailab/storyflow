@@ -1,5 +1,5 @@
 // input: Workspace/session state, navigation state, collapsible rail chrome, file-open intent, and shell callbacks
-// output: Desktop app shell with window-pinned title-bar actions, project navigation, and writing panels
+// output: Desktop shell with project writing panels and session-owned Free Conversation file docks
 // pos: Top-level renderer layout coordinator for workspace navigation
 
 import type { DocumentSearchTarget } from '@craft-agent/ui'
@@ -72,6 +72,7 @@ import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
 import { NovelDocumentTabStrip } from "@/components/writing/NovelDocumentTabStrip"
 import { FileViewer } from "@/components/files/FileViewer"
+import { useConversationWorkspace } from "../right-sidebar/ConversationFilesPanel"
 import { NovelVersionHistoryDialog } from "@/components/writing/NovelVersionHistoryDialog"
 import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
 import type {
@@ -4098,9 +4099,17 @@ function AppShellContent({
       t,
     ]
   )
+  const conversationWorkspace = useConversationWorkspace({
+    sessionId: effectiveSessionId ?? undefined,
+    active: activeWorkspaceId === FREE_CONVERSATION_WORKSPACE_ID && isSessionsNavigation(navState),
+    compact: isAutoCompact,
+    availableWidth: shellWidth - activityRailOffset - visibleSessionListWidth,
+    onOpenFile: handleSelectNovelFileByPath,
+  })
   const appShellContextValueWithReview = React.useMemo<AppShellContextType>(() => ({
     ...appShellContextValue,
-    onOpenFile: handleSelectNovelFileByPath,
+    onOpenFile: conversationWorkspace.openFile,
+    conversationFileRequest: conversationWorkspace.drawerRequest,
     resolveFileChangeReviewStatus,
     onAcceptFileChange: handleAcceptConversationFileChange,
     onRejectFileChange: handleRejectConversationFileChange,
@@ -4108,7 +4117,8 @@ function AppShellContent({
     onRevertFileChanges: handleRevertConversationFileChanges,
   }), [
     appShellContextValue,
-    handleSelectNovelFileByPath,
+    conversationWorkspace.openFile,
+    conversationWorkspace.drawerRequest,
     canPresentConversationDiffInWorkspace,
     handleAcceptConversationFileChange,
     handleOpenConversationFileChanges,
@@ -5452,9 +5462,10 @@ function AppShellContent({
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
           hidePanelCloseButton={showPrimarySidebar}
-          rightSidebarButton={!rightWorkspaceVisible ? rightWorkspaceToggleButton : undefined}
+          rightSidebarButton={conversationWorkspace.button ?? (!rightWorkspaceVisible ? rightWorkspaceToggleButton : undefined)}
           contentPanelMinWidth={showWritingDocumentColumn ? WRITING_ASSISTANT_MIN_WIDTH : PANEL_MIN_WIDTH}
         />
+        {conversationWorkspace.panel}
         <AnimatePresence initial={false}>
           {/* Tabs and the directory toggle belong to one stable workspace header.
               Folding the directory only reallocates the body below that header. */}

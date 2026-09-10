@@ -134,6 +134,7 @@ export interface AppShellContextType {
 
   // File/URL handlers - these can open in tabs or external apps
   onOpenFile: (path: string) => void
+  conversationFileRequest?: { sessionId: string; path: string }
   onOpenUrl: (url: string) => void
   /** Resolve and update review state for file changes shown inside the active conversation. */
   resolveFileChangeReviewStatus?: (sessionId: string, change: FileChange) => FileChangeReviewStatus | undefined
@@ -212,6 +213,7 @@ export interface AppShellContextType {
 }
 
 interface SessionInteractionActionsContextType {
+  conversationFileRequest?: AppShellContextType['conversationFileRequest']
   onOpenFile: AppShellContextType['onOpenFile']
   onCreateSession: AppShellContextType['onCreateSession']
   onSendMessage: AppShellContextType['onSendMessage']
@@ -331,6 +333,7 @@ export function AppShellProvider({
   value: AppShellContextType
 }) {
   const sessionInteractionActions = React.useMemo<SessionInteractionActionsContextType>(() => ({
+    conversationFileRequest: value.conversationFileRequest,
     onOpenFile: value.onOpenFile,
     onCreateSession: value.onCreateSession,
     onSendMessage: value.onSendMessage,
@@ -343,6 +346,7 @@ export function AppShellProvider({
     onOpenFileChanges: value.onOpenFileChanges,
     onRevertFileChanges: value.onRevertFileChanges,
   }), [
+    value.conversationFileRequest,
     value.onOpenFile,
     value.onCreateSession,
     value.onSendMessage,
