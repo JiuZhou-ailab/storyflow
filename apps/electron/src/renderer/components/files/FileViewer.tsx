@@ -1,5 +1,5 @@
 // input: Selected file path, optional Search Hit and explicit system-open capability
-// output: Bounded read-only preview for project tabs and conversation files
+// output: Read-only project-editor rendering for documents and bounded previews for other files
 // pos: Shared file presentation, independent of project editing and version management
 
 import { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'react'
@@ -10,6 +10,12 @@ import { Spinner, locateSourceSearch, type DocumentSearchTarget } from '@craft-a
 import { classifyFile, isVideoFile } from '@craft-agent/ui/file-classification'
 import { useTheme } from '@/hooks/useTheme'
 import type { FilePreviewState } from '@/hooks/useLinkInterceptor'
+import { isNovelDocumentFilePath } from '@/lib/writing-workspace'
+
+const NovelDocumentEditorPanel = lazy(async () => {
+  const module = await import('../writing/NovelDocumentEditorPanel')
+  return { default: module.NovelDocumentEditorPanel }
+})
 
 const FilePreviewRenderer = lazy(async () => {
   const module = await import('@/components/file-preview/FilePreviewRenderer')
@@ -108,6 +114,36 @@ export function FileViewer({ path, searchTarget, onOpenExternal, onClose, extern
     ? classification.type
     : 'external'
 
+  const openExternalButton = onOpenExternal ? (
+    <button
+      type="button"
+      onClick={() => onOpenExternal(path)}
+      className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+    >
+      <ExternalLink className="h-3.5 w-3.5" />
+      {t('common.open')}
+    </button>
+  ) : null
+
+  if (isNovelDocumentFilePath(path)) {
+    return (
+      <div className="h-full min-h-0" data-file-viewer-kind={previewKind}>
+        <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner className="text-lg" /></div>}>
+          <NovelDocumentEditorPanel
+            file={{ path, relativePath: fileName }}
+            content={loadedFor === readKey ? content : ''}
+            searchTarget={searchTarget}
+            loading={isLoading || (!error && loadedFor !== readKey)}
+            error={error}
+            editable={false}
+            saving={false}
+            toolbarAccessory={openExternalButton}
+          />
+        </Suspense>
+      </div>
+    )
+  }
+
   const embeddedPreviewState: FilePreviewState | null = previewKind === 'pdf'
     ? { type: 'pdf', filePath: path }
     : previewKind === 'json' && !isLoading && !searchTarget
@@ -141,16 +177,7 @@ export function FileViewer({ path, searchTarget, onOpenExternal, onClose, extern
         <p className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={path}>
           {fileName}
         </p>
-        {onOpenExternal ? (
-          <button
-            type="button"
-            onClick={() => onOpenExternal(path)}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            {t('common.open')}
-          </button>
-        ) : null}
+        {openExternalButton}
       </div>
 
       {searchLocation?.status === 'missing' || searchLocation?.status === 'relocated' ? (

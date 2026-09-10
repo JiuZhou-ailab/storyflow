@@ -1,6 +1,6 @@
 // input: Selected document content, read readiness, review changes, and save/open callbacks
-// output: Middle-column Markdown document editor or inline review surface
-// pos: Replaces the session-list navigator column for novel writing workspaces
+// output: Markdown document editor, read-only document rendering, or inline review surface
+// pos: Shared document surface for project workspaces and conversation file previews
 
 import * as React from 'react'
 import { AlertCircle, Loader2 } from 'lucide-react'

@@ -34,12 +34,16 @@ try {
   const session = sessions[0]!
   await evalOn(live, `window.electronAPI.sessionCommand(${JSON.stringify(session.id)}, {type:'rename',name:'文件验收A'})`)
   await waitFor(live, `document.body.textContent.includes('文件验收A')`)
-  const file = join(session.workingDirectory, '验收报告.txt')
-  writeFileSync(file, '第一版报告')
-  const fileButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] [role="treeitem"]')).find(e=>e.textContent==='验收报告.txt')`
+  const file = join(session.workingDirectory, '验收报告.md')
+  writeFileSync(file, '# 第一版报告\n\n**重要说明**\n\n- 第一项\n- 第二项\n')
+  const fileButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] [role="treeitem"]')).find(e=>e.textContent==='验收报告.md')`
   await waitFor(live, fileButton, 5000, 'A new work file appears without reopening')
   await evalOn(live, `${fileButton}.click()`)
   await waitFor(live, `document.querySelector('[data-testid="conversation-preview"]')?.textContent.includes('第一版报告')`)
+  assert.equal(await evalOn(live, `document.querySelector('[data-testid="conversation-preview"] .ProseMirror h1')?.textContent`), '第一版报告', 'Markdown must use the project document editor, not a source-text preview')
+  assert.equal(await evalOn(live, `document.querySelector('[data-testid="conversation-preview"] .ProseMirror strong')?.textContent`), '重要说明')
+  assert.equal(await evalOn(live, `document.querySelectorAll('[data-testid="conversation-preview"] .ProseMirror li').length`), 2)
+  assert.equal(await evalOn(live, `document.querySelector('[data-testid="conversation-preview"] .ProseMirror')?.getAttribute('contenteditable')`), 'false')
   const directoryToggle = `document.querySelector('[data-testid="conversation-files"] button[aria-label="收起目录"]')`
   assert.equal(await evalOn(live, `!!document.querySelector('[data-testid="conversation-files"] [data-panel-role="writing-file-tabs"]')`), true)
   assert.equal(await evalOn(live, `document.querySelector('[data-testid="conversation-files"] [data-panel-role="directory"]').getBoundingClientRect().left >= document.querySelector('[data-testid="conversation-preview"]').getBoundingClientRect().right - 1`), true, 'The existing workspace places its directory to the right of the document')
@@ -134,7 +138,7 @@ try {
   // Load real persisted chat links through a fresh window, with no agent/provider calls.
   await live.close()
   app = undefined
-  writeFileSync(file, '链接目标报告')
+  writeFileSync(file, '## 链接目标报告\n\n**重点结论**\n\n- 使用项目文档编辑器渲染\n- 保留对话文件归属\n')
   const sibling = join(session.workingDirectory, '旁边文件.json')
   writeFileSync(sibling, '{"name":"旁边内容"}')
   const denied = join(session.workingDirectory, '读取重试.txt')
@@ -177,6 +181,7 @@ try {
   const reportVisible = `document.querySelector('[data-testid="conversation-preview"]')?.textContent.includes('链接目标报告')`
   await waitFor(live, reportVisible)
   const siblingButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] [role="treeitem"]')).find(e=>e.textContent==='旁边文件.json')`
+  await waitFor(live, siblingButton)
   await evalOn(live, `${siblingButton}.click()`)
   await waitFor(live, `document.querySelector('[data-testid="conversation-preview"]')?.textContent.includes('旁边内容')`)
   assert.equal(await evalOn(live, `!!document.querySelector('[data-testid="conversation-files"] button[aria-label="打开"]')`), true, 'JSON has the same system-open action')
