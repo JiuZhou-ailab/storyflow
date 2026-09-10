@@ -1,6 +1,6 @@
-// input: Open writing files, active path, start-page action, and trailing header controls
+// input: Open file descriptors, active path, start-page action, and trailing header controls
 // output: Shared closable file-tab header with a workspace start-page button
-// pos: Stable chrome above both the manuscript editor and optional directory pane
+// pos: Workspace chrome shared by project documents and conversation previews
 
 import * as React from 'react'
 import { FileText, Plus, X } from 'lucide-react'

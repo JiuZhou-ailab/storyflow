@@ -29,7 +29,7 @@ import {
   StyledContextMenuContent,
   StyledContextMenuItem,
 } from '@/components/ui/styled-context-menu'
-import type { ConversationFile, SessionFile } from '../../../shared/types'
+import type { SessionFile } from '../../../shared/types'
 import { cn } from '@/lib/utils'
 import * as storage from '@/lib/local-storage'
 import { getFileManagerName } from '@/lib/platform'
@@ -218,7 +218,7 @@ const FileThumbnail = memo(function FileThumbnail({ file }: { file: SessionFile 
 })
 
 interface FileTreeItemProps {
-  file: ConversationFile
+  file: SessionFile
   depth: number
   expandedPaths: Set<string>
   onToggleExpand: (path: string) => void
@@ -236,7 +236,7 @@ interface FileTreeItemProps {
  * - Framer-motion staggered animation for expand/collapse
  * - Chevron shown on hover, icon hidden
  */
-export function FileTreeItem({
+function FileTreeItem({
   file,
   depth,
   expandedPaths,
@@ -274,7 +274,6 @@ export function FileTreeItem({
   // The button element for the file/folder item
   const buttonElement = (
     <button
-      aria-expanded={hasChildren ? isExpanded : undefined}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       className={cn(
@@ -317,7 +316,7 @@ export function FileTreeItem({
       </span>
 
       {/* File/folder name - min-w-0 required for truncate to work in flex container */}
-      <span className="flex-1 min-w-0 truncate">{file.name}{file.unavailable ? ` (${t('conversationFiles.unavailable')})` : ''}</span>
+      <span className="flex-1 min-w-0 truncate">{file.name}</span>
     </button>
   )
 

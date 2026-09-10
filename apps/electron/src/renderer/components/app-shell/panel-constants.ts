@@ -11,6 +11,11 @@ export const PANEL_EDGE_INSET = 0
 /** Minimum width for any content panel */
 export const PANEL_MIN_WIDTH = 440
 
+/** The outermost workspace directory stays narrower than the document surface. */
+export const WORKSPACE_DIRECTORY_MIN_WIDTH = 220
+export const WORKSPACE_DIRECTORY_MAX_WIDTH = 460
+export const WORKSPACE_DIRECTORY_DEFAULT_WIDTH = WORKSPACE_DIRECTORY_MIN_WIDTH
+
 /**
  * Shared resize sash geometry.
  *

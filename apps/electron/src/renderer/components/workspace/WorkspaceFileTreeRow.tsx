@@ -1,4 +1,4 @@
-// input: React Arborist node state and workspace file-tree interaction callbacks
+// input: React Arborist node state and explicit file-tree action capabilities
 // output: Finder-style virtual row with inline rename, review marker, and context menu
 // pos: Presentation layer for one visible workspace file-tree entry
 
@@ -44,7 +44,8 @@ export interface WorkspaceFileTreeLabels {
 export interface WorkspaceFileTreeRowContextValue {
   labels: WorkspaceFileTreeLabels
   getMenuActions?: (entry: WorkspaceFileTreeNode) => readonly WorkspaceFileTreeMenuAction[]
-  onDelete: (entry: WorkspaceFileTreeNode) => void
+  onDelete?: (entry: WorkspaceFileTreeNode) => void
+  canRename?: boolean
   hasReviewDot?: (path: string) => boolean
   onDismissReviewDot?: (path: string) => void
 }
@@ -105,7 +106,9 @@ function EntryContextMenu({
 }) {
   const entry = node.data
   const extraActions = context.getMenuActions?.(entry) ?? []
-  const canMutate = entry.type !== 'root'
+  const canRename = entry.type !== 'root' && context.canRename
+  const canDelete = entry.type !== 'root' && !!context.onDelete
+  const canMutate = canRename || canDelete
   if (extraActions.length === 0 && !canMutate) return null
 
   return (
@@ -125,17 +128,17 @@ function EntryContextMenu({
       {extraActions.length > 0 && canMutate ? <StyledContextMenuSeparator /> : null}
       {canMutate ? (
         <>
-          <StyledContextMenuItem onSelect={() => void node.edit()}>
+          {canRename && <StyledContextMenuItem onSelect={() => void node.edit()}>
             <Pencil className="h-3.5 w-3.5" />
             {context.labels.rename}
-          </StyledContextMenuItem>
-          <StyledContextMenuItem
+          </StyledContextMenuItem>}
+          {canDelete && <StyledContextMenuItem
             variant="destructive"
-            onSelect={() => context.onDelete(entry)}
+            onSelect={() => context.onDelete?.(entry)}
           >
             <Trash2 className="h-3.5 w-3.5" />
             {context.labels.delete}
-          </StyledContextMenuItem>
+          </StyledContextMenuItem>}
         </>
       ) : null}
     </StyledContextMenuContent>

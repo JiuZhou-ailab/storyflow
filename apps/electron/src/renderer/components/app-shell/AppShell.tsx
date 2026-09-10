@@ -68,6 +68,8 @@ import {
 import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { PanelStackContainer } from "./PanelStackContainer"
 import { ResizableColumn } from "./ResizableColumn"
+import { WorkspaceDockLayout } from '../workspace/WorkspaceDockLayout'
+import { WORKSPACE_DIRECTORY_MIN_WIDTH, WORKSPACE_DIRECTORY_MAX_WIDTH, WORKSPACE_DIRECTORY_DEFAULT_WIDTH } from './panel-constants'
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
 import { NovelDocumentTabStrip } from "@/components/writing/NovelDocumentTabStrip"
@@ -303,11 +305,6 @@ const SESSION_LIST_MAX_WIDTH = 480
 const NOVEL_WORKSPACE_NAVIGATOR_MIN_WIDTH = 420
 const NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH = DEFAULT_WORKSPACE_WIDTH
 const WRITING_ASSISTANT_MIN_WIDTH = 320
-// The directory is the outermost content navigator, so it stays narrow like a
-// file tree rather than matching the manuscript's reading width.
-const WORKSPACE_DIRECTORY_MIN_WIDTH = 220
-const WORKSPACE_DIRECTORY_MAX_WIDTH = 460
-const WORKSPACE_DIRECTORY_DEFAULT_WIDTH = WORKSPACE_DIRECTORY_MIN_WIDTH
 /** Fraction of the window the manuscript column takes before the user resizes it. */
 const DEFAULT_DOCUMENT_DOCK_WIDTH_RATIO = 0.34
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
@@ -5480,29 +5477,16 @@ function AppShellContent({
               panelRef={navigatorPanelRef}
               disableAnimation={isResizing === 'document-dock'}
             >
-              <div className="flex h-full min-w-0 flex-col">
-                {activeWritingWorkspaceHeader}
-                <div className="flex min-h-0 flex-1">
-                  <div className="min-w-0 flex-1">
-                    {activeWritingDocumentSurface}
-                  </div>
-                  <AnimatePresence initial={false}>
-                    {showWorkspaceDirectoryColumn ? (
-                      <ResizableColumn
-                        key="workspace-directory"
-                        mode="directory-dock"
-                        role="directory"
-                        sashLabel={t('writing.directory.title', '目录')}
-                        onResizeStart={beginResize}
-                        width={workspaceDirectoryWidth}
-                        disableAnimation={isResizing === 'directory-dock'}
-                      >
-                        {activityWorkspaceDirectory}
-                      </ResizableColumn>
-                    ) : null}
-                  </AnimatePresence>
-                </div>
-              </div>
+              <WorkspaceDockLayout
+                header={activeWritingWorkspaceHeader}
+                directory={showWorkspaceDirectoryColumn ? activityWorkspaceDirectory : undefined}
+                directoryWidth={workspaceDirectoryWidth}
+                directoryLabel={t('writing.directory.title', '目录')}
+                onDirectoryResize={beginResize}
+                resizingDirectory={isResizing === 'directory-dock'}
+              >
+                {activeWritingDocumentSurface}
+              </WorkspaceDockLayout>
             </ResizableColumn>
           ) : null}
         </AnimatePresence>

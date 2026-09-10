@@ -54,7 +54,7 @@ describe('WorkspaceEmptyState', () => {
     expect(appShellSource).toContain("selectedNovelFile ? selectedNovelFileOpenTarget === 'editor' ? (")
     expect(appShellSource).toContain('<WorkspaceEmptyState')
     expect(appShellSource).toContain('onCreateFile={() => handleWorkspaceOpeningCommand')
-    expect(appShellSource).toContain('<div className="min-w-0 flex-1">')
+    expect(appShellSource).toContain('<WorkspaceDockLayout')
     expect(editorSource).not.toContain('WorkspaceEmptyState')
   })
 })

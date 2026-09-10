@@ -36,10 +36,19 @@ try {
   await waitFor(live, `document.body.textContent.includes('文件验收A')`)
   const file = join(session.workingDirectory, '验收报告.txt')
   writeFileSync(file, '第一版报告')
-  const fileButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] button')).find(e=>e.textContent==='验收报告.txt')`
+  const fileButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] [role="treeitem"]')).find(e=>e.textContent==='验收报告.txt')`
   await waitFor(live, fileButton, 5000, 'A new work file appears without reopening')
   await evalOn(live, `${fileButton}.click()`)
   await waitFor(live, `document.querySelector('[data-testid="conversation-preview"]')?.textContent.includes('第一版报告')`)
+  const directoryToggle = `document.querySelector('[data-testid="conversation-files"] button[aria-label="收起目录"]')`
+  assert.equal(await evalOn(live, `!!document.querySelector('[data-testid="conversation-files"] [data-panel-role="writing-file-tabs"]')`), true)
+  assert.equal(await evalOn(live, `document.querySelector('[data-testid="conversation-files"] [data-panel-role="directory"]').getBoundingClientRect().left >= document.querySelector('[data-testid="conversation-preview"]').getBoundingClientRect().right - 1`), true, 'The existing workspace places its directory to the right of the document')
+  const previewWidth = await evalOn<number>(live, `document.querySelector('[data-testid="conversation-preview"]').getBoundingClientRect().width`)
+  await evalOn(live, `${directoryToggle}.click()`)
+  await waitFor(live, `!document.querySelector('[data-testid="conversation-files"] [data-panel-role="directory"]')`)
+  assert.equal(await evalOn(live, `document.querySelector('[data-testid="conversation-preview"]').getBoundingClientRect().width > ${previewWidth}`), true)
+  await evalOn(live, `document.querySelector('[data-testid="conversation-files"] button[aria-label="展开目录"]').click()`)
+  await waitFor(live, fileButton)
   writeFileSync(file, '第二版报告')
   await waitFor(live, `document.querySelector('[data-testid="conversation-preview"]')?.textContent.includes('第二版报告')`)
   rmSync(file)
@@ -60,12 +69,19 @@ try {
     { id: 'without-material', type: 'user', content: '没有附件', timestamp: Date.now(), attachments: null },
     { id: 'sent-material', type: 'user', content: '查看材料', timestamp: Date.now(), attachments: [null, stored, stored] },
   ].map(message => JSON.stringify(message)).join('\n') + '\n')
-  const originalButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] button')).find(e=>e.textContent==='原始材料.txt')`
+  const originalButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] [role="treeitem"]')).find(e=>e.textContent==='原始材料.txt')`
   await waitFor(live, originalButton, 5000, 'Persisting a user message exposes the already-created original')
-  assert.equal(await evalOn(live, `Array.from(document.querySelectorAll('[data-testid="conversation-files"] button')).filter(e=>e.textContent==='原始材料.txt').length`), 1)
+  assert.equal(await evalOn(live, `Array.from(document.querySelectorAll('[data-testid="conversation-files"] [role="treeitem"]')).filter(e=>e.textContent==='原始材料.txt').length`), 1)
   await evalOn(live, `${originalButton}.click()`)
   await waitFor(live, `document.querySelector('[data-testid="conversation-preview"]')?.textContent.includes('不可变的原始材料')`)
-  assert.equal(await evalOn(live, `!!document.querySelector('[data-testid="conversation-preview"] button[aria-label="打开"]')`), false)
+  assert.equal(await evalOn(live, `!!document.querySelector('[data-testid="conversation-files"] button[aria-label="打开"]')`), false)
+  const originalPoint = await evalOn<{x: number; y: number}>(live, `(() => { const r=${originalButton}.getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2} })()`)
+  await live.cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...originalPoint, button: 'right', clickCount: 1 }, live.sid)
+  await live.cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...originalPoint, button: 'right', clickCount: 1 }, live.sid)
+  await waitFor(live, `document.querySelector('[role="menuitem"]')`)
+  assert.deepEqual(await evalOn(live, `Array.from(document.querySelectorAll('[role="menuitem"]')).map(e=>e.textContent.trim())`), ['打开文件位置'], 'The reused tree never offers mutations for conversation files')
+  await live.cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' }, live.sid)
+  await live.cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' }, live.sid)
   assert.equal(await evalOn(live, `/converted|internal/.test(document.querySelector('[data-testid="conversation-files"]').textContent)`), false)
 
   const backup = readFileSync(transcript, 'utf8')
@@ -88,7 +104,7 @@ try {
     await waitFor(live, `document.querySelector('[data-testid="conversation-files"]')?.dataset.sessionId === ${JSON.stringify(id)}`)
   }
   await navigate(next.id)
-  const bButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] button')).find(e=>e.textContent==='会话B.txt')`
+  const bButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] [role="treeitem"]')).find(e=>e.textContent==='会话B.txt')`
   await waitFor(live, bButton)
   assert.equal(await evalOn(live, `document.querySelector('[data-testid="conversation-files"]').textContent.includes('原始材料')`), false)
   await evalOn(live, `${bButton}.click()`)
@@ -160,11 +176,11 @@ try {
   await evalOn(live, `${link}.click()`)
   const reportVisible = `document.querySelector('[data-testid="conversation-preview"]')?.textContent.includes('链接目标报告')`
   await waitFor(live, reportVisible)
-  const siblingButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] button')).find(e=>e.textContent==='旁边文件.json')`
+  const siblingButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] [role="treeitem"]')).find(e=>e.textContent==='旁边文件.json')`
   await evalOn(live, `${siblingButton}.click()`)
   await waitFor(live, `document.querySelector('[data-testid="conversation-preview"]')?.textContent.includes('旁边内容')`)
-  assert.equal(await evalOn(live, `!!document.querySelector('[data-testid="conversation-preview"] button[aria-label="打开"]')`), true, 'JSON has the same system-open action')
-  await evalOn(live, `document.querySelector('[data-testid="conversation-preview"] button[aria-label="打开"]').click(); document.querySelector('[data-testid="conversation-preview"] button[aria-label="打开文件位置"]').click()`)
+  assert.equal(await evalOn(live, `!!document.querySelector('[data-testid="conversation-files"] button[aria-label="打开"]')`), true, 'JSON has the same system-open action')
+  await evalOn(live, `document.querySelector('[data-testid="conversation-files"] button[aria-label="打开"]').click(); document.querySelector('[data-testid="conversation-files"] button[aria-label="打开文件位置"]').click()`)
   const actions = await live.cdp.send('Runtime.evaluate', { contextId: preload.id, expression: 'globalThis.__fileActions', returnByValue: true }, live.sid)
   assert.deepEqual(actions.result.value, [{channel:'shell:openFile',args:[sibling]}, {channel:'shell:showInFolder',args:[sibling]}])
   await evalOn(live, `${link}.click()`)
@@ -177,10 +193,10 @@ try {
   assert.equal(await evalOn(live, `window.__previewBeforeRefresh === document.querySelector('[data-file-viewer-kind]')`), true, 'Sibling changes preserve the active preview instance')
 
   chmodSync(denied, 0)
-  await evalOn(live, `Array.from(document.querySelectorAll('[data-testid="conversation-files"] button')).find(e=>e.textContent==='读取重试.txt').click()`)
+  await evalOn(live, `Array.from(document.querySelectorAll('[data-testid="conversation-files"] [role="treeitem"]')).find(e=>e.textContent==='读取重试.txt').click()`)
   await waitFor(live, `document.querySelector('[data-testid="conversation-preview"]')?.textContent.includes('EACCES')`)
   chmodSync(denied, 0o600)
-  await evalOn(live, `document.querySelector('[data-testid="conversation-preview"] button[aria-label="重试"]').click()`)
+  await evalOn(live, `document.querySelector('[data-testid="conversation-files"] button[aria-label="重试"]').click()`)
   await waitFor(live, `document.querySelector('[data-testid="conversation-preview"]')?.textContent.includes('重试读取成功')`)
   console.log('PASS: repeated chat link, JSON system-open action, stable preview, filesystem read retry')
 

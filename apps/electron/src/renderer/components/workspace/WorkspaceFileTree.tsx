@@ -1,4 +1,4 @@
-// input: Controlled workspace catalog, selection/expansion state, file-open intent, and mutation callbacks
+// input: Controlled catalog, selection/expansion state, file-open intent, and optional mutation capabilities
 // output: Virtualized, keyboard-accessible tree with single-click replacement and double-click tab opening
 // pos: Workspace file navigation boundary and React Arborist state adapter
 
@@ -50,9 +50,9 @@ export interface WorkspaceFileTreeProps {
   labels: WorkspaceFileTreeLabels
   onExpandedChange: (id: string, expanded: boolean) => void
   onSelectFile: (file: NovelWorkspaceFile, mode: NovelDocumentOpenMode) => void
-  onMoveEntry: (entry: WorkspaceFileTreeNode, destinationDirectory: WorkspaceFileTreeNode) => void | Promise<void>
-  onRenameEntry: (entry: WorkspaceFileTreeNode, newName: string) => void | Promise<void>
-  onDeleteEntry: (entry: WorkspaceFileTreeNode) => void
+  onMoveEntry?: (entry: WorkspaceFileTreeNode, destinationDirectory: WorkspaceFileTreeNode) => void | Promise<void>
+  onRenameEntry?: (entry: WorkspaceFileTreeNode, newName: string) => void | Promise<void>
+  onDeleteEntry?: (entry: WorkspaceFileTreeNode) => void
   getMenuActions?: (entry: WorkspaceFileTreeNode) => readonly WorkspaceFileTreeMenuAction[]
   hasReviewDot?: (path: string) => boolean
   onDismissReviewDot?: (path: string) => void
@@ -156,7 +156,7 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
       const destinationDirectory = parentNode?.data
       if (!entry || !destinationDirectory || destinationDirectory.type === 'file') return
       try {
-        await onMoveEntry(entry, destinationDirectory)
+        await onMoveEntry?.(entry, destinationDirectory)
       } catch (error) {
         onError?.(error)
       }
@@ -165,7 +165,7 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     const handleRename = React.useCallback<RenameHandler<WorkspaceFileTreeNode>>(async ({ node, name }) => {
       if (name === node.data.name) return
       try {
-        await onRenameEntry(node.data, name)
+        await onRenameEntry?.(node.data, name)
       } catch (error) {
         onError?.(error)
       }
@@ -272,9 +272,10 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
       labels,
       getMenuActions,
       onDelete: onDeleteEntry,
+      canRename: !!onRenameEntry,
       hasReviewDot,
       onDismissReviewDot,
-    }), [getMenuActions, hasReviewDot, labels, onDeleteEntry, onDismissReviewDot])
+    }), [getMenuActions, hasReviewDot, labels, onDeleteEntry, onRenameEntry, onDismissReviewDot])
 
     React.useImperativeHandle(forwardedRef, () => ({
       focusSelected() {
@@ -315,10 +316,11 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
             initialOpenState={initialOpenState}
             selection={selectionId}
             disableMultiSelection
-            disableDrag={entry => entry.type === 'root'}
-            disableEdit={entry => entry.type === 'root'}
+            disableDrag={entry => !onMoveEntry || entry.type === 'root'}
+            disableEdit={entry => !onRenameEntry || entry.type === 'root'}
             disableDrop={({ parentNode, dragNodes }) => (
-              !parentNode
+              !onMoveEntry
+              || !parentNode
               || parentNode.data.type === 'file'
               || dragNodes.every(node => node.parent?.id === parentNode.id)
             )}
