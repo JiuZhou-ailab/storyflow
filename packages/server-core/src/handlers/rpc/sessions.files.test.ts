@@ -97,6 +97,34 @@ describe('sessions file tree RPC', () => {
     await expect(query()).rejects.toThrow()
   })
 
+  it('accepts persisted null attachment sentinels without hiding files or accepting malformed metadata', async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'craft-conversation-null-attachments-'))
+    mkdirSync(join(tempRoot, 'work'))
+    mkdirSync(join(tempRoot, 'attachments'))
+    writeFileSync(join(tempRoot, 'work/report.txt'), 'report')
+    const original = join(tempRoot, 'attachments/source.txt')
+    writeFileSync(original, 'original')
+    const attachment = { name: 'source.txt', storedPath: original }
+    const { getFiles } = createHarness(tempRoot)
+    const query = () => getFiles({ clientId: 'client-1', workspaceId: null, webContentsId: null }, 'session-1', 'conversation')
+    const persist = (attachments: unknown) => writeFileSync(join(tempRoot, 'session.jsonl'), [
+      { id: 'session-1' },
+      { type: 'user', attachments },
+    ].map(record => JSON.stringify(record)).join('\n') + '\n')
+    for (const attachments of [undefined, null, [], [null], [null, attachment, null]]) {
+      persist(attachments)
+      const result = await query()
+      expect(result.groups[0].files[0].name).toBe('report.txt')
+      expect(result.groups.find((group: { kind: string }) => group.kind === 'attachments')?.files.map((file: { path: string }) => file.path) ?? [])
+        .toEqual(Array.isArray(attachments) && attachments.includes(attachment) ? [original] : [])
+    }
+    for (const malformed of [{}, 'invalid', false, 0, [false], [{ name: 'missing original' }]]) {
+      persist(malformed)
+      await expect(query()).rejects.toThrow()
+    }
+    expect(readFileSync(original, 'utf8')).toBe('original')
+  })
+
   it('keeps independent file consumers subscribed and reports persisted attachment changes', async () => {
     tempRoot = mkdtempSync(join(tmpdir(), 'craft-conversation-watch-'))
     const { handlers, events } = createHarness(tempRoot)

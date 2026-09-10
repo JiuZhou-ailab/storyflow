@@ -73,9 +73,11 @@ export async function getConversationFiles(sessionPath: string): Promise<Convers
         hasHeader = true
         continue
       }
-      if (record.type !== 'user' || record.attachments === undefined) continue
+      // Persisted messages can use null for absent attachments, including null array slots.
+      if (record.type !== 'user' || record.attachments == null) continue
       if (!Array.isArray(record.attachments)) throw new Error('Invalid session attachments')
       for (const attachment of record.attachments) {
+        if (attachment == null) continue
         if (!attachment || typeof attachment.name !== 'string'
           || (attachment.representations !== undefined && (!Array.isArray(attachment.representations)
             || attachment.representations.some((item: unknown) => !item || typeof item !== 'object')))) {

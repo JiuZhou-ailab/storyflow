@@ -56,7 +56,10 @@ try {
   assert.equal(await evalOn(live, `document.querySelector('[data-testid="conversation-files"]').textContent.includes('source.txt')`), false, 'Unsent attachments stay out')
   const transcript = join(sessionFolder, 'session.jsonl')
   const stored = { id: 'attachment-source', type: 'text', name: '原始材料.txt', storedPath: original, size: 27, mimeType: 'text/plain' }
-  appendFileSync(transcript, JSON.stringify({ id: 'sent-material', type: 'user', content: '查看材料', timestamp: Date.now(), attachments: [stored, stored] }) + '\n')
+  appendFileSync(transcript, [
+    { id: 'without-material', type: 'user', content: '没有附件', timestamp: Date.now(), attachments: null },
+    { id: 'sent-material', type: 'user', content: '查看材料', timestamp: Date.now(), attachments: [null, stored, stored] },
+  ].map(message => JSON.stringify(message)).join('\n') + '\n')
   const originalButton = `Array.from(document.querySelectorAll('[data-testid="conversation-files"] button')).find(e=>e.textContent==='原始材料.txt')`
   await waitFor(live, originalButton, 5000, 'Persisting a user message exposes the already-created original')
   assert.equal(await evalOn(live, `Array.from(document.querySelectorAll('[data-testid="conversation-files"] button')).filter(e=>e.textContent==='原始材料.txt').length`), 1)
@@ -121,7 +124,7 @@ try {
   const denied = join(session.workingDirectory, '读取重试.txt')
   writeFileSync(denied, '重试读取成功')
   const messages = backup.trim().split('\n').map(line => JSON.parse(line))
-  messages[0].messageCount = 2
+  messages[0].messageCount = 3
   messages[0].lastFinalMessageId = 'file-link-reply'
   messages.push({ id: 'file-link-reply', type: 'assistant', content: `[打开报告](${file})`, timestamp: Date.now(), isIntermediate: false })
   writeFileSync(transcript, messages.map(message => JSON.stringify(message)).join('\n') + '\n')
