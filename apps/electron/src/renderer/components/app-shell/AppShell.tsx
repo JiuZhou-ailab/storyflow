@@ -4700,7 +4700,7 @@ function AppShellContent({
               style={{ '--activity-rail-width': `${activityRailWidth}px` } as React.CSSProperties}
               exit={{ width: 0 }}
               transition={shouldReduceMotion || isActivityRailResizing ? { duration: 0 } : PANEL_SPRING}
-              className="h-full min-w-0 shrink-0 overflow-hidden border-r border-foreground/[0.03] data-[resizing=true]:w-(--activity-rail-width)!"
+              className="h-full min-w-0 shrink-0 overflow-hidden border-r border-border data-[resizing=true]:w-(--activity-rail-width)!"
             >
               <ActivityRail
                 activeItem={activeActivityRailItem}

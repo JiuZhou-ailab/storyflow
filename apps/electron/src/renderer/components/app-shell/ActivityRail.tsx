@@ -997,7 +997,7 @@ export function ActivityRail({
         onKeyDown={handleResizeKeyDown}
         className="group absolute inset-y-0 right-0 z-dropdown w-2 cursor-col-resize outline-none"
       >
-        <span className="absolute inset-y-0 right-0 w-px bg-transparent transition-colors group-hover:bg-foreground/[0.03] group-focus-visible:bg-foreground/[0.06]" />
+        <span className="absolute inset-y-0 right-0 w-px bg-transparent transition-colors group-hover:bg-border group-focus-visible:bg-foreground/[0.12]" />
       </div>
       {renameTarget ? (
         <RenameDialog
