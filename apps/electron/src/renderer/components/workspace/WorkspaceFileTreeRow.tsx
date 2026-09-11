@@ -162,9 +162,9 @@ export function WorkspaceFileTreeRow({
       data-tutorial={entry.type === 'root' ? 'writing-catalog' : undefined}
       className={cn(
         'group flex h-full min-w-0 items-center gap-1.5 rounded-[6px] px-2 text-[10px] outline-none',
-        'text-foreground/85 hover:bg-foreground/[0.045]',
-        entry.type === 'root' && 'font-medium',
-        (entry.type === 'root' || node.isSelected) && 'bg-foreground/[0.07]',
+        'text-foreground/90 hover:bg-foreground/[0.06]',
+        entry.type === 'root' && 'bg-foreground/[0.07] font-medium text-foreground',
+        node.isSelected && 'bg-foreground/[0.10] font-medium text-foreground',
         node.isFocused && entry.type !== 'root' && 'ring-1 ring-inset ring-ring/60',
         node.willReceiveDrop && 'bg-accent/10 ring-1 ring-inset ring-accent/40',
         node.isDragging && 'opacity-40',
@@ -176,7 +176,7 @@ export function WorkspaceFileTreeRow({
         tabIndex={-1}
         aria-label={node.isOpen ? 'Collapse folder' : 'Expand folder'}
         className={cn(
-          'flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground',
+          'flex h-4 w-4 shrink-0 items-center justify-center rounded text-foreground/65',
           node.isLeaf && 'invisible',
         )}
         onClick={(event) => {
@@ -203,7 +203,7 @@ export function WorkspaceFileTreeRow({
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 ring-2 ring-background" />
         </button>
       ) : null}
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-foreground/70">
         <EntryIcon entry={entry} />
       </span>
       {node.isEditing ? (
