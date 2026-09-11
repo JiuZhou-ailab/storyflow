@@ -16,6 +16,7 @@ import { SkillMenu, SkillRemovalDialog } from '@/components/app-shell/SkillMenu'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { routes, navigate } from '@/lib/navigate'
 import { PublishSkillDialog } from '@/components/app-shell/PublishSkillDialog'
+import { Button } from '@/components/ui/button'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
 import { skillsAtom } from '@/atoms/skills'
 import {
@@ -150,6 +151,12 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workspaceRootPat
             title={displayName}
             tagline={skill.metadata.description}
           />
+
+          <div className="px-4 pb-4">
+            <Button onClick={() => navigate(routes.action.newSession({ workspaceId, input: `[skill:${skill.slug}] ` }))}>
+              {t('skillsHub.use')}
+            </Button>
+          </div>
 
           {/* Metadata */}
           <Info_Section

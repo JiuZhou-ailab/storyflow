@@ -223,7 +223,7 @@ bun run apps/cli/src/index.ts run --workspace-dir . "Inspect this repository"
 ## 来源、技能和自动化
 
 - **Sources**：连接 MCP server、REST API、本地文件和服务集成等外部系统；Craft 全局默认保存在 `~/.craft-agent/sources/`（不再写入共享的 `~/.agents/`），工作区内同名配置可覆盖。
-- **Skills**：由 Pi 从用户级与项目级目录解析；内容创作 Skills 默认安装到当前项目的 `.pi/skills/`，通用工具可由用户显式选择用户级范围。第一方 Skills Market 负责浏览、AI 审核发布、不可变下载与校验安装，但不参与运行时执行。
+- **Skills**：由 Pi 从用户级与项目级目录解析；内容创作 Skills 默认安装到当前项目的 `.pi/skills/`，通用工具可由用户显式选择用户级范围。第一方 Skills Market 提供上传文件预览、AI 审核发布结果、安装链接与项目级校验安装；已安装条目保留在市场中，可直接创建带 Skill 的任务草稿。Market 不参与运行时执行。
 - **Automations**：可根据标签、计划任务、工具事件、权限变化和会话生命周期创建或更新会话。
 
 这些系统的跨宿主契约与校验位于 `packages/shared/src`（成员资格标准见其 README），运行时连接池等单宿主实现位于对应宿主包，可复用服务端 handler 位于 `packages/server-core/src/handlers/rpc`。

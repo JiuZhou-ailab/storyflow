@@ -123,6 +123,23 @@ describe('Skills Market client', () => {
       .rejects.toThrow('mismatched Skill detail')
   })
 
+  it('rejects publication receipts for another package or an invalid digest', async () => {
+    const bytes = Buffer.from('---\nname: qa-skill\ndescription: QA\n---\nInstructions')
+    for (const receipt of [
+      { slug: 'wrong-skill', version: '1.0.0', sha256: 'a'.repeat(64) },
+      { slug: 'qa-skill', version: '2.0.0', sha256: 'a'.repeat(64) },
+      { slug: 'qa-skill', version: '1.0.0', sha256: 'invalid' },
+    ]) {
+      await expect(publishSkillToMarket({
+        bundle: { version: 1, exportedAt: 1, resources: { skills: [{ slug: 'qa-skill', files: [
+          { relativePath: 'SKILL.md', contentBase64: bytes.toString('base64'), size: bytes.byteLength },
+        ] }] } },
+        publication: { version: '1.0.0', displayName: 'QA', summary: 'QA instructions', license: 'MIT', visibility: 'public' },
+      }, { author: { name: 'QA' }, token: 'test-token', fetchImpl: async () => Response.json({ status: 'published', ...receipt }) }))
+        .rejects.toThrow('invalid publication result')
+    }
+  })
+
   it('adds publisher metadata and sends the capability only to the fixed Market', async () => {
     const skillText = '---\nname: 剧情因果审查\ndescription: 审查故事因果\n---\n\n正文\n'
     const bytes = Buffer.from(skillText)

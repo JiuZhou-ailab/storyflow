@@ -1,5 +1,5 @@
 // input: Pi-native Skills/Sources, authenticated Skills Market details, and the active workspace
-// output: Discovery, dependency-safe installation guidance, installed Skill management, and publication actions
+// output: Persistent discovery, verified installation, Skill-prefilled tasks, and publication actions
 // pos: Default Skills route; local Pi catalog remains the authority for installed state
 
 import * as React from 'react'
@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { isDefaultGlobalAgentSkillSlug } from '@craft-agent/shared/agent-defaults/skills'
-import type { MarketSkillDetail, MarketSkillSummary } from '@craft-agent/shared/skills/marketplace'
+import { buildSkillInstallDeepLink, type MarketSkillDetail, type MarketSkillSummary } from '@craft-agent/shared/skills/marketplace'
 import type { SkillInstallReceipt } from '@craft-agent/shared/resources'
 import { skillsAtom } from '@/atoms/skills'
 import { sourcesAtom } from '@/atoms/sources'
@@ -49,6 +49,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Info_Markdown } from '@/components/info'
 import { navigate, routes } from '@/lib/navigate'
+import { installMarketSkill } from '@/lib/skill-market-install'
 import { cn } from '@/lib/utils'
 import type { LoadedSkill, LoadedSource } from '../../shared/types'
 import {
@@ -154,9 +155,8 @@ export default function SkillsHubPage() {
     ].filter(Boolean).join(' ').toLocaleLowerCase().includes(normalizedQuery))
   }, [query, skills])
   const filteredMarketSkills = React.useMemo(
-    () => filterMarketSkills(marketSkills, query, catalogView)
-      .filter(skill => !installedBySlug.has(skill.slug)),
-    [catalogView, installedBySlug, marketSkills, query],
+    () => filterMarketSkills(marketSkills, query, catalogView),
+    [catalogView, marketSkills, query],
   )
   const publishableSkills = React.useMemo(
     () => workspace?.remoteServer ? [] : skills.filter(skill => (
@@ -205,41 +205,27 @@ export default function SkillsHubPage() {
     setMarketSkillDetailLoading(false)
   }, [])
 
+  React.useEffect(() => window.electronAPI.onClientAuthStateChanged(() => {
+    closeMarketSkill()
+    setMarketSkills([])
+    setReloadToken(value => value + 1)
+  }), [closeMarketSkill])
+
   const installSkill = React.useCallback(async (skill: MarketSkillSummary) => {
     if (!workspaceId || installingSlug || !isInstallableMarketSkill(skill)) return
     const targetWorkspaceId = workspaceId
     setInstallingSlug(skill.slug)
     try {
-      const downloaded = await window.electronAPI.downloadSkillFromMarket(skill)
-      if (currentWorkspaceId.current !== targetWorkspaceId) {
-        throw new Error(t('skillsMarket.runtimeChanged'))
-      }
-      const result = await window.electronAPI.importResources(
-        targetWorkspaceId,
-        downloaded.bundle,
-        'skip',
-        {
-          skillScope: 'project',
-          installArtifact: {
-            slug: skill.slug,
-            version: skill.version,
-            sha256: downloaded.sha256,
-            raw: downloaded.raw,
-          },
-        },
+      const status = await installMarketSkill(
+        window.electronAPI, skill, targetWorkspaceId,
+        () => currentWorkspaceId.current === targetWorkspaceId,
       )
-      const bucket = result.skills
-      if (bucket.imported.includes(skill.slug)) {
-        setReceiptReloadToken(value => value + 1)
-        toast.success(t('skillsMarket.imported', { slug: skill.slug }))
-        return
-      }
-      if (bucket.skipped.includes(skill.slug)) {
-        toast.info(t('skillsMarket.exists', { slug: skill.slug }))
-        return
-      }
-      const reason = bucket.failed.find(item => item.id === skill.slug)?.error
-      throw new Error(reason ?? t('skillsMarket.importFailed', { slug: skill.slug }))
+      if (currentWorkspaceId.current !== targetWorkspaceId) return
+      setReceiptReloadToken(value => value + 1)
+      toast[status === 'installed' ? 'success' : 'info'](t(
+        status === 'installed' ? 'skillsMarket.imported' : 'skillsMarket.exists',
+        { slug: skill.slug },
+      ))
     } catch (error) {
       toast.error(t('skillsMarket.importFailed', { slug: skill.slug }), {
         description: error instanceof Error ? error.message : String(error),
@@ -414,6 +400,14 @@ export default function SkillsHubPage() {
                       </span>
                     </span>
                   </button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate(routes.action.newSession({ workspaceId: workspaceId!, input: `[skill:${skill.slug}] ` }))}
+                  >
+                    {t('skillsHub.use')}
+                  </Button>
                   {updateAvailable && receipt && marketSkill ? (
                     <Button
                       type="button"
@@ -538,6 +532,7 @@ export default function SkillsHubPage() {
             ) : (
               <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
                 {filteredMarketSkills.map(skill => {
+                  const installed = installedBySlug.get(skill.slug)
                   const installing = installingSlug === skill.slug
                   const installable = isInstallableMarketSkill(skill)
                   const visual = getMarketSkillVisual(skill)
@@ -577,10 +572,14 @@ export default function SkillsHubPage() {
                           variant="outline"
                           className="shrink-0"
                           disabled={!workspaceId || installingSlug !== null}
-                          onClick={() => void openMarketSkill(skill)}
+                          onClick={() => installed
+                            ? navigate(routes.action.newSession({ workspaceId: workspaceId!, input: `[skill:${installed.slug}] ` }))
+                            : void openMarketSkill(skill)}
                         >
-                          <Download aria-hidden="true" />
-                          {installing
+                          {installed ? <Check aria-hidden="true" /> : <Download aria-hidden="true" />}
+                          {installed
+                            ? t('skillsHub.use')
+                            : installing
                             ? t('skillsHub.installing', '安装中')
                             : t('skillsHub.install', '安装')}
                         </Button>
@@ -621,7 +620,7 @@ export default function SkillsHubPage() {
         }}
         onOpenInstalled={(skill) => {
           closeMarketSkill()
-          openSkill(skill)
+          navigate(routes.action.newSession({ workspaceId: workspaceId!, input: `[skill:${skill.slug}] ` }))
         }}
         onOpenRequiredSource={(dependency) => {
           closeMarketSkill()
@@ -647,7 +646,12 @@ export default function SkillsHubPage() {
           workspaceRootPath={workspace.rootPath}
           open={skillToPublish !== null}
           onOpenChange={open => { if (!open) setSkillToPublish(null) }}
-          onPublished={() => setReloadToken(value => value + 1)}
+          onPublished={() => {
+            setReloadToken(value => value + 1)
+            setActiveTab('discover')
+            setCatalogView('all')
+            setQuery('')
+          }}
         />
       ) : null}
       <SkillRemovalDialog
@@ -789,24 +793,33 @@ function MarketSkillDetailDialog({
             <span>{resolvedSkill.license}</span>
             {resolvedSkill.tags.map(tag => <span key={tag}>{tag}</span>)}
           </div>
-          {installed ? (
-            <Button type="button" size="sm" onClick={() => onOpenInstalled(installed)}>
-              <Check aria-hidden="true" />
-              {t('skillsHub.open', '打开')}
-            </Button>
-          ) : isInstallableMarketSkill(resolvedSkill) ? (
-            <Button type="button" size="sm" disabled={!canInstall || installing} onClick={onInstall}>
-              <Download aria-hidden="true" />
-              {installing ? t('skillsHub.installing', '安装中') : t('skillsHub.install', '安装')}
-            </Button>
-          ) : detail?.manifest.author.url ? (
-            <Button type="button" size="sm" variant="outline" onClick={() => onOpenUrl(detail.manifest.author.url!)}>
-              <ExternalLink aria-hidden="true" />
-              {t('skillsHub.openSource', '查看来源')}
-            </Button>
-          ) : (
-            <Button type="button" size="sm" variant="ghost" disabled>{t('skillsHub.referenceOnly', '仅供参考')}</Button>
-          )}
+          <div className="flex shrink-0 gap-2">
+            {isInstallableMarketSkill(resolvedSkill) && (
+              <Button type="button" size="sm" variant="outline" onClick={() => {
+                void navigator.clipboard.writeText(buildSkillInstallDeepLink(resolvedSkill))
+                  .then(() => toast.success(t('skillsMarket.linkCopied')))
+                  .catch(() => toast.error(t('skillsMarket.copyFailed')))
+              }}>{t('skillsMarket.copyInstallLink')}</Button>
+            )}
+            {installed ? (
+              <Button type="button" size="sm" onClick={() => onOpenInstalled(installed)}>
+                <Check aria-hidden="true" />
+                {t('skillsHub.use')}
+              </Button>
+            ) : isInstallableMarketSkill(resolvedSkill) ? (
+              <Button type="button" size="sm" disabled={!canInstall || installing} onClick={onInstall}>
+                <Download aria-hidden="true" />
+                {installing ? t('skillsHub.installing', '安装中') : t('skillsHub.install', '安装')}
+              </Button>
+            ) : detail?.manifest.author.url ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => onOpenUrl(detail.manifest.author.url!)}>
+                <ExternalLink aria-hidden="true" />
+                {t('skillsHub.openSource', '查看来源')}
+              </Button>
+            ) : (
+              <Button type="button" size="sm" variant="ghost" disabled>{t('skillsHub.referenceOnly', '仅供参考')}</Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

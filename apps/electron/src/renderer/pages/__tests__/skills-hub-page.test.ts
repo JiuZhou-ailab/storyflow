@@ -1,5 +1,5 @@
 // input: SkillsHubPage source and its catalog/install contracts
-// output: Regression coverage for local authority, uninstalled discovery, and safe one-click installation
+// output: Regression coverage for local authority, persistent discovery, and safe one-click installation
 // pos: Small source-level check isolated from Electron's browser-only dependency graph
 
 import { describe, expect, it } from 'bun:test'
@@ -46,18 +46,11 @@ describe('SkillsHubPage contracts', () => {
       .toBeNull()
   })
 
-  it('keeps installed Skills out of discovery', () => {
-    expect(source).toContain('.filter(skill => !installedBySlug.has(skill.slug))')
-    expect(source).not.toContain('const installed = installedBySlug.get(skill.slug)')
-  })
-
-  it('validates downloads and imports only into the active project', () => {
-    expect(source).toContain('window.electronAPI.downloadSkillFromMarket(skill)')
-    expect(source).toContain("'skip',")
-    expect(source).toContain("skillScope: 'project'")
-    expect(source).toContain('installArtifact:')
-    expect(source).toContain('raw: downloaded.raw')
-    expect(source).toContain('currentWorkspaceId.current !== targetWorkspaceId')
+  it('keeps installed Skills discoverable and exposes use from both entry points', () => {
+    expect(source).not.toContain('.filter(skill => !installedBySlug.has(skill.slug))')
+    expect(source).toContain('const installed = installedBySlug.get(skill.slug)')
+    expect(source).toContain("t('skillsHub.use')")
+    expect(source).toContain('routes.action.newSession({ workspaceId: workspaceId!, input: `[skill:${skill.slug}] ` })')
   })
 
   it('offers explicit tracked upgrades without generic overwrite', () => {
@@ -85,7 +78,8 @@ describe('SkillsHubPage contracts', () => {
   })
 
   it('reloads the uncached catalog after a successful publication', () => {
-    expect(source).toContain('onPublished={() => setReloadToken(value => value + 1)}')
+    expect(source).toContain('setReloadToken(value => value + 1)')
+    expect(source).toContain("setActiveTab('discover')")
   })
 
   it('resolves hidden runtime workspaces without hiding the header actions', () => {

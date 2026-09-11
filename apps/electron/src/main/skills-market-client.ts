@@ -58,6 +58,7 @@ export function downloadSkillFromMarket(
     fetchImpl: (url, init) => options.fetchImpl(url, {
       ...init,
       headers: marketHeaders(options.token, init?.headers),
+      signal: AbortSignal.timeout(15_000),
     }),
   })
 }
@@ -96,6 +97,9 @@ export async function publishSkillToMarket(
     || typeof body.slug !== 'string'
     || typeof body.version !== 'string'
     || typeof body.sha256 !== 'string'
+    || !/^[a-f0-9]{64}$/.test(body.sha256)
+    || body.slug !== bundle.resources.skills?.[0]?.slug
+    || body.version !== input.publication.version.trim()
   ) throw new Error('Skills Market returned an invalid publication result')
   return {
     status: 'published',

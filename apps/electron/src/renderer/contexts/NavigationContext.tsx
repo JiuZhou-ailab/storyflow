@@ -32,7 +32,7 @@ import {
 } from '../../shared/route-parser'
 import { routes, type Route, type ViewRoute } from '../../shared/routes'
 import { parsePermissionMode } from '@craft-agent/shared/agent/mode-types'
-import { downloadMarketSkillBundle } from '@craft-agent/shared/skills/marketplace'
+import { MarketSkillInstallDialog, type MarketSkillInstallRequest } from '@/components/app-shell/MarketSkillInstallDialog'
 import { NAVIGATE_EVENT, type NavigateOptions } from '../lib/navigate'
 import {
   normalizePanelRouteForReconcile,
@@ -167,6 +167,7 @@ export function NavigationProvider({
 }: NavigationProviderProps) {
   const { t } = useTranslation()
   const [, setSession] = useSession()
+  const [skillInstallRequest, setSkillInstallRequest] = useState<MarketSkillInstallRequest | null>(null)
 
   const updateSessionMeta = useSetAtom(updateSessionMetaAtom)
 
@@ -849,64 +850,11 @@ export function NavigationProvider({
 
         case 'install-skill': {
           const { slug, version, sha256 } = parsed.params
-          const targetRuntimeWorkspaceId = workspaceId
-          if (!slug || !version || !sha256 || !targetRuntimeWorkspaceId) {
+          if (!slug || !version || !sha256) {
             toast.error(t('toast.invalidLink'), { description: t('skillsMarket.invalidLink') })
             break
           }
-          const toastId = toast.loading(t('skillsMarket.validating', { slug }))
-          try {
-            const downloaded = await downloadMarketSkillBundle({ slug, version, sha256 })
-            toast.info(t('skillsMarket.ready', { slug }), {
-              id: toastId,
-              description: t('skillsMarket.readyDescription', {
-                version,
-                sha256: downloaded.sha256.slice(0, 12),
-              }),
-              duration: 20_000,
-              action: {
-                label: t('skillsMarket.confirm'),
-                onClick: () => {
-                  if (runtimeWorkspaceRouteRef.current !== targetRuntimeWorkspaceId) {
-                    toast.error(t('skillsMarket.runtimeChanged'))
-                    return
-                  }
-                  const importToastId = toast.loading(t('skillsMarket.importing', { slug }))
-                  void window.electronAPI.importResources(
-                    targetRuntimeWorkspaceId,
-                    downloaded.bundle,
-                    'skip',
-                    {
-                      skillScope: 'project',
-                      installArtifact: { slug, version, sha256: downloaded.sha256, raw: downloaded.raw },
-                    },
-                  )
-                    .then(result => {
-                      const bucket = result.skills
-                      if (bucket.imported.includes(slug)) {
-                        toast.success(t('skillsMarket.imported', { slug }), { id: importToastId })
-                      } else if (bucket.skipped.includes(slug)) {
-                        toast.info(t('skillsMarket.exists', { slug }), { id: importToastId })
-                      } else {
-                        const reason = bucket.failed.find(item => item.id === slug)?.error
-                        toast.error(t('skillsMarket.importFailed', { slug }), { id: importToastId, description: reason })
-                      }
-                    })
-                    .catch(error => {
-                      toast.error(t('skillsMarket.importFailed', { slug }), {
-                        id: importToastId,
-                        description: error instanceof Error ? error.message : String(error),
-                      })
-                    })
-                },
-              },
-            })
-          } catch (error) {
-            toast.error(t('skillsMarket.validationFailed', { slug }), {
-              id: toastId,
-              description: error instanceof Error ? error.message : String(error),
-            })
-          }
+          setSkillInstallRequest({ slug, version, sha256 })
           break
         }
 
@@ -1430,6 +1378,14 @@ export function NavigationProvider({
     <NavigationActionsContext.Provider value={actionsValue}>
       <NavigationStateContext.Provider value={navigationState}>
         {children}
+        {skillInstallRequest && (
+          <MarketSkillInstallDialog
+            key={`${skillInstallRequest.slug}@${skillInstallRequest.version}:${skillInstallRequest.sha256}`}
+            request={skillInstallRequest}
+            workspaceId={workspaceId}
+            onClose={() => setSkillInstallRequest(null)}
+          />
+        )}
       </NavigationStateContext.Provider>
     </NavigationActionsContext.Provider>
   )
