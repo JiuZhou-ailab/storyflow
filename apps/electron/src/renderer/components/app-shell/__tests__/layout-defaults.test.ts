@@ -322,7 +322,7 @@ describe('app shell layout defaults', () => {
     )
     expect(appShellSource).toContain('<AnimatePresence initial={false}>')
     expect(appShellSource).toContain('data-testid="activity-rail-motion"')
-    expect(appShellSource).toContain('border-r border-border data-[resizing=true]:w-(--activity-rail-width)!')
+    expect(appShellSource).toContain('border-r border-foreground/[0.03] data-[resizing=true]:w-(--activity-rail-width)!')
     expect(appShellSource).toContain('key="activity-rail"')
     expect(appShellSource).toContain('initial={{ width: 0 }}')
     expect(appShellSource).toContain('animate={{ width: activityRailWidth }}')

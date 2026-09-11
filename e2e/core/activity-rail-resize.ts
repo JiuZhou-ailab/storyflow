@@ -1,5 +1,5 @@
 // input: Built Electron app and native rapid sidebar resize events
-// output: Per-frame rail/container width equality, collapse/reopen, and saved-width assertions
+// output: Light/dark separator paint, per-frame width equality, collapse/reopen, and saved-width assertions
 // pos: Offline regression for sidebar resize paint gaps
 import assert from 'node:assert/strict'
 import {execFileSync} from 'node:child_process'
@@ -16,6 +16,37 @@ await waitFor(app,`document.querySelector('[aria-label="调整侧边栏宽度"]'
 await evalOn(app,`Array.from(document.querySelectorAll('[role="dialog"] button')).find(b=>/继续使用|Continue/.test(b.textContent))?.click()`)
 await evalOn(app,`window.__dragFrames=[];window.__dragProbe=true;(()=>{const sample=()=>{if(!window.__dragProbe)return;const rail=document.querySelector('[data-testid="activity-rail"]'),wrapper=rail.parentElement;window.__dragFrames.push({time:performance.now(),rail:rail.getBoundingClientRect().width,wrapper:wrapper.getBoundingClientRect().width,background:getComputedStyle(wrapper).backgroundColor});requestAnimationFrame(sample)};sample()})()`)
 const p=await evalOn(app,`(()=>{const r=document.querySelector('[aria-label="调整侧边栏宽度"]').getBoundingClientRect();return {x:r.right-3,y:r.top+300}})()`)
+// Measure resolved paint, not class names: the visible seam belongs to the wrapper.
+for (const theme of ['light', 'dark']) {
+  await evalOn(app, `document.documentElement.classList.toggle('dark', ${theme === 'dark'})`)
+  for (const state of ['idle', 'hover', 'focus']) {
+    await app.cdp.send('Input.dispatchMouseEvent', {type:'mouseMoved', ...(state === 'hover' ? p : {x:600,y:300})}, app.sid)
+    if (state === 'focus') {
+      await app.cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key:'Tab',code:'Tab'}, app.sid)
+      await app.cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key:'Tab',code:'Tab'}, app.sid)
+      await evalOn(app, `document.querySelector('[aria-label="调整侧边栏宽度"]').focus()`)
+    } else await evalOn(app, `document.activeElement?.blur()`)
+    await sleep(250)
+    const paint = await evalOn<{border:number;highlight:number;width:string;focus:boolean}>(app, `(() => {
+      const handle=document.querySelector('[aria-label="调整侧边栏宽度"]');
+      const wrapper=document.querySelector('[data-testid="activity-rail-motion"]');
+      const ctx=document.createElement('canvas').getContext('2d');
+      const alpha=color=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);return ctx.getImageData(0,0,1,1).data[3]};
+      return {border:alpha(getComputedStyle(wrapper).borderRightColor),highlight:alpha(getComputedStyle(handle.firstElementChild).backgroundColor),width:getComputedStyle(wrapper).borderRightWidth,focus:handle.matches(':focus-visible')};
+    })()`)
+    assert.equal(paint.width, '1px')
+    assert.ok(paint.border > 0 && paint.border <= 8, `${theme}/${state}: visible seam must stay at 3% opacity, got ${paint.border}/255`)
+    assert.ok(paint.highlight <= (state === 'focus' ? 16 : 8), `${theme}/${state}: highlight must remain subtle`)
+    if (state === 'focus') assert.ok(paint.focus && paint.highlight > 0, 'Keyboard focus retains a visible highlight')
+    if (process.env.CRAFT_E2E_SCREENSHOTS) {
+      const shot=await app.cdp.send('Page.captureScreenshot',{format:'png'},app.sid)
+      writeFileSync(join(process.env.CRAFT_E2E_SCREENSHOTS,`rail-${theme}-${state}.png`),Buffer.from(shot.data,'base64'))
+    }
+  }
+}
+await evalOn(app, `document.activeElement?.blur();document.documentElement.classList.remove('dark')`)
+console.log('PASS: light/dark separator stays at 3% with bounded hover/focus paint')
+
 await app.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',...p},app.sid)
 await app.cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',...p,button:'left',buttons:1,clickCount:1},app.sid)
 await app.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:p.x+120,y:p.y,button:'left',buttons:1},app.sid)
