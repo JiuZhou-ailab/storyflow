@@ -32,6 +32,8 @@ This uses an isolated offline fixture and the real renderer; it never sends a mo
 
 ## Browser checks
 
+Tutorial sidebar: at 1440/768px, all 11 chapter links align in one column with at least 40px targets. At 390/320px, the tutorial menu starts collapsed, Enter opens it, links remain in sequence with at least 44px targets, and selecting another chapter closes it. Operation reference starts expanded and supports keyboard toggling. Check the current chapter marker and absence of horizontal overflow.
+
 1. Landing previews start in full view with no numbered markers, outlines or explanation paragraphs. Tutorial previews retain them. Switch steps and focus regions; the original-image link must follow the selected state. Images and authored example content are labelled.
 2. Play and pause a tour. It advances only when visible and the picture is not hovered and another control is not focused. Reduced-motion users get instant focus changes and no playback button. Keyboard users can select steps and scroll narrow detail views.
 3. Verify the download button explicitly names macOS / Windows and footer contact is 飞书：派大星 / `mailto:zjdding@gmail.com`. Use Enter to open the installer menu, verify all three destinations, Tab into it, then Escape to close and recover focus. At 390/320 px, the visible download link reaches the installation section.
