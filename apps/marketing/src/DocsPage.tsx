@@ -15,6 +15,7 @@ export function DocsPage({ pathname }: { pathname: string }) {
     { id: string; text: string; level: number }[]
   >([]);
   const [activeHeading, setActiveHeading] = useState("");
+  const [navigationOpen, setNavigationOpen] = useState(false);
 
   useEffect(() => {
     const elements = Array.from(
@@ -57,20 +58,29 @@ export function DocsPage({ pathname }: { pathname: string }) {
         {chapter?.path === "/docs/" && <p>用同一个小练习，分五步学会写作、修改和保存。打开桌面应用，从第一步开始。</p>}
       </section>
       <nav className="docs-toc" aria-label="教程目录">
-        {["开始使用", "遇到问题"].map(group => (
-          <div className="docs-nav-section" key={group}>
-            <p>{group}</p>
-            {docsChapters.filter(item => item.group === group).map(item => (
-              <a key={item.path} href={item.path} data-storyflow-page-link="true" aria-current={item === chapter ? "page" : undefined}>{item.title}</a>
-            ))}
-          </div>
-        ))}
-        <details className="docs-more" open>
-          <summary>操作参考</summary>
-          {docsChapters.filter(item => item.group === "操作参考").map(item => (
-            <a key={item.path} href={item.path} data-storyflow-page-link="true" aria-current={item === chapter ? "page" : undefined}>{item.title}</a>
+        <button className="docs-nav-toggle" type="button" aria-expanded={navigationOpen} aria-controls="docs-chapters" onClick={() => setNavigationOpen(!navigationOpen)}>
+          <span>教程目录</span><span>{navigationOpen ? "收起 −" : "展开 +"}</span>
+        </button>
+        <div id="docs-chapters" className="docs-nav-content" data-expanded={navigationOpen}>
+          {["开始使用", "遇到问题"].map(group => (
+            <div className="docs-nav-section" key={group}>
+              <p>{group}</p>
+              <ul>
+                {docsChapters.filter(item => item.group === group).map(item => (
+                  <li key={item.path}><a href={item.path} data-storyflow-page-link="true" aria-current={item === chapter ? "page" : undefined}>{item.title}</a></li>
+                ))}
+              </ul>
+            </div>
           ))}
-        </details>
+          <details className="docs-more" open>
+            <summary>操作参考</summary>
+            <ul>
+              {docsChapters.filter(item => item.group === "操作参考").map(item => (
+                <li key={item.path}><a href={item.path} data-storyflow-page-link="true" aria-current={item === chapter ? "page" : undefined}>{item.title}</a></li>
+              ))}
+            </ul>
+          </details>
+        </div>
       </nav>
       <aside className="docs-page-toc" aria-label="本页目录">
         <p>本页目录</p>

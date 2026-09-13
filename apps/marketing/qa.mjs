@@ -445,6 +445,32 @@ for (const width of [1440, 768, 390, 320]) {
     assert.equal(response.ok, true, `Native capture loads: ${url}`);
   }
   await page.goto(`${base}/docs/first-task/`);
+  const mobileDocs = width <= 760;
+  assert.equal(await page.evaluate(() => document.querySelector('.docs-nav-toggle').getBoundingClientRect().height > 0), mobileDocs);
+  if (mobileDocs) {
+    assert.equal(await page.evaluate(() => document.querySelector('#docs-chapters').getBoundingClientRect().height), 0);
+    await page.focus('.docs-nav-toggle');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.docs-nav-toggle[aria-expanded="true"]');
+  }
+  const chapters = await page.evaluate(() => [...document.querySelectorAll('.docs-toc li a')].map(a => a.getBoundingClientRect().toJSON()));
+  assert.equal(chapters.length, 11);
+  chapters.forEach((rect, index) => {
+    assert.ok(rect.height >= (mobileDocs ? 44 : 40), `Chapter target at ${width}px`);
+    assert.equal(rect.x, chapters[0].x, `Single-column chapter alignment at ${width}px`);
+    if (index) assert.ok(rect.top >= chapters[index - 1].bottom, `Sequential chapter order at ${width}px`);
+  });
+  assert.equal(await page.evaluate(() => document.querySelector('.docs-more').open), true);
+  if (mobileDocs) {
+    await page.focus('.docs-more summary');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => document.querySelector('.docs-more').open), false);
+    await page.keyboard.press('Enter');
+    await page.click('.docs-toc a[href="/docs/troubleshooting/"]');
+    await page.waitForURL('**/docs/troubleshooting/');
+    assert.equal(await page.evaluate(() => document.querySelector('.docs-nav-toggle').getAttribute('aria-expanded')), 'false');
+    assert.equal(await page.evaluate(() => document.querySelector('#docs-chapters').getBoundingClientRect().height), 0);
+  }
   assert.equal(
     await page.evaluate(
       () =>
