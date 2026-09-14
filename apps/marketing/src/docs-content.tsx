@@ -70,7 +70,7 @@ export const docsChapters = [
               poster="/reference-assets/tutorial/storyflow-getting-started-v2.jpg"
               aria-label="Storyflow 80 秒真实写作演示，含中文旁白和字幕"
             >
-              <source src="/reference-assets/tutorial/storyflow-getting-started-v2.mp4" type="video/mp4" />
+              <source src="https://story-storage.zjding.com/tutorials/storyflow-getting-started-v2.mp4" type="video/mp4" />
               你的浏览器不支持视频播放，请使用下方链接下载观看。
             </video>
             <figcaption>中文旁白与字幕 · 可全屏观看 · <a href="/reference-assets/tutorial/storyflow-getting-started-v2.mp4" download>下载视频</a></figcaption>

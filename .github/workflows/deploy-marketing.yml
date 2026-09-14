@@ -1,4 +1,4 @@
-# input: Website and versioned release-note changes, Cloudflare Pages credentials
+# input: Website and versioned release-note changes, Cloudflare Pages and R2 credentials
 # output: Tested production landing build deployed to Cloudflare Pages
 # pos: Canonical deployment boundary for apps/marketing
 
@@ -59,6 +59,22 @@ jobs:
 
       - name: Build marketing site
         run: bun run marketing:build
+
+      - name: Publish tutorial playback video to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          STORYFLOW_R2_BUCKET: ${{ secrets.STORYFLOW_R2_BUCKET }}
+        run: |
+          test -n "$STORYFLOW_R2_BUCKET"
+          bunx wrangler@4.114.0 r2 object put "$STORYFLOW_R2_BUCKET/tutorials/storyflow-getting-started-v2.mp4" \
+            --file apps/marketing/reference-assets/tutorial/storyflow-getting-started-v2.mp4 \
+            --content-type video/mp4 --cache-control "public, max-age=31536000, immutable" --remote --force
+          range_status=$(curl --fail --silent --show-error --range 0-1023 \
+            --output /tmp/tutorial-range.bin --write-out '%{http_code}' \
+            https://story-storage.zjding.com/tutorials/storyflow-getting-started-v2.mp4)
+          test "$range_status" = 206
+          test "$(wc -c < /tmp/tutorial-range.bin)" -eq 1024
 
       - name: Deploy marketing site to Cloudflare Pages
         env:
