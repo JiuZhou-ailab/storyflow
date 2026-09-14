@@ -53,8 +53,29 @@ export const docsChapters = [
     path: "/docs/",
     title: "从这里开始",
     group: "开始使用",
-    anchors: ["overview-title"],
+    anchors: ["watch-tutorial", "overview-title"],
     Content: () => (<>
+        <section className="docs-section" aria-labelledby="watch-tutorial">
+          <div className="docs-section-copy">
+            <h2 id="watch-tutorial">先看 80 秒，了解怎么开始</h2>
+            <p>跟着一次真实写作，看如何提出需求、查看稿件，再按自己的想法修改。看完后，可以继续下面的分步练习。</p>
+          </div>
+          <figure className="docs-figure">
+            <video
+              controls
+              playsInline
+              preload="none"
+              width="2560"
+              height="1440"
+              poster="/reference-assets/tutorial/storyflow-getting-started-v2.jpg"
+              aria-label="Storyflow 80 秒真实写作演示，含中文旁白和字幕"
+            >
+              <source src="/reference-assets/tutorial/storyflow-getting-started-v2.mp4" type="video/mp4" />
+              你的浏览器不支持视频播放，请使用下方链接下载观看。
+            </video>
+            <figcaption>中文旁白与字幕 · 可全屏观看 · <a href="/reference-assets/tutorial/storyflow-getting-started-v2.mp4" download>下载视频</a></figcaption>
+          </figure>
+        </section>
 <section className="docs-summary">
           <h2 id="overview-title">这次先完成一件小事</h2>
           <p>写一段约 300 字的悬疑开场，改好其中一句，保存到电脑上。练习结束时，你会有两个文件：<code>创作要求.md</code> 和 <code>第01章.md</code>。</p>
