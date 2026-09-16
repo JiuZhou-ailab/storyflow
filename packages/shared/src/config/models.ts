@@ -125,6 +125,12 @@ export interface ModelDefinition {
   thinkingLevelMap?: ModelThinkingLevelMap;
   /** Explicit per-model image input capability hint, primarily for custom endpoints. */
   supportsImages?: boolean;
+  /** Explicitly approved fallback contract; absence is unknown, never inferred from SDK defaults. */
+  fallbackCapabilities?: {
+    maxOutputTokens: number;
+    tools: boolean;
+    structuredOutput: 'prompt';
+  };
 }
 
 // ============================================

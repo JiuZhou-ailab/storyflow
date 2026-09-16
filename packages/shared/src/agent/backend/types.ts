@@ -36,7 +36,7 @@ export enum AbortReason {
   InternalError = 'internal_error',
 }
 
-import type { ModelProvider, ModelThinkingLevelMap } from '../../config/models.ts';
+import type { ModelDefinition, ModelProvider, ModelThinkingLevelMap } from '../../config/models.ts';
 
 // Import LLM connection types for auth
 import type { CustomEndpointConfig, LlmAuthType, LlmProviderType } from '../../config/llm-connections.ts';
@@ -50,12 +50,14 @@ export interface BackendRuntimeUpdate {
     baseUrl?: string;
     piAuthProvider?: string;
     customEndpoint?: CustomEndpointConfig;
+    managedConnection?: { slug: string; autoFallback: boolean };
     customModels?: Array<string | {
       id: string;
       contextWindow?: number;
       supportsImages?: boolean;
       supportsThinking?: boolean;
       thinkingLevelMap?: ModelThinkingLevelMap;
+      fallbackCapabilities?: ModelDefinition['fallbackCapabilities'];
     }>;
     [key: string]: unknown;
   };

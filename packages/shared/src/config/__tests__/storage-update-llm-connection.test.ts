@@ -209,3 +209,10 @@ describe('setDefaultLlmSelection', () => {
     expect(config.llmConnections.find((connection: any) => connection.slug === 'second')?.defaultModel).toBe('model-c')
   })
 })
+
+it('persists a managed fallback preference through unrelated connection updates', () => {
+  const state = setup([{ slug: 'storyflow-managed-deepseek', name: 'DeepSeek', providerType: 'pi_compat', authType: 'api_key', createdAt: 1 }])
+  expect(state.runUpdate('storyflow-managed-deepseek', { autoFallback: false })).toBe(true)
+  expect(state.runUpdate('storyflow-managed-deepseek', { name: 'DeepSeek managed' })).toBe(true)
+  expect(state.readConnection('storyflow-managed-deepseek').autoFallback).toBe(false)
+})

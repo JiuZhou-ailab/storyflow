@@ -2,7 +2,7 @@
 // output: Normalized model definitions plus provider/auth routing decisions for Pi.
 // pos: Shared, side-effect-free policy for registering and authenticating custom endpoint models.
 
-import type { ModelThinkingLevelMap } from '../../shared/src/config/models.ts'
+import type { ModelDefinition, ModelThinkingLevelMap } from '../../shared/src/config/models.ts'
 import type { PiCustomEndpointModelConfig } from '../../shared/src/agent/backend/pi/protocol.ts'
 
 export type CustomEndpointInput = 'text' | 'image'
@@ -16,6 +16,7 @@ export interface CustomEndpointModelOverrides {
   supportsImages?: boolean
   supportsThinking?: boolean
   thinkingLevelMap?: ModelThinkingLevelMap
+  fallbackCapabilities?: ModelDefinition['fallbackCapabilities']
 }
 
 export interface CustomEndpointModelEntry extends CustomEndpointModelOverrides {
@@ -94,6 +95,7 @@ export function normalizeCustomEndpointModelEntry(model: PiCustomEndpointModelCo
     ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
     ...(model.supportsThinking !== undefined ? { supportsThinking: model.supportsThinking } : {}),
     ...(model.thinkingLevelMap !== undefined ? { thinkingLevelMap: model.thinkingLevelMap } : {}),
+    ...(model.fallbackCapabilities !== undefined ? { fallbackCapabilities: model.fallbackCapabilities } : {}),
   }
 }
 
@@ -121,6 +123,6 @@ export function buildCustomEndpointModelDef(
     input,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: overrides?.contextWindow ?? 131_072,
-    maxTokens: 8_192,
+    maxTokens: overrides?.fallbackCapabilities?.maxOutputTokens ?? 8_192,
   }
 }

@@ -117,6 +117,7 @@ export function buildBackendRuntimeSignature(input: BackendRuntimeSignatureInput
         providerType: connection.providerType,
         authType: connection.authType,
         defaultModel: connection.defaultModel,
+        autoFallback: connection.autoFallback,
         ...(isCompatProvider(connection.providerType)
           ? {
               baseUrl: connection.baseUrl,

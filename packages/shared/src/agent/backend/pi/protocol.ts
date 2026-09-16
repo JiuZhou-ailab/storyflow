@@ -3,7 +3,7 @@
 // pos: Stable process boundary between Storyflow orchestration and the Pi execution runtime
 
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent';
-import type { ModelThinkingLevelMap } from '../../../config/models.ts';
+import type { ModelDefinition, ModelThinkingLevelMap } from '../../../config/models.ts';
 import type { LLMQueryRequest, LLMQueryResult } from '../../llm-tool.ts';
 import type {
   ConversationRewindRequest,
@@ -34,6 +34,7 @@ export type PiCustomEndpointModelConfig = string | {
   supportsImages?: boolean;
   supportsThinking?: boolean;
   thinkingLevelMap?: ModelThinkingLevelMap;
+  fallbackCapabilities?: ModelDefinition['fallbackCapabilities'];
 };
 
 export interface PiProxyToolDefinition {
@@ -67,6 +68,7 @@ export interface PiInitMessage {
   customModels?: PiCustomEndpointModelConfig[];
   piAuth?: { provider: string; credential: PiCredential };
   enable1MContext?: boolean;
+  managedConnection?: { slug: string; autoFallback: boolean };
 }
 
 export interface PiRuntimeConfigUpdateMessage {
@@ -78,6 +80,7 @@ export interface PiRuntimeConfigUpdateMessage {
   baseUrl?: string;
   customEndpoint?: { api: PiCustomEndpointApi; supportsImages?: boolean };
   customModels?: PiCustomEndpointModelConfig[];
+  managedConnection?: PiInitMessage['managedConnection'];
 }
 
 export type PiInboundMessage =
@@ -191,6 +194,7 @@ export type PiOutboundMessage =
   | { type: 'session_id_update'; sessionId: string }
   | {
       type: 'extension_notification';
+      modelFallback?: { from: string; to: string };
       message: string;
       level?: 'info' | 'warning' | 'error';
     }

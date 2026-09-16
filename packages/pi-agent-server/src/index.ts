@@ -161,6 +161,7 @@ async function ensureSession(): Promise<AgentSession> {
 
   const created = await createPrimaryPiSession({
     config: initConfig,
+    getConfig: () => initConfig!,
     cwd,
     agentDir,
     modelRuntime: piModels,
@@ -208,6 +209,8 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
   const piModels = await modelRuntime.getModelsRuntime();
   return queryLlmWithEphemeralPiSession(request, {
     config: initConfig,
+    getConfig: () => initConfig!,
+    activeSessions: activeSubagentSessions,
     cwd: modelRuntime.resolvedCwd(),
     modelRuntime: piModels,
     preferCustomEndpoint: modelRuntime.prefersCustomEndpoint(),
@@ -662,6 +665,7 @@ async function handleUpdateRuntimeConfig(
       throw new Error('Runtime config update received before init');
     }
 
+    await handleAbort();
     initConfig = {
       ...initConfig,
       model: msg.model,
@@ -670,6 +674,7 @@ async function handleUpdateRuntimeConfig(
       baseUrl: msg.baseUrl,
       customEndpoint: msg.customEndpoint,
       customModels: msg.customModels,
+      managedConnection: msg.managedConnection,
     };
 
     if (piModelsRuntime && initConfig.baseUrl?.trim() && initConfig.customEndpoint) {
@@ -710,6 +715,7 @@ async function handleSetModel(msg: Extract<PiInboundMessage, { type: 'set_model'
     return;
   }
   try {
+    if (initConfig) initConfig.model = msg.model;
     await piSession.setModel(piModel);
     debugLog(`[set_model] Model changed to: ${msg.model} (resolved: ${piModel.provider}/${piModel.id})`);
   } catch (error) {
@@ -862,7 +868,13 @@ async function processMessage(msg: PiInboundMessage): Promise<void> {
 
     case 'token_update': {
       try {
+        await handleAbort();
+        if (initConfig) initConfig = { ...initConfig, piAuth: msg.piAuth };
         await modelRuntime.updateCredential(msg.piAuth);
+        if (piSession && piModelsRuntime && initConfig) {
+          const preferred = modelRuntime.resolveModel(piModelsRuntime, initConfig.model, 'credential_update');
+          if (preferred) await piSession.setModel(preferred);
+        }
         send({ type: 'token_update_result', id: msg.id, success: true });
       } catch (error) {
         send({

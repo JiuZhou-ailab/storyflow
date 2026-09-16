@@ -17,8 +17,14 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 - `src/extension-ui.ts` — Pi Extension dialogs projected onto Storyflow's existing structured-question flow.
 - `src/product-rewind.ts` — Durable Pi user-entry to Storyflow transcript-cut mapping.
 - `src/tool-hooks.ts` — Pi-native permission and result hooks.
-- `src/provider-hooks.ts` — Narrow Pi-native request-header and response diagnostics hooks; retry remains Pi-owned.
+- `src/provider-hooks.ts` — Stable Model Call / transport-attempt correlation and native stream diagnostics; retry remains Pi-owned.
+- `src/managed-fallback.ts` — Session-scoped managed model selection within native retry budgets; cooldown survives resource reload and resets with connection/credential generation.
 - `src/openai-encrypted-reasoning-compat.ts` — Session-local recovery for stale OpenAI Responses encrypted reasoning without rewriting persisted history.
 - `src/gemini-thought-signature-compat.test.ts` — Pins Pi's Gemini 3 cross-provider tool-history compatibility contract.
 - `src/network-proxy.ts` — Transport-only proxy routing for the Bun subprocess.
 - `src/tools/` — built-in web and search tool definitions.
+
+Managed fallback defaults on for trusted managed connections only, but requires
+explicit `fallbackCapabilities` on both source and candidate. The current catalog
+awaits capability confirmation; synthetic SDK limits alone never qualify a candidate.
+See [QA](../../docs/model-fallback-qa.md) and [pinned Pi patches](patches/README.md).

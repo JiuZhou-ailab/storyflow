@@ -1,0 +1,149 @@
+diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
+index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b38c073b26 100644
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -102,6 +102,9 @@ export class AgentSession {
+     // Retry state
+     _retryAbortController = undefined;
+     _retryAttempt = 0;
++    _abortRevision = 0;
++    _providerResponse;
++    _modelSelectionRevision = 0;
+     // Bash execution state
+     _bashAbortControllers = new Set();
+     _pendingBashMessages = [];
+@@ -137,6 +140,16 @@ export class AgentSession {
+     _systemPromptOverride;
+     constructor(config) {
+         this.agent = config.agent;
++        const onPayload = this.agent.onPayload;
++        const onResponse = this.agent.onResponse;
++        this.agent.onPayload = async (...args) => {
++            this._providerResponse = undefined;
++            return onPayload?.(...args);
++        };
++        this.agent.onResponse = async (response, model) => {
++            this._providerResponse = response;
++            await onResponse?.(response, model);
++        };
+         this.sessionManager = config.sessionManager;
+         this.settingsManager = config.settingsManager;
+         this._scopedModels = config.scopedModels ?? [];
+@@ -582,6 +595,7 @@ export class AgentSession {
+      * Call this when completely done with the session.
+      */
+     dispose() {
++        this._abortRevision++;
+         try {
+             this.abortRetry();
+             this.abortCompaction();
+@@ -769,15 +783,21 @@ export class AgentSession {
+     // =========================================================================
+     // Prompting
+     // =========================================================================
+-    async _runAgentPrompt(messages) {
++    async _runAgentPrompt(messages, abortRevision = this._abortRevision) {
+         this._isAgentRunActive = true;
+         try {
++            if (abortRevision !== this._abortRevision) return;
+             await this.agent.prompt(messages);
+-            while (await this._handlePostAgentRun()) {
++            while (abortRevision === this._abortRevision && await this._handlePostAgentRun()) {
++                if (abortRevision !== this._abortRevision) break;
+                 await this.agent.continue();
+             }
+         }
+         finally {
++            if (abortRevision !== this._abortRevision && this._retryAttempt > 0) {
++                this._emit({ type: "auto_retry_end", success: false, attempt: this._retryAttempt, finalError: "Retry cancelled" });
++                this._retryAttempt = 0;
++            }
+             this._systemPromptOverride = undefined;
+             this._flushPendingBashMessages();
+             this._flushPendingCustomMessages();
+@@ -819,6 +839,7 @@ export class AgentSession {
+      * @throws Error if no model selected or no API key available (when not streaming)
+      */
+     async prompt(text, options) {
++        const abortRevision = this._abortRevision;
+         const expandPromptTemplates = options?.expandPromptTemplates ?? true;
+         const preflightResult = options?.preflightResult;
+         let messages;
+@@ -946,7 +967,7 @@ export class AgentSession {
+             return;
+         }
+         preflightResult?.(true);
+-        await this._runAgentPrompt(messages);
++        await this._runAgentPrompt(messages, abortRevision);
+     }
+     /**
+      * Try to execute an extension command. Returns true if command was found and executed.
+@@ -1220,6 +1241,7 @@ export class AgentSession {
+      * Abort current operation and wait for agent to become idle.
+      */
+     async abort() {
++        this._abortRevision++;
+         this.abortRetry();
+         this.agent.abort();
+         await this.waitForIdle();
+@@ -1250,9 +1272,11 @@ export class AgentSession {
+      * @throws Error if no auth is configured for the model
+      */
+     async setModel(model, options = {}) {
++        const revision = ++this._modelSelectionRevision;
+         if (!(await this._modelRuntime.checkAuth(model.provider))) {
+             throw new Error(`No API key for ${model.provider}/${model.id}`);
+         }
++        if (revision !== this._modelSelectionRevision) return;
+         const previousModel = this.model;
+         const thinkingLevel = this._getThinkingLevelForModelSwitch(model);
+         this.agent.state.model = model;
+@@ -2239,6 +2263,10 @@ export class AgentSession {
+      * Context overflow errors are NOT retryable (handled by compaction instead).
+      */
+     _isRetryableError(message) {
++        // Preserve provider rejection semantics before the generic 5xx classifier.
++        const response = this._providerResponse;
++        if (response?.status === 401 || response?.status === 403 ||
++            response?.headers?.["x-should-retry"] === "false") return false;
+         // Context overflow is handled by compaction, not retry.
+         if (isContextOverflow(message, this.model?.contextWindow ?? 0))
+             return false;
+@@ -2287,7 +2315,14 @@ export class AgentSession {
+             this._retryAttempt--;
+             return false;
+         }
+-        const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
++        const retryAfter = this._providerResponse?.headers?.["retry-after"];
++        const seconds = retryAfter && /^\d+(?:\.\d+)?$/.test(retryAfter) ? Number(retryAfter) : NaN;
++        const providerDelay = Number.isFinite(seconds) ? seconds * 1000 : Math.max(0, Date.parse(retryAfter ?? "") - Date.now());
++        const gatewayDelay = Number(/"retry_after_ms"\s*:\s*(\d{1,13})/.exec(message.errorMessage ?? "")?.[1] ?? 0);
++        const delayMs = Math.max(settings.baseDelayMs * 2 ** (this._retryAttempt - 1), Number.isFinite(providerDelay) ? providerDelay : 0, gatewayDelay);
++        // setTimeout overflows above int32; fail closed rather than retrying early.
++        if (delayMs > 2147483647) return false;
++        this._retryAbortController = new AbortController();
+         this._emit({
+             type: "auto_retry_start",
+             attempt: this._retryAttempt,
+@@ -2300,8 +2335,7 @@ export class AgentSession {
+         if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+             this.agent.state.messages = messages.slice(0, -1);
+         }
+-        // Wait with exponential backoff (abortable)
+-        this._retryAbortController = new AbortController();
++        // Wait with exponential backoff (abortable, including synchronous event callbacks)
+         try {
+             await sleep(delayMs, this._retryAbortController.signal);
+         }
+diff --git a/dist/core/model-runtime.js b/dist/core/model-runtime.js
+index 7d93ba62bdb5d47e129751e8075cbb34620322ad..d089d3fb0819c7992f3a3680718527f5f1fd25e5 100644
+--- a/dist/core/model-runtime.js
++++ b/dist/core/model-runtime.js
+@@ -435,6 +435,7 @@ export class ModelRuntime {
+         let headers = mergeHeaders(resolution.auth.headers, providerOptions.headers);
+         if (transformHeaders)
+             headers = await transformHeaders(headers ?? {});
++        rawProviderOptions.refreshHeaders = transformHeaders ? () => transformHeaders(headers ?? {}) : undefined;
+         const env = resolution.env || providerOptions.env
+             ? { ...(resolution.env ?? {}), ...(providerOptions.env ?? {}) }
+             : undefined;

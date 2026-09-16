@@ -235,6 +235,9 @@ export interface LlmConnection {
   /** Marks a connection managed by the app/distribution rather than the user. */
   managed?: boolean;
 
+  /** Managed chat fallback within the native Pi retry budget; defaults to true. */
+  autoFallback?: boolean;
+
   /** Optional provenance marker for distribution-provided connections. */
   source?: 'builtin' | string;
 

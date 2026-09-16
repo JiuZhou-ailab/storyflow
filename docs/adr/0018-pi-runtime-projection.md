@@ -102,3 +102,18 @@ module loader 向 npm Extension 提供 Pi API；普通单文件 JS bundle 不满
 
 本 ADR 修订 ADR 0006 的全局资源根与 Extension 隔离决策，并修订 ADR 0011 中
 Storyflow-only Extension 的决策。ADR 0016 的 Provider Protocol 所有权保持不变。
+
+## 托管模型选择扩展（Spec #41）
+
+托管连接可以安装受信任的模型选择 Extension：在 awaited `agent_end` 中通过公开
+`AgentSession.setModel` 选择同协议候选，在 `before_agent_start` 绕过冷却模型，在
+`agent_settled` 恢复首选。它只读取公开 retry settings/状态，不调用 `prompt`/`continue`，
+不重写 assistant 错误、历史、请求体或工具结果，不增加 retry budget。候选来自共享
+managed catalog，使用显式 `fallbackCapabilities` 及当前注册模型共同验证能力；
+SDK 合成默认值不构成能力证据。没有兼容候选就交还 Pi 原生终态。
+
+每个 AgentSession 独立创建扩展入口，状态跨同一 session 的 resource reload 保留。
+主会话、Free Conversation、Subagent Run 和非固定模型的托管临时查询复用该入口。
+后台摘要、compaction 和 branch summary 不参与。Pi 上游尚未提供的错误 header、
+原生 session backoff 和并发模型选择修复以版本固定 Bun patch 维护；退出条件及真实
+Session 回归测试见 `packages/pi-agent-server/patches/README.md`。

@@ -321,3 +321,14 @@ export function cloneManagedModelCatalog(api?: CustomEndpointApi): ModelDefiniti
         : {}),
     }));
 }
+
+/** Approved candidate families; explicit per-model fallbackCapabilities are still required.
+ * Existing catalog entries intentionally remain unqualified until their capabilities are confirmed.
+ * Discovery and the synthetic SDK output limit never establish that confirmation.
+ */
+export const MANAGED_FALLBACK_FAMILIES = [
+  ['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+  ['deepseek-v4-flash', 'deepseek-v4-pro'],
+  ['claude-sonnet-5', 'claude-opus-5'],
+  ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'],
+] as const;

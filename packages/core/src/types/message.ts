@@ -291,6 +291,8 @@ export interface TurnMetrics {
  * Runtime message type (includes transient fields like isStreaming)
  */
 export interface Message {
+  /** Provider-reported model for this assistant message; absent on legacy history. */
+  model?: string;
   id: string;
   role: MessageRole;
   content: string;
@@ -384,6 +386,8 @@ export interface Message {
  * Excludes transient runtime-only fields (isStreaming, isPending)
  */
 export interface StoredMessage {
+  /** Actual provider model; optional for older transcripts. */
+  model?: string;
   id: string;
   type: MessageRole;
   content: string;
@@ -590,7 +594,7 @@ export type AgentEvent =
   | { type: 'status'; message: string; statusType?: 'compacting' | 'retrying' }
   | { type: 'info'; message: string; statusType?: 'compaction_complete'; level?: 'info' | 'warning' | 'error' }
   | { type: 'text_delta'; text: string; turnId?: string; parentToolUseId?: string }
-  | { type: 'text_complete'; text: string; isIntermediate?: boolean; turnId?: string; parentToolUseId?: string; sdkTurnAnchor?: string }
+  | { type: 'text_complete'; text: string; model?: string; isIntermediate?: boolean; turnId?: string; parentToolUseId?: string; sdkTurnAnchor?: string }
   | { type: 'tool_start'; toolName: string; toolUseId: string; input: Record<string, unknown>; intent?: string; displayName?: string; turnId?: string; parentToolUseId?: string; toolDisplayMeta?: ToolDisplayMeta }
   | { type: 'tool_result'; toolUseId: string; toolName?: string; result: string; isError: boolean; input?: Record<string, unknown>; turnId?: string; parentToolUseId?: string }
   | {

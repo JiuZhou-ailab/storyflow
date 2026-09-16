@@ -151,6 +151,7 @@ export function handleTextComplete(
       // so branchFromMessageId always resolves against persisted session.jsonl.
       ...(event.messageId ? { id: event.messageId } : {}),
       content: resolvedContent,
+      model: event.model,
       isStreaming: false,
       isPending: false,
       isIntermediate: event.isIntermediate,
@@ -171,6 +172,7 @@ export function handleTextComplete(
   const newMessage: Message = {
     id: event.messageId ?? generateMessageId(),
     role: 'assistant',
+    model: event.model,
     content: event.text || streaming?.content || '',
     timestamp: event.timestamp ?? Date.now(),
     isStreaming: false,

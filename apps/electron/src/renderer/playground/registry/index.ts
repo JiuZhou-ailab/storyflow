@@ -24,11 +24,13 @@ import { transportBannerComponents } from './transport-banner'
 import { containerTransitionsComponents } from './container-transitions'
 import { apiKeyInputComponents } from './api-key-input'
 import { messagingComponents } from './messaging'
+import { managedFallbackComponents } from './managed-fallback'
 import { imageSupportComponents } from './image-support'
 
 export * from './types'
 
 export const componentRegistry: ComponentEntry[] = [
+  ...managedFallbackComponents,
   ...apiKeyInputComponents,
   ...onboardingComponents,
   ...chatComponents,
@@ -55,7 +57,7 @@ export const componentRegistry: ComponentEntry[] = [
 ]
 
 export function getCategories(): CategoryGroup[] {
-  const categoryOrder: Category[] = ['Automations', 'Onboarding', 'Agent Setup', 'Chat', 'Island', 'Browser', 'Custom Shadows', 'Session List', 'Entity Lists', 'Edit Popover', 'Turn Cards', 'TurnCard Modes', 'Fullscreen', 'Chat Messages', 'Chat Inputs', 'Toast Messages', 'Markdown', 'Icons', 'OAuth', 'Messaging']
+  const categoryOrder: Category[] = ['Automations', 'Onboarding', 'Agent Setup', 'Chat', 'Island', 'Browser', 'Custom Shadows', 'Session List', 'Entity Lists', 'Edit Popover', 'Turn Cards', 'TurnCard Modes', 'Fullscreen', 'Chat Messages', 'Chat Inputs', 'Toast Messages', 'Markdown', 'Icons', 'OAuth', 'Messaging', 'Settings']
   const categoryMap = new Map<Category, ComponentEntry[]>()
 
   for (const entry of componentRegistry) {

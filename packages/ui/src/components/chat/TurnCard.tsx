@@ -245,6 +245,7 @@ export interface ActivityItem {
 }
 
 export interface ResponseContent {
+  model?: string
   text: string
   isStreaming: boolean
   streamStartTime?: number
@@ -1265,6 +1266,7 @@ function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExp
 // ============================================================================
 
 export interface ResponseCardProps {
+  model?: string
   /** The content to display (markdown) */
   text: string
   /** Whether the content is still streaming */
@@ -1442,6 +1444,7 @@ function clearAnnotationMarks(root: HTMLElement): void {
  */
 export function ResponseCard({
   text,
+  model,
   isStreaming,
   onOpenFile,
   onOpenUrl,
@@ -2325,6 +2328,7 @@ export function ResponseCard({
                     />
                   </div>
                 )}
+                {model && <span className="text-xs text-muted-foreground">{model}</span>}
                 {metrics && <TurnUsageTooltip metrics={metrics} />}
                 {onBranch && <BranchDropdown onBranch={onBranch} />}
               </div>
@@ -2821,6 +2825,7 @@ export const TurnCard = React.memo(function TurnCard({
             >
               <ResponseCard
                 text={response.text}
+                model={response.model}
                 isStreaming={response.isStreaming}
                 streamStartTime={response.streamStartTime}
                 sessionId={sessionId}
@@ -2853,6 +2858,7 @@ export const TurnCard = React.memo(function TurnCard({
         <div className={cn("select-text", hasActivities && "mt-2")}>
           <ResponseCard
             text={response.text}
+            model={response.model}
             isStreaming={response.isStreaming}
             streamStartTime={response.streamStartTime}
             sessionId={sessionId}

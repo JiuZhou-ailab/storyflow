@@ -1,6 +1,7 @@
 // input: Model requests, legacy Catalog reads, and broker-issued Storyflow capability JWTs
 // output: Authenticated model calls plus a one-release Catalog compatibility proxy
 // pos: Edge authorization boundary that keeps upstream credentials out of desktop builds
+import { normalizeUpstreamError } from './upstream-error'
 import { decodeProtectedHeader, jwtVerify, type JWTPayload } from 'jose'
 import {
   isManagedModelAllowed,
@@ -44,6 +45,13 @@ interface GatewayRequestLogDetails {
   model?: string
   api?: CustomEndpointApi
   stage?: 'config' | 'upstream'
+  status?: number
+  phase?: 'headers'
+  upstream_code?: string
+  retryable?: boolean
+  correlation_version?: number
+  retry_index?: number
+  requested_model?: string
   upstream_status?: number
   upstream_ray?: string
   error?: string
@@ -197,7 +205,7 @@ export async function handleRequest(
     ...logIdentity,
     ...readModelCallContext(request.headers),
     model: requestedModel,
-    api: requestApi,
+    api: requestApi ?? undefined,
   }
 
   const upstreamHeaders = new Headers()
@@ -225,88 +233,25 @@ export async function handleRequest(
 
   try {
     const upstreamResponse = await fetchImpl(upstreamRequest)
-    if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
-      logGatewayRequest(startedAt, {
-        stage: 'upstream',
-        ...modelLogContext,
-        upstream_status: upstreamResponse.status,
-        upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
-      })
-      return Response.json(
-        {
-          error: 'Model provider authentication failed',
-          code: 'upstream_auth_failed',
-        },
-        { status: 502 },
-      )
-    }
-
-    const upstreamContentType = upstreamResponse.headers.get('content-type')?.toLowerCase() ?? ''
-    if (
-      upstreamResponse.status >= 400
-      && (upstreamContentType.includes('text/html') || upstreamContentType.includes('application/xhtml+xml'))
-    ) {
-      logGatewayRequest(startedAt, {
-        stage: 'upstream',
-        ...modelLogContext,
-        upstream_status: upstreamResponse.status,
-        upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
-        error: 'html_response_body',
-      })
-      return Response.json(
-        {
-          error: {
-            message: 'Upstream gateway returned an unexpected HTML response',
-            type: 'upstream_error',
-            code: 'upstream_html_response',
-          },
-        },
-        {
-          status: upstreamResponse.status === 524
-            ? 504
-            : upstreamResponse.status >= 500
-              ? 502
-              : upstreamResponse.status,
-        },
-      )
-    }
-
-    if (upstreamResponse.status === 400 && !(await upstreamResponse.clone().text()).trim()) {
-      logGatewayRequest(startedAt, {
-        stage: 'upstream',
-        ...modelLogContext,
-        upstream_status: 400,
-        upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
-        error: 'empty_response_body',
-      })
-      return Response.json(
-        {
-          error: {
-            message: 'Model provider rejected the request without an error body',
-            type: 'upstream_error',
-            code: 'upstream_empty_response',
-          },
-        },
-        { status: 502 },
-      )
-    }
-    logGatewayRequest(
-      startedAt,
-      upstreamResponse.ok
-        ? modelLogContext
-        : {
-            stage: 'upstream',
-            ...modelLogContext,
-            upstream_status: upstreamResponse.status,
-            upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
-          },
-    )
+    const normalized = upstreamResponse.ok ? undefined : await normalizeUpstreamError(upstreamResponse)
+    logGatewayRequest(startedAt, {
+      stage: 'upstream',
+      ...modelLogContext,
+      status: normalized?.response.status ?? upstreamResponse.status,
+      upstream_status: upstreamResponse.status,
+      upstream_ray: upstreamResponse.headers.get('cf-ray') ?? undefined,
+      upstream_code: normalized?.code,
+      retryable: normalized?.retryable,
+      // Response headers received, not stream completion.
+      phase: 'headers',
+    })
+    if (normalized) return normalized.response
     return upstreamResponse
   } catch (error) {
     logGatewayRequest(startedAt, {
       stage: 'upstream',
       ...modelLogContext,
-      error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown upstream fetch error',
+      error: 'upstream_fetch_failed',
     })
     return Response.json({ error: 'NewAPI gateway is unavailable' }, { status: 502 })
   }
@@ -579,10 +524,15 @@ function normalizeUserName(value: unknown): string | undefined {
   return normalized ? normalized.slice(0, 100) : undefined
 }
 
-function readModelCallContext(headers: Headers): Pick<GatewayRequestLogDetails, 'model_call_id' | 'attempt'> {
+function readModelCallContext(headers: Headers): Pick<GatewayRequestLogDetails, 'model_call_id' | 'attempt' | 'correlation_version' | 'retry_index' | 'requested_model'> {
   const modelCallId = headers.get('x-storyflow-model-call-id')
   const attempt = headers.get('x-storyflow-attempt')
+  const retryIndex = headers.get('x-storyflow-retry-index')
+  const requestedModel = headers.get('x-storyflow-requested-model')
   return {
+    ...(headers.get('x-storyflow-correlation-version') === '2' ? { correlation_version: 2 } : {}),
+    ...(retryIndex && /^(?:0|[1-9]\d?)$/.test(retryIndex) ? { retry_index: Number(retryIndex) } : {}),
+    ...(requestedModel && /^[A-Za-z0-9._/-]{1,128}$/.test(requestedModel) ? { requested_model: requestedModel } : {}),
     ...(modelCallId && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(modelCallId)
       ? { model_call_id: modelCallId }
       : {}),

@@ -207,12 +207,14 @@ export class PiModelRuntime {
         || model.supportsImages !== undefined
         || model.supportsThinking !== undefined
         || model.thinkingLevelMap !== undefined
+        || model.fallbackCapabilities !== undefined
       ) {
         this.customModelOverrides.set(model.id, {
           ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
           ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
           ...(model.supportsThinking !== undefined ? { supportsThinking: model.supportsThinking } : {}),
           ...(model.thinkingLevelMap !== undefined ? { thinkingLevelMap: model.thinkingLevelMap } : {}),
+          ...(model.fallbackCapabilities !== undefined ? { fallbackCapabilities: model.fallbackCapabilities } : {}),
         });
       }
     }

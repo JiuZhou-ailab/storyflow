@@ -42,6 +42,7 @@ export interface TextDeltaEvent {
  * Text complete event - finalizes streaming text
  */
 export interface TextCompleteEvent {
+  model?: string
   type: 'text_complete'
   sessionId: string
   text: string
