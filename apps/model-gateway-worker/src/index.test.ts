@@ -602,7 +602,10 @@ describe('model gateway worker', () => {
     )
 
     expect(response.status).toBe(502)
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
+      retryable: false,
+      scope: 'upstream_access',
+      upstream_status: 401,
       error: 'Model provider authentication failed',
       code: 'upstream_auth_failed',
     })
@@ -631,7 +634,7 @@ describe('model gateway worker', () => {
       )
 
       expect(response.status).toBe(502)
-      expect(await response.json()).toEqual({
+      expect(await response.json()).toMatchObject({
         error: {
           message: 'Model provider rejected the request without an error body',
           type: 'upstream_error',
@@ -642,7 +645,6 @@ describe('model gateway worker', () => {
         stage: 'upstream',
         upstream_status: 400,
         upstream_ray: 'empty-400-ray',
-        error: 'empty_response_body',
       })
       expect(errorSpy.mock.calls[0]?.[0]).not.toHaveProperty('model_call_id')
       expect(errorSpy.mock.calls[0]?.[0]).not.toHaveProperty('attempt')
@@ -676,7 +678,7 @@ describe('model gateway worker', () => {
       )
 
       expect(response.status).toBe(400)
-      expect(await response.json()).toEqual({
+      expect(await response.json()).toMatchObject({
         error: {
           message: 'Upstream gateway returned an unexpected HTML response',
           type: 'upstream_error',
@@ -688,7 +690,6 @@ describe('model gateway worker', () => {
         stage: 'upstream',
         upstream_status: 400,
         upstream_ray: 'upstream-alb-ray',
-        error: 'html_response_body',
       })
     } finally {
       errorSpy.mockRestore()
@@ -745,7 +746,11 @@ describe('model gateway worker', () => {
         'duration_ms',
         'model',
         'model_call_id',
+        'phase',
+        'retryable',
         'stage',
+        'status',
+        'upstream_code',
         'upstream_ray',
         'upstream_status',
         'user',

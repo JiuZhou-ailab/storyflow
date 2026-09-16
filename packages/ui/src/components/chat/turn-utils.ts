@@ -586,6 +586,7 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
         isStreaming: !!message.isStreaming,
         streamStartTime: message.isStreaming ? message.timestamp : undefined,
         messageId: message.id,
+        model: message.model,
         canBranch: message.canBranch ?? !!message.turnId,
         annotations: message.annotations,
       }
@@ -720,6 +721,7 @@ export function tryPatchTurnsForStreamingContentChange(
       isStreaming: !!nextLast.isStreaming,
       streamStartTime: nextLast.isStreaming ? nextLast.timestamp : undefined,
       messageId: nextLast.id,
+      model: nextLast.model,
       canBranch: nextLast.canBranch ?? !!nextLast.turnId,
       annotations: nextLast.annotations,
     }

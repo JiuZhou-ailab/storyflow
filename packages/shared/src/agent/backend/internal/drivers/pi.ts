@@ -2,6 +2,7 @@
 // output: Direct Pi runtime configuration and model discovery functions
 // pos: Minimal Storyflow configuration bridge into the sole Pi runtime
 
+import { isManagedLlmConnectionSlug } from '../../../../config/llm-connections.ts';
 import type { LlmConnection } from '../../../../config/storage.ts';
 import { InMemoryCredentialStore } from '@earendil-works/pi-ai';
 import { builtinModels } from '@earendil-works/pi-ai/providers/all';
@@ -58,6 +59,9 @@ export function buildPiRuntime(args: {
     },
     piAuthProvider: providerOptions?.piAuthProvider
       || (context.connection ? resolvePiAuthProvider(context.connection) : undefined),
+    managedConnection: context.connection && isManagedLlmConnectionSlug(context.connection.slug)
+      ? { slug: context.connection.slug, autoFallback: context.connection.autoFallback !== false }
+      : undefined,
     baseUrl: context.connection?.baseUrl,
     customEndpoint: context.connection?.customEndpoint,
     customModels: context.connection?.models?.map(m => {
@@ -74,9 +78,11 @@ export function buildPiRuntime(args: {
         || supportsImages !== undefined
         || supportsThinking !== undefined
         || thinkingLevelMap !== undefined
+        || m.fallbackCapabilities !== undefined
       ) {
         return {
           id: m.id,
+          ...(m.fallbackCapabilities ? { fallbackCapabilities: m.fallbackCapabilities } : {}),
           ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
           ...(supportsImages !== undefined ? { supportsImages } : {}),
           ...(supportsThinking !== undefined ? { supportsThinking } : {}),

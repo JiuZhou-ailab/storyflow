@@ -759,6 +759,7 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
         baseUrl: runtime.baseUrl,
         customEndpoint: runtime.customEndpoint,
         customModels: runtime.customModels,
+      managedConnection: runtime.managedConnection,
       });
     });
   }

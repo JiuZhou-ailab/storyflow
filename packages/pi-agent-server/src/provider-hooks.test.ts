@@ -92,9 +92,9 @@ describe('createProviderHooks', () => {
       { type: 'before_provider_headers', headers: retryHeaders } as never,
       { model: { api: 'openai-responses', provider: 'custom-endpoint' } } as never,
     );
-    expect(retryHeaders['x-storyflow-model-call-id']).not.toBe(firstHeaders['x-storyflow-model-call-id']);
+    expect(retryHeaders['x-storyflow-model-call-id']).toBe(firstHeaders['x-storyflow-model-call-id']);
     expect(firstHeaders['x-storyflow-attempt']).toBe('0');
-    expect(retryHeaders['x-storyflow-attempt']).toBe('0');
+    expect(retryHeaders['x-storyflow-attempt']).toBe('1');
 
     await handlers.get('message_end')!(
       { type: 'message_end', message: { role: 'assistant', stopReason: 'stop' } } as never,

@@ -2,6 +2,7 @@
 // output: Subprocess lifecycle, correlated protocol results, and Pi event delivery
 // pos: Policy-free Boundary Protocol beneath the Product Host projection
 
+import { i18n } from '../i18n/index.ts';
 /**
  * Pi Backend (Subprocess RPC Client)
  *
@@ -392,6 +393,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
       baseUrl: runtime.baseUrl,
       customEndpoint: runtime.customEndpoint,
       customModels: runtime.customModels,
+      managedConnection: runtime.managedConnection,
       enable1MContext: this.config.enable1MContext,
       // Branch params for Pi SDK session fork
       branchFromSdkSessionId: this.config.session?.branchFromSdkSessionId,
@@ -771,7 +773,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
       case 'extension_notification':
         this.eventQueue.enqueue({
           type: 'info',
-          message: String(msg.message || 'Extension notification'),
+          message: msg.modelFallback ? i18n.t('chat.modelFallback', msg.modelFallback) : String(msg.message || 'Extension notification'),
           level: msg.level === 'warning' || msg.level === 'error' ? msg.level : 'info',
         });
         break;

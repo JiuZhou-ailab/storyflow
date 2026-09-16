@@ -2,6 +2,7 @@
 // output: User-editable AI settings and connection management surfaces
 // pos: Renderer settings boundary for user-owned LLM configuration
 
+import { ManagedFallbackSettings } from './ManagedFallbackSettings'
 /**
  * AiSettingsPage
  *
@@ -997,6 +998,7 @@ export default function AiSettingsPage() {
               </SettingsSection>
               )}
 
+              <ManagedFallbackSettings connections={llmConnections} onSaved={refreshLlmConnections} />
               <AiContextSettings />
 
               {/* Workspace Overrides - only show if connections exist */}

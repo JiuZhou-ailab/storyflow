@@ -1,0 +1,135 @@
+diff --git a/dist/api/anthropic-messages.js b/dist/api/anthropic-messages.js
+index d04d7a9f59f3700a7e3bacb02aa68256215bee27..d463751b807ca80843fb7e596b669b3995211ed6 100644
+--- a/dist/api/anthropic-messages.js
++++ b/dist/api/anthropic-messages.js
+@@ -380,6 +380,11 @@ export const stream = (model, context, options) => {
+                 maxRetries: 0,
+             };
+             const response = await retryProviderRequest(() => client.messages.create({ ...params, stream: true }, requestOptions).asResponse(), {
++                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
++                onError: async (error) => {
++                    if (typeof error?.status === "number" && error.headers instanceof Headers)
++                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
++                },
+                 maxRetries: options?.maxRetries,
+                 maxRetryDelayMs: options?.maxRetryDelayMs,
+                 signal: options?.signal,
+diff --git a/dist/api/google-generative-ai.js b/dist/api/google-generative-ai.js
+index e5db9352c61629ab16158b78ee3a6bbd96bf1a9b..6efc5c19dd00f0500e766f51dc7044cec8e540a1 100644
+--- a/dist/api/google-generative-ai.js
++++ b/dist/api/google-generative-ai.js
+@@ -43,7 +43,13 @@ export const stream = (model, context, options) => {
+             if (nextParams !== undefined) {
+                 params = nextParams;
+             }
+-            const googleStream = await retryGoogleRequest(() => client.models.generateContentStream(params), options);
++            const googleStream = await retryGoogleRequest(() => client.models.generateContentStream(params), {
++                ...options,
++                beforeRetry: async () => {
++                    const headers = await options?.refreshHeaders?.();
++                    if (headers) params.config = { ...params.config, httpOptions: { ...params.config?.httpOptions, headers: providerHeadersToRecord(headers) } };
++                },
++            });
+             stream.push({ type: "start", partial: output });
+             let currentBlock = null;
+             const blocks = output.content;
+diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
+index 4214c050965c3bdb3564b623d54130d2f8608b1f..cbfc022e573a4bafcc4813c1ecc32ca359721a3d 100644
+--- a/dist/api/google-shared.js
++++ b/dist/api/google-shared.js
+@@ -392,6 +392,7 @@ export function retryGoogleRequest(request, options) {
+             throw error;
+         }
+     }, {
++        beforeRetry: options?.beforeRetry,
+         maxRetries: options?.maxRetries,
+         maxRetryDelayMs: options?.maxRetryDelayMs,
+         signal: options?.signal,
+diff --git a/dist/api/openai-completions.js b/dist/api/openai-completions.js
+index c732f1fa77815c60bae57077a1e00161562548cc..5332c92d194c296d160f7da0831c6b17bf1094ae 100644
+--- a/dist/api/openai-completions.js
++++ b/dist/api/openai-completions.js
+@@ -211,6 +211,11 @@ export const stream = (model, context, options) => {
+                 maxRetries: 0,
+             };
+             const { data: openaiStream, response } = await retryProviderRequest(() => client.chat.completions.create(params, requestOptions).withResponse(), {
++                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
++                onError: async (error) => {
++                    if (typeof error?.status === "number" && error.headers instanceof Headers)
++                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
++                },
+                 maxRetries: options?.maxRetries,
+                 maxRetryDelayMs: options?.maxRetryDelayMs,
+                 signal: options?.signal,
+diff --git a/dist/api/openai-responses.js b/dist/api/openai-responses.js
+index 0fb7e8b26f323f2b44a5a4b760bccedc4c3abdd0..e53c4bdfcd2900826cfea97c58eeaa0a730857a2 100644
+--- a/dist/api/openai-responses.js
++++ b/dist/api/openai-responses.js
+@@ -109,6 +109,11 @@ export const stream = (model, context, options) => {
+                 maxRetries: 0,
+             };
+             const { data: openaiStream, response } = await retryProviderRequest(() => client.responses.create(params, requestOptions).withResponse(), {
++                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
++                onError: async (error) => {
++                    if (typeof error?.status === "number" && error.headers instanceof Headers)
++                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
++                },
+                 maxRetries: options?.maxRetries,
+                 maxRetryDelayMs: options?.maxRetryDelayMs,
+                 signal: options?.signal,
+diff --git a/dist/api/simple-options.js b/dist/api/simple-options.js
+index 216a45feebc02acef047d1ff133729fb0751b76c..664734e38d5247a1552a7461bf752ab66784fab4 100644
+--- a/dist/api/simple-options.js
++++ b/dist/api/simple-options.js
+@@ -23,6 +23,7 @@ export function buildBaseOptions(model, context, options, apiKey) {
+         cacheRetention: options?.cacheRetention,
+         sessionId: options?.sessionId,
+         headers: options?.headers,
++        refreshHeaders: options?.refreshHeaders,
+         onPayload: options?.onPayload,
+         onResponse: options?.onResponse,
+         timeoutMs: options?.timeoutMs,
+diff --git a/dist/models.js b/dist/models.js
+index 2e415e0b3a95527bfa8b4ad67664c94c2ac9549e..6ee49fa32df9f4e2e7fbf8f89b2b9e0979536f06 100644
+--- a/dist/models.js
++++ b/dist/models.js
+@@ -374,7 +374,7 @@ class ModelsImpl {
+         const env = resolution.env || options?.env ? { ...(resolution.env ?? {}), ...(options?.env ?? {}) } : undefined;
+         const requestModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model;
+         const { transformHeaders: _transformHeaders, ...providerOptions } = options ?? {};
+-        const requestOptions = { ...providerOptions, apiKey, headers, env };
++        const requestOptions = { ...providerOptions, apiKey, headers, env, refreshHeaders: options?.transformHeaders ? () => options.transformHeaders(headers ?? {}) : undefined };
+         return { requestModel, requestOptions };
+     }
+     stream(model, context, options) {
+diff --git a/dist/utils/provider-retry.js b/dist/utils/provider-retry.js
+index a08fefd7e254f494f838ffa95affd6bf279973db..a4a2f5dabcf5475c935f99a592fc4227205c6948 100644
+--- a/dist/utils/provider-retry.js
++++ b/dist/utils/provider-retry.js
+@@ -78,9 +78,11 @@ export async function retryProviderRequest(request, options = {}) {
+     for (;;) {
+         try {
+             // Each retry is a fresh SDK request, so X-Stainless-Retry-Count remains zero.
++            if (retriesRemaining < maxRetries) await options.beforeRetry?.();
+             return await request();
+         }
+         catch (error) {
++            await options.onError?.(error);
+             if (options.signal?.aborted)
+                 throw createAbortError();
+             if (retriesRemaining <= 0 || !isProviderError(error) || !isRetryableProviderError(error))
+diff --git a/dist/utils/retry.js b/dist/utils/retry.js
+index 65c7c9efd7667445b711fcd43549062ee3eb5ecf..db68fdfac719d2836c9fd2263f0dcbf57bf832d3 100644
+--- a/dist/utils/retry.js
++++ b/dist/utils/retry.js
+@@ -2,6 +2,10 @@ function buildProviderErrorPattern(patterns) {
+     return new RegExp(patterns.join("|"), "i");
+ }
+ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
++    // Deterministic gateway denials take precedence over an outer 502 wrapper.
++    "upstream_auth_failed",
++    "model_not_allowed",
++    '"retryable"\\s*:\\s*false',
+     // OpenCode Go/free-tier limits returned as 429 JSON error types by OpenCode's
+     // Zen API. These are subscription/account limits, not transient throttles.
+     "GoUsageLimitError",

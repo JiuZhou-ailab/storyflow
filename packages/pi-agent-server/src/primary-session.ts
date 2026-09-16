@@ -45,6 +45,7 @@ import type { createToolHooks } from "./tool-hooks.ts";
 
 interface PrimaryPiSessionContext {
   config: PiInitMessage;
+  getConfig(): PiInitMessage;
   cwd: string;
   agentDir: string;
   modelRuntime: ModelRuntime;
@@ -164,9 +165,11 @@ export async function createPrimaryPiSession(
     intentByCallId: new Map(),
     toolResultTokens: 0,
   });
-  const providerHooks = createProviderHooks({
+  const makeProviderHooks = (getSession: () => AgentSession | null) => createProviderHooks({
     enable1MContext: config.enable1MContext === true,
+    fallback: { getSession, getConfig: context.getConfig, notify: (from, to) => send({ type: 'extension_notification', message: '', modelFallback: { from, to } }), diagnostic: data => debugLog(JSON.stringify(data)) },
   });
+  const providerHooks = makeProviderHooks(() => activeSession);
   const subagentExtension = createSubagentExtension({
     cwd,
     agentDir,
@@ -174,7 +177,7 @@ export async function createPrimaryPiSession(
     thinkingLevel: piThinkingLevel,
     toolDefinitions: customTools,
     activeSessions: activeSubagentSessions,
-    providerHooks,
+    createProviderHooks: makeProviderHooks,
     createSessionHooks: (context: SubagentHookContext) =>
       createSessionToolHooks({
         getSession: () => context.session,

@@ -60,7 +60,7 @@ export interface CreateSubagentExtensionOptions {
   activeSessions?: Set<AgentSession>;
   thinkingLevel?: Parameters<AgentSession['setThinkingLevel']>[0];
   createSessionHooks(context: SubagentHookContext): InlineExtension;
-  providerHooks?: InlineExtension;
+  createProviderHooks?(getSession: () => AgentSession | null): InlineExtension;
   createSession?: (options: CreateAgentSessionOptions) => Promise<AgentSession>;
 }
 
@@ -148,9 +148,11 @@ function createConcurrencyGate(limit: number) {
 export function createSubagentExtension(
   options: CreateSubagentExtensionOptions,
 ): InlineExtension {
-  const createSession = options.createSession ?? (async sessionOptions => (
-    await createAgentSession(sessionOptions)
-  ).session);
+  const createSession = options.createSession ?? (async sessionOptions => {
+    const { session } = await createAgentSession(sessionOptions);
+    await session.bindExtensions({});
+    return session;
+  });
   const withConcurrencySlot = createConcurrencyGate(MAX_CONCURRENT_TASKS);
 
   return {
@@ -220,7 +222,7 @@ export function createSubagentExtension(
                 agentDir: options.agentDir,
                 settingsManager,
                 extensionFactories: [
-                  ...(options.providerHooks ? [options.providerHooks] : []),
+                  ...(options.createProviderHooks ? [options.createProviderHooks(() => session)] : []),
                   createOpenAIEncryptedReasoningCompat(),
                   options.createSessionHooks(hookContext),
                 ],

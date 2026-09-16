@@ -380,7 +380,7 @@ export class PiEventAdapter {
       case 'message_end': {
         // Pi SDK emits message_end for ALL messages (user, assistant, toolResult).
         // Only process assistant messages — skip user prompts and tool results.
-        const msg = event.message as { role?: string; stopReason?: string; errorMessage?: string; usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number; cost: { total: number } } } | undefined;
+        const msg = event.message as { role?: string; model?: string; stopReason?: string; errorMessage?: string; usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number; cost: { total: number } } } | undefined;
         const eventMetadata = event as { sdkTurnAnchor?: string; contextWindow?: number };
         const sdkTurnAnchor = eventMetadata.sdkTurnAnchor;
         if (msg?.role !== 'assistant') break;
@@ -463,6 +463,7 @@ export class PiEventAdapter {
             isIntermediate,
             turnId: mTurnId,
             sdkTurnAnchor,
+            model: msg.model,
           };
         }
 

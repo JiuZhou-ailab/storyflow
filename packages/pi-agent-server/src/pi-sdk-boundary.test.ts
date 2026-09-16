@@ -30,6 +30,8 @@ const ALLOWED_PI_TYPE_IMPORTS = new Set([
   "ContextEvent",
   "CreateAgentSessionOptions",
   "ExtensionUIContext",
+  "ExtensionAPI",
+  "ExtensionContext",
   "InlineExtension",
   "ModelRuntime",
   "ResourceLoader",

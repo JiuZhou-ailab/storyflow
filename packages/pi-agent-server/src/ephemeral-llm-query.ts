@@ -10,6 +10,7 @@ import {
   getAgentDir,
 } from '@earendil-works/pi-coding-agent';
 import type {
+  AgentSession,
   AgentSessionEvent,
   CreateAgentSessionOptions,
   ModelRuntime,
@@ -30,6 +31,8 @@ import { pickProviderAppropriateMiniModel } from './pick-mini-model.ts';
 
 interface EphemeralLlmQueryContext {
   config: PiInitMessage;
+  getConfig?(): PiInitMessage;
+  activeSessions?: Set<AgentSession>;
   cwd: string;
   modelRuntime: ModelRuntime;
   preferCustomEndpoint: boolean;
@@ -56,6 +59,7 @@ export async function queryLlmWithEphemeralPiSession(
     const resolvedProvider = (resolved as { provider?: string } | undefined)?.provider;
     const isCompatible = resolvedProvider === authProvider || resolvedProvider === 'custom-endpoint';
     if (!resolved || !isCompatible || isDeniedMiniModelId(model, piAuthProvider)) {
+      if (config.managedConnection && request.model) throw new Error(`Requested managed model is not available: ${request.model}`);
       const providerDefault = authProvider === 'anthropic'
         ? undefined
         : pickProviderAppropriateMiniModel(authProvider, modelRuntime, preferCustomEndpoint);
@@ -65,7 +69,7 @@ export async function queryLlmWithEphemeralPiSession(
     }
   }
 
-  const runQueryWithModel = async (modelId: string): Promise<string> => {
+  const runQueryWithModel = async (modelId: string): Promise<LLMQueryResult> => {
     debug(`[queryLlm] Using model: ${modelId}`);
     const piModel = resolvePiModel(
       modelRuntime,
@@ -91,13 +95,14 @@ export async function queryLlmWithEphemeralPiSession(
     };
     const promptOverride = createSystemPromptOverride();
     promptOverride.set(request.systemPrompt ?? 'Reply with ONLY the requested text. No explanation.');
+    let activeSession: AgentSession | null = null;
     const resourceLoader = new DefaultResourceLoader({
       cwd: context.cwd,
       agentDir: config.agentDir || getAgentDir(),
       settingsManager,
       extensionFactories: [
         promptOverride.extension,
-        createProviderHooks({ enable1MContext: config.enable1MContext === true }),
+        createProviderHooks({ enable1MContext: config.enable1MContext === true, fallback: { getSession: () => activeSession, getConfig: context.getConfig ?? (() => config), fixedModel: !!request.model, diagnostic: data => debug(JSON.stringify(data)) } }),
       ],
       noExtensions: true,
       noSkills: true,
@@ -111,24 +116,26 @@ export async function queryLlmWithEphemeralPiSession(
 
     const { session } = await createAgentSession(ephemeralOptions);
     try {
-      try {
-        await session.setModel(piModel);
-      } catch {
-        debug('[queryLlm] Failed to set model on ephemeral session, proceeding with default');
-      }
+      activeSession = session;
+      context.activeSessions?.add(session);
+      await session.bindExtensions({});
 
       debug(`[queryLlm] Created ephemeral session: ${session.sessionId}`);
       let result = '';
+      let effectiveModel = piModel.id;
       let lastError = '';
       const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
         if (event.type !== 'message_end') return;
         const message = event.message as {
           role?: string;
+          model?: string;
           content?: string | Array<{ type: string; text?: string }>;
           stopReason?: string;
           errorMessage?: string;
         };
         if (message.role !== 'assistant') return;
+        effectiveModel = message.model ?? effectiveModel;
+        lastError = message.stopReason === 'error' || message.stopReason === 'aborted' ? message.errorMessage ?? message.stopReason : '';
         if (message.stopReason === 'error' && message.errorMessage) {
           lastError = message.errorMessage;
           debug(`[queryLlm] API error in message_end: ${message.errorMessage}`);
@@ -149,16 +156,21 @@ export async function queryLlmWithEphemeralPiSession(
           LLM_QUERY_TIMEOUT_MS,
           `queryLlm timed out after ${LLM_QUERY_TIMEOUT_MS / 1000}s`,
         );
+        await session.waitForIdle();
         debug(`[queryLlm] Result length: ${result.trim().length}`);
-        if (!result.trim() && lastError) throw new Error(lastError);
-        return result.trim();
+        if (lastError) throw new Error(lastError);
+        return { text: result.trim(), model: effectiveModel };
       } finally {
         unsubscribe();
       }
     } finally {
+      await session.abort();
       session.dispose();
+      context.activeSessions?.delete(session);
     }
   };
+
+  if (config.managedConnection) return runQueryWithModel(model);
 
   const fallbackCandidates = [
     'pi/gpt-5-mini',
@@ -173,8 +185,7 @@ export async function queryLlmWithEphemeralPiSession(
   while (true) {
     triedModels.add(currentModel);
     try {
-      const text = await runQueryWithModel(currentModel);
-      return { text, model: currentModel };
+      return await runQueryWithModel(currentModel);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!isModelNotFoundError(message)) throw error;

@@ -2602,6 +2602,7 @@ export function updateLlmConnection(slug: string, updates: Partial<Omit<LlmConne
     // Distribution metadata
     hidden: updates.hidden !== undefined ? updates.hidden : existing.hidden,
     managed: updates.managed !== undefined ? updates.managed : existing.managed,
+    autoFallback: typeof updates.autoFallback === 'boolean' ? updates.autoFallback : existing.autoFallback,
     source: updates.source !== undefined ? updates.source : existing.source,
     // Timestamps
     lastUsedAt: updates.lastUsedAt !== undefined ? updates.lastUsedAt : existing.lastUsedAt,

@@ -4869,6 +4869,7 @@ export class SessionManager implements ISessionManager {
           id: generateMessageId(),
           role: 'assistant',
           content: event.text,
+          model: event.model,
           timestamp: this.monotonic(),
           isIntermediate: event.isIntermediate,
           turnId: event.turnId,
@@ -4896,7 +4897,7 @@ export class SessionManager implements ISessionManager {
           }
         }
 
-        this.sendEvent({ type: 'text_complete', sessionId, text: event.text, isIntermediate: event.isIntermediate, turnId: event.turnId, parentToolUseId: event.parentToolUseId, timestamp: assistantMessage.timestamp, messageId: assistantMessage.id, canBranch }, workspaceId)
+        this.sendEvent({ type: 'text_complete', sessionId, text: event.text, model: event.model, isIntermediate: event.isIntermediate, turnId: event.turnId, parentToolUseId: event.parentToolUseId, timestamp: assistantMessage.timestamp, messageId: assistantMessage.id, canBranch }, workspaceId)
 
         // Persist session after complete message to prevent data loss on quit
         this.persistSession(managed)
