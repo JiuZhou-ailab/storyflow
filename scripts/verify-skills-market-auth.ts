@@ -8,6 +8,7 @@ type FetchLike = typeof fetch
 
 interface VerifySkillsMarketAuthOptions {
   clientSessionSecret: string
+  appSessionToken?: string
   authOrigin?: string
   marketOrigin?: string
   fetchImpl?: FetchLike
@@ -16,14 +17,15 @@ interface VerifySkillsMarketAuthOptions {
 
 export async function verifySkillsMarketAuth({
   clientSessionSecret,
+  appSessionToken: persistedSession,
   authOrigin = 'https://storyflow-auth.zjding.com',
   marketOrigin = 'https://storyflow-skills.zjding.com',
   fetchImpl = fetch,
   nowSeconds = Math.floor(Date.now() / 1000),
 }: VerifySkillsMarketAuthOptions): Promise<{ catalog: number }> {
-  if (!clientSessionSecret) throw new Error('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET is required')
+  if (!persistedSession && !clientSessionSecret) throw new Error('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET is required')
 
-  const appSessionToken = await new SignJWT({
+  const appSessionToken = persistedSession ?? await new SignJWT({
     scope: 'capability:issue',
     model_tier: 'standard',
     auth_time: nowSeconds,
@@ -60,7 +62,11 @@ export async function verifySkillsMarketAuth({
 }
 
 if (import.meta.main) {
+  const appSessionToken = process.env.STORYFLOW_ACCESS_CANARY_SESSION
+  const config = Bun.TOML.parse(await Bun.file(new URL('../apps/auth-broker-worker/wrangler.toml', import.meta.url)).text()) as { vars?: { STORYFLOW_ACCESS_ENFORCEMENT?: string } }
+  if (config.vars?.STORYFLOW_ACCESS_ENFORCEMENT !== 'legacy' && !appSessionToken) throw new Error('Persisted STORYFLOW_ACCESS_CANARY_SESSION is required')
   const result = await verifySkillsMarketAuth({
+    appSessionToken,
     clientSessionSecret: process.env.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET ?? '',
     authOrigin: process.env.STORYFLOW_AUTH_ORIGIN,
     marketOrigin: process.env.STORYFLOW_SKILLS_MARKET_ORIGIN,

@@ -11,7 +11,7 @@ Firecrawl 官方 onboarding 的默认路径会安装 CLI/skills、打开供应�
 
 ## 决策
 
-1. Identity Session 仍是唯一可持久化的账户事实。Auth Broker 仅按需用独立的 ES256 私钥签发短期 Managed Tool Capability；Tool Gateway 只持有公钥并验证独立的 audience 与 scope，不复用 Model Access 或 Skills Market 密钥，也不让 GitHub Actions 接触工具签名私钥。
+1. Identity Session 仍是桌面唯一可持久化的账户凭证。服务端当前权限与撤销事实遵循修订后的 ADR 0015。Auth Broker 仅按需用独立的 ES256 私钥签发短期 Managed Tool Capability；Tool Gateway 只持有公钥并验证独立的 audience 与 scope，不复用 Model Access 或 Skills Market 密钥，也不让 GitHub Actions 接触工具签名私钥。
 2. Electron Host 持有 Managed Tool Capability 的进程内缓存。本机 Local Capability Broker 只绑定 loopback，并用每次进程启动随机生成的本机 capability 验证子进程。
 3. 子进程和安装的 CLI 不获得云端 JWT。Local Capability Broker 代理明确列出的 Tool Operation，并在云端拒绝旧 token 时最多刷新重试一次。
 4. Tool Gateway 暴露稳定、能力导向的产品路由：`POST /v1/search` 要求 `web:search`，由 AnySearch 适配；`POST /v1/scrape` 要求 `web:scrape`，由 Firecrawl 适配。供应商 API key 只存在于 Cloudflare Worker Secret。
@@ -34,3 +34,9 @@ Firecrawl 官方 onboarding 的默认路径会安装 CLI/skills、打开供应�
 - 不提供任意 URL 代理、任意 MCP method passthrough 或通用 secrets API。
 - 不把 Provider Tool Credential 写入桌面配置、日志、Skill Package、MCP 配置或 CLI 环境。
 - 不安装 Firecrawl 官方 onboarding Skill；默认分发的 Storyflow `firecrawl` Skill 只描述托管 `web_scrape` 的使用方法，不建立第三方插件运行时，也不提供站点级 crawl 或批处理接口。
+
+## 2026-09-16 修订：工具与 Market 撤销边界（#42）
+
+工具 JWT 携带父会话 `sid`，每次请求同时满足 token scope 与 Broker 当前权限。Broker 的新工具/Market 能力签发也查询当前状态。Model/Tool 能力上限仍为 24 小时，父会话和操作前 12 小时 5 分钟安全余量保持不变；限流仍在授权后执行。
+
+独立 Skills Registry 不参与本次逐请求撤销。已经签发的 Market token 最长仍可使用 300 秒，且不能超过父会话期限；禁用或撤销只立即阻止新的签发。组织与发布者所有权仍由 Registry 检查。

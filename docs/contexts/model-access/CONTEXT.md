@@ -5,16 +5,12 @@ Model Access defines who owns authentication state for managed and user-configur
 ## Language
 
 **Identity Session**:
-The renewable relationship between a local Storyflow installation and a signed-in account. It may be persisted so the account can be restored after restart.
+The bounded, individually revocable relationship between one local Storyflow installation and a provider-qualified signed-in account. It may be persisted for restart; renewing it does not extend its original lifetime.
 _Avoid_: Model credential, provider API key
 
-**Invitation**:
-A native Neon Organization invitation bound to an email address. It is not an account or a session.
-_Avoid_: Registration account, login token
-
-**Organization Membership**:
-The Neon-signed authorization fact that admits an external email identity to Storyflow.
-_Avoid_: Feishu user, Neon user, app session
+**Account Access**:
+Storyflow's current permission to use managed capabilities and models, owned independently of the login provider. Disabling access revokes existing Identity Sessions; enabling it permits a fresh login.
+_Avoid_: Login provider, subscription tier, organization membership
 
 **Managed Model Access**:
 A short-lived capability derived from an Identity Session and supplied by the host only to Storyflow-managed model runtimes.
@@ -42,10 +38,11 @@ _Avoid_: SDK retry budget, duplicate user message
 
 ## Relationships
 
-- Feishu's tenant allowlist and Neon's Organization membership are independent admission boundaries.
-- A Neon Invitation may establish Organization Membership after the invited email is verified.
-- Feishu or Neon proves identity when Storyflow creates the Identity Session; routine capability renewal trusts that bounded Storyflow session rather than repeating provider login.
+- Feishu's tenant allowlist and verified, non-banned Neon email identities are independent admission boundaries; Neon organization invitations are not required.
+- Provider-qualified identities remain distinct even when their email matches; login does not reset Account Access.
+- Feishu or Neon proves identity when Storyflow creates the Identity Session; routine capability renewal requires the bounded Storyflow session and current Account Access. Storyflow access changes are independent of later identity-provider administration.
 - Managed Model Access authorizes only trusted Storyflow-managed connections and remains transient. The host accepts or renews it before an Agent operation and never rotates it inside the operation.
+- Each new managed resource operation requires both its capability and current Account Access; a successfully revoked session cannot authorize subsequent operations.
 - Provider Credentials remain independent so user-configured providers continue to work without an Identity Session.
 - Connection readiness is evaluated at the connection boundary, separately from Credential Store Health.
 - Pi owns retry classification, backoff, and the configured per-call budget; transport correlation also counts any native provider retries.

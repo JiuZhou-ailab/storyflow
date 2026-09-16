@@ -1,12 +1,24 @@
 name = "storyflow-auth-broker"
-main = "src/index.ts"
+main = "src/worker.ts"
 compatibility_date = "2026-05-28"
 workers_dev = false
 routes = [
   { pattern = "storyflow-auth.zjding.com", custom_domain = true },
 ]
 
+[[d1_databases]]
+binding = "ACCESS_DB"
+database_name = "storyflow-access"
+migrations_dir = "migrations"
+
+[observability]
+enabled = true
+[observability.traces]
+enabled = true
+
 [vars]
+# Migration only: provision D1, deploy all consumers, then switch all three Workers to required.
+STORYFLOW_ACCESS_ENFORCEMENT = "legacy"
 STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID = "client-session-2026-07"
 STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID = "model-access-2026-07"
 STORYFLOW_SKILLS_MARKET_JWT_CURRENT_KEY_ID = "skills-market-2026-08"

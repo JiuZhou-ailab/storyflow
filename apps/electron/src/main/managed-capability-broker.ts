@@ -1,7 +1,9 @@
 // input: Storyflow client-auth state plus managed model and tool capability refresh functions
-// output: Loopback-only, operation-scoped access for trusted local Agent and CLI processes
+// output: Loopback-only operation access with bounded expiry recovery and terminal denial propagation
 // pos: Host projection from desktop login ownership to managed child-process capabilities
 
+import { accessFailure, isAccessReason } from '@craft-agent/shared/auth/managed-access'
+import { ClientAuthBrokerHttpError } from './client-auth-broker'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 
@@ -139,6 +141,11 @@ async function handleRequest(
       url.pathname === '/v1/tools/search' ? 'search' : 'scrape',
     )
   } catch (error) {
+    if (error instanceof ClientAuthBrokerHttpError && isAccessReason(error.diagnostic?.reason)) {
+      const failure = accessFailure(error.diagnostic.reason, 'identity', { correlation_id: error.diagnostic.correlationId })
+      sendJson(response, failure.status, await failure.json())
+      return
+    }
     if (error instanceof PayloadTooLargeError) {
       sendJson(response, 413, { error: error.message })
       return
@@ -176,10 +183,19 @@ async function proxyToolOperation(
   }
 
   let upstream = await callGateway(false)
+  let content = await readResponseBuffer(upstream.body, 1024 * 1024)
   if (upstream.status === 401 || upstream.status === 403) {
-    upstream = await callGateway(true)
+    // Keep legacy bounded recovery; a current permission/session rejection cannot be repaired by refresh.
+    let recoverable = true
+    try {
+      const diagnostic = JSON.parse(content.toString('utf8')) as { reason?: unknown } | null
+      if (isAccessReason(diagnostic?.reason)) recoverable = diagnostic.reason === 'token_expired'
+    } catch { /* Older gateways may return a non-JSON rejection. */ }
+    if (recoverable) {
+      upstream = await callGateway(true)
+      content = await readResponseBuffer(upstream.body, 1024 * 1024)
+    }
   }
-  const content = await readResponseBuffer(upstream.body, 1024 * 1024)
   response.writeHead(upstream.status, {
     'Cache-Control': 'no-store',
     'Content-Type': upstream.headers.get('content-type') ?? 'application/json; charset=utf-8',

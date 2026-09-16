@@ -20,6 +20,7 @@ const TOOL_ACCESS_PUBLIC_KEY = await exportSPKI(toolAccessKeyPair.publicKey)
 
 function makeEnv(overrides: Record<string, string | undefined> = {}) {
   return {
+    STORYFLOW_ACCESS_ENFORCEMENT: 'legacy',
     CRAFT_WEBUI_FEISHU_APP_ID: 'cli_test',
     CRAFT_WEBUI_FEISHU_APP_SECRET: 'feishu-secret',
     CRAFT_WEBUI_FEISHU_ALLOW_ALL_USERS: 'true',

@@ -46,4 +46,15 @@ describe('verifySkillsMarketAuth', () => {
     })).rejects.toThrow('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET is required')
     expect(called).toBe(false)
   })
+  it('uses an operator-provided persisted session without minting another identity', async () => {
+    let requestIndex = 0
+    await verifySkillsMarketAuth({ clientSessionSecret: '', appSessionToken: 'persisted-canary-session', fetchImpl: (async (_input, init) => {
+      if (requestIndex++ === 0) {
+        expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer persisted-canary-session')
+        return Response.json({ marketPublishToken: 'market-capability' })
+      }
+      return Response.json({ skills: [{ slug: 'example' }] })
+    }) as typeof fetch })
+  })
+
 })

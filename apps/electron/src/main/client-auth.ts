@@ -117,6 +117,7 @@ export interface ClientAuthBrokerMarketTokenResult { marketPublishToken: string,
 export interface ClientAuthBrokerToolTokenResult { toolAccessToken: string }
 
 export interface ClientAuthBrokerClient {
+  revokeSession?(input: ClientAuthBrokerTokenRefreshInput): Promise<void>
   getFeishuAuthConfig?(input: { brokerUrl: string }): Promise<ClientFeishuBrokerPublicConfig | null>
   exchangeNeonToken(input: ClientAuthNeonBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
   exchangeFeishuCode(input: ClientAuthBrokerExchangeInput): Promise<ClientAuthBrokerExchangeResult>
@@ -731,6 +732,7 @@ export function createClientAuthService(
     },
 
     async signOut(): Promise<void> {
+      const previousSession = currentSession
       const generation = tokenLifecycle.beginTransition()
       if (activeFeishuLogin) {
         activeFeishuLogin.reject(new Error('Feishu login was cancelled'))
@@ -746,6 +748,14 @@ export function createClientAuthService(
         currentSession = null
         await notifyAuthChange()
       })
+      if (previousSession?.appSessionToken) {
+        try {
+          if (!authBrokerUrl || !authBrokerClient?.revokeSession) throw new Error('Revocation unavailable')
+          await authBrokerClient.revokeSession({ brokerUrl: authBrokerUrl, appSessionToken: previousSession.appSessionToken })
+        } catch {
+          throw new Error('Signed out locally; remote session revocation could not be confirmed.')
+        }
+      }
     },
 
     dispose(): void {

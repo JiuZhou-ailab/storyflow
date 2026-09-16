@@ -1,7 +1,8 @@
-// input: Storyflow tool-operation requests, scoped capability JWTs, and server-only provider credentials
+// input: Storyflow tool-operation requests, scoped capability JWTs, current-access RPC, and server-only provider credentials
 // output: Validated product-level tool responses with provider protocols and secrets contained at the edge
 // pos: Cloud authorization and provider-adapter boundary for managed Storyflow tools
 
+import { accessAuthorityReady, currentAccess, accessFailure, accessRequired, tokenFailure, ManagedAccessError, type AccessEnvironment, type AccessIdentity } from '../../../packages/shared/src/auth/managed-access'
 import { decodeProtectedHeader, importSPKI, jwtVerify, type JWTPayload } from 'jose'
 
 interface ToolGatewaySecrets {
@@ -14,7 +15,7 @@ interface ToolGatewaySecrets {
   SCRAPE_RATE_LIMITER?: RateLimitBinding
 }
 
-export type ToolGatewayEnv = Env & ToolGatewaySecrets
+export type ToolGatewayEnv = Env & ToolGatewaySecrets & AccessEnvironment
 type FetchLike = (request: Request) => Promise<Response>
 
 interface RateLimitBinding {
@@ -22,6 +23,7 @@ interface RateLimitBinding {
 }
 
 interface ToolGatewayJwtPayload extends JWTPayload {
+  sid?: string
   scopes?: unknown
 }
 
@@ -73,7 +75,7 @@ export async function handleRequest(
 
   if (url.pathname === '/ready') {
     if (request.method !== 'GET') return methodNotAllowed('GET')
-    return await getReadinessError(env)
+    return (!await accessAuthorityReady(env) || await getReadinessError(env))
       ? Response.json({ status: 'not_ready', code: 'configuration_invalid' }, { status: 503 })
       : Response.json({ status: 'ready' })
   }
@@ -92,17 +94,21 @@ export async function handleRequest(
   const token = readBearerToken(request.headers.get('authorization'))
   if (!token) {
     logRequest(startedAt, { capability, status: 401 })
-    return invalidToolAccessTokenResponse()
+    return accessRequired(env) ? accessFailure('token_missing', 'tool') : invalidToolAccessTokenResponse()
   }
 
   let subject: string
   try {
-    subject = await verifyToolGatewayJwt(token, env, capability)
+    const identity = await verifyToolGatewayJwt(token, env, capability)
+    await currentAccess(env, identity, capability)
+    subject = identity.sub
   } catch (error) {
+    if (accessRequired(env)) return accessFailure(error instanceof ManagedAccessError ? error.reason
+      : error instanceof ForbiddenToolTokenError ? 'scope_denied' : tokenFailure(error), 'tool')
     const status = error instanceof ForbiddenToolTokenError ? 403 : 401
     logRequest(startedAt, { capability, status })
     return status === 403
-      ? Response.json({ error: error.message }, { status })
+      ? Response.json({ error: error instanceof Error ? error.message : 'Access denied' }, { status })
       : invalidToolAccessTokenResponse()
   }
 
@@ -330,9 +336,9 @@ function isPrivateHostname(raw: string): boolean {
   return octets[0] === 0
     || octets[0] === 10
     || octets[0] === 127
-    || (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127)
+    || (octets[0] === 100 && octets[1]! >= 64 && octets[1]! <= 127)
     || (octets[0] === 169 && octets[1] === 254)
-    || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+    || (octets[0] === 172 && octets[1]! >= 16 && octets[1]! <= 31)
     || (octets[0] === 192 && octets[1] === 168)
 }
 
@@ -368,7 +374,7 @@ async function verifyToolGatewayJwt(
   token: string,
   env: ToolGatewayEnv,
   requiredScope: string,
-): Promise<string> {
+): Promise<AccessIdentity> {
   const kid = decodeProtectedHeader(token).kid
   if (typeof kid !== 'string' || !kid.trim()) throw new Error('Tool token key id is required')
   const key = [getCurrentKey(env), getPreviousKey(env)].find(candidate => candidate?.id === kid)
@@ -387,7 +393,7 @@ async function verifyToolGatewayJwt(
   if (!Array.isArray(payload.scopes) || !payload.scopes.includes(requiredScope)) {
     throw new ForbiddenToolTokenError(`Missing required capability: ${requiredScope}`)
   }
-  return subject
+  return { sub: subject, sid: payload.sid }
 }
 
 function getCurrentKey(env: ToolGatewayEnv): { id: string, publicKey: string } | null {

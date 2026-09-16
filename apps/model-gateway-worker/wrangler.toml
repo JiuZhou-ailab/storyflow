@@ -24,7 +24,14 @@ invocation_logs = true
 enabled = true
 head_sampling_rate = 1
 
+[[services]]
+binding = "ACCESS_AUTHORITY"
+service = "storyflow-auth-broker"
+entrypoint = "AccessAuthority"
+
 [vars]
+# Migration only; remove legacy acceptance at the managed-access cutover.
+STORYFLOW_ACCESS_ENFORCEMENT = "legacy"
 STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID = "model-access-2026-07"
 STORYFLOW_GATEWAY_JWT_AUDIENCE = "storyflow-model-gateway"
 STORYFLOW_GATEWAY_JWT_ISSUER = "storyflow-auth-broker"

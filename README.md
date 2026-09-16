@@ -23,7 +23,7 @@ Storyflow 是一个基于 Bun workspace 的 AI Agent 工作台项目，支持桌
 storyflow/
 ├── apps/
 │   ├── cli/                 # 无头服务端的命令行客户端
-│   ├── auth-broker-worker/  # 账户身份交换与短期能力令牌签发
+│   ├── auth-broker-worker/  # 身份交换、D1 当前权限/撤销与能力令牌签发
 │   ├── catalog-api/         # 多来源短剧榜单、媒资覆盖度与有序 OSS 分集清单
 │   ├── edge-gateway/        # 公网单端口到独立 Docker 服务的路径路由
 │   ├── electron/            # 主桌面应用：main、preload、renderer
@@ -55,6 +55,7 @@ storyflow/
 ## 环境要求
 
 - [Bun](https://bun.sh/) 1.2 或更高版本。
+- Node.js 22 或更高版本，用于 Miniflare 原生 Worker/D1 验收。
 - Git。
 - Electron 相关包所需的 Node 兼容原生工具链。
 - Python 3，仅用于文档工具 smoke test。

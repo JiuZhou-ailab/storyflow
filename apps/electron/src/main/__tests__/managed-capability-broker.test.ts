@@ -2,6 +2,7 @@
 // output: Regression coverage for zero-config model and tool access without cloud credential exposure
 // pos: Guards the desktop boundary exposed to trusted local Agent and CLI processes
 
+import { ClientAuthBrokerHttpError } from '../client-auth-broker'
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
   MODEL_ACCESS_BROKER_TOKEN_ENV,
@@ -154,4 +155,34 @@ describe('managed capability broker', () => {
     expect(response.status).toBe(413)
     expect(await response.json()).toEqual({ error: 'Tool response exceeds 1MB' })
   })
+  it.each(['session_revoked', 'account_disabled', 'scope_denied'])('does not renew or replay a terminal %s tool rejection', async (reason) => {
+    let calls = 0
+    let renewals = 0
+    const status = reason === 'session_revoked' ? 401 : 403
+    const body = { code: status === 401 ? 'tool_access_token_invalid' : 'managed_access_denied', reason, stage: 'tool', correlation_id: 'reference-42', retryable: false }
+    broker = await startManagedCapabilityBroker({
+      modelGatewayBaseUrl: 'https://model.test', toolGatewayBaseUrl: 'https://tools.test', isAuthenticated: () => true,
+      ensureModelAccessToken: async () => ({ token: 'model-token' }),
+      ensureToolAccessToken: async ({ force } = {}) => { if (force) renewals++; return { token: 'tool-token' } },
+      fetchImpl: async () => { calls++; return Response.json(body, { status }) },
+    })
+    const response = await fetch(`${broker.env[TOOL_BROKER_URL_ENV]}/search`, { method: 'POST', headers: { Authorization: `Bearer ${broker.env[TOOL_BROKER_TOKEN_ENV]}` } })
+    expect(response.status).toBe(status)
+    expect(await response.json()).toEqual(body)
+    expect(calls).toBe(1)
+    expect(renewals).toBe(0)
+  })
+
+  it('preserves an identity rejection while obtaining a fresh tool capability', async () => {
+    broker = await startManagedCapabilityBroker({
+      modelGatewayBaseUrl: 'https://model.test', toolGatewayBaseUrl: 'https://tools.test', isAuthenticated: () => true,
+      ensureModelAccessToken: async () => ({ token: 'model-token' }),
+      ensureToolAccessToken: async () => { throw new ClientAuthBrokerHttpError('safe access rejection', 403, { reason: 'account_disabled', correlationId: 'reference-42' }) },
+      fetchImpl: async () => { throw new Error('must not call gateway') },
+    })
+    const response = await fetch(`${broker.env[TOOL_BROKER_URL_ENV]}/search`, { method: 'POST', headers: { Authorization: `Bearer ${broker.env[TOOL_BROKER_TOKEN_ENV]}` } })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ reason: 'account_disabled', stage: 'identity', correlation_id: 'reference-42' })
+  })
+
 })

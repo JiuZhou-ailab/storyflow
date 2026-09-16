@@ -22,6 +22,7 @@
     "./auth": "./src/auth/index.ts",
     "./auth/callback-page": "./src/auth/callback-page.ts",
     "./auth/types": "./src/auth/types.ts",
+    "./auth/managed-access": "./src/auth/managed-access.ts",
     "./config": "./src/config/index.ts",
     "./config/managed-model-catalog": "./src/config/managed-model-catalog.ts",
     "./config/proxy-utils": "./src/config/proxy-utils.ts",
