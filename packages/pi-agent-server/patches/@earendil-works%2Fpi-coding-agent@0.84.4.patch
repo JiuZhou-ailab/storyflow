@@ -117,7 +117,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
 +        const retryAfter = this._providerResponse?.headers?.["retry-after"];
 +        const seconds = retryAfter && /^\d+(?:\.\d+)?$/.test(retryAfter) ? Number(retryAfter) : NaN;
 +        const providerDelay = Number.isFinite(seconds) ? seconds * 1000 : Math.max(0, Date.parse(retryAfter ?? "") - Date.now());
-+        const gatewayDelay = Number(/"retry_after_ms"\s*:\s*(\d{1,13})/.exec(message.errorMessage ?? "")?.[1] ?? 0);
++        const gatewayDelay = Number(/"retry_after_ms"\s*:\s*(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/.exec(message.errorMessage ?? "")?.[1] ?? 0);
 +        const delayMs = Math.max(settings.baseDelayMs * 2 ** (this._retryAttempt - 1), Number.isFinite(providerDelay) ? providerDelay : 0, gatewayDelay);
 +        // setTimeout overflows above int32; fail closed rather than retrying early.
 +        if (delayMs > 2147483647) return false;

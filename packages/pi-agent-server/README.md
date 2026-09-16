@@ -25,6 +25,7 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 - `src/tools/` — built-in web and search tool definitions.
 
 Managed fallback defaults on for trusted managed connections only, but requires
-explicit `fallbackCapabilities` on both source and candidate. The current catalog
-awaits capability confirmation; synthetic SDK limits alone never qualify a candidate.
+explicit `fallbackCapabilities` on both source and candidate. The approved chat
+families have documented declarations; gateway discovery alone never qualifies a
+candidate. Capability ceilings do not increase the existing 8192-token request budget.
 See [QA](../../docs/model-fallback-qa.md) and [pinned Pi patches](patches/README.md).

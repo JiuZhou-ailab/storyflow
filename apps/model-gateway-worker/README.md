@@ -11,3 +11,12 @@ public error codes and response shapes. Logs mark `phase: headers`; HTTP 200 is
 not stream completion. Model selection/retries live in Pi, never in this Worker.
 
 With `STORYFLOW_ACCESS_ENFORCEMENT = "required"`, verified JWTs also require a current account/session decision through the Broker's private `ACCESS_AUTHORITY` Service Binding. No allow cache is used; dependency failures return 503 before upstream work. `legacy` exists only for the coordinated [managed access cutover](../../docs/managed-access-qa.md).
+
+The authenticated model catalog includes approved fallback capabilities and may be
+empty after account filtering. Consumers must persist an empty success rather than
+restore bundled models. New Pi clients request `x-storyflow-error-format: sdk-v1`:
+access failures then include a standard nested `error` object plus the existing
+top-level diagnostic fields, so OpenAI SDK normalization retains them. Callers
+without this opt-in retain the published string `error` shape. Remove that legacy
+branch only when the minimum supported desktop and direct HTTP consumers accept
+the SDK envelope; identity/tool HTTP APIs are unchanged.

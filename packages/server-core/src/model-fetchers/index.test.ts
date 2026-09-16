@@ -113,6 +113,78 @@ function runModelRefreshEval(configDir: string, code: string): string {
 }
 
 describe('ModelRefreshService credentials', () => {
+  it('retains the previous catalog on malformed capability metadata, not as an empty success', () => {
+    const configDir = setupManagedModelRefreshConfigDir()
+    const output = runModelRefreshEval(configDir, `
+      globalThis.fetch = async () => Response.json({ data: [{
+        id: 'gpt-5.5', name: 'GPT', short_name: 'GPT', description: '', provider: 'pi',
+        context_window: 262144, supports_thinking: true, supports_images: true, api: 'openai-responses',
+        fallback_capabilities: { maxOutputTokens: 'unverified', tools: true, structuredOutput: 'prompt' }
+      }] });
+      const service = initModelRefreshService(async () => ({ apiKey: 'managed-token' }));
+      await service.refreshNow('storyflow-managed');
+      const { getLlmConnection } = await import('@craft-agent/shared/config');
+      console.log(JSON.stringify(getLlmConnection('storyflow-managed')));
+    `)
+    const connection = JSON.parse(output)
+    expect(connection.models.map((model: { id: string }) => model.id)).toEqual(['gpt-5.5', 'gpt-5.6-sol', 'retired-model'])
+    expect(connection.defaultModel).toBe('retired-model')
+  })
+  for (const otherFamily of [false, true]) it(`persists an authoritative empty catalog (other family: ${otherFamily}) across builtin seeding`, () => {
+    const configDir = setupManagedModelRefreshConfigDir()
+    const output = runModelRefreshEval(configDir, `
+      globalThis.fetch = async () => Response.json({ data: ${otherFamily ? JSON.stringify([{
+        id: 'gemini-3.8-flash', name: 'Gemini', short_name: 'Gemini', description: '',
+        provider: 'pi', context_window: 1000000, supports_thinking: true,
+        supports_images: true, api: 'google-generative-ai',
+      }]) : '[]'} });
+      const service = initModelRefreshService(async () => ({ apiKey: 'managed-token' }));
+      await service.refreshNow('storyflow-managed');
+      const { getLlmConnection, loadStoredConfig, applyBuiltinLlmConnectionDefaults } = await import('@craft-agent/shared/config');
+      const before = getLlmConnection('storyflow-managed');
+      const config = loadStoredConfig();
+      const defaults = await Bun.file(${JSON.stringify(join(import.meta.dir, '../../../../apps/electron/resources/config-defaults.json'))}).json();
+      applyBuiltinLlmConnectionDefaults(config, defaults);
+      console.log(JSON.stringify({ before, after: config.llmConnections.find(c => c.slug === 'storyflow-managed') }));
+    `)
+    const { before, after } = JSON.parse(output)
+    for (const connection of [before, after]) {
+      expect(connection.models).toEqual([])
+      expect(connection.defaultModel).toBeUndefined()
+    }
+  })
+
+  it('refreshes after identity replacement and ignores a late previous-account catalog', () => {
+    const configDir = setupManagedModelRefreshConfigDir()
+    const output = runModelRefreshEval(configDir, `
+      let releaseOld;
+      let markOldStarted;
+      const oldStarted = new Promise(resolve => { markOldStarted = resolve; });
+      const oldResponse = new Promise(resolve => { releaseOld = resolve; });
+      let token = 'old-account';
+      globalThis.fetch = async (_input, init) => {
+        if (new Headers(init.headers).get('authorization') === 'Bearer old-account') {
+          markOldStarted();
+          return oldResponse;
+        }
+        return Response.json({ data: [{ id: 'gpt-5.5', name: 'GPT', short_name: 'GPT', description: '', provider: 'pi', context_window: 262144, supports_thinking: true, supports_images: true, api: 'openai-responses' }] });
+      };
+      const service = initModelRefreshService(async () => ({ apiKey: token }));
+      service.startAll();
+      const oldRefresh = service.refreshConnection('storyflow-managed');
+      await oldStarted;
+      token = 'new-account';
+      const newRefresh = service.refreshAfterCredentialChange('storyflow-managed');
+      await newRefresh;
+      releaseOld(Response.json({ data: [] }));
+      await Promise.all([oldRefresh, newRefresh]);
+      const { getLlmConnection } = await import('@craft-agent/shared/config');
+      service.stopAll();
+      console.log(JSON.stringify(getLlmConnection('storyflow-managed').models.map(model => model.id)));
+    `)
+    expect(JSON.parse(output)).toEqual(['gpt-5.5'])
+  })
+
   it('reconciles the managed connection to the authenticated gateway catalog', () => {
     const configDir = setupManagedModelRefreshConfigDir()
 
@@ -136,6 +208,7 @@ describe('ModelRefreshService credentials', () => {
               context_window: 262144,
               supports_thinking: true,
               thinking_level_map: { low: 'low', max: null },
+              fallback_capabilities: { maxOutputTokens: 128000, tools: true, structuredOutput: 'prompt' },
               supports_images: true,
               api: 'openai-responses',
             },
@@ -183,6 +256,7 @@ describe('ModelRefreshService credentials', () => {
         contextWindow: 262_144,
         supportsThinking: true,
         thinkingLevelMap: { low: 'low', max: null },
+        fallbackCapabilities: { maxOutputTokens: 128000, tools: true, structuredOutput: 'prompt' },
         supportsImages: true,
       },
       {

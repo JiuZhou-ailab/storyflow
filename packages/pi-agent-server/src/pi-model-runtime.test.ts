@@ -12,7 +12,7 @@ import type { LlmConnection } from '../../shared/src/config/llm-connections.ts';
 describe('PiModelRuntime', () => {
   it('preserves explicit fallback limits through the Host payload and real model registration', async () => {
     const catalog = cloneManagedModelCatalog('openai-completions');
-    expect(catalog.every(model => !model.fallbackCapabilities)).toBe(true);
+    expect(catalog.every(model => model.fallbackCapabilities?.maxOutputTokens === 384_000)).toBe(true);
     const declared = catalog.map(model => ({ ...model,
       fallbackCapabilities: { maxOutputTokens: 4096, tools: true, structuredOutput: 'prompt' as const },
     }));
@@ -30,6 +30,9 @@ describe('PiModelRuntime', () => {
     expect(config.customModels?.[0]).toMatchObject({ fallbackCapabilities: declared[0]!.fallbackCapabilities });
     expect(models.getModel('custom-endpoint', 'deepseek-v4-flash')?.maxTokens).toBe(4096);
     config.customModels = catalog;
+    runtime.refreshCustomEndpointModels(models);
+    expect(models.getModel('custom-endpoint', 'deepseek-v4-flash')?.maxTokens).toBe(8192);
+    config.customModels = catalog.map(({ fallbackCapabilities: _capabilities, ...model }) => model);
     runtime.refreshCustomEndpointModels(models);
     expect(models.getModel('custom-endpoint', 'deepseek-v4-flash')?.maxTokens).toBe(8192);
     expect(config.customModels.every(model => typeof model !== 'string' && !model.fallbackCapabilities)).toBe(true);

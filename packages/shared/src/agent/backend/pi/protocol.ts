@@ -1,5 +1,5 @@
 // input: Host commands, Pi runtime events, credentials, and request correlation identifiers
-// output: One typed JSONL protocol shared by the Pi host client and subprocess server
+// output: Typed JSONL protocol and canonical model projection for runtime creation/refresh
 // pos: Stable process boundary between Storyflow orchestration and the Pi execution runtime
 
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent';
@@ -36,6 +36,24 @@ export type PiCustomEndpointModelConfig = string | {
   thinkingLevelMap?: ModelThinkingLevelMap;
   fallbackCapabilities?: ModelDefinition['fallbackCapabilities'];
 };
+
+/** One projection for initial creation and in-place refresh; capability fields must survive both. */
+export function toPiCustomEndpointModelConfig(model: ModelDefinition | string): PiCustomEndpointModelConfig {
+  if (typeof model === 'string') return model;
+  const { id, contextWindow, thinkingLevelMap, fallbackCapabilities } = model;
+  const supportsImages = typeof model.supportsImages === 'boolean' ? model.supportsImages : undefined;
+  const supportsThinking = typeof model.supportsThinking === 'boolean' ? model.supportsThinking : undefined;
+  if (!contextWindow && supportsImages === undefined && supportsThinking === undefined
+    && thinkingLevelMap === undefined && fallbackCapabilities === undefined) return id;
+  return {
+    id,
+    ...(contextWindow ? { contextWindow } : {}),
+    ...(supportsImages !== undefined ? { supportsImages } : {}),
+    ...(supportsThinking !== undefined ? { supportsThinking } : {}),
+    ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
+    ...(fallbackCapabilities !== undefined ? { fallbackCapabilities } : {}),
+  };
+}
 
 export interface PiProxyToolDefinition {
   name: string;

@@ -10,18 +10,21 @@ On 2026-09-16 the published 0.85.1 `agent-session.js`/`utils/retry.js` still lac
 
 - `@earendil-works%2Fpi-ai@0.84.4.patch`: emit provider response hooks on rejected
   HTTP calls; refresh correlation headers for provider-internal transport retries;
-  classify permanent gateway semantics before generic 5xx matching.
+  classify permanent gateway semantics before generic 5xx matching in both provider
+  and session retries; honor bounded JSON retry metadata when SDK headers are lost.
 - `@earendil-works%2Fpi-coding-agent@0.84.4.patch`: preserve HTTP rejection semantics
   and honor Retry-After in the native abortable session backoff; forward refreshed
   retry headers; newer concurrent `setModel` calls win after auth awaits; preserve
   cancellation through awaited model selection, prompt preflight and retry events.
 
 Google's SDK drops error response headers. Gateway failures also carry bounded
-`retry_after_ms` metadata, consumed by the native Pi session backoff. Success SSE
+`retry_after_ms` metadata, consumed by both native provider and session backoff. Session
+backoff parses full JSON numbers, including exponent notation, and rejects delays
+beyond the timer range rather than overflowing into an immediate retry. Success SSE
 remains untouched. No Host-owned sleep, request loop or payload rewriting exists.
 
 Delete the patches when a supported Pi release passes
-`bun test packages/pi-agent-server/src/managed-fallback.test.ts` **without** them.
+`bun test packages/pi-agent-server/src/managed-fallback.test.ts packages/pi-agent-server/src/managed-access-contract.test.ts` **without** them.
 That suite uses real Pi sessions against loopback HTTP across all four APIs;
 removing the patches reproduces deterministic-denial amplification, early retry,
 and repeated attempt=0. Do not remove a patch based only on SDK provider-level

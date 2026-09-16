@@ -74,6 +74,14 @@ it('turns a portable Pi fork into an explicit seeded fresh runtime', () => {
 })
 
 describe('buildBackendRuntimeSignature', () => {
+  it('refreshes on capability changes while ignoring catalog presentation metadata', () => {
+    const model = { id: 'gemma', supportsImages: true, fallbackCapabilities: { maxOutputTokens: 8192, tools: true, structuredOutput: 'prompt' } } as const
+    const withModel = (value: unknown) => sig({ ...baseCompat, models: [value as never] })
+    expect(withModel(model)).not.toBe(sig(baseCompat))
+    expect(withModel({ ...model, name: 'Renamed' })).toBe(withModel(model))
+    expect(withModel({ ...model, fallbackCapabilities: { ...model.fallbackCapabilities, tools: false } })).not.toBe(withModel(model))
+    expect(withModel({ ...model, supportsThinking: false })).not.toBe(withModel(model))
+  })
   it('changes when a custom endpoint model image override changes', () => {
     const enabled = sig(baseCompat)
     const disabled = sig({

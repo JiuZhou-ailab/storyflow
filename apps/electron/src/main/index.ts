@@ -533,12 +533,20 @@ app.whenReady().then(async () => {
         ),
       )
     }
+    let modelRefreshService: ReturnType<typeof initModelRefreshService> | null = null
     const authService = createClientAuthService(clientAuthConfig, {
       initialSession: initialClientAuthSession,
       sessionStore: clientAuthSessionStore,
       openExternal: (url) => shell.openExternal(url).then(() => undefined),
       onAuthChange: (change) => {
         broadcastClientAuthState(change.state)
+        if (change.session && modelRefreshService) {
+          for (const slug of MANAGED_LLM_CONNECTION_SLUGS) {
+            void modelRefreshService.refreshAfterCredentialChange(slug).catch(error => {
+              mainLog.warn(`[client-auth] Failed to refresh managed model catalog ${slug}:`, error)
+            })
+          }
+        }
         if (!change.session) {
           void revokeManagedModelRuntimes().catch(error => {
             mainLog.warn('[client-auth] Failed to revoke managed model runtimes:', error)
@@ -817,19 +825,22 @@ app.whenReady().then(async () => {
           await sm.initialize()
         },
         deferRuntimeInitialization: !isHeadless,
-        initModelRefreshService: () => initModelRefreshService(async (connection) => {
-          if (
-            connection.managed === true
-            && connection.source === 'builtin'
-            && isManagedLlmConnectionSlug(connection.slug)
-          ) {
-            if (serverModeEnabled) return {}
-            const result = await authService.ensureModelAccessToken()
-            return { apiKey: result.token }
-          }
-          const { getCredentialManager } = await import('@craft-agent/shared/credentials')
-          return resolveModelRefreshCredentials(connection, getCredentialManager())
-        }),
+        initModelRefreshService: () => {
+          modelRefreshService = initModelRefreshService(async (connection) => {
+            if (
+              connection.managed === true
+              && connection.source === 'builtin'
+              && isManagedLlmConnectionSlug(connection.slug)
+            ) {
+              if (serverModeEnabled) return {}
+              const result = await authService.ensureModelAccessToken()
+              return { apiKey: result.token }
+            }
+            const { getCredentialManager } = await import('@craft-agent/shared/credentials')
+            return resolveModelRefreshCredentials(connection, getCredentialManager())
+          })
+          return modelRefreshService
+        },
         onClientConnected: ({ clientId, webContentsId }) => {
           if (webContentsId != null) clientMap.set(webContentsId, clientId)
         },

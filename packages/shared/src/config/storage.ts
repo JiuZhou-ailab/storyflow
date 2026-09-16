@@ -259,13 +259,20 @@ export function applyBuiltinLlmConnectionDefaults(
       });
       changed = true;
     } else {
+      // A gateway catalog (including []) is account-specific. Bundled models only
+      // bootstrap missing catalogs and migrate legacy string-only definitions.
+      const retainedModels = managedModels && existing.models?.every(model => typeof model !== 'string')
+        ? existing.models : undefined;
       const managedUpdates: Partial<LlmConnection> = {
         name: connection.name,
         providerType: connection.providerType,
         authType: connection.authType,
         baseUrl: connection.baseUrl,
-        models: connection.models,
-        defaultModel: connection.defaultModel,
+        models: retainedModels ?? connection.models,
+        defaultModel: retainedModels
+          ? (retainedModels.some(model => (typeof model === 'string' ? model : model.id) === existing.defaultModel)
+            ? existing.defaultModel : (retainedModels[0] as ModelDefinition | undefined)?.id)
+          : connection.defaultModel,
         modelSelectionMode: connection.modelSelectionMode,
         piAuthProvider: connection.piAuthProvider,
         customEndpoint: connection.customEndpoint,
@@ -2591,7 +2598,8 @@ export function updateLlmConnection(slug: string, updates: Partial<Omit<LlmConne
     // Optional fields from updates or existing
     baseUrl: updates.baseUrl !== undefined ? updates.baseUrl : existing.baseUrl,
     models: updates.models !== undefined ? updates.models : existing.models,
-    defaultModel: updates.defaultModel !== undefined ? updates.defaultModel : existing.defaultModel,
+    defaultModel: updates.models?.length === 0 ? undefined
+      : updates.defaultModel !== undefined ? updates.defaultModel : existing.defaultModel,
     modelSelectionMode: updates.modelSelectionMode !== undefined ? updates.modelSelectionMode : existing.modelSelectionMode,
     // Pi auth provider
     piAuthProvider: updates.piAuthProvider !== undefined ? updates.piAuthProvider : existing.piAuthProvider,

@@ -130,14 +130,14 @@ export async function handleRequest(
         ?? readBearerToken(request.headers.get('authorization'))
       : readBearerToken(request.headers.get('authorization'))
   if (!token) {
-    return accessRequired(env) ? accessFailure('token_missing', 'model', readModelCallContext(request.headers)) : invalidModelAccessTokenResponse()
+    return accessRequired(env) ? modelAccessFailure(request, 'token_missing') : invalidModelAccessTokenResponse()
   }
 
   let access: VerifiedGatewayJwtPayload
   try {
     access = await verifyGatewayJwt(token, env, requiredScope)
   } catch (error) {
-    if (accessRequired(env)) return accessFailure(error instanceof ForbiddenGatewayTokenError ? 'scope_denied' : tokenFailure(error), 'model', readModelCallContext(request.headers))
+    if (accessRequired(env)) return modelAccessFailure(request, error instanceof ForbiddenGatewayTokenError ? 'scope_denied' : tokenFailure(error))
     if (error instanceof ForbiddenGatewayTokenError) {
       return Response.json({ error: error.message }, { status: 403 })
     }
@@ -148,7 +148,7 @@ export async function handleRequest(
   try {
     policy = await currentAccess(env, { sub: access.sub, sid: access.sid }, requiredScope, requestedModel ?? undefined)
   } catch (error) {
-    if (error instanceof ManagedAccessError) return accessFailure(error.reason, 'model', readModelCallContext(request.headers))
+    if (error instanceof ManagedAccessError) return modelAccessFailure(request, error.reason)
     throw error
   }
   const logIdentity = {
@@ -187,6 +187,7 @@ export async function handleRequest(
         thinking_level_map: model.thinkingLevelMap,
         supports_images: model.supportsImages,
         api: model.api,
+        ...(model.fallbackCapabilities ? { fallback_capabilities: model.fallbackCapabilities } : {}),
         object: 'model',
         owned_by: 'storyflow',
       })),
@@ -532,6 +533,12 @@ function normalizeUserName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const normalized = value.replace(/[\u0000-\u001F\u007F]/g, '').trim()
   return normalized ? normalized.slice(0, 100) : undefined
+}
+
+// Keep the published legacy body until the caller explicitly opts into SDK envelopes.
+function modelAccessFailure(request: Request, reason: Parameters<typeof accessFailure>[0]): Response {
+  return accessFailure(reason, 'model', readModelCallContext(request.headers),
+    request.headers.get('x-storyflow-error-format') === 'sdk-v1' ? 'sdk' : 'legacy')
 }
 
 function readModelCallContext(headers: Headers): Pick<GatewayRequestLogDetails, 'model_call_id' | 'attempt' | 'correlation_version' | 'retry_index' | 'requested_model'> {

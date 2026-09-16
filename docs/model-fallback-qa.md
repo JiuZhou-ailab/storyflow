@@ -4,25 +4,44 @@ No paid provider is required. Keep production credentials and user settings out 
 these fixtures. Runtime acceptance uses real Pi AgentSession instances against
 loopback HTTP; only the external provider response and clock are controlled.
 
-Candidate activation is currently pending capability confirmation. The managed
-catalog has no explicit `fallbackCapabilities` declarations, so production
-selection fails closed with `fallback_unavailable/no_compatible_candidate`.
-The synthetic SDK `maxTokens: 8192` is only a request default. Qualified entries
-must explicitly declare their output limit, tool support and the existing
-prompt-based JSON schema contract; this does not claim native strict-schema
-support. Local fixtures declare these capabilities for their controlled server.
+The approved chat families now carry explicit `fallbackCapabilities` in
+`MANAGED_MODEL_CATALOG`. Gateway `/v1/models` publishes them, the authenticated
+catalog refresh validates/persists them, and both runtime creation and refresh
+use the same Pi projection. Missing capabilities still exclude a candidate;
+discovery never approves a new family. Tests use these product declarations,
+not only synthetic fixture metadata.
+
+Capability evidence checked 2026-09-16 (output limits and function/tool calling):
+
+| Models | Declared output ceiling | Primary sources |
+| --- | ---: | --- |
+| GPT-5.5, GPT-5.6 Sol/Terra/Luna | 128,000 | [5.5](https://developers.openai.com/api/docs/models/gpt-5.5), [Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol), [Terra](https://developers.openai.com/api/docs/models/compare), [Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) |
+| Claude Sonnet 5 / Opus 5 | 128,000 | [Sonnet](https://platform.claude.com/docs/en/models/sonnet-5/whats-new-sonnet-5), [Opus](https://platform.claude.com/docs/en/models/opus-5/whats-new-opus-5), [tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview) |
+| Gemini 3.5 / 3.6 / 3.7 / 3.8 Flash | 65,536 | [3.5](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash), [3.6](https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash), [3.7](https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash), [3.8](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) |
+| DeepSeek V4 Flash / Pro | 384,000 | [API model details](https://api-docs.deepseek.com/quick_start/pricing/) (conservative interpretation of 384K) |
+
+DeepSeek documents `deepseek-v4-flash` as a retained alias now served by V4.1
+Flash; do not infer image equivalence with Pro. Storyflow's existing text-only
+DeepSeek contract remains unchanged. These declarations describe documented model
+capability, not live NewAPI route availability or verified production health.
+A route that changes model identity/limits must update its declaration or be
+excluded. `structuredOutput: prompt` records Storyflow's existing prompt-based
+schema path; it does not enable native strict-schema mode.
+
+The runtime's 8192-token default request budget remains separate from the
+capability ceiling. Adding metadata must not increase token budgets or spend.
 
 ## Automated checks
 
 ```sh
-bun test packages/pi-agent-server/src/managed-fallback.test.ts
+bun test packages/pi-agent-server/src/managed-fallback.test.ts packages/pi-agent-server/src/managed-access-contract.test.ts
 bun test apps/model-gateway-worker/src/index.test.ts apps/model-gateway-worker/src/upstream-error.test.ts
 bun test packages/pi-agent-server/src/provider-hooks.test.ts packages/pi-agent-server/src/subagent-tool.test.ts packages/pi-agent-server/src/pi-sdk-boundary.test.ts
 bun run typecheck:all
 ```
 
 The runtime suite verifies all four native protocols; A,A,B recovery; shared retry
-budget; permanent rejection; Retry-After/cancel; partial text/reasoning/tool args;
+budget; permanent rejection with nonzero provider retry budgets; Retry-After/cancel; partial text/reasoning/tool args;
 exactly-once committed tool results; cooldown through resource reload; lazy recovery;
 manual selection races; independent parent/two subagents/mini-query state; actual
 model persistence; legacy history; fixed mini-model and custom-provider exclusion.
