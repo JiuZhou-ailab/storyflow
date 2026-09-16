@@ -5,8 +5,29 @@
 import { describe, expect, it } from 'bun:test'
 import { decodeJwt, decodeProtectedHeader } from 'jose'
 import { verifySkillsMarketAuth } from '../verify-skills-market-auth'
+import { handleRequest } from '../../apps/auth-broker-worker/src/index'
 
 describe('verifySkillsMarketAuth', () => {
+  it('treats an empty CI canary secret as absent and authenticates against the real Broker handler', async () => {
+    const result = await verifySkillsMarketAuth({
+      clientSessionSecret: 'client-session-secret',
+      appSessionToken: '',
+      fetchImpl: (async (input, init) => {
+        const request = new Request(input, init)
+        if (request.url.includes('/api/client-auth/skills-market/token')) {
+          return handleRequest(request, {
+            STORYFLOW_ACCESS_ENFORCEMENT: 'legacy',
+            STORYFLOW_CLIENT_SESSION_JWT_CURRENT_KEY_ID: 'client-session-2026-07',
+            STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: 'client-session-secret',
+            STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: 'independent-market-secret',
+          })
+        }
+        return Response.json({ skills: [{ slug: 'example' }] })
+      }) as typeof fetch,
+    })
+    expect(result).toEqual({ catalog: 1 })
+  })
+
   it('uses a bounded client session and forwards the broker capability to Market', async () => {
     const requests: Request[] = []
     const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
