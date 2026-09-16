@@ -234,4 +234,24 @@ describe('DefaultClientAuthBrokerClient', () => {
     expect(temporaryClearCount).toBe(0)
     expect(temporaryService.getState().authenticated).toBe(true)
   })
+  it('keeps a valid login after permission denial and accepts a bodyless revoke response', async () => {
+    let clears = 0
+    globalThis.fetch = (async () => Response.json({ code: 'managed_access_denied', reason: 'account_disabled', error: 'Managed access permission denied', correlation_id: 'reference-42' }, { status: 403 })) as unknown as typeof fetch
+    const service = createClientAuthService({ required: true, authBrokerUrl: 'https://auth.storyflow.example.com' }, {
+      initialSession: { user: { provider: 'neon', userId: 'user-1' }, appSessionToken: 'private-app-session' },
+      sessionStore: { save: async () => {}, clear: async () => { clears++ } },
+    })
+    await expect(service.ensureModelAccessToken()).rejects.toThrow('reference-42')
+    expect(service.getState().authenticated).toBe(true)
+    expect(clears).toBe(0)
+    globalThis.fetch = (async (input, init) => {
+      expect(input.toString()).toEndWith('/api/client-auth/session/revoke')
+      expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer private-app-session')
+      expect(service.getState().authenticated).toBe(false)
+      return new Response(null, { status: 204 })
+    }) as typeof fetch
+    await service.signOut()
+    expect(clears).toBe(1)
+  })
+
 })

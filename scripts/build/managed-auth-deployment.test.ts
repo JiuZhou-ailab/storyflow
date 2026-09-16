@@ -83,13 +83,16 @@ describe('managed auth deployment', () => {
     expect(workflow).toContain('gemini-3.7-flash')
     expect(gatewayDeploy).toBeGreaterThan(0)
     expect(toolGatewayDeploy).toBeGreaterThan(gatewayDeploy)
-    expect(brokerDeploy).toBeGreaterThan(toolGatewayDeploy)
+    expect(gatewayDeploy).toBeGreaterThan(brokerDeploy)
+    expect(workflow.indexOf('d1 migrations apply')).toBeGreaterThan(brokerDeploy)
+    expect(workflow.indexOf('d1 migrations apply')).toBeLessThan(gatewayDeploy)
     expect(workflow).not.toContain('wangsu')
   })
 
   it('scopes managed-auth production authority to the steps that consume it', () => {
     const deploy = readDeployJob('.github/workflows/deploy-managed-auth.yml')
     const productionEnv = [
+      'STORYFLOW_ACCESS_CANARY_SESSION',
       'CLOUDFLARE_API_TOKEN',
       'CLOUDFLARE_ACCOUNT_ID',
       'STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET',
@@ -104,6 +107,7 @@ describe('managed auth deployment', () => {
     }
 
     expect(findStep(deploy, 'Verify deployment inputs').env).toEqual({
+      STORYFLOW_ACCESS_CANARY_SESSION: '${{ secrets.STORYFLOW_ACCESS_CANARY_SESSION }}',
       CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}',
       CLOUDFLARE_ACCOUNT_ID: '${{ vars.CLOUDFLARE_ACCOUNT_ID }}',
       STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}',
@@ -127,6 +131,7 @@ describe('managed auth deployment', () => {
       STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}',
     })
     expect(findStep(deploy, 'Verify managed auth integration').env).toEqual({
+      STORYFLOW_ACCESS_CANARY_SESSION: '${{ secrets.STORYFLOW_ACCESS_CANARY_SESSION }}',
       STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: '${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}',
     })
     expect(findStep(deploy, 'Verify Skills Market auth integration')).toMatchObject({

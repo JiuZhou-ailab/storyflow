@@ -19,6 +19,8 @@ on:
     secrets:
       CLOUDFLARE_API_TOKEN:
         required: false
+      STORYFLOW_ACCESS_CANARY_SESSION:
+        required: false
       STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET:
         required: true
       STORYFLOW_GATEWAY_JWT_CURRENT_SECRET:
@@ -66,6 +68,7 @@ jobs:
 
       - name: Verify deployment inputs
         env:
+          STORYFLOW_ACCESS_CANARY_SESSION: ${{ secrets.STORYFLOW_ACCESS_CANARY_SESSION }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
@@ -73,6 +76,15 @@ jobs:
           STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}
         run: |
           set -euo pipefail
+          bun --eval '
+            const configs = ["auth-broker-worker", "model-gateway-worker", "tool-gateway-worker"];
+            for (const app of configs) {
+              const config = Bun.TOML.parse(await Bun.file(`apps/${app}/wrangler.toml`).text());
+              if (config.vars?.STORYFLOW_ACCESS_ENFORCEMENT !== "legacy" && !process.env.STORYFLOW_ACCESS_CANARY_SESSION) {
+                throw new Error("Required access needs a real, persisted STORYFLOW_ACCESS_CANARY_SESSION");
+              }
+            }
+          '
           for name in STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET; do
             test -n "${!name}" || { echo "Missing $name"; exit 1; }
           done
@@ -92,9 +104,33 @@ jobs:
         run: |
           bun test \
             apps/auth-broker-worker/src/index.test.ts \
+            apps/auth-broker-worker/src/managed-access.test.ts \
             apps/model-gateway-worker/src/index.test.ts \
             apps/model-gateway-worker/src/managed-auth-flow.test.ts \
             apps/tool-gateway-worker/src/index.test.ts
+          bun run --cwd apps/auth-broker-worker typecheck
+
+      - name: Deploy auth broker
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
+          STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET }}
+          STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" \
+            | bunx wrangler@4.114.0 secret put STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET \
+                --config apps/auth-broker-worker/wrangler.toml >/dev/null
+          printf '%s' "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
+            | bunx wrangler@4.114.0 secret put STORYFLOW_GATEWAY_JWT_CURRENT_SECRET \
+                --config apps/auth-broker-worker/wrangler.toml >/dev/null
+          printf '%s' "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" \
+            | bunx wrangler@4.114.0 secret put STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET \
+                --config apps/auth-broker-worker/wrangler.toml >/dev/null
+          bunx wrangler@4.114.0 deploy --config apps/auth-broker-worker/wrangler.toml
+          bunx wrangler@4.114.0 d1 migrations apply storyflow-access --remote --config apps/auth-broker-worker/wrangler.toml
 
       - name: Deploy model gateway
         if: ${{ inputs.deploy }}
@@ -144,29 +180,9 @@ jobs:
           test "$status" = 401
           grep -q '"code":"tool_access_token_invalid"' "$RUNNER_TEMP/tool-gateway-negative.json"
 
-      - name: Deploy auth broker
-        if: ${{ inputs.deploy }}
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
-          STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_GATEWAY_JWT_CURRENT_SECRET }}
-          STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET" \
-            | bunx wrangler@4.114.0 secret put STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET \
-                --config apps/auth-broker-worker/wrangler.toml >/dev/null
-          printf '%s' "$STORYFLOW_GATEWAY_JWT_CURRENT_SECRET" \
-            | bunx wrangler@4.114.0 secret put STORYFLOW_GATEWAY_JWT_CURRENT_SECRET \
-                --config apps/auth-broker-worker/wrangler.toml >/dev/null
-          printf '%s' "$STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET" \
-            | bunx wrangler@4.114.0 secret put STORYFLOW_SKILLS_MARKET_JWT_CURRENT_SECRET \
-                --config apps/auth-broker-worker/wrangler.toml >/dev/null
-          bunx wrangler@4.114.0 deploy --config apps/auth-broker-worker/wrangler.toml
-
       - name: Verify managed auth integration
         env:
+          STORYFLOW_ACCESS_CANARY_SESSION: ${{ secrets.STORYFLOW_ACCESS_CANARY_SESSION }}
           STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
         run: |
           set -euo pipefail
@@ -180,6 +196,14 @@ jobs:
 
           APP_SESSION_TOKEN="$(bun --eval '
             import { SignJWT } from "jose";
+            if (process.env.STORYFLOW_ACCESS_CANARY_SESSION) {
+              console.log(process.env.STORYFLOW_ACCESS_CANARY_SESSION);
+              process.exit(0);
+            }
+            for (const app of ["auth-broker-worker", "model-gateway-worker", "tool-gateway-worker"]) {
+              const config = Bun.TOML.parse(await Bun.file(`apps/${app}/wrangler.toml`).text());
+              if (config.vars?.STORYFLOW_ACCESS_ENFORCEMENT !== "legacy") throw new Error("Persisted canary session required");
+            }
             const now = Math.floor(Date.now() / 1000);
             console.log(await new SignJWT({
               scope: "capability:issue",
@@ -283,5 +307,6 @@ jobs:
       - name: Verify Skills Market auth integration
         if: ${{ inputs.deploy || inputs.verify_skills_market_auth }}
         env:
+          STORYFLOW_ACCESS_CANARY_SESSION: ${{ secrets.STORYFLOW_ACCESS_CANARY_SESSION }}
           STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: ${{ secrets.STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET }}
         run: bun run scripts/verify-skills-market-auth.ts

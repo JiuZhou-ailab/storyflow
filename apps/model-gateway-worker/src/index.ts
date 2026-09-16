@@ -1,6 +1,7 @@
-// input: Model requests, legacy Catalog reads, and broker-issued Storyflow capability JWTs
-// output: Authenticated model calls plus a one-release Catalog compatibility proxy
+// input: Model requests, legacy Catalog reads, and broker-issued Storyflow capability JWTs plus current-access RPC
+// output: Currently authorized model calls plus a one-release Catalog compatibility proxy
 // pos: Edge authorization boundary that keeps upstream credentials out of desktop builds
+import { accessAuthorityReady, currentAccess, accessFailure, accessRequired, tokenFailure, ManagedAccessError, type AccessEnvironment } from '../../../packages/shared/src/auth/managed-access'
 import { normalizeUpstreamError } from './upstream-error'
 import { decodeProtectedHeader, jwtVerify, type JWTPayload } from 'jose'
 import {
@@ -10,7 +11,7 @@ import {
 } from '@craft-agent/shared/config/managed-model-catalog'
 import type { CustomEndpointApi } from '@craft-agent/shared/config'
 
-export interface Env {
+export interface Env extends AccessEnvironment {
   STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID?: string
   STORYFLOW_GATEWAY_JWT_CURRENT_SECRET?: string
   STORYFLOW_GATEWAY_JWT_PREVIOUS_KEY_ID?: string
@@ -26,6 +27,7 @@ export interface Env {
 type FetchLike = (request: Request) => Promise<Response>
 
 interface GatewayJwtPayload extends JWTPayload {
+  sid?: string
   scopes?: unknown
   model_tier?: unknown
   user_name?: unknown
@@ -94,7 +96,7 @@ export async function handleRequest(
     if (request.method !== 'GET') {
       return methodNotAllowed('GET')
     }
-    const readinessError = await getGatewayReadinessError(env, fetchImpl)
+    const readinessError = !await accessAuthorityReady(env) ? 'dependency_unavailable' : await getGatewayReadinessError(env, fetchImpl)
     return readinessError
       ? Response.json(
           { status: 'not_ready', code: readinessError },
@@ -115,7 +117,7 @@ export async function handleRequest(
   }
 
   const startedAt = Date.now()
-  const requiredScope = isCatalog
+  const requiredScope = isCatalog || (accessRequired(env) && requestUrl.pathname === '/v1/models')
     ? 'catalog:read'
     : geminiModel && MANAGED_GEMINI_VIDEO_MODELS.has(geminiModel)
       ? 'model:video'
@@ -128,17 +130,26 @@ export async function handleRequest(
         ?? readBearerToken(request.headers.get('authorization'))
       : readBearerToken(request.headers.get('authorization'))
   if (!token) {
-    return invalidModelAccessTokenResponse()
+    return accessRequired(env) ? accessFailure('token_missing', 'model', readModelCallContext(request.headers)) : invalidModelAccessTokenResponse()
   }
 
   let access: VerifiedGatewayJwtPayload
   try {
     access = await verifyGatewayJwt(token, env, requiredScope)
   } catch (error) {
+    if (accessRequired(env)) return accessFailure(error instanceof ForbiddenGatewayTokenError ? 'scope_denied' : tokenFailure(error), 'model', readModelCallContext(request.headers))
     if (error instanceof ForbiddenGatewayTokenError) {
       return Response.json({ error: error.message }, { status: 403 })
     }
     return invalidModelAccessTokenResponse()
+  }
+  const requestedModel = request.method === 'POST' ? geminiModel ?? await readRequestedModel(request) : undefined
+  let policy
+  try {
+    policy = await currentAccess(env, { sub: access.sub, sid: access.sid }, requiredScope, requestedModel ?? undefined)
+  } catch (error) {
+    if (error instanceof ManagedAccessError) return accessFailure(error.reason, 'model', readModelCallContext(request.headers))
+    throw error
   }
   const logIdentity = {
     user: access.sub,
@@ -165,7 +176,7 @@ export async function handleRequest(
     const catalog = await resolveManagedModelCatalog(upstreamBaseUrl, newApiKey, fetchImpl)
     return Response.json({
       object: 'list',
-      data: catalog.map(model => ({
+      data: catalog.filter(model => !policy || policy.models === null || policy.models.includes(model.id)).map(model => ({
         id: model.id,
         name: model.name,
         short_name: model.shortName,
@@ -183,7 +194,6 @@ export async function handleRequest(
   }
 
   const requestApi = resolveRequestApi(requestUrl.pathname, geminiModel)
-  const requestedModel = geminiModel ?? await readRequestedModel(request)
   if (
     !requestedModel
     || (

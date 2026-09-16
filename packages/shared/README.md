@@ -6,7 +6,7 @@
 
 - `src/agent/` — Pi agent 运行时、传输边界、产品策略与 backend 契约
 - `src/automations/` — 自动化系统：事件总线、匹配器、调度、handlers
-- `src/auth/` — OAuth 与令牌管理
+- `src/auth/` — OAuth、令牌管理与 Broker/Gateway/桌面共用的托管访问错误合同
 - `src/config/` — 配置/偏好/模型目录/存储
 - `src/credentials/` — 加密凭据管理
 - `src/i18n/` — 多语言注册表与翻译资源

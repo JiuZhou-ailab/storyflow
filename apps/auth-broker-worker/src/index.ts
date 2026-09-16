@@ -1,9 +1,11 @@
-// input: Desktop client-auth exchange requests and Feishu/Neon identity provider responses
-// output: Public auth config, verified desktop identity with company scope, durable client sessions, and operation-safe capability JWTs
+// input: Desktop client-auth requests, current D1 access state and Feishu/Neon identity responses
+// output: Public auth config, verified desktop identity with company scope, revocable client sessions, and operation-safe capability JWTs
 // pos: HTTPS auth broker for packaged desktop login without shipping server secrets
+import { accessStateReady, openAccessSession, readAccess, revokeAccessSession, type AccessStateEnv } from './access-state'
+import { accessFailure, accessRequired, ManagedAccessError, tokenFailure, type AccessEnvironment } from '../../../packages/shared/src/auth/managed-access'
 import { createRemoteJWKSet, customFetch, decodeProtectedHeader, importPKCS8, jwtVerify, SignJWT, type JWTPayload } from 'jose'
 
-export interface Env {
+export interface Env extends AccessEnvironment, AccessStateEnv {
   CRAFT_WEBUI_FEISHU_APP_ID?: string
   CRAFT_WEBUI_FEISHU_APP_SECRET?: string
   CRAFT_WEBUI_FEISHU_SCOPE?: string
@@ -57,12 +59,12 @@ interface NeonIdentity {
 interface ClientSessionPayload extends JWTPayload {
   scope?: unknown
   model_tier?: unknown
+  sid?: string
   auth_time?: unknown
   user_name?: unknown
   organization_id?: unknown
 }
 
-const DEFAULT_FEISHU_AUTH_BASE_URL = 'https://accounts.feishu.cn/open-apis/authen/v1/authorize'
 const DEFAULT_FEISHU_API_BASE_URL = 'https://open.feishu.cn'
 const DEFAULT_GATEWAY_AUDIENCE = 'storyflow-model-gateway'
 const DEFAULT_GATEWAY_ISSUER = 'storyflow-auth-broker'
@@ -82,7 +84,15 @@ export default {
   },
 }
 
-export async function handleRequest(
+export async function handleRequest(request: Request, env: Env, fetchImpl: FetchLike = fetch): Promise<Response> {
+  try { return await routeRequest(request, env, fetchImpl) }
+  catch (error) {
+    if (error instanceof ManagedAccessError) return accessFailure(error.reason, 'identity')
+    throw error
+  }
+}
+
+async function routeRequest(
   request: Request,
   env: Env,
   fetchImpl: FetchLike = fetch,
@@ -131,6 +141,18 @@ export async function handleRequest(
 
   if (url.pathname === '/api/client-auth/neon/exchange' && request.method === 'POST') {
     return exchangeNeonToken(request, env, fetchImpl)
+  }
+
+  if (url.pathname === '/api/client-auth/session/revoke' && request.method === 'POST') {
+    const token = readBearerToken(request.headers.get('authorization'))
+    if (!token) return accessFailure('token_missing', 'identity')
+    try {
+      const session = await verifyClientSessionToken(token, env, 0, false)
+      await revokeAccessSession(env, { sub: session.subject, sid: session.sid })
+      return new Response(null, { status: 204 })
+    } catch (error) {
+      return accessFailure(error instanceof ManagedAccessError ? error.reason : tokenFailure(error), 'identity')
+    }
   }
 
   if (url.pathname === '/api/client-auth/token' && request.method === 'POST') {
@@ -229,6 +251,7 @@ async function exchangeFeishuCode(
       ...tokens,
     })
   } catch (error) {
+    if (error instanceof ManagedAccessError) return accessFailure(error.reason, 'identity')
     return Response.json({ error: error instanceof Error ? error.message : 'Feishu exchange failed' }, { status: 401 })
   }
 }
@@ -273,6 +296,7 @@ async function exchangeNeonToken(
       ...tokens,
     })
   } catch (error) {
+    if (error instanceof ManagedAccessError) return accessFailure(error.reason, 'identity')
     return Response.json({ error: error instanceof Error ? error.message : 'Invalid Neon Auth token' }, { status: 401 })
   }
 }
@@ -295,6 +319,7 @@ async function refreshClientAuthToken(
       session.userName,
       session.organizationId,
       session.authenticatedAtSeconds,
+      session.sid,
     ),
   })
 }
@@ -320,6 +345,8 @@ async function issueSkillsMarketToken(
       session.userName,
       session.organizationId,
       session.authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS,
+      session.sid,
+      session.scopes,
     ),
     expiresInSeconds: SKILLS_MARKET_TOKEN_TTL_SECONDS,
   })
@@ -340,6 +367,8 @@ async function issueToolAccessToken(
       env,
       session.subject,
       session.authenticatedAtSeconds + CLIENT_SESSION_TOKEN_TTL_SECONDS,
+      session.sid,
+      session.scopes,
     ),
   })
 }
@@ -355,8 +384,8 @@ async function authorizeClientSession(
   let session: Awaited<ReturnType<typeof verifyClientSessionToken>>
   try {
     session = await verifyClientSessionToken(token, env, minimumRemainingSeconds)
-  } catch {
-    return invalidClientSessionResponse()
+  } catch (error) {
+    return accessRequired(env) ? accessFailure(error instanceof ManagedAccessError ? error.reason : tokenFailure(error), 'identity') : invalidClientSessionResponse()
   }
   return { session }
 }
@@ -365,7 +394,10 @@ async function verifyClientSessionToken(
   token: string,
   env: Env,
   minimumRemainingSeconds = MODEL_ACCESS_TOKEN_MIN_REMAINING_SECONDS,
+  checkAccess = true,
 ): Promise<{
+  sid?: string
+  scopes?: string[]
   subject: string
   modelTier: 'standard' | 'pro'
   authenticatedAtSeconds: number
@@ -388,6 +420,7 @@ async function verifyClientSessionToken(
       audience: DEFAULT_CLIENT_SESSION_AUDIENCE,
     },
   )
+  if (accessRequired(env) && !readString(payload.sid)) throw new ManagedAccessError('legacy_session')
   const subject = readString(payload.sub)
   if (!subject) throw new Error('Client session subject is required')
   // ponytail: accept the published pre-0019 scope until all 90-day sessions
@@ -413,10 +446,14 @@ async function verifyClientSessionToken(
   ) {
     throw new Error('Client session authentication time is invalid')
   }
+  const sid = readString(payload.sid)
+  const policy = accessRequired(env) && checkAccess ? await readAccess(env, { sub: subject, sid }) : undefined
   const userName = normalizeUserName(payload.user_name)
   const organizationId = readString(payload.organization_id)
   return {
     subject,
+    sid,
+    scopes: policy?.scopes,
     modelTier: payload.model_tier,
     authenticatedAtSeconds,
     ...(userName ? { userName } : {}),
@@ -441,9 +478,12 @@ async function createAuthTokens(
   userName?: string,
   organizationId?: string,
   authenticatedAtSeconds?: number,
+  sessionId?: string,
 ): Promise<{ appSessionToken: string, modelAccessToken: string }> {
   const authenticationTime = authenticatedAtSeconds ?? Math.floor(Date.now() / 1000)
   const clientSessionExpiresAt = authenticationTime + CLIENT_SESSION_TOKEN_TTL_SECONDS
+  const sid = accessRequired(env) ? sessionId ?? await openAccessSession(env, subject, authenticationTime, clientSessionExpiresAt) : undefined
+  const policy = accessRequired(env) ? await readAccess(env, { sub: subject, sid }) : undefined
   return {
     appSessionToken: await createClientSessionToken(
       env,
@@ -452,8 +492,9 @@ async function createAuthTokens(
       userName,
       organizationId,
       authenticationTime,
+      sid,
     ),
-    modelAccessToken: await createModelAccessToken(env, subject, modelTier, userName, clientSessionExpiresAt),
+    modelAccessToken: await createModelAccessToken(env, subject, modelTier, userName, clientSessionExpiresAt, sid, policy?.scopes),
   }
 }
 
@@ -464,6 +505,7 @@ async function createClientSessionToken(
   userName?: string,
   organizationId?: string,
   authenticatedAtSeconds = Math.floor(Date.now() / 1000),
+  sid?: string,
 ): Promise<string> {
   const key = getCurrentClientSessionKey(env)
   if (!key) throw new Error('Client session token signing is not configured')
@@ -473,6 +515,7 @@ async function createClientSessionToken(
 
   return new SignJWT({
     scope: 'capability:issue',
+    ...(sid ? { sid } : {}),
     model_tier: modelTier,
     auth_time: authenticatedAtSeconds,
     ...(userName ? { user_name: userName } : {}),
@@ -493,6 +536,8 @@ async function createModelAccessToken(
   modelTier: 'standard' | 'pro',
   userName?: string,
   parentExpiresAtSeconds?: number,
+  sid?: string,
+  allowedScopes?: string[],
 ): Promise<string> {
   const key = getCurrentModelAccessKey(env)
   if (!key) throw new Error('Model access token signing is not configured')
@@ -504,7 +549,8 @@ async function createModelAccessToken(
   if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
 
   return new SignJWT({
-    scopes: ['model:chat', 'model:video', 'catalog:read'],
+    scopes: ['model:chat', 'model:video', 'catalog:read'].filter(scope => !allowedScopes || allowedScopes.includes(scope)),
+    ...(sid ? { sid } : {}),
     model_tier: modelTier,
     ...(userName ? { user_name: userName } : {}),
   })
@@ -521,6 +567,8 @@ async function createToolAccessToken(
   env: Env,
   subject: string,
   parentExpiresAtSeconds?: number,
+  sid?: string,
+  allowedScopes?: string[],
 ): Promise<string> {
   const key = getCurrentToolAccessKey(env)
   if (!key) throw new Error('Tool access token signing is not configured')
@@ -531,7 +579,7 @@ async function createToolAccessToken(
   )
   if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
 
-  return new SignJWT({ scopes: ['web:search', 'web:scrape'] })
+  return new SignJWT({ scopes: ['web:search', 'web:scrape'].filter(scope => !allowedScopes || allowedScopes.includes(scope)), ...(sid ? { sid } : {}) })
     .setProtectedHeader({ alg: 'ES256', typ: 'JWT', kid: key.id })
     .setIssuer(readString(env.STORYFLOW_TOOL_GATEWAY_JWT_ISSUER) ?? DEFAULT_GATEWAY_ISSUER)
     .setAudience(readString(env.STORYFLOW_TOOL_GATEWAY_JWT_AUDIENCE) ?? DEFAULT_TOOL_GATEWAY_AUDIENCE)
@@ -547,6 +595,8 @@ async function createSkillsMarketPublishToken(
   userName?: string,
   organizationId?: string,
   parentExpiresAtSeconds?: number,
+  sid?: string,
+  allowedScopes?: string[],
 ): Promise<string> {
   const key = getCurrentSkillsMarketKey(env)
   if (!key) throw new Error('Skills Market token signing is not configured')
@@ -558,7 +608,8 @@ async function createSkillsMarketPublishToken(
   if (expiresAtSeconds <= nowSeconds) throw new Error('Client session has reached its maximum lifetime')
 
   return new SignJWT({
-    scopes: ['skills:read', 'skills:publish'],
+    scopes: ['skills:read', 'skills:publish'].filter(scope => !allowedScopes || allowedScopes.includes(scope)),
+    ...(sid ? { sid } : {}),
     ...(userName ? { user_name: userName } : {}),
     ...(organizationId ? { organization_id: organizationId } : {}),
   })
@@ -586,6 +637,7 @@ function getTokenIssuanceConfigError(env: Env): string | null {
 }
 
 async function getBrokerReadinessError(env: Env): Promise<string | null> {
+  if (accessRequired(env) && !await accessStateReady(env)) return 'Authorization state is unavailable'
   const tokenError = getTokenIssuanceConfigError(env)
   if (tokenError) return tokenError
   const toolTokenError = await getToolAccessTokenConfigError(env)

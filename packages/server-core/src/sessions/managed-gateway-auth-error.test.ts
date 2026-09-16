@@ -25,6 +25,15 @@ const baseInvalidApiKeyError: TypedError = {
 }
 
 describe('managed default gateway auth error normalization', () => {
+  it('preserves safe authorization evidence without retrying a permission denial', () => {
+    const normalized = normalizeManagedDefaultGatewayAuthError({ ...baseInvalidApiKeyError,
+      code: 'service_error', originalError: '403 {"code":"managed_access_denied","reason":"account_disabled","stage":"model","correlation_id":"call-42","secret":"never-persist"}',
+    }, 'storyflow-managed')
+    expect(normalized.title).toBe('Default AI Access Denied')
+    expect(normalized.canRetry).toBe(false)
+    expect(normalized.originalError).toContain('call-42')
+    expect(normalized.originalError).not.toContain('never-persist')
+  })
   afterEach(() => {
     setSessionRuntimeHooks({
       ensureManagedModelAccessToken: async () => ({ token: 'managed-token', refreshed: false }),

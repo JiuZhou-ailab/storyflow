@@ -4,9 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test src/index.test.ts"
+    "test": "bun test src/index.test.ts src/managed-access.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json",
+    "types": "wrangler types --include-runtime false --env-interface AuthBrokerBindings"
   },
   "dependencies": {
     "jose": "^6.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260916.1",
+    "miniflare": "4.20260722.0",
+    "wrangler": "4.114.0"
   }
 }

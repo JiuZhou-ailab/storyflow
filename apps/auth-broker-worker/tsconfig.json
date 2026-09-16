@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM"],
+    "types": ["bun"]
+  },
+  "exclude": ["src/index.test.ts", "src/worker.ts"],
+  "include": ["src/**/*.ts", "../model-gateway-worker/src/index.ts", "../tool-gateway-worker/src/index.ts", "../tool-gateway-worker/worker-configuration.d.ts"]
+}

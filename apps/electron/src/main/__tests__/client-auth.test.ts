@@ -22,10 +22,24 @@ function modelToken(expiresAtMs: number): string {
 }
 
 const unusedBrokerMethods: ClientAuthBrokerClient = {
+  revokeSession: async () => {},
   exchangeNeonToken: async () => { throw new Error('not used') },
   exchangeFeishuCode: async () => { throw new Error('not used') },
   refreshModelAccessToken: async () => { throw new Error('not used') },
 }
+
+it('signs out locally before remote revocation and reports an unconfirmed remote result', async () => {
+  const service = createClientAuthService({ required: true, authBrokerUrl: 'https://auth.test' }, {
+    initialSession: { user: { provider: 'neon', userId: 'user' }, appSessionToken: 'session-to-revoke' },
+    createAuthBrokerClient: () => ({ ...unusedBrokerMethods, revokeSession: async input => {
+      expect(input.appSessionToken).toBe('session-to-revoke')
+      expect(service.getState().authenticated).toBe(false)
+      throw new Error('offline')
+    } }),
+  })
+  await expect(service.signOut()).rejects.toThrow('remote session revocation could not be confirmed')
+  expect(service.getState().authenticated).toBe(false)
+})
 
 const unusedNeonSessionMethods = {
   verifyEmailOtp: async () => {},

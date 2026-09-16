@@ -2,6 +2,8 @@
 // output: Bounded HTTPS broker exchanges and normalized desktop identity with company capabilities
 // pos: Main-process network trust boundary beneath the client auth service
 
+import { isAccessReason } from '@craft-agent/shared/auth/managed-access'
+
 import type {
   ClientAuthBrokerClient,
   ClientAuthBrokerExchangeInput,
@@ -38,14 +40,22 @@ export function normalizeClientAuthBrokerUrl(value: string): string {
 }
 
 export class ClientAuthBrokerHttpError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly diagnostic?: { reason: string; correlationId?: string }) {
     super(message)
     this.name = 'ClientAuthBrokerHttpError'
+    if (diagnostic) this.message += ` (${diagnostic.reason}${diagnostic.correlationId ? '; reference ' + diagnostic.correlationId : ''})`
   }
 }
 
 export class DefaultClientAuthBrokerClient implements ClientAuthBrokerClient {
   constructor(private readonly requestTimeoutMs = DEFAULT_AUTH_BROKER_REQUEST_TIMEOUT_MS) {}
+
+  async revokeSession(input: ClientAuthBrokerTokenRefreshInput): Promise<void> {
+    await requestBrokerJson(buildBrokerEndpointUrl(input.brokerUrl, '/api/client-auth/session/revoke'), {
+      method: 'POST', headers: { Authorization: `Bearer ${input.appSessionToken}` },
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
+    }, 'Session revocation failed')
+  }
 
   async getFeishuAuthConfig(input: { brokerUrl: string }): Promise<ClientFeishuBrokerPublicConfig | null> {
     const endpoint = buildBrokerEndpointUrl(input.brokerUrl, DEFAULT_FEISHU_BROKER_CONFIG_PATH)
@@ -230,7 +240,7 @@ export function normalizeBrokerClientAuthUser(
 
 export function isRejectedAppSession(error: unknown): boolean {
   return error instanceof ClientAuthBrokerHttpError
-    && (error.status === 401 || error.status === 403)
+    && error.status === 401
 }
 
 function normalizeFeishuBrokerPublicConfig(body: Record<string, unknown>): ClientFeishuBrokerPublicConfig {
@@ -311,6 +321,10 @@ async function requestBrokerJson(
     throw new ClientAuthBrokerHttpError(
       readBrokerError(body) ?? `${failurePrefix}: HTTP ${res.status}`,
       res.status,
+      isAccessReason(body.reason) ? {
+        reason: body.reason,
+        ...(typeof body.correlation_id === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(body.correlation_id) ? { correlationId: body.correlation_id } : {}),
+      } : undefined,
     )
   }
   return body

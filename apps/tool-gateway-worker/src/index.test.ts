@@ -12,6 +12,7 @@ const TOOL_PUBLIC_KEY = await exportSPKI(toolKeyPair.publicKey)
 
 function makeEnv(overrides: Partial<ToolGatewayEnv> = {}): ToolGatewayEnv {
   return {
+    STORYFLOW_ACCESS_ENFORCEMENT: 'legacy',
     STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_KEY_ID: TOOL_KEY_ID,
     STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_PUBLIC_KEY: TOOL_PUBLIC_KEY,
     STORYFLOW_TOOL_GATEWAY_JWT_AUDIENCE: 'storyflow-tool-gateway',

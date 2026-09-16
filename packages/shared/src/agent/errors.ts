@@ -393,6 +393,8 @@ export function parseError(
   // Check for specific HTTP status codes or patterns
   } else if (lowerMessage.includes('402') || lowerMessage.includes('payment required')) {
     code = 'billing_error';
+  } else if (lowerMessage.includes('managed_access_denied')) {
+    code = 'service_error';
   } else if (lowerMessage.includes('upstream_auth_failed')) {
     code = 'service_error';
   } else if (lowerMessage.includes('convert_request_failed')) {

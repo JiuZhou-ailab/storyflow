@@ -2170,9 +2170,14 @@ function AppContent() {
   }, [loadClientAuthState])
 
   const handleClientSignOut = useCallback(async () => {
-    await window.electronAPI.signOutClient()
-    await loadClientAuthState()
-  }, [loadClientAuthState])
+    try {
+      await window.electronAPI.signOutClient()
+    } catch (error) {
+      toast.warning(error instanceof Error ? error.message : t('errors.somethingWentWrong'))
+    } finally {
+      await loadClientAuthState()
+    }
+  }, [loadClientAuthState, t])
 
   const handleReturnToActiveProject = useCallback(() => {
     if (!activeProjectId) return

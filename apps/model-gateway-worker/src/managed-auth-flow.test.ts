@@ -30,6 +30,7 @@ describe('managed auth flow', () => {
         STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET: CLIENT_SESSION_SECRET,
         STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID: MODEL_ACCESS_KEY_ID,
         STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: MODEL_ACCESS_SECRET,
+        STORYFLOW_ACCESS_ENFORCEMENT: 'legacy',
       },
       async (input) => {
         if (input.toString().endsWith('/open-apis/authen/v2/oauth/token')) {
@@ -58,6 +59,7 @@ describe('managed auth flow', () => {
     const gatewayEnv = {
       STORYFLOW_GATEWAY_JWT_CURRENT_KEY_ID: MODEL_ACCESS_KEY_ID,
       STORYFLOW_GATEWAY_JWT_CURRENT_SECRET: MODEL_ACCESS_SECRET,
+        STORYFLOW_ACCESS_ENFORCEMENT: 'legacy',
       STORYFLOW_GATEWAY_JWT_AUDIENCE: 'storyflow-model-gateway',
       STORYFLOW_GATEWAY_JWT_ISSUER: 'storyflow-auth-broker',
       NEWAPI_API_KEY: 'server-only-newapi-key',
