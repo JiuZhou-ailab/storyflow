@@ -63,14 +63,6 @@ export {
 } from './SettingsSegmentedControl'
 
 export {
-  SettingsSelect,
-  SettingsSelectRow,
-  type SettingsSelectProps,
-  type SettingsSelectOption,
-  type SettingsSelectRowProps,
-} from './SettingsSelect'
-
-export {
   SettingsMenuSelect,
   SettingsMenuSelectRow,
   type SettingsMenuSelectProps,
