@@ -79,7 +79,7 @@ async function reset() {
   await page.click('#demo-reset');
   await page.waitForFunction(before => { const w = document.querySelector('iframe').contentWindow; return w.performance.timeOrigin !== before && document.getElementById('demo-notice')?.textContent.includes('点击第01章'); }, before, { timeout: 15000 });
 }
-async function openChapter() { await page.focus(chapterLink); await page.keyboard.press('Enter'); await waitEditor('第一章 · 黑洞直播'); }
+async function openChapter() { await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelectorAll('ul a[href="%E7%AC%AC01%E7%AB%A0.md"]').length === 1); await page.focus(chapterLink); await page.keyboard.press('Enter'); await waitEditor('第一章 · 黑洞直播'); }
 async function backToChat(width) {
   if (width < 768) {
     await page.focus('loc=role:button[name="返回对话"]');
@@ -183,6 +183,28 @@ for (const width of [1440, 390]) {
   await backToChat(width);
   console.log(`PASS: ${width}px edits, switches files, runs both scenarios, rejects safely, accepts and resets`);
 }
+// Scenarios compose in either order and replay without duplicate edits.
+for (const width of [1440, 390]) {
+  for (const order of [['rewrite', 'continue'], ['continue', 'rewrite']]) {
+    await fresh(width);
+    await openChapter();
+    await append('连续案例前的手动修改。');
+    await backToChat(width);
+    for (const id of [...order, ...order]) {
+      const count = await page.evaluate(() => document.querySelector('iframe').contentDocument.body.innerText.split('示例任务已完成').length);
+      await scenario(id);
+      await page.waitForFunction(count => document.querySelector('iframe').contentDocument.body.innerText.split('示例任务已完成').length > count, count);
+      assert.ok(!(await body()).includes('Failed to send message'));
+    }
+    await openChapter();
+    await waitEditor('头像换成了他的房间');
+    assert.equal((await editor()).split('头像换成了他的房间').length, 2);
+    assert.equal((await editor()).split('螺丝便自己转了半圈').length, 2);
+    assert.ok((await editor()).includes('连续案例前的手动修改。'));
+
+  }
+}
+console.log('PASS: both scenario orders and repeated completed scenarios keep one copy without errors');
 await fresh();
 await page.press('[role="textbox"]', 'Enter');
 assert.ok(!(await body()).includes('已编辑 1 个文件'));
@@ -220,7 +242,14 @@ await page.keyboard.press('Enter');
 await openChapter();
 assert.ok((await editor()).includes('这行是在任务完成后写的。'));
 assert.ok(!(await editor()).includes('头像换成了他的房间'));
-console.log('PASS: blank/edited input does not execute; repeated submit stays single; rejection preserves later unrelated edits');
+const rejectedContent = await editor();
+const completedBeforeReplay = await page.evaluate(() => document.querySelector('iframe').contentDocument.body.innerText.split('示例任务已完成').length);
+await scenario('continue');
+await page.waitForFunction(count => document.querySelector('iframe').contentDocument.body.innerText.split('示例任务已完成').length > count, completedBeforeReplay);
+await waitText('重置体验可重新运行');
+await openChapter();
+assert.equal(await editor(), rejectedContent, 'Repeating a rejected example must not reapply it');
+console.log('PASS: blank/edited input does not execute; repeated submit stays single; rejection preserves later edits and replay does not reapply');
 
 // Reject an overlapping edit without overwriting the visitor's current text.
 await fresh();

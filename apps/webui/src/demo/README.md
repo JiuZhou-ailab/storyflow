@@ -12,7 +12,10 @@ login/server discovery/WebSocket bootstrap.
   events. Unknown host calls fail visibly. No model/runtime/network fallback exists.
 - `fixture.ts` defines the authored 黑洞直播 content and the two explicit scenarios.
   Selected scenario plus unchanged input is required; matching a keyword never runs
-  a task. Edits target one unique current passage and preserve other manual edits.
+  a task. Continuation appends independently of the rewrite, which targets one unique
+  current passage. Each scenario runs once per experience; repeating it completes
+  without another edit, including after rejection or later manual edits. Reset starts
+  a fresh experience. Both orders preserve manual changes; conflicting rewrites stop.
 - `main.tsx` composes real renderer providers and reports a crashed surface to the
   parent. `styles.css` gives the product its complete iframe viewport; navigation,
   titlebar, input controls and notification positions keep their native geometry.

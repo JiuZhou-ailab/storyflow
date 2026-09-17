@@ -16,12 +16,12 @@ export const initialFiles = {
 }
 export const scenarios = {
   continue: {
-    label: '续写一段', prompt: '参考人物与创作要求，给第01章续写一段。',
-    before: opening,
-    after: `${opening}\n\n苏白伸手去按住它，指尖却停在半空。屏幕右下角，在线人数从37跳到了38。新来的观众没有发弹幕，只把头像换成了他的房间。`,
+    kind: 'append', label: '续写一段', prompt: '参考人物与创作要求，给第01章续写一段。',
+    before: '',
+    after: `\n\n苏白伸手去按住它，指尖却停在半空。屏幕右下角，在线人数从37跳到了38。新来的观众没有发弹幕，只把头像换成了他的房间。`,
   },
   rewrite: {
-    label: '改写悬念', prompt: '把第01章里螺丝滑动的段落改得更有悬念。',
+    kind: 'replace', label: '改写悬念', prompt: '把第01章里螺丝滑动的段落改得更有悬念。',
     before: opening,
     after: '苏白还没碰到桌面，那颗螺丝便自己转了半圈。他移开金属球，螺丝停住了；再放回去，它又朝同一个方向滑了一寸。',
   },

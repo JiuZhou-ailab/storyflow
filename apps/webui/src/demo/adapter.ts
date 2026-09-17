@@ -112,7 +112,11 @@ export function createDemoAdapter(notice: (message: string) => void) {
       if (session.isProcessing) throw new Error('示例任务正在处理中。')
       const path = `${workspace.rootPath}/第01章.md`
       const before = read(path)
-      if (before.includes(scenario.after) || before.split(scenario.before).length !== 2) {
+      const alreadyRun = session.messages.some(message => message.role === 'tool'
+        && message.toolStatus === 'completed' && message.toolInput?.new_string === scenario.after)
+      const canApply = (content: string) => alreadyRun || content.includes(scenario.after)
+        || scenario.kind === 'append' || content.split(scenario.before).length === 2
+      if (!canApply(before)) {
         notice('目标段落已改变，无法安全运行此示例。请重置体验后再试。')
         throw new Error('目标段落已改变或出现多次，文件保持不变。')
       }
@@ -123,16 +127,21 @@ export function createDemoAdapter(notice: (message: string) => void) {
       emit({ type: 'user_message', sessionId: id, message: user, optimisticMessageId: options?.optimisticMessageId, status: 'accepted' })
       timer = setTimeout(() => {
         const current = read(path)
-        if (current.split(scenario.before).length !== 2) {
+        if (!canApply(current)) {
           emit({ type: 'error', sessionId: id, error: '目标段落已改变，文件保持不变。' })
         } else {
-          const toolUseId = crypto.randomUUID()
-          const toolInput = { file_path: path, old_string: scenario.before, new_string: scenario.after }
-          emit({ type: 'tool_start', sessionId: id, toolName: 'Edit', toolUseId, toolInput, turnId })
-          files.set(path, current.replace(scenario.before, scenario.after))
-          session.messages.push({ id: toolUseId, role: 'tool', toolName: 'Edit', toolUseId, toolInput, toolStatus: 'completed', content: '已更新第01章.md', turnId, timestamp: Date.now() })
-          emit({ type: 'tool_result', sessionId: id, toolUseId, toolName: 'Edit', result: '已更新第01章.md', turnId })
-          const text = '示例任务已完成。打开 [第01章.md](第01章.md)，查看这次改动，再决定接受或拒绝。'
+          const alreadyApplied = alreadyRun || current.includes(scenario.after)
+          if (!alreadyApplied) {
+            const toolUseId = crypto.randomUUID()
+            const toolInput = { file_path: path, old_string: scenario.before, new_string: scenario.after }
+            emit({ type: 'tool_start', sessionId: id, toolName: 'Edit', toolUseId, toolInput, turnId })
+            files.set(path, scenario.kind === 'append' ? current + scenario.after : current.replace(scenario.before, scenario.after))
+            session.messages.push({ id: toolUseId, role: 'tool', toolName: 'Edit', toolUseId, toolInput, toolStatus: 'completed', content: '已更新第01章.md', turnId, timestamp: Date.now() })
+            emit({ type: 'tool_result', sessionId: id, toolUseId, toolName: 'Edit', result: '已更新第01章.md', turnId })
+          }
+          const text = alreadyApplied
+            ? '示例任务已完成。此示例已体验，未重复修改正文。重置体验可重新运行。'
+            : '示例任务已完成。打开 [第01章.md](第01章.md)，查看这次改动，再决定接受或拒绝。'
           session.messages.push({ id: `${turnId}-result`, role: 'assistant', content: text, turnId, timestamp: Date.now() })
           emit({ type: 'text_complete', sessionId: id, text, turnId })
         }
