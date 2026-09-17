@@ -153,6 +153,7 @@ export function PreviewHeader({
         {onClose && (
           <button
             onClick={onClose}
+            aria-label={t('common.close')}
             className={cn(
               'p-1.5 rounded-[6px] bg-background shadow-minimal cursor-pointer',
               'opacity-70 hover:opacity-100 transition-opacity',

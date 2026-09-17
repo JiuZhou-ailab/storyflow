@@ -10,6 +10,12 @@ on:
       - main
     paths:
       - "apps/marketing/**"
+      - "apps/webui/**"
+      - "apps/electron/src/renderer/**"
+      - "apps/electron/src/shared/**"
+      - "packages/ui/**"
+      - "packages/shared/**"
+      - "packages/core/**"
       - "apps/electron/resources/release-notes/*.md"
       - "scripts/build-marketing.ts"
       - "package.json"

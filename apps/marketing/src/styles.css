@@ -207,12 +207,12 @@ ol {
 }
 
 .hero {
-  padding-top: 112px;
+  padding-top: 64px;
   padding-bottom: 67.2px;
 }
 .hero-copy {
   max-width: 800px;
-  margin-bottom: 56px;
+  margin-bottom: 32px;
 }
 .hero-copy h1 {
   font-size: 26px;
@@ -221,6 +221,20 @@ ol {
   line-height: 1.25;
   margin-bottom: 22.4px;
   text-wrap: balance;
+}
+
+.interactive-demo {
+  position: relative;
+  height: clamp(620px, calc(100dvh - 260px), 800px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--background);
+}
+.interactive-demo iframe { display: block; width: 100%; height: 100%; border: 0; }
+.demo-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: var(--background); }
+@media (max-width: 767px) {
+  .interactive-demo { height: 820px; }
 }
 
 .button-row {
@@ -331,18 +345,6 @@ ol {
   display: block;
   font-size: 12px;
   margin-top: 3px;
-}
-
-.hero-stage {
-  background: #e9e8e4;
-  border-radius: 4px;
-  isolation: isolate;
-  overflow: hidden;
-  position: relative;
-  padding: clamp(10px, 3.5vw, 48px);
-}
-.hero-primary-window {
-  width: 100%;
 }
 
 .feature-card {
@@ -534,7 +536,7 @@ ol {
     --site-header-height: 56px;
   }
   .hero {
-    padding-top: 105px;
+    padding-top: 48px;
     padding-bottom: 63px;
   }
   .hero-copy h1 {
@@ -542,7 +544,7 @@ ol {
     margin-bottom: 21px;
   }
   .hero-copy {
-    margin-bottom: 52.5px;
+    margin-bottom: 28px;
   }
   .feature-card,
   .feature-card.is-reverse {
@@ -776,7 +778,7 @@ ol {
     padding-bottom: 63px;
   }
   .hero {
-    padding-top: 105px;
+    padding-top: 48px;
   }
   .section-heading {
     font-size: 24px;

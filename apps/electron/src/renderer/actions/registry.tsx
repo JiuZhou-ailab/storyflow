@@ -1,5 +1,5 @@
-// input: Action definitions, DOM keybinding context, and registered renderer handlers
-// output: Global action dispatch with exact cross-platform hotkey matching
+// input: Action definitions, renderer host kind, DOM keybinding context, and registered handlers
+// output: Global action dispatch with exact hotkeys and native browser Tab navigation
 // pos: Central keyboard shortcut registry for the Electron renderer
 
 import React, { createContext, useContext, useCallback, useRef, useEffect } from 'react'
@@ -83,6 +83,11 @@ export function ActionRegistryProvider({ children }: { children: React.ReactNode
   // Set up global hotkey listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Browser hosts need native Tab order, including entry/exit of an embedded renderer.
+      // Widgets still handle their own Tab events (menus, editor indentation, dialogs).
+      if (window.electronAPI.getRuntimeEnvironment() === 'web'
+        && e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) return
+
       // Build context snapshot from DOM state at event time
       const context = getKeybindingContext(e)
 

@@ -19,6 +19,30 @@ ego-browser nodejs < apps/marketing/qa.mjs
 
 The script uses the existing ego-browser API, without another test framework. By default it opens its own TaskSpace and closes it after success. When running inside an existing browser task, prepend `globalThis.marketingQA = { space: <existing numeric id>, page: "p2", output: "/absolute/evidence/directory" };` to the script input and reuse that space. `url` optionally changes the preview origin. Shell environment variables are not forwarded by ego-browser's remote Node runtime.
 
+## Interactive hero acceptance
+
+Run `qa-demo.mjs` against the same production preview and TaskSpace as `qa.mjs`.
+The demo must show the current renderer, with a readable sample chapter on desktop
+and accessible file links/project-file dialog on phones. A screenshot tour cannot
+satisfy this check. The separate `/demo/` entry must also load directly.
+
+1. At 1440 and 390px, open all three files, edit the chapter, switch away and back,
+   execute both scenarios, inspect the actual diff, accept and safely reject changes.
+2. Keep unrelated manual edits when rejecting. Change the same target text and
+   verify a conflict preserves the file. Unsupported/edited requests retain drafts.
+3. Reset during a task and after review; wait past the old callback, then check a
+   clean project. Refresh and a second iframe instance must also start clean.
+4. Capture requests plus attempted fetch/WebSocket/EventSource/XHR/beacon calls.
+   Only published static assets are allowed, including when loading fails. Check
+   parent storage sentinels and rejection of unknown/out-of-project virtual paths.
+5. At 1440/768/390/320px verify visible controls, readable text, no horizontal page
+   overflow, keyboard file/review/dialog exit, reduced motion, and static-resource
+   failure followed by retry. Downloads and tutorial navigation remain available.
+
+The toolbar identifies preset local results and temporary changes. Global account
+and project navigation is hidden. Visible native operations must show an explicit
+limit, without granting real resources or pretending they succeeded.
+
 ## Refresh product captures
 
 After building the current desktop application:
@@ -44,9 +68,9 @@ Tutorial sidebar: at 1440/768px, all 11 chapter links align in one column with a
 
 ## Visual acceptance
 
-Compare with `design-reference/cursor-1440.png`, `cursor-390.png`, and the recorded computed geometry. Inspect hero, each feature, cards, releases, final CTA and footer at matching viewport widths. Scrollable demonstration text must remain readable and keyboard reachable. Check screenshot framing rather than only HTTP status.
+The interactive hero follows Memoh; verify its real working UI and readable layout. For untouched supporting sections, the historical `design-reference/cursor-1440.png`, `cursor-390.png`, and measured geometry remain useful references. Inspect hero, each feature, cards, releases, final CTA and footer at matching viewport widths. Scrollable demonstration text must remain readable and keyboard reachable. Check screenshot framing rather than only HTTP status.
 
-The browser smoke test does not award a visual-fidelity score. Document differences in `implementation-notes.md`. Customer proof, testimonials, team and editorial material remain missing; no full-homepage 1:1 sign-off is claimed. Later sections cannot have matching absolute positions until those material gaps are resolved.
+The browser smoke test does not award a visual-fidelity score. Document differences in `implementation-notes.md`. Full-page pixel matching and historical external-material gaps are outside the interactive demo scope.
 
 ## Boundaries
 

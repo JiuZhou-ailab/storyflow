@@ -268,7 +268,7 @@ describe('app shell layout defaults', () => {
     expect(panelHeaderSource).toContain('titlebar-drag-region')
     expect(activityRailSource).toContain('style={{ height: WINDOW_TITLE_BAR_HEIGHT }}')
     expect(tiptapEditorStyles).toContain('-webkit-app-region: drag')
-    expect(appShellSource).toContain('rightSidebarButton={!rightWorkspaceVisible ? rightWorkspaceToggleButton : undefined}')
+    expect(appShellSource).toContain('rightSidebarButton={isAutoCompact || !rightWorkspaceVisible ? rightWorkspaceToggleButton : undefined}')
     expect(panelStackSource).toContain('index === visiblePanels.length - 1 ? rightSidebarButton : undefined')
   })
 

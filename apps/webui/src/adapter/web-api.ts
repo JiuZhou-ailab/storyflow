@@ -192,7 +192,6 @@ export function createWebApi(options: WebApiOptions): {
     // Badge — use document title
     refreshBadge: () => Promise.resolve(),
     setDockIconWithBadge: () => Promise.resolve(),
-    onBadgeDraw: () => () => {},
     onBadgeDrawWindows: () => () => {},
 
     // Notifications — Web Notifications API

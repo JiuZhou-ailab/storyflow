@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
+    <meta name="robots" content="noindex" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <title>Storyflow 交互演示</title>
+  </head>
+  <body>
+    <div id="demo-toolbar" aria-label="示例操作">
+      <div><strong>交互演示</strong><span>示例内容 · 修改仅在本次体验中有效</span></div>
+      <div><button data-scenario="continue" disabled>续写一段</button><button data-scenario="rewrite" disabled>改写悬念</button><button id="demo-reset">重置体验</button></div>
+    </div>
+    <p id="demo-notice" role="status">正在打开示例项目…</p>
+    <div id="root"></div>
+    <script type="module" src="./bootstrap.ts"></script>
+  </body>
+</html>

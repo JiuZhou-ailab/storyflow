@@ -1,5 +1,5 @@
-// input: Marketing React app source
-// output: Static landing-page build served from apps/marketing/dist
+// input: Marketing React app source and prebuilt product demo
+// output: Static landing build and demo directory-index serving during development
 // pos: Vite configuration for the marketing website
 
 import { dirname, resolve } from "node:path";
@@ -11,7 +11,16 @@ import { embedReleaseNotes } from "./release-notes";
 const appDir = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins: [react(), { name: "release-notes", transformIndexHtml: (html) => embedReleaseNotes(html) }],
+  plugins: [react(), { name: "release-notes", transformIndexHtml: (html) => embedReleaseNotes(html) }, {
+    name: "demo-directory-index",
+    configureServer(server) {
+      server.middlewares.use((request, _response, next) => {
+        // Vite's dev SPA fallback otherwise returns the landing page inside itself.
+        if (request.url?.split("?")[0] === "/demo/") request.url = request.url.replace("/demo/", "/demo/index.html");
+        next();
+      });
+    },
+  }],
   root: appDir,
   base: "./",
   resolve: {

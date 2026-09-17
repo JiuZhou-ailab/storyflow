@@ -1,5 +1,5 @@
-// input: Controlled workspace catalog, selection/expansion state, file-open intent, and mutation callbacks
-// output: Virtualized, keyboard-accessible tree with single-click replacement and double-click tab opening
+// input: Controlled catalog, selection/expansion state, renderer host kind, and file-open/mutation capabilities
+// output: Virtualized tree with native browser Tab traversal, single-click replacement and double-click tab opening
 // pos: Workspace file navigation boundary and React Arborist state adapter
 
 import * as React from 'react'
@@ -293,6 +293,13 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     return (
       <div
         ref={containerRef}
+        onKeyDownCapture={event => {
+          // Arborist's document-local Tab helper cannot leave an iframe.
+          // Let the browser traverse out of the tree; keep popup/widget handlers intact.
+          if (window.electronAPI.getRuntimeEnvironment() === 'web'
+            && event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey
+            && (event.target as Element).closest('[role="tree"]')) event.stopPropagation()
+        }}
         className={fitContent
           ? 'w-full overflow-hidden px-2 py-1 [&_[role=tree]>div]:!overflow-hidden'
           : 'h-full min-h-0 w-full overflow-hidden px-2 py-1'}
