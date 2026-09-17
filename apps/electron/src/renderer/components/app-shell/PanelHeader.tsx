@@ -93,10 +93,10 @@ export function PanelHeader({
   isRegeneratingTitle,
 }: PanelHeaderProps) {
   // Use context as fallback when prop is not explicitly set.
-  // Skip stoplight compensation when leadingAction is present — the back button
-  // occupies the space where traffic lights would be.
+  // A back button replaces default traffic-light space, but must still respect
+  // an explicit inset reserved for visible shell controls.
   const stoplightCompensation = useStoplightCompensation()
-  const shouldCompensate = leadingAction
+  const shouldCompensate = leadingAction && stoplightCompensation.leadingInset === undefined
     ? false
     : (compensateForStoplight ?? stoplightCompensation.enabled)
 
@@ -157,7 +157,7 @@ export function PanelHeader({
         ? 'grid-cols-[minmax(0,1fr)_auto]'
         : 'grid-cols-[minmax(0,1fr)_minmax(0,auto)_minmax(0,1fr)]',
     )}>
-      <div className="min-w-0 w-fit justify-self-start flex items-center">
+      <div className="min-w-0 w-full justify-self-start flex items-center">
         {leadingAction}
         {titleAlign === 'start' && titleBlock}
       </div>

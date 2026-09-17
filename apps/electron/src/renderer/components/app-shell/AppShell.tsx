@@ -1297,9 +1297,10 @@ function AppShellContent({
     )
   const contentNeedsStoplightCompensation = isAutoCompact
     || (!isActivityRailVisible && hideSessionListNavigator)
-  const contentHeaderLeadingInset = !isAutoCompact && !isActivityRailVisible && hideSessionListNavigator
-    ? activityRailWidth + 16
-    : null
+  const activityRailControlsWidth = isAutoCompact ? WINDOW_TITLE_BAR_HEIGHT * 2 : activityRailWidth
+  const contentHeaderLeadingInset = isAutoCompact
+    ? activityRailControlsWidth
+    : !isActivityRailVisible && hideSessionListNavigator ? activityRailWidth + 16 : null
   const visibleSessionListWidth = hideSessionListNavigator ? 0 : sessionListWidth
 
   const enabledModes = PERMISSION_MODE_ORDER
@@ -2620,6 +2621,8 @@ function AppShellContent({
     if (novelDocumentEditorRef.current && isCurrentNovelDocumentDirty()) {
       setNovelDocumentContent(getCurrentNovelDocumentContent())
     }
+    // A desktop-width rail would leave the compact conversation only a few characters wide.
+    if (requestedCompact) setIsActivityRailVisible(false)
     setIsAutoCompact(requestedCompact)
   }, [requestedCompact, isAutoCompact, getCurrentNovelDocumentContent, isCurrentNovelDocumentDirty])
 
@@ -4397,7 +4400,7 @@ function AppShellContent({
     <div
       data-testid="activity-rail-titlebar-actions"
       className="pointer-events-none fixed left-0 top-0 z-overlay flex shrink-0 translate-y-0.5 items-center justify-end gap-0.5 px-2"
-      style={{ width: activityRailWidth, height: WINDOW_TITLE_BAR_HEIGHT }}
+      style={{ width: activityRailControlsWidth, height: WINDOW_TITLE_BAR_HEIGHT }}
     >
       <button
         type="button"

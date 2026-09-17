@@ -8,6 +8,7 @@ const page = task.page(config.page || 'p1');
 const base = config.url || 'http://127.0.0.1:4176';
 console.log({ space: task.spaceId, page: page.label });
 await page.cdp('Network.enable');
+await page.cdp('Emulation.setEmulatedMedia', { features: [] });
 await page.events();
 const { identifier: auditScript } = await page.cdp('Page.addScriptToEvaluateOnNewDocument', { source: `
   window.__demoNetworkAttempts = [];
@@ -62,7 +63,7 @@ async function auditNetwork() {
 const chapterLink = 'ul a[href="%E7%AC%AC01%E7%AB%A0.md"]';
 const body = () => page.evaluate(() => document.querySelector('iframe').contentDocument.body.innerText);
 const editor = () => page.evaluate(() => document.querySelector('iframe').contentDocument.querySelector('.tiptap')?.textContent);
-const waitText = (text) => page.waitForFunction(text => document.querySelector('iframe')?.contentDocument.body.innerText.includes(text), text, { timeout: 6000 }).catch(error => { throw new Error(`Missing visible content: ${text}`, { cause: error }); });
+const waitText = (text) => page.waitForFunction(text => (document.getElementById('demo-notice')?.textContent + document.querySelector('iframe')?.contentDocument.body.innerText).includes(text), text, { timeout: 6000 }).catch(error => { throw new Error(`Missing visible content: ${text}`, { cause: error }); });
 const waitEditor = (text) => page.waitForFunction(text => document.querySelector('iframe')?.contentDocument.querySelector('.tiptap[contenteditable="true"]')?.textContent.includes(text), text, { timeout: 6000 }).catch(error => { throw new Error(`Missing visible content: ${text}`, { cause: error }); });
 async function fresh(width = 1440) {
   await auditNetwork();
@@ -76,7 +77,7 @@ async function reset() {
   await auditNetwork();
   const before = await page.evaluate(() => document.querySelector('iframe').contentWindow.performance.timeOrigin);
   await page.click('#demo-reset');
-  await page.waitForFunction(before => { const w = document.querySelector('iframe').contentWindow; return w.performance.timeOrigin !== before && w.document.getElementById('demo-notice')?.textContent.includes('点击第01章'); }, before, { timeout: 15000 });
+  await page.waitForFunction(before => { const w = document.querySelector('iframe').contentWindow; return w.performance.timeOrigin !== before && document.getElementById('demo-notice')?.textContent.includes('点击第01章'); }, before, { timeout: 15000 });
 }
 async function openChapter() { await page.focus(chapterLink); await page.keyboard.press('Enter'); await waitEditor('第一章 · 黑洞直播'); }
 async function backToChat(width) {
@@ -95,12 +96,57 @@ async function append(text) {
 }
 async function scenario(id) {
   await page.click(`button[data-scenario="${id}"]`);
+  await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelector('[role="textbox"]')?.textContent.trim().length > 0);
   await page.press('[role="textbox"]', 'Enter');
   await waitText('示例任务已完成');
   await waitText('已编辑 1 个文件');
 }
 for (const width of [1440, 390]) {
   await fresh(width);
+  if (width === 1440) {
+    const shell = await page.evaluate(() => {
+      const d = document.querySelector('iframe').contentDocument;
+      const visible = selector => { const r = d.querySelector(selector)?.getBoundingClientRect(); return !!r && r.width > 0 && r.height > 0; };
+      const root = d.getElementById('root').getBoundingClientRect();
+      const rail = d.querySelector('[aria-label="工作区导航"]')?.getBoundingClientRect();
+      const collapse = d.querySelector('button[aria-label="收起侧边栏"]')?.getBoundingClientRect();
+      return {
+        fullViewport: root.top === 0 && Math.abs(root.height - d.defaultView.innerHeight) <= 1,
+        navigation: !!rail && rail.width > 0,
+        nativeTitlebar: !!collapse && !!rail && collapse.top >= rail.top && collapse.bottom <= rail.top + 40,
+        inputTools: visible('button[aria-label="附加文件 / 选择技能 / 选择数据源"]') && visible('[aria-label^="运行权限："]'),
+        model: [...d.querySelectorAll('form button')].some(button => button.textContent.includes('本地演示') && button.getBoundingClientRect().width > 0),
+        hostControlsOutsideProduct: !!document.getElementById('demo-toolbar') && !d.getElementById('demo-toolbar'),
+      };
+    });
+    assert.deepEqual(shell, { fullViewport: true, navigation: true, nativeTitlebar: true, inputTools: true, model: true, hostControlsOutsideProduct: true }, 'Preserve the complete product UI and its viewport coordinates');
+    await page.click('button[aria-label="附加文件 / 选择技能 / 选择数据源"]');
+    await page.waitForSelector('[role="menuitem"]:has-text("附加文件")');
+    await page.keyboard.press('Escape');
+    await page.click('button[aria-label="收起侧边栏"]');
+    await page.click('button[aria-label="展开侧边栏"]');
+    for (const destination of ['技能', '数据源']) {
+      await page.click(`[aria-label="插件导航"] button:has-text("${destination}")`);
+      await page.waitForFunction(() => !document.querySelector('iframe').contentDocument.querySelector('[role="textbox"]'));
+      await page.click('button[data-scenario="continue"]');
+      await waitText('已返回示例对话');
+      await page.waitForSelector('[role="textbox"]');
+      await scenario('continue');
+      await reset();
+    }
+    console.log('PASS: full product navigation, native header coordinates, input toolbar, menus and return from auxiliary pages');
+  } else {
+    const headerFits = await page.evaluate(() => {
+      const d = document.querySelector('iframe').contentDocument;
+      const badge = d.querySelector('[data-testid="chat-project-badge"]');
+      const title = [...d.querySelectorAll('h1')].find(node => node.textContent.includes('第一章'));
+      const grid = badge.closest('.grid');
+      const controls = grid.lastElementChild.getBoundingClientRect();
+      const railControls = d.querySelector('[data-testid="activity-rail-titlebar-actions"]').getBoundingClientRect();
+      return title.getBoundingClientRect().left >= railControls.right && badge.getBoundingClientRect().right <= controls.left;
+    });
+    assert.ok(headerFits, 'Compact product title and badge must not overlap native controls');
+  }
   await openChapter();
   await append('这行是读者的手动修改。');
   await page.click('[role="treeitem"]:has-text("人物.md")');
@@ -249,7 +295,7 @@ await page.click('[role="treeitem"]:has-text("第01章.md")');
 await waitEditor('窄屏切换前的编辑。');
 assert.ok((await editor()).includes('宽屏切换前的编辑。'));
 await page.cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 900, deviceScaleFactor: 1, mobile: true });
-await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelectorAll('.tiptap[contenteditable="true"]').length === 1);
+await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelector('[role="dialog"] .tiptap[contenteditable="true"]'));
 await append('再次切换后继续编辑。');
 await page.click('[role="treeitem"]:has-text("人物.md")');
 await waitEditor('科学主播');
@@ -258,9 +304,9 @@ await waitEditor('再次切换后继续编辑。');
 console.log('PASS: unsaved text survives both responsive layout transitions');
 
 await fresh();
-await page.focus('.hero a[href="/docs/"]');
+await page.focus('#demo-reset');
 await page.keyboard.press('Tab');
-assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'IFRAME', 'Keyboard enters demo from the tutorial CTA');
+assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'IFRAME', 'Keyboard enters product from the external demo controls');
 await page.keyboard.press('Shift+Tab');
 assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), 'IFRAME', 'Keyboard can leave backwards');
 await page.keyboard.press('Tab');
@@ -274,7 +320,9 @@ console.log('PASS: keyboard enters and exits iframe');
 await page.cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
 await fresh();
 await scenario('rewrite');
-await page.click('loc=role:button[name="审核"]');
+await page.focus('loc=role:button[name="审核"]');
+await page.keyboard.press('Enter');
+await page.waitForSelector('loc=role:button[name="Accept"]');
 await page.click('loc=role:button[name="Accept"]');
 await waitText('Accepted');
 await page.cdp('Emulation.setEmulatedMedia', { features: [] });
@@ -300,6 +348,7 @@ if (config.output) {
 }
 console.log('PASS: static-load failure keeps navigation usable and retry restores the working product');
 } finally {
+  await page.cdp('Emulation.setEmulatedMedia', { features: [] });
   await page.cdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: auditScript });
   await page.cdp('Network.setBlockedURLs', { urls: [] });
   await page.cdp('Network.setCacheDisabled', { cacheDisabled: false });
