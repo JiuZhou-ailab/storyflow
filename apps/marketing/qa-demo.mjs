@@ -97,7 +97,8 @@ async function append(text) {
 async function scenario(id) {
   await page.click(`button[data-scenario="${id}"]`);
   await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelector('[role="textbox"]')?.textContent.trim().length > 0);
-  await page.press('[role="textbox"]', 'Enter');
+  if (id === 'continue') await page.click('[data-tutorial="send-button"]');
+  else await page.press('[role="textbox"]', 'Enter');
   await waitText('示例任务已完成');
   await waitText('已编辑 1 个文件');
 }
@@ -249,7 +250,12 @@ const invalidFiles = await page.evaluate(async () => {
 });
 assert.ok(invalidFiles.every(message => message.includes('示例文件不存在')));
 await page.click('button[aria-label="打开文件位置"]');
-await waitText('此功能不在交互演示中开放');
+await waitText('完整功能请下载');
+assert.ok(await page.evaluate(() => {
+  const summary = document.querySelector('.demo-summary');
+  const notice = document.getElementById('demo-notice');
+  return summary.contains(notice) && Math.abs(summary.querySelector('strong').getBoundingClientRect().y - notice.getBoundingClientRect().y) < 3;
+}), 'Temporary-demo label and compact notice share one line');
 await page.click('button[data-scenario="continue"]');
 await page.press('[role="textbox"]', 'Enter');
 await reset();
