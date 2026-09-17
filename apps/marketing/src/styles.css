@@ -240,7 +240,9 @@ ol {
 #demo-toolbar button { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; background: var(--background); cursor: pointer; }
 #demo-toolbar button:disabled { opacity: .5; cursor: wait; }
 #demo-toolbar button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-#demo-notice { margin: 0; padding: 5px 14px; font-size: 12px; line-height: 1.5; color: var(--muted); background: var(--background); }
+#demo-toolbar .demo-summary { flex: 1 1 300px; min-width: 0; flex-wrap: nowrap; }
+#demo-toolbar .demo-summary strong { flex-shrink: 0; }
+#demo-toolbar .demo-context { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .demo-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: var(--background); }
 @media (max-width: 767px) {
   .interactive-demo { height: 820px; }

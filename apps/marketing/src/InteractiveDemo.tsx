@@ -29,7 +29,7 @@ export function InteractiveDemo() {
   return (
     <div className="interactive-demo">
       <div id="demo-toolbar" aria-label="示例操作">
-        <div><strong>交互演示</strong><span>示例内容 · 修改仅在本次体验中有效</span></div>
+        <div className="demo-summary"><strong>交互演示</strong><span className="demo-context">临时体验 · <span id="demo-notice" role="status" title={notice}>{notice}</span></span></div>
         <div>
           {([['continue', '续写一段'], ['rewrite', '改写悬念']] as const).map(([id, label]) => (
             <button key={id} data-scenario={id} disabled={status !== 'ready'} onClick={() => frame.current?.contentWindow?.postMessage({ type: 'storyflow-demo-scenario', id }, location.origin)}>{label}</button>
@@ -37,8 +37,7 @@ export function InteractiveDemo() {
           <button id="demo-reset" onClick={reset}>重置体验</button>
         </div>
       </div>
-      <p id="demo-notice" role="status">{notice}</p>
-      <iframe key={attempt} ref={frame} src="/demo/" title="Storyflow 交互演示" sandbox="allow-scripts allow-same-origin" />
+      <iframe key={attempt} ref={frame} src="/demo/" title="Storyflow 交互演示" sandbox="allow-scripts allow-same-origin allow-forms" />
       {status !== 'ready' && <div className="demo-loading" role="status">
         <p>{status === 'loading' ? '正在打开示例项目…' : '示例项目暂时无法打开。'}</p>
         {status === 'error' && <div className="button-row">

@@ -16,7 +16,7 @@ export function createDemoAdapter(notice: (message: string) => void) {
   const copy = <T,>(value: T): T => structuredClone(value)
   const emit = (event: SessionEvent) => { if (!disposed) for (const listener of listeners) listener(copy(event)) }
   const unsupported = () => {
-    const message = '此功能不在交互演示中开放。请下载 Storyflow 后使用。'
+    const message = '完整功能请下载'
     notice(message)
     throw new Error(message)
   }
