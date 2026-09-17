@@ -2187,7 +2187,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             })
                           }
                         }}
-                        footer={!compactMode && turnFileChanges.length > 0 ? (
+                        footer={turnFileChanges.length > 0 ? (
                           <FileChangesSummary
                             changes={turnFileChanges}
                             reverting={revertingTurnKey === turnKey}

@@ -1,6 +1,23 @@
-# Homepage fidelity — Issue #39
+# Interactive product demo — Issue #39
 
-## Reference baseline
+## Current scope (2026-09-17)
+
+Issue #39 now follows [Memoh](https://memoh.ai/): the first screen embeds a working
+product frontend. The previous Cursor full-page fidelity target below is historical.
+Missing testimonials or editorial assets do not block this scope.
+
+The hero loads the existing Storyflow renderer from an independent static demo
+entry. Its ElectronAPI adapter owns only memory-backed sample files, one conversation,
+and two deterministic edit scenarios. The real editor and review logic handle saves,
+acceptance, safe rejection and conflicts. A compact project dialog reuses those same
+surfaces on narrow screens. The parent keeps downloads/tutorials available if the
+iframe fails and offers a retry.
+
+Build with `bun run marketing:build`; run `qa-demo.mjs` and `qa.mjs` against the
+production preview. See `qa-runbook.md` for behavior, isolation and regression checks.
+No production publish is implied by implementing this issue.
+
+## Historical screenshot reference (superseded)
 
 Reference: <https://cursor.com/>, captured on 2026-09-11 after the Chinese light homepage finished rendering. The archived `design-reference/cursor.json` records the capture time, language, viewport, section order, and computed geometry at 1440, 768, 390, and 320 CSS px. `cursor-1440.png` and `cursor-390.png` are the full-page reference captures, for review only; the build does not publish this directory.
 

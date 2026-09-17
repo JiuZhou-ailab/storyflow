@@ -2,12 +2,20 @@
 
 Storyflow landing page and release-download metadata.
 
-The landing page uses the archived Cursor homepage geometry with Storyflow's
-own brand, clean current Electron previews, and published
-release history. The screenshot tour is local to the page and never calls an Agent. Original 4320 × 2700 screenshots come from the unmodified current Electron renderer at a 1440 × 900 viewport and 3× pixel density, with authored sample files and transcripts. Landing previews keep the native 16:10 ratio; annotations and explanatory captions belong only to the tutorial.
-Customer proof, testimonials, team materials and editorial highlights remain
-explicit acceptance gaps; see `implementation-notes.md` before calling the page
-a completed 1:1 replica.
+The hero embeds a live Storyflow renderer in `/demo/`, following Memoh's interactive
+product-preview approach. Visitors open and edit the 黑洞直播 sample project, send
+two explicitly selected writing scenarios, and review or reset their changes.
+The renderer uses a browser-memory ElectronAPI adapter; it never starts an Agent,
+logs in, connects to a model, or touches real files. Refresh/reset discards the
+instance, including drafts and review state. See `../webui/src/demo/README.md`.
+
+`bun run dev` builds the demo before starting Vite. `bun run build` builds it again
+and copies its generated `public/demo/` assets into `dist/demo/`. Changes to the
+shared renderer also trigger the existing marketing deployment workflow.
+Supporting sections keep the existing clean Electron screenshot tours, downloads,
+tutorial and release history. Historical Cursor fidelity notes are retained in
+`implementation-notes.md`; they are not the current Issue #39 acceptance target.
+
 `/changelog/` contains the full version history with permanent `#vX.Y.Z` anchors. Both the Bun build and Vite development load every numeric versioned Markdown file from `apps/electron/resources/release-notes/`; `next.md` and prerelease drafts are excluded. Markdown renders safely at build time and is embedded in the site HTML, so reading history never depends on GitHub or a live API. Existing version files remain the archive; add new versions without replacing older files. Header and footer link to the page; the old `/#changelog` anchor remains at the footer entry.
 `/docs/` is a short tutorial index. The five practice steps have separate `/docs/install/`, `/docs/create-project/`, `/docs/first-task/`, `/docs/review-changes/` and `/docs/save-return/` routes; self-check, troubleshooting and three reference groups also have independent pages. Only the selected chapter mounts. The left sidebar selects chapters, the right outline lists current-page headings, and previous/next links follow the chapter order. Legacy `/docs/#anchor` bookmarks resolve to the matching chapter without adding a history entry. The practice teaches: install/sign in and confirm a reply, add a local project folder, write requirements and a short opening, review one targeted edit, then save a version and reopen the file. Each step includes a completion signal. Four copyable prompts preserve multiline text and offer a manual-copy fallback. Symptom-based help links lead to recovery instructions and contact details; advanced references follow the practice. Repeated screenshots are consolidated at their relevant steps. Tutorial copy must
 match current desktop labels and file behavior; screenshots illustrate an existing
@@ -32,6 +40,8 @@ Changes to versioned release-note Markdown on `main` also trigger this deploymen
 - `promo-video/` - HyperFrames product promo composition and rendered assets.
 - `reference-assets/` - Local landing screenshots and visual reference assets.
 - `src/App.tsx` - Landing page and same-site navigation.
+- `src/InteractiveDemo.tsx` - Product iframe, loading status and retry/tutorial recovery.
+- `public/demo/` - Generated browser demo assets; ignored by Git.
 - `src/DocsPage.tsx` - Chapter layout, left navigation, current-page outline and previous/next links.
 - `src/docs-content.tsx` - Tutorial chapter catalog, exercise content, copyable prompts and legacy bookmark mapping.
 - `release-notes.ts` - Build-time loader and Markdown renderer shared by Bun and Vite.
@@ -42,7 +52,7 @@ Changes to versioned release-note Markdown on `main` also trigger this deploymen
 - `reference-assets/current/` - Original current product captures and provenance.
 - `src/downloads.ts` - Shared installer metadata for both pages.
 - `src/__tests__/` - Download, tutorial navigation, and rendering checks.
-- `qa-runbook.md` / `qa.mjs` - Public-page browser acceptance and download/tutorial regression checks.
+- `qa-runbook.md` / `qa.mjs` / `qa-demo.mjs` - Production browser acceptance for the demo and existing marketing navigation.
 - `design-reference/` - Fixed Cursor reference, Storyflow verification captures and measured geometry; excluded from published assets.
 - `tsconfig.json` - TypeScript checks for the marketing app.
 - `vite.config.ts` - Vite build and preview configuration.

@@ -96,9 +96,10 @@ describe("downloadOptions", () => {
     });
   });
 
-  test("keeps landing previews unannotated and full-frame before interaction", () => {
+  test("embeds the interactive product and keeps supporting previews unannotated", () => {
     const html = renderToStaticMarkup(createElement(App));
-    expect(html).toContain('aria-label="写作实拍导览"');
+    expect(html).toContain('title="Storyflow 交互演示"');
+    expect(html).toContain('src="/demo/"');
     expect(html).not.toContain('class="tour-outline"');
     expect(html).not.toContain('class="tour-number"');
     expect(html).not.toContain('data-zoom="true"');

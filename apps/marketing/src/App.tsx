@@ -9,6 +9,7 @@ import { DocsPage } from "./DocsPage";
 import { findDocsChapter, resolveLegacyDocsTarget } from "./docs-content";
 import { ChangelogPage, type ReleaseNote } from "./ChangelogPage";
 import { ProductTour, captureUrl } from "./ProductTour";
+import { InteractiveDemo } from "./InteractiveDemo";
 
 const assets = {
   dataResults: captureUrl("sources"),
@@ -274,15 +275,7 @@ function Hero() {
             </a>
           </div>
         </div>
-        <div className="hero-stage">
-          <div className="hero-primary-window">
-            <ProductTour
-              steps={["workspace", "context", "review"]}
-              label="写作实拍导览"
-              annotated={false}
-            />
-          </div>
-        </div>
+        <InteractiveDemo />
       </div>
     </section>
   );

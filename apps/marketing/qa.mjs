@@ -19,47 +19,47 @@ await page.cdp("Emulation.setDeviceMetricsOverride", {
   deviceScaleFactor: 1,
   mobile: false,
 });
-await page.waitForSelector('section[aria-label="写作实拍导览"]');
+await page.waitForSelector('section[aria-label="创作过程实拍"]');
 await page.click(
-  'section[aria-label="写作实拍导览"] button:has-text("播放导览")',
+  'section[aria-label="创作过程实拍"] button:has-text("播放导览")',
 );
 await page.waitForFunction(
   () =>
     document
       .querySelector(
-        'section[aria-label="写作实拍导览"] .tour-tabs button[aria-pressed="true"]',
+        'section[aria-label="创作过程实拍"] .tour-tabs button[aria-pressed="true"]',
       )
       .textContent.includes("引用项目文件"),
   undefined,
   { timeout: 10000 },
 );
 await page.click(
-  'section[aria-label="写作实拍导览"] button:has-text("暂停导览")',
+  'section[aria-label="创作过程实拍"] button:has-text("暂停导览")',
 );
 const pausedCapture = await page.evaluate(() =>
   document
-    .querySelector('section[aria-label="写作实拍导览"] image')
+    .querySelector('section[aria-label="创作过程实拍"] image')
     .getAttribute("href"),
 );
 await new Promise((resolve) => setTimeout(resolve, 6200));
 assert.equal(
   await page.evaluate(() =>
     document
-      .querySelector('section[aria-label="写作实拍导览"] image')
+      .querySelector('section[aria-label="创作过程实拍"] image')
       .getAttribute("href"),
   ),
   pausedCapture,
 );
-for (const title of ["引用项目文件", "审阅具体改动", "目标与正文"]) {
+for (const title of ["引用项目文件", "目标与正文"]) {
   await page.click(
-    `section[aria-label="写作实拍导览"] .tour-tabs button:has-text("${title}")`,
+    `section[aria-label="创作过程实拍"] .tour-tabs button:has-text("${title}")`,
   );
   assert.equal(
     await page.evaluate(
       (title) =>
         [
           ...document.querySelectorAll(
-            'section[aria-label="写作实拍导览"] .tour-tabs button',
+            'section[aria-label="创作过程实拍"] .tour-tabs button',
           ),
         ]
           .find((b) => b.textContent.includes(title))
@@ -82,18 +82,18 @@ assert.equal(
   5,
 );
 await page.click(
-  'section[aria-label="写作实拍导览"] button:has-text("查看细节")',
+  'section[aria-label="创作过程实拍"] button:has-text("查看细节")',
 );
 assert.match(
   await page.evaluate(
     () =>
-      document.querySelector('section[aria-label="写作实拍导览"] .tour-camera')
+      document.querySelector('section[aria-label="创作过程实拍"] .tour-camera')
         .style.transform,
   ),
   /scale\([2-9]|scale\(1\./,
 );
 await page.click(
-  'section[aria-label="写作实拍导览"] button:has-text("查看全貌")',
+  'section[aria-label="创作过程实拍"] button:has-text("查看全貌")',
 );
 await page.click(
   'section[aria-label="Skills 实拍"] .tour-tabs button:has-text("把方法带入任务")',
@@ -365,7 +365,7 @@ for (const width of [1440, 768, 390, 320]) {
       document.documentElement.clientWidth,
     heading: document.querySelector("h1").getBoundingClientRect().toJSON(),
     stage: document
-      .querySelector(".hero-stage")
+      .querySelector(".interactive-demo")
       .getBoundingClientRect()
       .toJSON(),
     frameRatios: [

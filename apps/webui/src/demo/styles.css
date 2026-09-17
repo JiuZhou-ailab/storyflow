@@ -1,0 +1,18 @@
+/* input: Real product renderer and its demo-only toolbar
+ * output: Responsive embedded frame, without changing product geometry
+ * pos: Host chrome for the marketing demo
+ */
+html { zoom: 1; }
+body { display: flex; flex-direction: column; height: 100dvh; padding: 0; }
+#root { flex: 1; min-height: 0; }
+#demo-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px 14px; background: #f7f7f4; border-bottom: 1px solid #e5e5e2; font-size: 12px; }
+#demo-toolbar > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#demo-toolbar span { color: #696963; }
+#demo-toolbar button { border: 1px solid #dadad5; border-radius: 8px; padding: 6px 10px; background: white; cursor: pointer; }
+#demo-toolbar button:disabled { opacity: .5; cursor: wait; }
+#demo-toolbar button:focus-visible { outline: 2px solid #5b4fc4; outline-offset: 2px; }
+#demo-notice { margin: 0; padding: 5px 14px; font-size: 12px; line-height: 1.5; color: #696963; background: #f7f7f4; }
+/* The hosted example has one project; global account/project navigation is unavailable. */
+[aria-label="工作区导航"], [aria-label="展开侧边栏"], [aria-label="收起侧边栏"] { display: none !important; }
+/* Preset tasks keep their fixed model/permissions; attachments and version management are outside this demo. */
+form button.input-toolbar-btn, [aria-label^="运行权限："], [aria-label="版本管理"] { display: none !important; }

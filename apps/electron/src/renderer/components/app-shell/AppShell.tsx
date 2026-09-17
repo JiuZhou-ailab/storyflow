@@ -1,5 +1,5 @@
 // input: Workspace/session state, navigation state, collapsible rail chrome, file-open intent, and shell callbacks
-// output: Desktop shell with project writing panels and session-owned Free Conversation file docks
+// output: Responsive shell with project writing panels, compact project editor, and Free Conversation file docks
 // pos: Top-level renderer layout coordinator for workspace navigation
 
 import type { DocumentSearchTarget } from '@craft-agent/ui'
@@ -69,6 +69,7 @@ import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { PanelStackContainer } from "./PanelStackContainer"
 import { ResizableColumn } from "./ResizableColumn"
 import { WorkspaceDockLayout } from '../workspace/WorkspaceDockLayout'
+import { CompactWorkspaceDialog } from '../workspace/CompactWorkspaceDialog'
 import { WorkspaceFileHeaderActions } from '../workspace/WorkspaceFileHeaderActions'
 import { WORKSPACE_DIRECTORY_MIN_WIDTH, WORKSPACE_DIRECTORY_MAX_WIDTH, WORKSPACE_DIRECTORY_DEFAULT_WIDTH } from './panel-constants'
 import type { ChatDisplayHandle } from "./ChatDisplay"
@@ -936,6 +937,7 @@ function AppShellContent({
   const [rightWorkspaceVisible, setRightWorkspaceVisible] = React.useState(() => {
     return storage.get(storage.KEYS.writingWorkspaceVisible, false)
   })
+  const [compactWorkspaceRoot, setCompactWorkspaceRoot] = React.useState<string | null>(null)
   const [workspaceDirectoryVisible, setWorkspaceDirectoryVisible] = React.useState(() => {
     // Before independent directory folding existed, workspaceDirectoryVisible
     // controlled the complete writing workspace. Keep that legacy value as the
@@ -954,7 +956,8 @@ function AppShellContent({
   const shellRef = useRef<HTMLDivElement>(null)
   const shellWidth = useContainerWidth(shellRef)
   const MOBILE_THRESHOLD = 768
-  const isAutoCompact = shellWidth > 0 && shellWidth < MOBILE_THRESHOLD
+  const requestedCompact = shellWidth > 0 && shellWidth < MOBILE_THRESHOLD
+  const [isAutoCompact, setIsAutoCompact] = React.useState(false)
 
   const effectiveSidebarAndNavigatorHidden = isAutoCompact
   // Foundation layer: activity rail is always available (not tied to sidebar/navigator chrome).
@@ -2608,6 +2611,16 @@ function AppShellContent({
     )
   ), [novelDocumentContent, savedNovelDocumentContent])
 
+  React.useLayoutEffect(() => {
+    if (requestedCompact === isAutoCompact) return
+    // Capture the live editor before the layout moves it between dock and dialog.
+    // Autosave keeps its normal cadence; the new surface receives the unsaved text.
+    if (novelDocumentEditorRef.current && isCurrentNovelDocumentDirty()) {
+      setNovelDocumentContent(getCurrentNovelDocumentContent())
+    }
+    setIsAutoCompact(requestedCompact)
+  }, [requestedCompact, isAutoCompact, getCurrentNovelDocumentContent, isCurrentNovelDocumentDirty])
+
   React.useEffect(() => {
     novelVersionBaselinesRef.current = {}
     setNovelVersions([])
@@ -3020,6 +3033,7 @@ function AppShellContent({
     file: NovelWorkspaceFile,
     openMode: NovelDocumentOpenMode = 'append',
   ): Promise<boolean> => {
+    if (isAutoCompact) setCompactWorkspaceRoot(novelWorkspaceRoot ?? activeWritingWorkspaceRoot)
     if (file.path === selectedNovelFilePath) {
       setNovelSearchTarget(null)
       setRightWorkspaceVisible(true)
@@ -3057,7 +3071,7 @@ function AppShellContent({
       durationMs: performance.now() - switchStartedAt,
     })
     return true
-  }, [activeWritingWorkspaceRoot, ensureNovelDocumentSaved, novelWorkspaceRoot, selectedNovelFilePath])
+  }, [activeWritingWorkspaceRoot, ensureNovelDocumentSaved, isAutoCompact, novelWorkspaceRoot, selectedNovelFilePath])
 
   const handleSelectNovelFileByPath = React.useCallback(async (filePath: string | null, target?: DocumentSearchTarget) => {
     if (!filePath) return
@@ -3574,7 +3588,15 @@ function AppShellContent({
   const navigatorPanelWidth = sessionListWidth
   const isNovelWorkspaceNavigatorActive = showNovelDocumentNavigator || showNovelWorkspacePending || showNovelWorkspaceUnavailable
   const rightWorkspaceToggleButton = React.useMemo(() => {
-    if (!isNovelWorkspaceNavigatorActive || isAutoCompact) return null
+    if (!isNovelWorkspaceNavigatorActive) return null
+
+    if (isAutoCompact) return <HeaderIconButton
+      icon={<FolderOpen className="h-4 w-4" />}
+      tooltip="打开项目文件"
+      aria-label="打开项目文件"
+      onClick={() => setCompactWorkspaceRoot(novelWorkspaceRoot)}
+      className="h-[26px] w-[26px] rounded-lg"
+    />
 
     const label = rightWorkspaceVisible ? '收起右侧栏' : '展开右侧栏'
     return (
@@ -3589,7 +3611,7 @@ function AppShellContent({
         className="h-[26px] w-[26px] rounded-lg"
       />
     )
-  }, [isAutoCompact, isNovelWorkspaceNavigatorActive, rightWorkspaceVisible])
+  }, [isAutoCompact, isNovelWorkspaceNavigatorActive, novelWorkspaceRoot, rightWorkspaceVisible])
   const directoryToggleLabel = workspaceDirectoryVisible
     ? t('writing.directory.collapse', '收起目录')
     : t('writing.directory.expand', '展开目录')
@@ -4643,7 +4665,7 @@ function AppShellContent({
             }}
           />}
           {directoryToggleButton}
-          {rightWorkspaceToggleButton}
+          {!isAutoCompact && rightWorkspaceToggleButton}
         </>
       )}
     />
@@ -5476,11 +5498,12 @@ function AppShellContent({
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
           hidePanelCloseButton={showPrimarySidebar}
-          rightSidebarButton={conversationWorkspace.button ?? (!rightWorkspaceVisible ? rightWorkspaceToggleButton : undefined)}
+          rightSidebarButton={conversationWorkspace.button ?? (isAutoCompact || !rightWorkspaceVisible ? rightWorkspaceToggleButton : undefined)}
           contentPanelMinWidth={showWritingDocumentColumn ? WRITING_ASSISTANT_MIN_WIDTH : PANEL_MIN_WIDTH}
         />
         {conversationWorkspace.panel}
-        <AnimatePresence initial={false}>
+        {/* A breakpoint moves the single editor; do not retain its old ref in an exit animation. */}
+        <AnimatePresence key={isAutoCompact ? 'compact-workspace' : 'wide-workspace'} initial={false}>
           {/* Tabs and the directory toggle belong to one stable workspace header.
               Folding the directory only reallocates the body below that header. */}
           {showWritingDocumentColumn ? (
@@ -5511,6 +5534,15 @@ function AppShellContent({
 
         {showActivityRail ? activityRailControls : null}
       </div>
+
+      {isAutoCompact && <CompactWorkspaceDialog
+        open={compactWorkspaceRoot !== null && compactWorkspaceRoot === novelWorkspaceRoot}
+        onClose={() => { void ensureNovelDocumentSaved().then(saved => { if (saved) setCompactWorkspaceRoot(null) }) }}
+        header={writingWorkspaceHeader}
+        directory={workspaceDirectoryVisible ? activityWorkspaceDirectory : undefined}
+      >
+        {writingDocumentSurface}
+      </CompactWorkspaceDialog>}
 
       <WhatsNewAnnouncementDialog
         open={showWhatsNewAnnouncement}

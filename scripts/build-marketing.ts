@@ -1,4 +1,4 @@
-// input: apps/marketing React source, HTML shell, versioned release notes, and static marketing assets
+// input: Marketing source, release notes, static assets and the independent Web UI demo build
 // output: Static production assets in apps/marketing/dist
 // pos: Build script for the public marketing landing page
 
@@ -17,6 +17,9 @@ const appleTouchIconPath = join(appDir, "apple-touch-icon.png");
 const redirectsPath = join(appDir, "_redirects");
 const referenceAssetsDir = join(appDir, "reference-assets");
 const downloadBaseUrl = process.env.VITE_STORYFLOW_DOWNLOAD_BASE_URL ?? "";
+
+const demoBuild = Bun.spawnSync(["bun", "run", "build:demo"], { cwd: appDir, stdout: "inherit", stderr: "inherit" });
+if (demoBuild.exitCode !== 0) process.exit(demoBuild.exitCode);
 
 if (!existsSync(entrypoint)) {
   throw new Error(`Missing marketing entrypoint: ${relative(rootDir, entrypoint)}`);
@@ -81,5 +84,6 @@ if (existsSync(redirectsPath)) {
 if (existsSync(referenceAssetsDir)) {
   cpSync(referenceAssetsDir, join(distDir, "reference-assets"), { recursive: true });
 }
+cpSync(join(appDir, "public", "demo"), join(distDir, "demo"), { recursive: true });
 
 console.log(`Built marketing site to ${relative(rootDir, distDir)}`);

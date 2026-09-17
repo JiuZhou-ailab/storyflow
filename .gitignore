@@ -112,6 +112,7 @@ tokens.css
 craft-agents-clone-*.png
 storyflow-landing-*.png
 apps/marketing/promo-video/renders/
+apps/marketing/public/demo/
 
 # SSH keys and secrets
 *.pem

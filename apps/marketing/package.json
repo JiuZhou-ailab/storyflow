@@ -6,7 +6,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "bun run build:demo && vite",
+    "build:demo": "vite build --config ../webui/vite.demo.config.ts",
     "build": "bun run ../../scripts/build-marketing.ts",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"

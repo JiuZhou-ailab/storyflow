@@ -4,10 +4,11 @@
 
 - `WorkspaceSurface.tsx`：延迟装载 AppShell 与编辑器专用主题 Provider。
 - `WorkspaceDockLayout.tsx`：项目和自由对话共用的文件标签栏、内容区及右侧可折叠目录布局。
+- `CompactWorkspaceDialog.tsx`：窄屏复用项目编辑器和目录，关闭前由工作区所有者保存内容；支持 Escape 和返回对话。
 - `WorkspaceFileHeaderActions.tsx`：项目和自由对话共用的刷新、系统打开及文件定位按钮；调用方提供刷新动作和保存前置检查，附件可隐藏系统打开。
 - `WorkspaceEmptyState.tsx`：在共享文件标签栏下提供不写入磁盘的创建、导入与 Skills 开始页。
 - `WorkspaceProjectSidebar.tsx`：延迟装载真实项目文件树，并呈现空白项目提示。
-- `WorkspaceFileTree.tsx`：受控、虚拟化的文件树；仅在提供相应回调时启用拖动、重命名和删除。
+- `WorkspaceFileTree.tsx`：受控、虚拟化的文件树；浏览器使用原生 Tab 出入；仅在提供相应回调时启用拖动、重命名和删除。
 - `WorkspaceFileTreeRow.tsx`：文件树可见行、右键菜单和行内编辑。
 - `useWorkspaceProjectSurface.ts`：冷启动状态与创建、导入、Skills 命令的编排边界。
 - `workspace-file-actions.ts`：文件级本地系统操作的可测试应用边界。
