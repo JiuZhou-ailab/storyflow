@@ -1,6 +1,6 @@
 // input: Selected file path, refresh action, and optional save/read-only constraints
 // output: Shared refresh, system-open, and file-location header buttons
-// pos: File operations shared by project and conversation workspace headers
+// pos: File operations in the project workspace header
 
 import { ExternalLink, FolderOpen, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -32,6 +32,6 @@ export function WorkspaceFileHeaderActions({ path, onRefresh, readOnly, busy, be
   return <>
     <HeaderIconButton icon={<RefreshCw className="h-4 w-4" />} tooltip={t('common.retry')} aria-label={t('common.retry')} disabled={busy} onClick={onRefresh} />
     {!readOnly && <HeaderIconButton icon={<ExternalLink className="h-4 w-4" />} tooltip={t('common.open')} aria-label={t('common.open')} disabled={busy} onClick={() => { void open() }} />}
-    <HeaderIconButton icon={<FolderOpen className="h-4 w-4" />} tooltip={t('conversationFiles.reveal')} aria-label={t('conversationFiles.reveal')} onClick={reveal} />
+    <HeaderIconButton icon={<FolderOpen className="h-4 w-4" />} tooltip={t('chat.openFileLocation')} aria-label={t('chat.openFileLocation')} onClick={reveal} />
   </>
 }

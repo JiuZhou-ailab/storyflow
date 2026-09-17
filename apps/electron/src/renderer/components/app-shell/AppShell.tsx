@@ -4644,6 +4644,21 @@ function AppShellContent({
       onOpenStart={() => { void handleOpenNovelWorkspaceStart() }}
       trailingActions={(
         <>
+          {selectedNovelFile && <WorkspaceFileHeaderActions
+            path={selectedNovelFile.path}
+            busy={!!selectedNovelDocumentPath && (novelDocumentLoading || novelDocumentSaving)}
+            beforeOpen={ensureNovelDocumentSaved}
+            onRefresh={async () => {
+              if (!await ensureNovelDocumentSaved()) return
+              // A delayed save must not reload a different document or newer edits.
+              if (latestNovelDocumentPathRef.current !== selectedNovelDocumentPath || isCurrentNovelDocumentDirty()) return
+              if (selectedNovelDocumentPath) {
+                setLoadedNovelDocumentPath(null)
+                setNovelDocumentLoading(true)
+              }
+              setNovelDocumentReloadVersion(version => version + 1)
+            }}
+          />}
           {directoryToggleButton}
           {!isAutoCompact && rightWorkspaceToggleButton}
         </>

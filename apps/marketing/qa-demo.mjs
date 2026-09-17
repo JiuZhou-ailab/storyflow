@@ -96,7 +96,11 @@ async function append(text) {
 }
 async function scenario(id) {
   await page.click(`button[data-scenario="${id}"]`);
-  await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelector('[role="textbox"]')?.textContent.trim().length > 0);
+  await page.waitForFunction(() => {
+    const d = document.querySelector('iframe').contentDocument;
+    const send = d.querySelector('[data-tutorial="send-button"]');
+    return d.querySelector('[role="textbox"]')?.textContent.trim().length > 0 && send && !send.disabled;
+  });
   if (id === 'continue') await page.click('[data-tutorial="send-button"]');
   else await page.press('[role="textbox"]', 'Enter');
   await waitText('示例任务已完成');
