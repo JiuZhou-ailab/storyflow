@@ -274,7 +274,7 @@ describe('app shell layout defaults', () => {
   })
 
   it('limits panel-header no-drag regions to the visible controls', () => {
-    expect(panelHeaderSource).toContain('min-w-0 w-fit justify-self-start flex items-center')
+    expect(panelHeaderSource).toContain('min-w-0 w-full justify-self-start flex items-center')
     expect(panelHeaderSource).not.toContain("titleAlign === 'start' && 'w-full'")
     expect(panelHeaderSource).not.toContain(
       'titlebar-no-drag min-w-0 w-fit justify-self-start flex items-center',
@@ -286,7 +286,7 @@ describe('app shell layout defaults', () => {
 
   it('keeps rail actions pinned beside the macOS traffic lights across rail collapse', () => {
     const activityRailControlsSource = appShellSource.slice(
-      appShellSource.indexOf('const activityRailControls'),
+      appShellSource.indexOf('const activityRailControls = ('),
       appShellSource.indexOf('// One rail callback'),
     )
 
@@ -300,7 +300,7 @@ describe('app shell layout defaults', () => {
     expect(appShellSource).toContain('const contentNeedsStoplightCompensation = isAutoCompact')
     expect(appShellSource).toContain('|| (!isActivityRailVisible && hideSessionListNavigator)')
     expect(appShellSource).toContain(
-      'const contentHeaderLeadingInset = !isAutoCompact && !isActivityRailVisible && hideSessionListNavigator',
+      'const contentHeaderLeadingInset = isAutoCompact',
     )
     expect(appShellSource).toContain('? activityRailWidth + 16')
     expect(appShellSource).toContain('stoplightLeadingInset={contentHeaderLeadingInset ?? undefined}')
@@ -312,7 +312,7 @@ describe('app shell layout defaults', () => {
     expect(activityRailControlsSource).toContain('justify-end')
     expect(activityRailControlsSource).toContain('px-2')
     expect(activityRailControlsSource).toContain('translate-y-0.5')
-    expect(activityRailControlsSource).toContain('style={{ width: activityRailWidth, height: WINDOW_TITLE_BAR_HEIGHT }}')
+    expect(activityRailControlsSource).toContain('style={{ width: activityRailControlsWidth, height: WINDOW_TITLE_BAR_HEIGHT }}')
     expect(activityRailControlsSource).not.toContain('left-[84px]')
     expect(activityRailControlsSource.match(/titlebar-no-drag pointer-events-auto/g)).toHaveLength(2)
     expect(activityRailSource).toContain('className="flex items-center gap-2 px-2.5 pb-2"')

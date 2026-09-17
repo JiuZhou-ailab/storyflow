@@ -39,9 +39,11 @@ satisfy this check. The separate `/demo/` entry must also load directly.
    overflow, keyboard file/review/dialog exit, reduced motion, and static-resource
    failure followed by retry. Downloads and tutorial navigation remain available.
 
-The toolbar identifies preset local results and temporary changes. Global account
-and project navigation is hidden. Visible native operations must show an explicit
-limit, without granting real resources or pretending they succeeded.
+The toolbar and status live outside the product iframe. The complete product
+navigation and input controls remain visible; fixed titlebar buttons must align with
+the product header. Unsupported host operations show an explicit limit without
+granting real resources or pretending they succeeded. The first desktop QA check
+guards both full UI visibility and the product viewport starting at (0, 0).
 
 ## Refresh product captures
 

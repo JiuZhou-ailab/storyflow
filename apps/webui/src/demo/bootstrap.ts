@@ -1,8 +1,9 @@
 // input: The demo iframe document
 // output: Isolated storage/host installed before the real renderer imports
 // pos: Browser-only entry; unavailable services never reach the network
+import { navigate, routes } from '../../../electron/src/renderer/lib/navigate'
 import { createDemoAdapter } from './adapter'
-import { initialSession, scenarios, workspace, type ScenarioId } from './fixture'
+import { initialSession, scenarios, workspace } from './fixture'
 
 class MemoryStorage implements Storage {
   private values = new Map<string, string>()
@@ -18,15 +19,16 @@ Object.defineProperty(window, 'sessionStorage', { value: new MemoryStorage() })
 localStorage.setItem('i18nextLng', 'zh')
 localStorage.setItem('craft-theme', JSON.stringify({ mode: 'light', colorTheme: 'default', font: 'system', isUserOverride: true }))
 localStorage.setItem('craft-writing-workspace-visible', 'true')
-localStorage.setItem('craft-activity-rail-visible', 'false')
+localStorage.setItem('craft-activity-rail-visible', 'true')
 localStorage.setItem('craft-first-run-tour-completed', 'true')
 localStorage.setItem(`craft-last-selected-session-id:${workspace.id}`, JSON.stringify(initialSession.id))
 const params = new URLSearchParams({ workspaceId: workspace.id, ws: workspace.slug, route: `allSessions/session/${initialSession.id}` })
 history.replaceState(null, '', `${location.pathname}?${params}`)
 
-const notice = (message: string) => { document.getElementById('demo-notice')!.textContent = message }
+const notice = (message: string) => window.parent.postMessage({ type: 'storyflow-demo-notice', message }, location.origin)
 const demo = createDemoAdapter(notice)
 let openedInitialFile = false
+let ready = false
 let readyTimer: ReturnType<typeof setTimeout> | undefined
 // Prime the desktop through the same file link a visitor uses, after route restoration.
 // Keep this coupling in the demo host; the product's initial project state stays unchanged.
@@ -42,7 +44,7 @@ const readyObserver = new MutationObserver(() => {
   // Route restoration can briefly mount both the outgoing and incoming transcript.
   readyTimer = setTimeout(() => {
     readyObserver.disconnect()
-    document.querySelectorAll<HTMLButtonElement>('[data-scenario]').forEach(button => { button.disabled = false })
+    ready = true
     notice('点击第01章.md打开正文，或选择上方的示例任务。')
     window.parent.postMessage({ type: 'storyflow-demo-ready' }, location.origin)
   }, 300)
@@ -64,16 +66,21 @@ window.EventSource = class { constructor() { unavailable() } } as unknown as typ
 window.XMLHttpRequest = class { constructor() { unavailable() } } as unknown as typeof XMLHttpRequest
 navigator.sendBeacon = () => false
 
-document.getElementById('demo-reset')!.addEventListener('click', () => { clearTimeout(readyTimer); readyObserver.disconnect(); demo.dispose(); location.reload() })
-document.querySelectorAll<HTMLButtonElement>('[data-scenario]').forEach(button => {
-  button.addEventListener('click', () => {
-    const id = button.dataset.scenario as ScenarioId
-    demo.select(id, initialSession.id)
-    window.dispatchEvent(new CustomEvent('craft:insert-text', { detail: { text: scenarios[id].prompt, sessionId: initialSession.id } }))
-    notice('示例请求已填入输入区，发送后可查看文件改动。')
-  })
-})
-window.addEventListener('pagehide', () => { clearTimeout(readyTimer); readyObserver.disconnect(); demo.dispose() }, { once: true })
+const receiveScenario = (event: MessageEvent) => {
+  if (!ready || event.origin !== location.origin || event.source !== window.parent) return
+  const id: unknown = event.data?.id
+  if (event.data?.type !== 'storyflow-demo-scenario' || (id !== 'continue' && id !== 'rewrite')) return
+  if (!document.querySelector('[role="textbox"]')) {
+    navigate(routes.view.allSessions(initialSession.id))
+    notice('已返回示例对话，请再次选择上方的示例任务。')
+    return
+  }
+  demo.select(id, initialSession.id)
+  window.dispatchEvent(new CustomEvent('craft:insert-text', { detail: { text: scenarios[id].prompt, sessionId: initialSession.id } }))
+  notice('示例请求已填入输入区，发送后可查看文件改动。')
+}
+window.addEventListener('message', receiveScenario)
+window.addEventListener('pagehide', () => { clearTimeout(readyTimer); readyObserver.disconnect(); demo.dispose(); window.removeEventListener('message', receiveScenario) }, { once: true })
 import('./main').catch(error => {
   notice('示例项目加载失败，请重置体验后重试。')
   window.parent.postMessage({ type: 'storyflow-demo-error' }, location.origin)

@@ -18,7 +18,7 @@ import './styles.css'
 setupI18n([LanguageDetector, initReactI18next])
 function Root() {
   const workspaceId = useAtomValue(windowWorkspaceIdAtom)
-  return <ThemeProvider activeWorkspaceId={workspaceId}><UpdateCheckerProvider><App /><Toaster offset={{ top: 140 }} mobileOffset={{ top: 140 }} /></UpdateCheckerProvider></ThemeProvider>
+  return <ThemeProvider activeWorkspaceId={workspaceId}><UpdateCheckerProvider><App /><Toaster /></UpdateCheckerProvider></ThemeProvider>
 }
 class DemoBoundary extends React.Component<React.PropsWithChildren, { failed: boolean }> {
   state = { failed: false }
@@ -28,7 +28,7 @@ class DemoBoundary extends React.Component<React.PropsWithChildren, { failed: bo
     window.parent.postMessage({ type: 'storyflow-demo-error' }, location.origin)
   }
   render() {
-    return this.state.failed ? <p role="alert">示例项目加载失败，请点击“重置体验”重试。</p> : this.props.children
+    return this.state.failed ? <p role="alert">示例项目加载失败。<button onClick={() => location.reload()}>重新打开</button></p> : this.props.children
   }
 }
 createRoot(document.getElementById('root')!).render(<DemoBoundary><Provider><Root /></Provider></DemoBoundary>)

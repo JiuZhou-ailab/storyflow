@@ -14,8 +14,16 @@ login/server discovery/WebSocket bootstrap.
   Selected scenario plus unchanged input is required; matching a keyword never runs
   a task. Edits target one unique current passage and preserve other manual edits.
 - `main.tsx` composes real renderer providers and reports a crashed surface to the
-  parent; `styles.css` contains demo host chrome and hides unavailable host controls.
-- `index.html` identifies the sample, offers reset and applies a static-resource CSP.
+  parent. `styles.css` gives the product its complete iframe viewport; navigation,
+  titlebar, input controls and notification positions keep their native geometry.
+- `index.html` mounts only the renderer and applies a static-resource CSP.
+
+Marketing owns the example toolbar, status and reset outside the iframe. Selected
+scenario commands and notices cross the existing origin/source-checked message
+boundary; file and session state stay inside the renderer. Unsupported host actions
+report their limit instead of hiding entire sections of the product UI. A scenario
+selected from an auxiliary page returns to the example conversation and explicitly
+asks the visitor to select it again once the input is mounted.
 
 Real product review semantics apply: task output is already written. Accept marks
 reviewed; Reject runs the renderer's current-content-aware reverse edit. Reload/reset
