@@ -2,6 +2,7 @@
 // output: AgentRuntime — lazy Pi subprocess creation, runtime refresh, bounded idle residency, credential rotation, confirmed disposal
 // pos: Owns every reason an agent runtime is created, refreshed, or torn down
 
+import { toPiCustomEndpointModelConfig } from '@craft-agent/shared/agent/backend/pi/protocol'
 import { join } from 'path'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -256,27 +257,10 @@ export class AgentRuntime {
             baseUrl: connection.baseUrl,
             piAuthProvider: connection.piAuthProvider,
             customEndpoint: connection.customEndpoint,
-            customModels: connection.models?.map(model => {
-              if (typeof model === 'string') return model
-              const supportsImages = typeof model.supportsImages === 'boolean' ? model.supportsImages : undefined
-              const supportsThinking = typeof model.supportsThinking === 'boolean' ? model.supportsThinking : undefined
-              const thinkingLevelMap = model.thinkingLevelMap
-              if (
-                model.contextWindow
-                || supportsImages !== undefined
-                || supportsThinking !== undefined
-                || thinkingLevelMap !== undefined
-              ) {
-                return {
-                  id: model.id,
-                  ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
-                  ...(supportsImages !== undefined ? { supportsImages } : {}),
-                  ...(supportsThinking !== undefined ? { supportsThinking } : {}),
-                  ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
-                }
-              }
-              return model.id
-            }),
+            customModels: connection.models?.map(toPiCustomEndpointModelConfig),
+            managedConnection: isManagedDefaultGatewayConnection(connection.slug)
+              ? { slug: connection.slug, autoFallback: connection.autoFallback !== false }
+              : undefined,
           } : undefined,
         })
       } catch (error) {

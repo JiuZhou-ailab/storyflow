@@ -2891,6 +2891,9 @@ export const TurnCard = React.memo(function TurnCard({
   // Conservative memoization: only skip re-render for completed, non-streaming turns
   // Active turns (streaming or incomplete) always re-render to show updates
 
+  // File navigation changes when the workspace switches between columns and a compact dialog.
+  if (prev.onOpenFile !== next.onOpenFile) return false
+
   // Always re-render streaming turns
   if (prev.isStreaming || next.isStreaming) return false
 

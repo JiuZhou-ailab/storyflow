@@ -58,7 +58,7 @@ export function tokenFailure(error: unknown): AccessReason {
   return 'invalid_token'
 }
 
-export function accessFailure(reason: AccessReason, stage: 'identity' | 'model' | 'tool', context?: { correlation_id?: string; model_call_id?: string; attempt?: number; correlation_version?: number; retry_index?: number }): Response {
+export function accessFailure(reason: AccessReason, stage: 'identity' | 'model' | 'tool', context?: { correlation_id?: string; model_call_id?: string; attempt?: number; correlation_version?: number; retry_index?: number }, format: 'legacy' | 'sdk' = 'legacy'): Response {
   const status = reason === 'dependency_unavailable' ? 503
     : ['account_disabled', 'scope_denied', 'model_denied'].includes(reason) ? 403 : 401
   const correlationId = context?.correlation_id && /^[a-zA-Z0-9-]{1,80}$/.test(context.correlation_id) ? context.correlation_id : crypto.randomUUID()
@@ -67,11 +67,14 @@ export function accessFailure(reason: AccessReason, stage: 'identity' | 'model' 
     : status === 403 ? 'managed_access_denied'
       : stage === 'identity' ? 'client_session_token_invalid'
         : stage === 'model' ? 'model_access_token_invalid' : 'tool_access_token_invalid'
-  return Response.json({
-    error: status === 503 ? 'Access service temporarily unavailable'
-      : status === 403 ? 'Managed access permission denied' : 'Authentication required',
+  const message = status === 503 ? 'Access service temporarily unavailable'
+    : status === 403 ? 'Managed access permission denied' : 'Authentication required'
+  const diagnostic = {
     code, reason, stage, correlation_id: correlationId, retryable: status === 503,
     recovery: status === 503 ? 'retry' : status === 403 ? 'contact_operator'
       : ['session_revoked', 'legacy_session'].includes(reason) || stage === 'identity' ? 'sign_in' : 'refresh_next_operation',
-  }, { status })
+  }
+  // Opted-in model SDKs retain error objects, but discard siblings of error strings.
+  // Top-level fields remain available to direct HTTP consumers and older clients.
+  return Response.json({ error: format === 'sdk' ? { message, ...diagnostic } : message, ...diagnostic }, { status })
 }

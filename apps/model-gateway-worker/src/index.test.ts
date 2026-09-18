@@ -117,6 +117,19 @@ describe('model gateway worker', () => {
     })
   })
 
+  it('negotiates SDK access errors while retaining the legacy HTTP shape', async () => {
+    for (const format of [undefined, 'sdk-v1']) {
+      const response = await handleRequest(new Request('https://model.storyflow.example.com/v1/responses', {
+        method: 'POST', headers: format ? { 'x-storyflow-error-format': format } : {},
+      }), { ...makeEnv(), STORYFLOW_ACCESS_ENFORCEMENT: 'required' }, async () => { throw new Error('Must not contact upstream') })
+      expect(response.status).toBe(401)
+      const body = await response.json() as Record<string, unknown>
+      expect(body.reason).toBe('token_missing')
+      if (format) expect(body.error).toMatchObject({ message: 'Authentication required', reason: 'token_missing', stage: 'model', correlation_id: body.correlation_id })
+      else expect(body.error).toBe('Authentication required')
+    }
+  })
+
   it('exposes the authenticated managed model catalog with total context windows', async () => {
     const token = await signTestJwt(CURRENT_MODEL_SECRET)
     const health = await handleRequest(
@@ -157,6 +170,8 @@ describe('model gateway worker', () => {
     expect(catalog.status).toBe(200)
     const catalogBody = await catalog.json() as { object: string; data: Array<Record<string, unknown>> }
     expect(catalogBody.object).toBe('list')
+    expect(catalogBody.data.find(model => model.id === 'gpt-5.5')?.fallback_capabilities)
+      .toEqual({ maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' })
     expect(catalogBody.data.map(model => model.id)).toEqual([
       'gpt-5.5',
       'gpt-5.6-sol',

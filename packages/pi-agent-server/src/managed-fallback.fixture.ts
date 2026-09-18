@@ -16,6 +16,9 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createProviderHooks } from "./provider-hooks.ts";
+import type { ModelDefinition } from '../../shared/src/config/models.ts';
+import { buildCustomEndpointModelDef } from './custom-endpoint-models.ts';
+import { toPiCustomEndpointModelConfig } from '../../shared/src/agent/backend/pi/protocol.ts';
 
 export function completion(model: string) {
   const chunk = (delta: object, finish_reason: string | null) => ({
@@ -34,6 +37,7 @@ export function completion(model: string) {
 }
 
 type FixtureOptions = {
+  catalog?: ModelDefinition[];
   extensionFactory?(
     runtime: ModelRuntime,
     config: import("../../shared/src/agent/backend/pi/protocol.ts").PiInitMessage,
@@ -77,7 +81,8 @@ export async function fixture(
     model: string,
     index: number,
     body: Record<string, unknown>,
-  ) => Response,
+    headers: Headers,
+  ) => Response | Promise<Response>,
   extra?: InlineExtension,
   options: FixtureOptions = {},
 ) {
@@ -102,7 +107,7 @@ export async function fixture(
         at: Date.now(),
         body,
       });
-      return respond(body.model, requests.length, body);
+      return respond(body.model, requests.length, body, request.headers);
     },
   });
   let session: AgentSession | undefined;
@@ -131,10 +136,11 @@ export async function fixture(
           index === 1 ? (options.candidateContext ?? 1_000_000) : 1_000_000,
         maxTokens: 8192,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        ...(options.catalog ? buildCustomEndpointModelDef(id, undefined, options.catalog.find(model => model.id === id)) : {}),
       })),
     });
     let config = {
-      customModels: ids.map((id) => ({
+      customModels: options.catalog?.map(toPiCustomEndpointModelConfig) ?? ids.map((id) => ({
         id,
         ...(options.unknownCapabilities
           ? {}
@@ -227,6 +233,7 @@ export function protocolCompletion(
   api: FixtureOptions["api"],
   model: string,
 ): Response {
+  if (api === 'openai-completions') return completion(model);
   if (api === "google-generative-ai")
     return new Response(
       `data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "OK" }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 } })}\n\n`,

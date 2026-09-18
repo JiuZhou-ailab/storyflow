@@ -86,6 +86,7 @@ export async function normalizeUpstreamError(
   const denied = response.status === 401 || response.status === 403;
   const retryable =
     !denied &&
+    response.headers.get("x-should-retry")?.trim().toLowerCase() !== "false" &&
     !PERMANENT_CODES.has(code ?? "") &&
     (response.status >= 500 ||
       response.status === 408 ||

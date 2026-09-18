@@ -261,6 +261,14 @@
   width: 100%;
 }
 
+.docs-figure video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: #f5f5f3;
+}
+
 .docs-figure-contain {
   align-items: center;
   display: flex;

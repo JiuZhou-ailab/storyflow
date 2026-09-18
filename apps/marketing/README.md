@@ -21,6 +21,8 @@ tutorial and release history. Historical Cursor fidelity notes are retained in
 match current desktop labels and file behavior; screenshots illustrate an existing
 project rather than a default folder template. The left navigation uses single-column chapter lists with aligned group labels and a current-page marker. On phones, a keyboard-accessible tutorial-menu button expands the chapter list; choosing a chapter closes it as the new page mounts. The reference navigation starts expanded; on wide screens, a separate right sidebar derives the page outline from the actual h2/h3 headings and tracks the current reading position.
 
+The tutorial index includes the approved 80-second live writing video with Chinese narration, burned-in captions and quiet original music. The native player loads only its poster until playback, supports fullscreen and offers a download link. Its 1440p web encode and poster live in `reference-assets/tutorial/`; the build copies them with the existing static assets. The deployment workflow uploads the playback copy to the existing R2 downloads bucket under `tutorials/` and verifies HTTP 206 byte-range support before publishing the site; Pages serves the poster and download copy. This avoids the Pages static host’s lack of partial responses when seeking.
+
 ## Downloads
 
 Download controls name both macOS and Windows; the menu lists Apple Silicon, Intel Mac and Windows x64 independently of the visitor’s OS. Download buttons point at `https://story-storage.zjding.com/latest` by default and use

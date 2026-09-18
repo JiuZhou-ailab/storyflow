@@ -2,6 +2,7 @@
 // output: Direct Pi runtime configuration and model discovery functions
 // pos: Minimal Storyflow configuration bridge into the sole Pi runtime
 
+import { toPiCustomEndpointModelConfig } from '../../pi/protocol.ts';
 import { isManagedLlmConnectionSlug } from '../../../../config/llm-connections.ts';
 import type { LlmConnection } from '../../../../config/storage.ts';
 import { InMemoryCredentialStore } from '@earendil-works/pi-ai';
@@ -64,33 +65,7 @@ export function buildPiRuntime(args: {
       : undefined,
     baseUrl: context.connection?.baseUrl,
     customEndpoint: context.connection?.customEndpoint,
-    customModels: context.connection?.models?.map(m => {
-      if (typeof m === 'string') return m;
-      const supportsImages = typeof m.supportsImages === 'boolean'
-        ? m.supportsImages
-        : undefined;
-      const supportsThinking = typeof m.supportsThinking === 'boolean'
-        ? m.supportsThinking
-        : undefined;
-      const thinkingLevelMap = m.thinkingLevelMap;
-      if (
-        m.contextWindow
-        || supportsImages !== undefined
-        || supportsThinking !== undefined
-        || thinkingLevelMap !== undefined
-        || m.fallbackCapabilities !== undefined
-      ) {
-        return {
-          id: m.id,
-          ...(m.fallbackCapabilities ? { fallbackCapabilities: m.fallbackCapabilities } : {}),
-          ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
-          ...(supportsImages !== undefined ? { supportsImages } : {}),
-          ...(supportsThinking !== undefined ? { supportsThinking } : {}),
-          ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
-        };
-      }
-      return m.id;
-    }),
+    customModels: context.connection?.models?.map(toPiCustomEndpointModelConfig),
   };
 }
 

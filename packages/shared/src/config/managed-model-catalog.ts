@@ -9,9 +9,11 @@ export interface ManagedModelDefinition extends ModelDefinition {
   api: CustomEndpointApi;
 }
 
+// Capability evidence and alias caveats: docs/model-fallback-qa.md (2026-09-16).
 export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   {
     id: 'gpt-5.5',
+    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
     name: 'GPT-5.5',
     shortName: 'GPT',
     description: '',
@@ -32,6 +34,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gpt-5.6-sol',
+    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
     name: 'GPT-5.6 Sol',
     shortName: 'GPT',
     description: '',
@@ -52,6 +55,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gpt-5.6-terra',
+    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
     name: 'GPT-5.6 Terra',
     shortName: 'GPT',
     description: '',
@@ -72,6 +76,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gpt-5.6-luna',
+    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
     name: 'GPT-5.6 Luna',
     shortName: 'GPT',
     description: '',
@@ -92,6 +97,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'claude-sonnet-5',
+    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
     name: 'Claude Sonnet 5',
     shortName: 'Claude',
     description: '',
@@ -103,6 +109,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'claude-opus-5',
+    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
     name: 'Claude Opus 5',
     shortName: 'Claude',
     description: '',
@@ -114,6 +121,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gemini-3.8-flash',
+    fallbackCapabilities: { maxOutputTokens: 65_536, tools: true, structuredOutput: 'prompt' },
     name: 'Gemini 3.8 Flash',
     shortName: 'Gemini',
     description: '',
@@ -133,6 +141,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gemini-3.7-flash',
+    fallbackCapabilities: { maxOutputTokens: 65_536, tools: true, structuredOutput: 'prompt' },
     name: 'Gemini 3.7 Flash',
     shortName: 'Gemini',
     description: '',
@@ -152,6 +161,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gemini-3.6-flash',
+    fallbackCapabilities: { maxOutputTokens: 65_536, tools: true, structuredOutput: 'prompt' },
     name: 'Gemini 3.6 Flash',
     shortName: 'Gemini',
     description: '',
@@ -170,6 +180,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gemini-3.5-flash',
+    fallbackCapabilities: { maxOutputTokens: 65_536, tools: true, structuredOutput: 'prompt' },
     name: 'Gemini 3.5 Flash',
     shortName: 'Gemini',
     description: '',
@@ -238,6 +249,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'deepseek-v4-pro',
+    fallbackCapabilities: { maxOutputTokens: 384_000, tools: true, structuredOutput: 'prompt' },
     name: 'DeepSeek V4 Pro',
     shortName: 'DeepSeek',
     description: '',
@@ -249,6 +261,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'deepseek-v4-flash',
+    fallbackCapabilities: { maxOutputTokens: 384_000, tools: true, structuredOutput: 'prompt' },
     name: 'DeepSeek V4 Flash',
     shortName: 'DeepSeek',
     description: '',
@@ -316,6 +329,7 @@ export function cloneManagedModelCatalog(api?: CustomEndpointApi): ModelDefiniti
     .filter(model => !api || model.api === api)
     .map(({ api: _api, ...model }) => ({
       ...model,
+      ...(model.fallbackCapabilities ? { fallbackCapabilities: { ...model.fallbackCapabilities } } : {}),
       ...(model.thinkingLevelMap
         ? { thinkingLevelMap: { ...model.thinkingLevelMap } }
         : {}),
@@ -323,8 +337,7 @@ export function cloneManagedModelCatalog(api?: CustomEndpointApi): ModelDefiniti
 }
 
 /** Approved candidate families; explicit per-model fallbackCapabilities are still required.
- * Existing catalog entries intentionally remain unqualified until their capabilities are confirmed.
- * Discovery and the synthetic SDK output limit never establish that confirmation.
+ * Discovery alone never qualifies a new model or extends these families.
  */
 export const MANAGED_FALLBACK_FAMILIES = [
   ['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.6-terra', 'gpt-5.6-luna'],

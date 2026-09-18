@@ -85,6 +85,8 @@ Open `/changelog/`: all 24 existing versions render their full notes, newest fir
 
 ## Beginner walkthrough
 
+On `/docs/`, check the 80-second video at 1440px and 390px: poster visible, no automatic playback or media download, native play/pause and seeking work, Chinese captions remain visible, and the 16:9 frame does not overflow. Verify fullscreen and the download link. The right outline must include the video heading; navigating to a chapter must remove the player and stop playback.
+
 Follow `/docs/` from installation to reopening a saved file. Verify the current desktop entry labels against ActivityRail, AccountSettingsSection, permission controls and version management. The example consistently uses the 黑洞直播 project, 创作要求.md and 第01章.md. All five main steps must state what to do and how to recognize completion; recovery links and both tables of contents must land on visible content.
 
 Click all four copy buttons and compare the complete multiline text with their displayed prompts. Simulate clipboard denial and confirm a manual-copy message appears without losing the prompt. `qa.mjs` performs these assertions with a temporary clipboard stub and restores it afterward. Check keyboard focus, mobile wrapping and tutorial screenshot controls. This website QA does not send requests to a model or prove the quality of generated prose.

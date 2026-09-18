@@ -1,5 +1,5 @@
 // input: Persisted LLM connections, provider credentials, and live model catalogs
-// output: Deduplicated model refresh with managed-catalog reconciliation and offline fallbacks
+// output: Authoritative managed catalogs (including empty), identity-safe refreshes and offline failure fallback
 // pos: Server-side synchronization boundary between provider metadata and stored connections
 
 /**
@@ -8,10 +8,10 @@
  * Centralized service for fetching and refreshing model lists across all providers.
  * Replaces the scattered fetchAndStore*Models() functions and startCodexModelRefresh().
  *
- * Fallback chain (same for every provider):
+ * On fetch failure (an empty managed success is authoritative):
  * 1. Provider runtime discovery via backend driver dispatch
  * 2. Persisted connection.models — previously fetched, survives offline/restart
- * 3. MODEL_REGISTRY — hardcoded offline seed data, last resort
+ * 3. MODEL_REGISTRY — hardcoded offline seed data for user-owned providers only
  */
 
 import type { ModelFetcherMap, ModelFetcherCredentials, FetchableProvider } from '@craft-agent/shared/config'
@@ -74,7 +74,6 @@ async function fetchManagedModelCatalog(
     .map(parseManagedModelDefinition)
     .filter(model => model.api === connection.customEndpoint!.api)
     .map(({ api: _api, ...model }) => model)
-  if (models.length === 0) throw new Error('Managed model catalog is empty')
   if (new Set(models.map(model => model.id)).size !== models.length) {
     throw new Error('Managed model catalog contains duplicate model IDs')
   }
@@ -122,6 +121,7 @@ function parseManagedModelDefinition(item: unknown): ManagedGatewayModel {
     supports_thinking: supportsThinking,
     thinking_level_map: thinkingLevelMap,
     supports_images: supportsImages,
+    fallback_capabilities: fallbackCapabilities,
     api,
   } = item as Record<string, unknown>
 
@@ -150,6 +150,18 @@ function parseManagedModelDefinition(item: unknown): ManagedGatewayModel {
   }
 
   const parsedThinkingLevelMap = parseManagedThinkingLevelMap(thinkingLevelMap)
+  let parsedFallbackCapabilities: ModelDefinition['fallbackCapabilities']
+  if (fallbackCapabilities !== undefined) {
+    if (!fallbackCapabilities || typeof fallbackCapabilities !== 'object' || Array.isArray(fallbackCapabilities)) {
+      throw new Error('Managed model catalog has invalid fallback capabilities')
+    }
+    const { maxOutputTokens, tools, structuredOutput } = fallbackCapabilities as Record<string, unknown>
+    if (typeof maxOutputTokens !== 'number' || !Number.isSafeInteger(maxOutputTokens) || maxOutputTokens <= 0
+      || typeof tools !== 'boolean' || structuredOutput !== 'prompt') {
+      throw new Error('Managed model catalog has invalid fallback capabilities')
+    }
+    parsedFallbackCapabilities = { maxOutputTokens, tools, structuredOutput }
+  }
   return {
     id,
     name,
@@ -160,6 +172,7 @@ function parseManagedModelDefinition(item: unknown): ManagedGatewayModel {
     supportsThinking,
     ...(parsedThinkingLevelMap ? { thinkingLevelMap: parsedThinkingLevelMap } : {}),
     supportsImages,
+    ...(parsedFallbackCapabilities ? { fallbackCapabilities: parsedFallbackCapabilities } : {}),
     api: api as CustomEndpointApi,
   }
 }
@@ -212,8 +225,8 @@ class ModelRefreshService {
     const existing = this.inFlight.get(slug)
     if (existing) return existing
 
-    const promise = this._doRefresh(slug).finally(() => {
-      this.inFlight.delete(slug)
+    const promise: Promise<void> = this._doRefresh(slug, () => this.inFlight.get(slug) === promise).finally(() => {
+      if (this.inFlight.get(slug) === promise) this.inFlight.delete(slug)
     })
     this.inFlight.set(slug, promise)
     return promise
@@ -222,6 +235,8 @@ class ModelRefreshService {
   /** Credential changes before runtime startup are covered by startAll(). */
   async refreshAfterCredentialChange(slug: string): Promise<void> {
     if (!this.started) return
+    // The prior identity's pending response must neither satisfy nor overwrite this refresh.
+    this.inFlight.delete(slug)
     await this.refreshConnection(slug)
   }
 
@@ -231,7 +246,7 @@ class ModelRefreshService {
    * Preserves user's defaultModel if still valid.
    * Updates connection.models in storage on success.
    */
-  private async _doRefresh(slug: string): Promise<void> {
+  private async _doRefresh(slug: string, isCurrent: () => boolean): Promise<void> {
     const connection = getLlmConnection(slug)
     if (!connection) {
       handlerLog.warn(`Model refresh: connection not found: ${slug}`)
@@ -290,7 +305,7 @@ class ModelRefreshService {
       }
     }
 
-    if (!newModels || newModels.length === 0) {
+    if (!newModels || (!isManagedCatalog && newModels.length === 0)) {
       handlerLog.warn(`Model refresh [${slug}]: no models available from any source`)
       return
     }
@@ -317,6 +332,7 @@ class ModelRefreshService {
       ? currentDefault
       : serverDefault ?? newModels[0]?.id
 
+    if (!isCurrent()) return
     updateLlmConnection(slug, {
       models: newModels,
       ...(newDefault && !stillValid ? { defaultModel: newDefault } : {}),

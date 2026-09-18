@@ -6,6 +6,7 @@ import type { LlmAuthType } from '@craft-agent/shared/agent/backend'
 import { isCompatProvider, modelSupportsImages, type LlmConnection } from '@craft-agent/shared/config'
 import type { FileAttachment } from '@craft-agent/shared/protocol'
 import type { LegacyAgentRuntime } from '@craft-agent/shared/sessions'
+import { toPiCustomEndpointModelConfig } from '@craft-agent/shared/agent/backend/pi/protocol'
 
 export interface BackendRuntimeSignatureInput {
   connection: LlmConnection | null
@@ -67,14 +68,8 @@ function definedObject<T extends Record<string, unknown>>(obj: T): Record<string
 
 function normalizeCustomModels(connection: LlmConnection): Array<Record<string, unknown>> {
   return (connection.models ?? [])
-    .map(model => {
-      if (typeof model === 'string') return { id: model }
-      return definedObject({
-        id: model.id,
-        contextWindow: model.contextWindow,
-        supportsImages: typeof model.supportsImages === 'boolean' ? model.supportsImages : undefined,
-      })
-    })
+    .map(toPiCustomEndpointModelConfig)
+    .map(model => typeof model === 'string' ? { id: model } : definedObject(model))
     .sort((a, b) => String(a.id).localeCompare(String(b.id)))
 }
 

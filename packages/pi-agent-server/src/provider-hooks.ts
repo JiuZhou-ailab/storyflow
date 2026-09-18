@@ -42,6 +42,7 @@ export function createProviderHooks(options: { enable1MContext: boolean; fallbac
         event.headers['x-storyflow-model-call-id'] = activeModelCall.id;
         event.headers['x-storyflow-attempt'] = String(activeModelCall.attempt);
         event.headers['x-storyflow-correlation-version'] = '2';
+        if (options.fallback?.getConfig()?.managedConnection) event.headers['x-storyflow-error-format'] = 'sdk-v1';
         const retryIndex = options.fallback?.getSession()?.retryAttempt;
         if (retryIndex !== undefined) event.headers['x-storyflow-retry-index'] = String(retryIndex);
         if (activeModelCall.requestedModel) event.headers['x-storyflow-requested-model'] = activeModelCall.requestedModel;

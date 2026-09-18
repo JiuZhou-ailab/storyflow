@@ -7,9 +7,6 @@ export { StructuredInput } from './StructuredInput'
 // Structured input components
 export { PermissionRequest } from './structured/PermissionRequest'
 
-// Hooks
-export { useAutoGrow } from './useAutoGrow'
-
 // Types
 export type {
   QueuedInputMessage,

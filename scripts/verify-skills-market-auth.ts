@@ -23,9 +23,9 @@ export async function verifySkillsMarketAuth({
   fetchImpl = fetch,
   nowSeconds = Math.floor(Date.now() / 1000),
 }: VerifySkillsMarketAuthOptions): Promise<{ catalog: number }> {
-  if (!persistedSession && !clientSessionSecret) throw new Error('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET is required')
+  if (!persistedSession?.trim() && !clientSessionSecret) throw new Error('STORYFLOW_CLIENT_SESSION_JWT_CURRENT_SECRET is required')
 
-  const appSessionToken = persistedSession ?? await new SignJWT({
+  const appSessionToken = persistedSession?.trim() || await new SignJWT({
     scope: 'capability:issue',
     model_tier: 'standard',
     auth_time: nowSeconds,
@@ -62,7 +62,7 @@ export async function verifySkillsMarketAuth({
 }
 
 if (import.meta.main) {
-  const appSessionToken = process.env.STORYFLOW_ACCESS_CANARY_SESSION
+  const appSessionToken = process.env.STORYFLOW_ACCESS_CANARY_SESSION?.trim() || undefined
   const config = Bun.TOML.parse(await Bun.file(new URL('../apps/auth-broker-worker/wrangler.toml', import.meta.url)).text()) as { vars?: { STORYFLOW_ACCESS_ENFORCEMENT?: string } }
   if (config.vars?.STORYFLOW_ACCESS_ENFORCEMENT !== 'legacy' && !appSessionToken) throw new Error('Persisted STORYFLOW_ACCESS_CANARY_SESSION is required')
   const result = await verifySkillsMarketAuth({

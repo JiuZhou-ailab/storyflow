@@ -2617,6 +2617,7 @@ const MemoizedMessageBubble = React.memo(MessageBubble, (prev, next) => {
   }
   // Skip re-render if key props unchanged
   return (
+    prev.onOpenFile === next.onOpenFile &&
     prev.message.id === next.message.id &&
     prev.message.content === next.message.content &&
     prev.message.role === next.message.role &&

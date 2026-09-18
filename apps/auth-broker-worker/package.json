@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/auth-broker-worker",
-  "version": "0.21.3",
+  "version": "0.22.0",
   "private": true,
   "type": "module",
   "scripts": {

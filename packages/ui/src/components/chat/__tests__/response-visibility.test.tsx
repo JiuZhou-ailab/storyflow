@@ -43,3 +43,14 @@ test('shows pending text from the real message-to-turn boundary before classific
   expect(html).toContain('data-search-root="response"')
   expect(html).toContain('首片正文')
 })
+
+test('completed file links receive the current workspace navigation callback', () => {
+  type Props = React.ComponentProps<typeof TurnCard>
+  const compare = (TurnCard as unknown as { compare: (prev: Props, next: Props) => boolean }).compare
+  const previous: Props = {
+    turnId: 'welcome', activities: [], isStreaming: false, isComplete: true,
+    onOpenFile: () => {},
+  }
+  expect(compare(previous, { ...previous })).toBe(true)
+  expect(compare(previous, { ...previous, onOpenFile: () => {} })).toBe(false)
+})

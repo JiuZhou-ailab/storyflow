@@ -19,13 +19,6 @@ export type { Info_DataTableProps } from './Info_DataTable'
 export { Info_Alert } from './Info_Alert'
 export type { Info_AlertProps } from './Info_Alert'
 
-export { Info_GroupedList } from './Info_GroupedList'
-export type {
-  Info_GroupedListProps,
-  Info_GroupedListGroupProps,
-  Info_GroupedListItemProps,
-} from './Info_GroupedList'
-
 export { Info_Badge } from './Info_Badge'
 export type { Info_BadgeProps, BadgeColor } from './Info_Badge'
 

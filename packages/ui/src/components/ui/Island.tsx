@@ -101,12 +101,6 @@ const DEFAULT_TRANSITION: Required<IslandTransitionConfig> = {
   entryStartScale: 0.25,
 }
 
-const IslandAnimationContext = React.createContext<Required<IslandTransitionConfig>>(DEFAULT_TRANSITION)
-
-export function useIslandAnimationConfig(): Required<IslandTransitionConfig> {
-  return React.useContext(IslandAnimationContext)
-}
-
 export interface HandleIslandEscapeParams {
   dialogBehavior: IslandDialogBehavior
   onRequestBack?: () => boolean
@@ -749,7 +743,7 @@ export function Island({
   if (!activeView) return null
 
   return (
-    <IslandAnimationContext.Provider value={cfg}>
+    <>
       {shouldBlockOutside && typeof document !== 'undefined' && ReactDOM.createPortal(
         <div
           data-ca-island-blocker="true"
@@ -808,6 +802,6 @@ export function Island({
           </AnimatePresence>
         </div>
       </motion.div>
-    </IslandAnimationContext.Provider>
+    </>
   )
 }

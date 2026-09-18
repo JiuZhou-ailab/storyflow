@@ -7,6 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Miniflare } from 'miniflare'
+import { build as bundle } from 'esbuild'
 import { handleRequest } from './index'
 import { handleRequest as gatewayRequest } from '../../model-gateway-worker/src/index'
 import { authorizeAccess } from './access-state'
@@ -74,11 +75,12 @@ test('native Worker bindings enforce policy, revocation and persistence', async 
   const directory = await mkdtemp(join(tmpdir(), 'storyflow-access-'))
   try {
     for (const [entry, name] of [ ['./worker.ts', 'broker'], ['../../model-gateway-worker/src/index.ts', 'model'], ['../../tool-gateway-worker/src/index.ts', 'tools'], ['./managed-access.integration.ts', 'acceptance'] ]) {
-      const result = await Bun.build({ entrypoints: [new URL(entry!, import.meta.url).pathname], target: name === 'acceptance' ? 'node' : 'browser', external: ['cloudflare:workers'],
+      // Bun 1.3's in-process bundler can reuse test-loader source under a different path.
+      const result = await bundle({ entryPoints: [new URL(entry!, import.meta.url).pathname], bundle: true, write: false,
+        format: 'esm', platform: name === 'acceptance' ? 'node' : 'browser', external: ['cloudflare:workers'],
         plugins: [{ name: 'native-miniflare', setup(build) { build.onResolve({ filter: /^miniflare$/ }, () => ({ path: import.meta.resolve('miniflare').replace('file://', ''), external: true })) } }],
       })
-      if (!result.success) throw new AggregateError(result.logs, 'Worker acceptance bundle failed')
-      await Bun.write(join(directory, name + (name === 'acceptance' ? '.mjs' : '.js')), result.outputs[0]!)
+      await Bun.write(join(directory, name + (name === 'acceptance' ? '.mjs' : '.js')), result.outputFiles[0]!.contents)
     }
     const result = Bun.spawnSync(['node', join(directory, 'acceptance.mjs'), new URL('..', import.meta.url).pathname, directory], { stdout: 'pipe', stderr: 'pipe' })
     if (result.exitCode !== 0) throw new Error(result.stdout.toString() + result.stderr.toString())

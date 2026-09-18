@@ -424,7 +424,7 @@ describe('refreshConnectionRuntime', () => {
     expect(agent.dispose).not.toHaveBeenCalled()
   })
 
-  it('preserves per-model capabilities in the runtime refresh IPC payload', async () => {
+  for (const managedConnection of [false, true]) it(`preserves runtime capabilities and fallback policy (managed: ${managedConnection})`, async () => {
     // End-to-end shape check: when the session's connection resolves to a
     // pi_compat connection with explicit per-model `supportsImages`, the
     // helper must forward that field on `customModels` so the Pi subprocess
@@ -433,7 +433,8 @@ describe('refreshConnectionRuntime', () => {
     const managed = injectSession(sm, 'shape-check', tmpRoot, 'slug-A', agent)
     const backendContext = {
       connection: {
-        slug: 'slug-A',
+        slug: managedConnection ? 'storyflow-managed' : 'slug-A',
+        autoFallback: false,
         name: 'Custom endpoint',
         providerType: 'pi_compat',
         authType: 'api_key',
@@ -441,6 +442,7 @@ describe('refreshConnectionRuntime', () => {
           id: 'custom-model',
           supportsImages: true,
           supportsThinking: true,
+          fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
           thinkingLevelMap: {
             off: 'none',
             minimal: null,
@@ -482,8 +484,10 @@ describe('refreshConnectionRuntime', () => {
     expect(agent.updateRuntimeConfig).toHaveBeenCalledTimes(1)
     const payload = agent.updateRuntimeConfig.mock.calls[0]?.[0]
     expect(payload).toBeDefined()
+    expect(payload.runtime?.managedConnection).toEqual(managedConnection ? { slug: 'storyflow-managed', autoFallback: false } : undefined)
     expect(payload.runtime?.customModels).toEqual([{
       id: 'custom-model',
+      fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
       supportsImages: true,
       supportsThinking: true,
       thinkingLevelMap: {

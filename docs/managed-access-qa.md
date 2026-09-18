@@ -63,3 +63,25 @@ Use a dedicated staging Broker/Gateway pointing at an observable fixture provide
 Revocation applies to requests whose current-state authorization begins after revocation commits; an already-authorized stream may finish. Each later Agent-loop model request rechecks. External Neon/Feishu administrative changes are not automatically synchronized to Storyflow; use the Storyflow operator command to disable access. Registry's already-issued Market tokens retain at most 300 seconds; organization and package ownership rules remain in that resource boundary.
 
 After cutover, roll back only to a version that still performs current-state authorization against the same persisted records. Never reset D1, remove revocations, restore an old allowing snapshot, or change the mode to `legacy`. If no safe rollback exists, keep managed entrypoints unavailable and fix forward. Custom Provider credentials and user content remain independent.
+
+## Joint runtime regression (#41 / #42)
+
+Run `bun test packages/pi-agent-server/src/managed-access-contract.test.ts
+packages/server-core/src/model-fetchers/index.test.ts` from the repository root.
+The SDK contract uses real Pi sessions and loopback HTTP for all four APIs. It
+checks negotiated `sdk-v1` errors through the desktop normalizer, safe diagnostic
+retention, no denial amplification, Google provider backoff, and product-catalog
+A,A,B fallback. Legacy clients keep the string error envelope until the minimum
+supported version can consume nested SDK errors.
+
+Desktop QA: remove all model grants, explicitly refresh the connections, and
+confirm those models disappear; restart and confirm bundled seeding does not
+restore them. Grant only a different protocol family and repeat. Empty success is
+an authoritative catalog; network/malformed responses are failures and may retain
+the previous catalog. Neither a cached catalog nor a capability declaration grants
+access: the Gateway checks current permissions on every model request.
+
+After an empty catalog, sign out and sign in with a different authorized test
+account without restarting. The managed catalog must refresh; a delayed response
+from the previous identity must not overwrite the new result. The ModelRefreshService
+contract test holds the old response until the new account's catalog has committed.

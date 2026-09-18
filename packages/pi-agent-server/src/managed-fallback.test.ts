@@ -7,6 +7,7 @@ import type {
   InlineExtension,
 } from "@earendil-works/pi-coding-agent";
 import { createProviderHooks } from "./provider-hooks.ts";
+import { normalizeUpstreamError } from "../../../apps/model-gateway-worker/src/upstream-error.ts";
 import {
   fixture,
   completion,
@@ -30,6 +31,21 @@ test("upstream auth denial terminates the real Pi session without retrying a map
         },
         { status: 502, headers: { "x-should-retry": "false" } },
       ),
+  );
+});
+
+test("an upstream no-retry header survives gateway normalization and stops the real Pi session", async () => {
+  await fixture(
+    async ({ session, requests }) => {
+      await session.prompt("do not retry");
+      await session.waitForIdle();
+      expect(requests).toHaveLength(1);
+      expect(session.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "error" });
+    },
+    async () => (await normalizeUpstreamError(Response.json(
+      { error: { message: "Do not retry", code: "server_error" } },
+      { status: 503, headers: { "x-should-retry": "false" } },
+    ))).response,
   );
 });
 
@@ -567,6 +583,32 @@ test("a manual choice made during automatic selection wins and is not restored a
     manual,
   );
 });
+
+for (const retryAfter of ["2147484", "1000000000000000000"]) {
+  test(`Google rejects Retry-After beyond the timer range: ${retryAfter}`, async () => {
+    await fixture(
+      async ({ session, requests }) => {
+        let retryStarts = 0;
+        session.subscribe((event) => {
+          if (event.type === "auto_retry_start") retryStarts++;
+        });
+        await session.prompt("timer range");
+        await session.waitForIdle();
+        expect(requests).toHaveLength(1);
+        expect(retryStarts).toBe(0);
+        expect(session.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "error" });
+      },
+      async (model, index) => index === 1
+        ? (await normalizeUpstreamError(Response.json(
+            { error: { message: "503 unavailable" } },
+            { status: 503, headers: { "retry-after": retryAfter } },
+          ))).response
+        : protocolCompletion("google-generative-ai", model),
+      undefined,
+      { api: "google-generative-ai", models: ["gemini-3.8-flash", "gemini-3.7-flash"], providerRetries: 1 },
+    );
+  });
+}
 
 test("Google native retry honors gateway Retry-After metadata when its SDK omits error headers", async () => {
   await fixture(
