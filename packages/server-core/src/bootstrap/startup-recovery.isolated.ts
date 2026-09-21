@@ -7,6 +7,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { join, dirname } from 'node:path'
 import { connect, createServer } from 'node:net'
 import { execFileSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 
 const root = mkdtempSync(join(os.tmpdir(), 'storyflow-startup-'))
 const configDir = join(root, 'config')
@@ -142,6 +143,12 @@ test('shutdown rejects late session admission and drains accepted RPC work befor
     expect(lateAdmissionError).toBeInstanceOf(Error)
     expect((lateAdmissionError as Error).message).toContain('shutting down')
     expect(existsSync(join(configDir, '.server.lease'))).toBe(false)
+    const replacement = createServer()
+    await new Promise<void>((resolve, reject) => {
+      replacement.once('error', reject)
+      replacement.listen(instance.port, '127.0.0.1', resolve)
+    })
+    await new Promise<void>(resolve => replacement.close(() => resolve()))
   } finally { client.destroy(); await request }
 })
 
@@ -149,28 +156,98 @@ test('embedded TLS uses the published endpoint and scoped certificate trust', as
   const cert = join(root, 'cert.pem'), key = join(root, 'key.pem')
   const opensslConfig = join(root, 'openssl.cnf')
   writeFileSync(opensslConfig, '[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=localhost\n[ext]\nsubjectAltName=DNS:localhost,IP:127.0.0.1\n')
-  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-config', opensslConfig], { stdio: 'ignore' })
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-config', opensslConfig], { stdio: 'ignore' })
   const { loadServerTls, localServerEndpoint } = await import('./tls')
-  const { WsRpcClient } = await import('../transport/client')
-  // Exercise the npm ws implementation used by Electron, not Bun's ws shim.
-  const { default: NodeWebSocket } = await import(join(dirname(require.resolve('ws/package.json')), 'index.js'))
   expect(() => loadServerTls(cert, undefined)).toThrow()
   expect(() => loadServerTls(cert, join(root, 'missing-key'))).toThrow()
   const tls = loadServerTls(cert, key)!
   expect(() => localServerEndpoint('192.0.2.1', 1, tls)).toThrow()
   const instance = await bootstrapServer({ ...base, tls, registerAllRpcHandlers(server) { server.handle('test:hello', () => 'encrypted') } })
   const endpoint = localServerEndpoint(instance.host, instance.port, tls)
-  const client = new WsRpcClient(endpoint.url, { token: base.serverToken, autoReconnect: false,
-    webSocketFactory: url => new NodeWebSocket(url, { ca: endpoint.ca, allowPartialTrustChain: true }) as unknown as WebSocket,
-  })
   try {
     expect(endpoint.url.startsWith('wss://')).toBe(true)
-    expect(await client.invoke('test:hello')).toBe('encrypted')
-    const untrusted = new WsRpcClient(endpoint.url, { token: base.serverToken, autoReconnect: false, connectTimeout: 500,
-      webSocketFactory: url => new NodeWebSocket(url) as unknown as WebSocket,
-    })
-    try { await expect(untrusted.invoke('test:hello')).rejects.toThrow() } finally { untrusted.destroy() }
-  } finally { client.destroy(); await instance.stop() }
+    // Electron uses Node TLS. Running npm ws inside Bun still uses Bun's HTTP
+    // client, whose 1.3.14 TLS upgrade behavior differs from the shipped client.
+    const clientModule = join(root, 'client.mjs')
+    const built = await Bun.build({ entrypoints: [join(import.meta.dir, '../transport/client.ts')], target: 'node' })
+    expect(built.success).toBe(true)
+    await Bun.write(clientModule, built.outputs[0]!)
+    const proc = Bun.spawn(['node', '--input-type=module', '--eval', `
+      import assert from 'node:assert/strict';
+      import { WsRpcClient } from ${JSON.stringify(pathToFileURL(clientModule).href)};
+      import NodeWebSocket from ${JSON.stringify(pathToFileURL(join(dirname(require.resolve('ws/package.json')), 'index.js')).href)};
+      const endpoint = ${JSON.stringify(endpoint)};
+      const client = new WsRpcClient(endpoint.url, { token: ${JSON.stringify(base.serverToken)}, autoReconnect: false,
+        webSocketFactory: url => new NodeWebSocket(url, { ca: endpoint.ca, allowPartialTrustChain: true }) });
+      try { assert.equal(await client.invoke('test:hello'), 'encrypted'); } finally { client.destroy(); }
+      const untrusted = new WsRpcClient(endpoint.url, { token: ${JSON.stringify(base.serverToken)}, autoReconnect: false, connectTimeout: 500,
+        webSocketFactory: url => new NodeWebSocket(url) });
+      try { await assert.rejects(untrusted.invoke('test:hello')); } finally { untrusted.destroy(); }
+    `], { stdout: 'pipe', stderr: 'pipe' })
+    const deadline = setTimeout(() => proc.kill(), 4000)
+    try {
+      const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
+      expect({ code, stderr }).toEqual({ code: 0, stderr: '' })
+    } finally {
+      clearTimeout(deadline)
+      if (proc.exitCode === null) { proc.kill(); await proc.exited }
+    }
+  } finally { await instance.stop() }
+})
+
+test('shutdown snapshots drained messages without reviving deletes or losing healthy writes behind a missing transcript', async () => {
+  const { SessionManager, createManagedSession } = await import('../sessions/SessionManager')
+  const { DEFAULT_TOKEN_USAGE } = await import('../sessions/managed-session')
+  const { writeSessionJsonl, getSessionFilePath, loadSession } = await import('@craft-agent/shared/sessions')
+  // The persistence queue is process-wide: keep Host shutdown tests isolated
+  // from unrelated suites' intentionally failed or abandoned writes.
+  for (const missing of [false, true]) {
+    const project = join(root, `shutdown-snapshot-${missing}`)
+    mkdirSync(project)
+    const workspace = { id: 'snapshot-project', slug: 'snapshot-project', name: 'Snapshot', rootPath: project, createdAt: Date.now() }
+    const manager = new SessionManager((_id, managed) => managed.workspace)
+    const seed = (id: string) => {
+      const path = getSessionFilePath(project, id)
+      mkdirSync(dirname(path), { recursive: true })
+      writeSessionJsonl(path, { id, workspaceRootPath: project, createdAt: Date.now(), lastUsedAt: Date.now(), tokenUsage: DEFAULT_TOKEN_USAGE,
+        messages: [{ id: 'before', type: 'user', content: 'before', timestamp: Date.now() }],
+      }, project)
+      const managed = createManagedSession({ id, createdAt: Date.now() }, workspace)
+      ;(manager as any).sessions.set(id, managed)
+      return managed
+    }
+    const cold = seed('cold')
+    const external = loadSession(project, 'cold')!
+    external.name = 'External rename before watcher notification'
+    writeSessionJsonl(getSessionFilePath(project, 'cold'), external, project)
+    const metadata = seed('metadata')
+    if (missing) rmSync(getSessionFilePath(project, 'metadata'))
+    const active = seed('active')
+    const deleting = seed('deleting')
+    deleting.runtimeState = 'deleting'
+    deleting.runtimeEpoch = 7
+    await manager.getSession(active.id)
+    active.agent = { async disposeForRestart() {
+      active.messages.push({ id: 'tail', role: 'assistant', content: 'final result', timestamp: Date.now() })
+      ;(manager as any).persistSession(active)
+      metadata.name = 'Accepted metadata change'
+      ;(manager as any).persistSession(metadata)
+    } } as any
+    try {
+      if (missing) await expect(manager.shutdown()).rejects.toThrow()
+      else await manager.shutdown()
+      expect(loadSession(project, active.id)?.messages.map(message => message.id)).toEqual(['before', 'tail'])
+      expect(cold.messagesLoaded).toBe(false)
+      expect(loadSession(project, 'cold')?.name).toBe(external.name)
+      if (!missing) {
+        const saved = loadSession(project, 'metadata')!
+        expect(saved.name).toBe(metadata.name)
+        expect(saved.messages.map(message => message.id)).toEqual(['before'])
+      }
+      expect(deleting.runtimeState).toBe('deleting')
+      expect(deleting.runtimeEpoch).toBe(7)
+    } finally { manager.cleanup() }
+  }
 })
 
 test('stop holds ownership until an accepted HTTP handler finishes even after its client disconnects', async () => {

@@ -1680,7 +1680,7 @@ export class SessionManager implements ISessionManager {
         // Runtime drain is the write barrier. Retire any older tail, then
         // durably save the final in-memory snapshot before detaching.
         await sessionPersistenceQueue.retire(managed.id)
-        this.persistence.enqueueProjectInvalidationSnapshot(managed)
+        this.persistence.enqueueInvalidationSnapshot(managed)
         await this.flushSession(managed.id)
       }))
       for (const managed of sessions) sessionPersistenceQueue.cancel(managed.id)
@@ -5685,11 +5685,15 @@ export class SessionManager implements ISessionManager {
   async shutdown(requestsDrained: Promise<void> = Promise.resolve()): Promise<void> {
     this.shuttingDown = true
     const managedSessions = [...this.sessions.values()]
+    // Existing delete/Project transitions retain their own final-write policy.
+    const shutdownSessions = managedSessions.filter(managed => !managed.runtimeState).map(managed => ({
+      managed, epoch: (managed.runtimeEpoch ?? 0) + 1,
+    }))
     const automationSystems = [...this.automationSystems.values()]
     this.automationSystems.clear()
-    for (const managed of managedSessions) {
+    for (const { managed, epoch } of shutdownSessions) {
       managed.runtimeState = 'invalidating'
-      managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
+      managed.runtimeEpoch = epoch
       managed.stopRequested = true
     }
     const results = await Promise.allSettled([
@@ -5703,6 +5707,12 @@ export class SessionManager implements ISessionManager {
       }),
     ])
     await requestsDrained
+    results.push(...await Promise.allSettled(shutdownSessions.map(async ({ managed, epoch }) => {
+      if (this.sessions.get(managed.id) === managed && managed.runtimeState === 'invalidating' && managed.runtimeEpoch === epoch) {
+        // Only persist writes deferred during this drain; leave untouched history on disk.
+        this.persistence.enqueueInvalidationSnapshot(managed, true)
+      }
+    })))
     await this.flushAllSessions()
     const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Host runtime cleanup incomplete')
