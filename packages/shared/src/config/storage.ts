@@ -14,10 +14,12 @@ import {
 import { findIconFile } from '../utils/icon.ts';
 import { extractWorkspaceSlugFromPath } from '../utils/workspace-slug.ts';
 import { initializeDocs } from '../docs/index.ts';
-import { expandPath, toPortablePath, getBundledAssetsDir } from '../utils/paths.ts';
+import { toPortablePath, getBundledAssetsDir } from '../utils/paths.ts';
 import { debug } from '../utils/debug.ts';
 import { atomicWriteFileSync, readJsonFileSync } from '../utils/files.ts';
 import { CONFIG_DIR } from './paths.ts';
+import { readStoredConfig } from './stored-config.ts';
+export { StoredConfigError, listStoredConfigBackups, restoreStoredConfigBackup } from './stored-config.ts';
 import type { PermissionMode } from '../agent/mode-manager.ts';
 import type { ThinkingLevel } from '../agent/thinking-levels.ts';
 import { normalizeThinkingLevel } from '../agent/thinking-levels.ts';
@@ -477,48 +479,23 @@ export function ensureConfigDir(): void {
     mkdirSync(CONFIG_DIR, { recursive: true });
   }
 
+  loadStoredConfig(); // Never back up/rotate damaged data as though it were healthy.
   backupConfigFile();
   // Initialize bundled docs (creates ~/.craft-agent/docs/ with sources.md, agents.md, permissions.md)
-  initializeDocs();
+  try { initializeDocs(); } catch (error) { debug('[config] Optional docs unavailable:', error); }
 
   // Initialize config defaults
   ensureConfigDefaults();
 
   // Initialize tool icons (CLI tool icons for turn card display)
-  ensureToolIcons();
+  try { ensureToolIcons(); } catch (error) { debug('[config] Optional tool icons unavailable:', error); }
 
   configDirInitialized = true;
 }
 
+/** Missing data returns null; damaged or inaccessible data must never become defaults. */
 export function loadStoredConfig(): StoredConfig | null {
-  try {
-    if (!existsSync(CONFIG_FILE)) {
-      return null;
-    }
-    const config = readJsonFileSync<StoredConfig>(CONFIG_FILE);
-
-    // Must have workspaces array
-    if (!Array.isArray(config.workspaces)) {
-      return null;
-    }
-
-    // Expand path variables (~ and ${HOME}) for portability
-    for (const workspace of config.workspaces) {
-      workspace.rootPath = expandPath(workspace.rootPath);
-    }
-
-    // Validate active workspace exists
-    const activeWorkspace = config.workspaces.find(w => w.id === config.activeWorkspaceId);
-    if (!activeWorkspace) {
-      // Default to first workspace
-      config.activeWorkspaceId = config.workspaces[0]?.id || null;
-    }
-
-    return config;
-  } catch (error) {
-    debug('[config] loadStoredConfig failed:', error instanceof Error ? error.message : error);
-    return null;
-  }
+  return readStoredConfig(CONFIG_FILE);
 }
 
 // Legacy credential helpers removed - use connection-aware credential lookup instead:
@@ -526,6 +503,7 @@ export function loadStoredConfig(): StoredConfig | null {
 // - getClaudeOAuthToken() → credentialManager.getLlmOAuth(connectionSlug)
 
 export function saveConfig(config: StoredConfig): void {
+  loadStoredConfig(); // Ordinary writes cannot silently repair or replace damaged data.
   ensureConfigDir();
 
   // Convert paths to portable form (~ prefix) for cross-machine compatibility

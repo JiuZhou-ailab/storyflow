@@ -36,7 +36,7 @@ async function openRoute(app: LaunchedApp, route: string) {
 
 try {
   execFileSync(process.execPath, ['run', 'scripts/perf/generate-fixture.ts', '--out', fixture, '--scale', '0.01'], { cwd: root, stdio: 'pipe' })
-  live = await launchApp(fixture)
+  live = await launchApp(fixture, { preserveServerLockState: true, userDataDir: join(fixture, 'electron-profile') })
   await pause(6000)
   await evalOn(live, `localStorage.setItem('craft-writing-workspace-visible', 'false')`)
   await openRoute(live, 'writing')
@@ -55,7 +55,7 @@ try {
   live = undefined
   const saved = JSON.parse(readFileSync(join(fixture, 'window-state.json'), 'utf8'))
   assert.equal(new URL(saved.windows[0].url).searchParams.get('route'), remembered)
-  live = await launchApp(fixture)
+  live = await launchApp(fixture, { preserveServerLockState: true, userDataDir: join(fixture, 'electron-profile') })
   await waitForComposer(live)
   assert.equal(await evalOn(live, `new URL(location.href).searchParams.get('route')`), remembered)
   console.log('PASS: cold restart restores the saved project conversation')
@@ -70,7 +70,7 @@ try {
   const freeRoute = await evalOn<string>(live, `new URL(location.href).searchParams.get('route')`)
   await live.close()
   live = undefined
-  live = await launchApp(fixture)
+  live = await launchApp(fixture, { preserveServerLockState: true, userDataDir: join(fixture, 'electron-profile') })
   await waitForComposer(live)
   assert.equal(await evalOn(live, `new URL(location.href).searchParams.get('route')`), freeRoute)
   assert.equal((await evalOn<any[]>(live, `window.electronAPI.getSessions()`)).length, 1)

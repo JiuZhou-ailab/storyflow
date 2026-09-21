@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const createdWindowOptions: any[] = []
 const createdWindows: any[] = []
+let loadError: Error | undefined
 
 function createMockWebContents() {
   const listeners: Record<string, Function[]> = {}
@@ -27,6 +28,7 @@ mock.module('electron', () => ({
   app: {
     isPackaged: true,
   },
+  dialog: { showErrorBox: mock(() => {}) },
   screen: {
     getPrimaryDisplay: () => ({
       workAreaSize: { width: 1280, height: 720 },
@@ -46,8 +48,8 @@ mock.module('electron', () => ({
       if (!this.listeners[event]) this.listeners[event] = []
       this.listeners[event].push(cb)
     })
-    loadFile = mock(() => {})
-    loadURL = mock(() => {})
+    loadFile = mock(async () => { if (loadError) throw loadError })
+    loadURL = mock(async () => { if (loadError) throw loadError })
     show = mock(() => {})
     isDestroyed = mock(() => false)
     destroy = mock(() => {})
@@ -93,6 +95,7 @@ describe('WindowManager', () => {
   beforeEach(() => {
     createdWindowOptions.length = 0
     createdWindows.length = 0
+    loadError = undefined
   })
 
   it('sets a native window background to avoid packaged paint flashes', () => {
@@ -151,5 +154,14 @@ describe('WindowManager', () => {
       remainingWindows: [],
     }])
     expect(createdWindows[0].destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not turn cancelled navigation into fatal startup recovery', async () => {
+    loadError = Object.assign(new Error('Navigation was cancelled'), { code: 'ERR_ABORTED', errno: -3 })
+    const recovery = mock(() => {})
+    const manager = new WindowManager(recovery)
+    manager.createWindow({ workspaceId: '' })
+    await Promise.resolve()
+    expect(recovery).not.toHaveBeenCalled()
   })
 })

@@ -4,7 +4,7 @@
 
 import { startShellEnvLoad, whenShellEnvReady } from './shell-env'
 
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, shell, screen } from 'electron'
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
 
@@ -13,7 +13,7 @@ import { setupI18n, i18n } from '@craft-agent/shared/i18n'
 setupI18n()
 
 import { dirname, join, delimiter } from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync } from 'fs'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
@@ -23,16 +23,16 @@ import { CLIENT_AUTH_IPC_CHANNELS, MCP_MARKET_IPC_CHANNELS, SKILLS_MARKET_IPC_CH
 import type { SkillMarketPublishInput } from '@craft-agent/shared/skills/marketplace'
 import { createElectronPlatform } from './platform'
 import type { HandlerDeps } from './handlers/handler-deps'
-import { bootstrapServer, releaseServerLock } from '@craft-agent/server-core/bootstrap'
+import { bootstrapServer, acquireServerLock, loadServerTls, localServerEndpoint, type ServerInstance } from '@craft-agent/server-core/bootstrap'
 import { createMessagingBootstrap, type MessagingBootstrapHandle } from '@craft-agent/messaging-gateway'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
-import { initModelRefreshService, getModelRefreshService, resolveModelRefreshCredentials, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
+import { initModelRefreshService, resolveModelRefreshCredentials, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
 import { setSearchPlatform, setImageProcessor } from '@craft-agent/server-core/services'
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
 import {
-  getLlmConnection,
+  getLlmConnection, loadStoredConfig, restoreStoredConfigBackup,
   getWorkspaces,
   getWorkspaceByNameOrId,
   isManagedLlmConnectionSlug,
@@ -49,7 +49,6 @@ import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
 import { setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
 import { handleDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
-import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
 import { configurePerfTracking, enableDebug, formatPerfMetric } from '@craft-agent/shared/utils'
@@ -70,10 +69,12 @@ import {
   setAutoUpdateEventSink,
   setUpdateInstallPreparation,
 } from './auto-update'
+import { CONFIG_DIR } from '@craft-agent/shared/config/paths'
+import { recordStartupFailure, showStartupRecovery } from './startup-recovery'
 import { createQuitCoordinator } from './quit-coordinator'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
-import { getStartupRecoveryDownloadUrl, shouldCreateWindowsAfterStartup } from './startup-state'
+import { getStartupRelaunchArgs, shouldCreateWindowsAfterStartup } from './startup-state'
 import {
   createClientAuthConfigFromRuntimeEnv,
   createClientAuthService,
@@ -119,7 +120,7 @@ if (isDebugMode) {
 // Bundle CLI tools: resolve platform-specific uv binary and wrapper scripts.
 // These are available to all agent Bash sessions via CRAFT_UV, CRAFT_SCRIPTS env vars
 // and PATH prepend. uv auto-downloads Python 3.12 on first use (~5s, then cached).
-{
+function configureRuntimePaths(): void {
   // In packaged app: runtime resources are single-rooted at app/dist/resources/.
   // In dev: resources are at __dirname/../resources/ (sibling of dist/)
   const runtimePaths = resolveElectronRuntimePaths({
@@ -190,9 +191,12 @@ let sessionManager: SessionManager | null = null
 let clientAuthService: ClientAuthService | null = null
 let managedCapabilityBroker: ManagedCapabilityBroker | null = null
 let browserPaneManager: BrowserPaneManager | null = null
-let oauthFlowStore: OAuthFlowStore | null = null
 let moduleSink: EventSink | null = null
 let moduleClientResolver: ((webContentsId: number) => string | undefined) | null = null
+let embeddedServerStarting: Promise<ServerInstance<SessionManager>> | null = null
+let mainStopping = false
+let recovering = false
+let fatalStartup = false
 let mainStartupSucceeded = false
 let mainStartupIsHeadless = !!process.env.CRAFT_HEADLESS
 
@@ -204,7 +208,7 @@ let mainStartupIsHeadless = !!process.env.CRAFT_HEADLESS
 let messagingHandle: MessagingBootstrapHandle | null = null
 
 // Store pending deep link if app not ready yet (cold start)
-let pendingDeepLink: string | null = null
+let pendingDeepLink: string | null = process.argv.find(arg => arg.startsWith(`${DEEPLINK_SCHEME}://`)) ?? null
 
 // Set app name early (before app.whenReady) to ensure correct macOS menu bar title
 // Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "Storyflow [1]")
@@ -224,7 +228,6 @@ if (process.defaultApp) {
 
 // Apply network proxy settings early (Node-level only — Electron sessions require app.whenReady)
 import { applyConfiguredProxySettings } from './network-proxy'
-void applyConfiguredProxySettings()
 
 // Register thumbnail:// custom protocol for file preview thumbnails in the sidebar.
 // Must happen before app.whenReady() — Electron requires early scheme registration.
@@ -235,7 +238,7 @@ app.on('open-url', (event, url) => {
   event.preventDefault()
   mainLog.info('Received deeplink:', url)
 
-  if (windowManager) {
+  if (windowManager && mainStartupSucceeded) {
     handleDeepLink(url, windowManager, moduleSink ?? undefined, moduleClientResolver ?? undefined).catch(err => {
       mainLog.error('Failed to handle deep link:', err)
     })
@@ -256,17 +259,20 @@ if (!gotTheLock) {
     // Someone tried to run a second instance, we should focus our window.
     // On Windows/Linux, the deeplink is in commandLine
     const url = commandLine.find(arg => arg.startsWith(`${DEEPLINK_SCHEME}://`))
-    if (url && windowManager) {
+    if (url && windowManager && mainStartupSucceeded) {
       mainLog.info('Received deeplink from second instance:', url)
       handleDeepLink(url, windowManager, moduleSink ?? undefined, moduleClientResolver ?? undefined).catch(err => {
         mainLog.error('Failed to handle deep link:', err)
       })
+    } else if (url) {
+      pendingDeepLink = url
     } else if (windowManager) {
       // No deep link - just focus the first window
       const windows = windowManager.getAllWindows()
       if (windows.length > 0) {
         const win = windows[0].window
         if (win.isMinimized()) win.restore()
+        win.show()
         win.focus()
       }
     }
@@ -298,7 +304,11 @@ async function createInitialWindows(): Promise<void> {
         workspaceId: saved.workspaceId,
         restoreUrl: saved.url,
       })
-      win.setBounds(saved.bounds)
+      const visible = screen.getAllDisplays().some(({ workArea }) =>
+        saved.bounds.x + saved.bounds.width > workArea.x && saved.bounds.x < workArea.x + workArea.width
+        && saved.bounds.y >= workArea.y && saved.bounds.y < workArea.y + workArea.height - 32)
+      if (visible) win.setBounds(saved.bounds)
+      else win.center()
 
       restoredCount++
     }
@@ -316,7 +326,39 @@ async function createInitialWindows(): Promise<void> {
     : 'Created project hub window without a workspace')
 }
 
+async function recoverStartup(error: unknown, stage: string): Promise<void> {
+  if (recovering || mainStopping) return
+  recovering = true
+  mainStartupSucceeded = false
+  fatalStartup = true
+  // Stop accepting work while the independent recovery dialog awaits a choice.
+  const preparation = quitCoordinator.prepare()
+  try {
+    if (!mainStartupIsHeadless) {
+      const choice = await showStartupRecovery(error, stage)
+      if (choice.restart) {
+        app.relaunch({ args: getStartupRelaunchArgs(process.argv, choice.backup) })
+        fatalStartup = false
+      }
+    } else recordStartupFailure(error, stage)
+  } finally {
+    await preparation
+    app.exit(fatalStartup ? 1 : 0)
+  }
+}
+
 app.whenReady().then(async () => {
+  if (!gotTheLock) return
+  try {
+  configureRuntimePaths()
+  {
+    mkdirSync(CONFIG_DIR, { recursive: true })
+    await acquireServerLock(mainLog)
+    const backup = process.argv.find(arg => arg.startsWith('--restore-config-backup='))?.split('=').slice(1).join('=')
+    if (backup) restoreStoredConfigBackup(backup)
+    loadStoredConfig()
+  }
+
   // Export packaged state as env var so logger.ts (and headless Bun) don't need 'electron'
   process.env.CRAFT_IS_PACKAGED = app.isPackaged ? 'true' : 'false'
 
@@ -329,10 +371,10 @@ app.whenReady().then(async () => {
   setPowerShellValidatorRoot(join(__dirname, 'resources'))
 
   // Initialize bundled docs
-  initializeDocs()
+  try { initializeDocs() } catch (error) { recordStartupFailure(error, 'optional-docs') }
 
   // Initialize bundled release notes
-  initializeReleaseNotes()
+  try { initializeReleaseNotes() } catch (error) { recordStartupFailure(error, 'optional-release-notes') }
 
   // Seed product-wide Skills and Sources. Domain Skills remain explicit project installs.
   seedDefaultAgentResources()
@@ -341,10 +383,10 @@ app.whenReady().then(async () => {
   ensureDefaultPermissions()
 
   // Seed tool icons to ~/.craft-agent/tool-icons/ (copies bundled SVGs on first run)
-  ensureToolIcons()
+  try { ensureToolIcons() } catch (error) { recordStartupFailure(error, 'optional-icons') }
 
   // Seed preset themes to ~/.craft-agent/themes/ (copies bundled theme JSONs on first run)
-  ensurePresetThemes()
+  try { ensurePresetThemes() } catch (error) { recordStartupFailure(error, 'optional-themes') }
 
   // Register thumbnail:// protocol handler (scheme was registered earlier, before app.whenReady)
   registerThumbnailHandler()
@@ -391,13 +433,12 @@ app.whenReady().then(async () => {
     }
   }
 
-  try {
     if (!process.env.CRAFT_SERVER_URL) {
       await migrateRemoteServerCredentialsOnStartup()
     }
 
     // Initialize window manager
-    windowManager = new WindowManager()
+    windowManager = new WindowManager(error => { void recoverStartup(error, 'window') })
     windowManager.setBeforeWindowDestroyed((closingWindow, remainingWindows) => {
       const windows = resolvePersistedWindowsAfterClose(remainingWindows, closingWindow)
       saveWindowState({ windows, lastFocusedWorkspaceId: windows[0]?.workspaceId })
@@ -719,27 +760,22 @@ app.whenReady().then(async () => {
         ? parseInt(process.env.CRAFT_RPC_PORT, 10)
         : (serverModeEnabled ? embeddedServerConfig.port : 0)
 
-      // Load TLS certificates if configured
-      let tls: import('@craft-agent/server-core/transport').WsRpcTlsOptions | undefined
-      if (serverModeEnabled && embeddedServerConfig.tlsCertPath && embeddedServerConfig.tlsKeyPath) {
-        try {
-          tls = {
-            cert: readFileSync(embeddedServerConfig.tlsCertPath),
-            key: readFileSync(embeddedServerConfig.tlsKeyPath),
-          }
-          mainLog.info('[server-mode] TLS enabled')
-        } catch (err) {
-          mainLog.error('[server-mode] Failed to load TLS certificates:', err)
-        }
-      }
+      const tls = serverModeEnabled ? loadServerTls(
+        process.env.CRAFT_RPC_TLS_CERT ?? embeddedServerConfig.tlsCertPath,
+        process.env.CRAFT_RPC_TLS_KEY ?? embeddedServerConfig.tlsKeyPath,
+        process.env.CRAFT_RPC_TLS_CA,
+      ) : undefined
+      // Validate local certificate identity before opening the listener.
+      localServerEndpoint(rpcHost, rpcPort, tls)
 
       if (serverModeEnabled) {
         mainLog.info(`[server-mode] Enabled — binding ${rpcHost}:${rpcPort}${tls ? ' (TLS)' : ''}`)
       }
 
       // Bootstrap the WS RPC server via shared bootstrap function.
-      const instance = await bootstrapServer<SessionManager, HandlerDeps>({
+      embeddedServerStarting = bootstrapServer<SessionManager, HandlerDeps>({
         serverToken,
+        reuseServerLock: true,
         rpcHost,
         rpcPort,
         tls,
@@ -824,6 +860,9 @@ app.whenReady().then(async () => {
           startShellEnvLoad()
           await sm.initialize()
         },
+        cleanupSessionManager: async (sm, requestsDrained) => {
+          await Promise.all([sm.shutdown(requestsDrained), messagingHandle?.dispose()])
+        },
         deferRuntimeInitialization: !isHeadless,
         initModelRefreshService: () => {
           modelRefreshService = initModelRefreshService(async (connection) => {
@@ -852,9 +891,11 @@ app.whenReady().then(async () => {
         },
       })
 
+      const instance = await embeddedServerStarting
+      if (mainStopping) { await instance.stop(); return }
+
       // Capture module-level references for before-quit cleanup and deep-link handlers
       sessionManager = instance.sessionManager
-      oauthFlowStore = instance.oauthFlowStore
       moduleSink = instance.wsServer.push.bind(instance.wsServer)
       moduleClientResolver = resolveClientId
 
@@ -862,6 +903,7 @@ app.whenReady().then(async () => {
         // The messaging registry depends on initialized sessions and automations,
         // so it belongs to the deferred runtime phase rather than shell startup.
         try {
+          if (mainStopping) return
           if (!messagingHandle) {
             throw new Error('Messaging handle was not constructed in createHandlerDeps')
           }
@@ -894,15 +936,14 @@ app.whenReady().then(async () => {
       } else {
         let runtimeStartRequested = false
         const startRuntime = (): void => {
-          if (runtimeStartRequested) return
+          if (runtimeStartRequested || mainStopping) return
           runtimeStartRequested = true
           void instance.startRuntime()
             .then(initializeMessagingGateway)
             .catch((err) => {
               mainLog.error('[runtime] Background initialization failed:', err)
-              void instance.stop().catch((stopError) => {
-                mainLog.error('[runtime] Failed to stop after background initialization failure:', stopError)
-              })
+              recordStartupFailure(err, 'agent-runtime')
+              // Workspace readiness gates report the scoped failure; keep the safe file shell alive.
             })
         }
 
@@ -916,7 +957,7 @@ app.whenReady().then(async () => {
         // interactive. The renderer owns the real product-readiness signal;
         // this fallback only recovers Agent availability after renderer failure.
         const scheduleRuntimeFallback = (): void => {
-          if (runtimeStartRequested) return
+          if (runtimeStartRequested || mainStopping) return
           runtimeFallback = setTimeout(startRuntime, 30_000)
         }
 
@@ -1014,8 +1055,8 @@ app.whenReady().then(async () => {
 
       // App relaunch (for server config changes — NOT an update install)
       ipcMain.handle('app:relaunch', () => {
-        app.relaunch()
-        app.exit(0)
+        app.relaunch({ args: getStartupRelaunchArgs(process.argv) })
+        app.quit()
       })
 
       // Language change: sync from renderer to main process and rebuild native menu
@@ -1025,8 +1066,8 @@ app.whenReady().then(async () => {
         await rebuildMenu()
       })
 
-      ipcMain.on('__get-ws-port', (e) => {
-        e.returnValue = instance.port
+      ipcMain.on('__get-ws-endpoint', (e) => {
+        e.returnValue = localServerEndpoint(instance.host, instance.port, tls)
       })
       ipcMain.on('__get-ws-token', (e) => {
         e.returnValue = instance.token
@@ -1163,6 +1204,7 @@ app.whenReady().then(async () => {
     })) {
       await createInitialWindows()
     }
+    if (mainStopping) return
     scheduleDeferredRuntime?.()
 
     // Run credential health check at startup to detect issues early
@@ -1186,12 +1228,14 @@ app.whenReady().then(async () => {
     // Non-critical — powerSaveBlocker may not work on headless/xvfb setups
     try {
       const { initPowerManager } = await import('./power-manager')
+      if (mainStopping) return
       await initPowerManager()
     } catch (err) {
       mainLog.warn('[power] Power manager init failed (non-critical):', err instanceof Error ? err.message : err)
     }
 
     // The launch check starts before server bootstrap; connect renderer events once available.
+    if (mainStopping) return
     if (moduleSink) setAutoUpdateEventSink(moduleSink)
 
     // Process pending deep link from cold start
@@ -1209,30 +1253,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     mainStartupSucceeded = false
     mainLog.error('Failed to initialize app:', error instanceof Error ? error.message : error, (error as any)?.stack)
-    releaseServerLock()
-    if (!mainStartupIsHeadless) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      const result = await dialog.showMessageBox({
-        type: 'error',
-        title: 'Storyflow failed to start',
-        message: 'Storyflow failed to start',
-        detail: `${errorMessage}\n\nDownload and install the latest version to repair Storyflow without removing your projects or settings.`,
-        buttons: ['Download latest version', 'Close'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-      })
-      if (result.response === 0) {
-        const downloadUrl = getStartupRecoveryDownloadUrl(process.platform, process.arch)
-        try {
-          await shell.openExternal(downloadUrl)
-        } catch (downloadError) {
-          mainLog.error('[startup] Failed to open recovery download:', downloadError)
-          dialog.showErrorBox('Unable to open download', downloadUrl)
-        }
-      }
-      app.quit()
-    }
+    await recoverStartup(error, 'host-bootstrap')
   }
 
   // macOS: Re-create window when dock icon is clicked
@@ -1275,6 +1296,7 @@ async function runQuitStep(name: string, step: () => void | Promise<void>): Prom
 const quitCoordinator = createQuitCoordinator({
   isUpdating,
   prepare: async () => {
+    mainStopping = true
     // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
     windowManager?.setAppQuitting(true)
 
@@ -1297,14 +1319,11 @@ const quitCoordinator = createQuitCoordinator({
       }
     })
 
-    // Session data is the only step whose loss is user-visible; run it first
-    // so it gets the largest share of the quit deadline.
-    await runQuitStep('session-flush', async () => {
-      if (!sessionManager) return
-      await sessionManager.flushAllSessions()
-      mainLog.info('Flushed all pending session writes')
-    })
-    await runQuitStep('session-cleanup', () => sessionManager?.cleanup())
+    if (embeddedServerStarting) await runQuitStep('host-stop', async () => { await (await embeddedServerStarting!).stop() })
+    else if (sessionManager) {
+      await runQuitStep('session-flush', () => sessionManager!.flushAllSessions())
+      await runQuitStep('session-cleanup', () => sessionManager!.cleanup())
+    }
 
     await runQuitStep('capability-broker', async () => {
       await managedCapabilityBroker?.close()
@@ -1319,8 +1338,6 @@ const quitCoordinator = createQuitCoordinator({
       clientAuthService = null
     })
     await runQuitStep('browser-panes', () => browserPaneManager?.destroyAll())
-    await runQuitStep('oauth-flows', () => oauthFlowStore?.dispose())
-    await runQuitStep('model-refresh', () => getModelRefreshService().stopAll())
     // Stop messaging gateways so the WhatsApp worker subprocess exits cleanly.
     await runQuitStep('messaging', () => messagingHandle?.dispose())
     await runQuitStep('power-manager', async () => {
@@ -1332,10 +1349,8 @@ const quitCoordinator = createQuitCoordinator({
     mainLog.warn(`[quit] cleanup ${reason}; exiting anyway`, error instanceof Error ? error.message : error ?? '')
   },
   exit: (code) => {
-    // Always release the server lease, even when cleanup timed out, so the
-    // next launch never waits on a lease this process can no longer heartbeat.
-    releaseServerLock()
-    app.exit(code)
+    // A timed-out writer retains ownership until this process actually exits.
+    app.exit(fatalStartup ? 1 : code)
   },
 })
 
@@ -1352,8 +1367,11 @@ app.on('before-quit', async (event) => {
 
 process.on('uncaughtException', (error) => {
   mainLog.error('Uncaught exception:', error)
+  void recoverStartup(error, 'uncaught-exception')
 })
 
 process.on('unhandledRejection', (reason, promise) => {
   mainLog.error('Unhandled rejection at:', promise, 'reason:', reason)
+  if (!mainStartupSucceeded) void recoverStartup(reason, 'unhandled-startup-rejection')
+  else recordStartupFailure(reason, 'unhandled-rejection')
 })

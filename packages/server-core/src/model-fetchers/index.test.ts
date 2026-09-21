@@ -113,6 +113,29 @@ function runModelRefreshEval(configDir: string, code: string): string {
 }
 
 describe('ModelRefreshService credentials', () => {
+  it('fences pending and late refreshes after Host stop', () => {
+    const configDir = setupManagedModelRefreshConfigDir()
+    const output = runModelRefreshEval(configDir, `
+      const { getLlmConnection } = await import('@craft-agent/shared/config');
+      const before = getLlmConnection('storyflow-managed').models;
+      let release, entered;
+      const started = new Promise(resolve => { entered = resolve; });
+      const response = new Promise(resolve => { release = resolve; });
+      let calls = 0;
+      globalThis.fetch = async () => { calls++; entered(); return response; };
+      const service = initModelRefreshService(async () => ({ apiKey: 'test' }));
+      service.startAll();
+      const pending = service.refreshNow('storyflow-managed');
+      await started;
+      service.stopAll();
+      release(Response.json({ data: [] }));
+      await pending;
+      await service.refreshNow('storyflow-managed');
+      console.log(JSON.stringify({ calls, preserved: JSON.stringify(before) === JSON.stringify(getLlmConnection('storyflow-managed').models) }));
+    `)
+    expect(JSON.parse(output)).toEqual({ calls: 1, preserved: true })
+  })
+
   it('retains the previous catalog on malformed capability metadata, not as an empty success', () => {
     const configDir = setupManagedModelRefreshConfigDir()
     const output = runModelRefreshEval(configDir, `

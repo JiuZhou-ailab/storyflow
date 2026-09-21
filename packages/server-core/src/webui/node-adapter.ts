@@ -5,6 +5,7 @@
  * the web-standard `(Request) => Response` handler used by the WebUI.
  * This lets us serve the WebUI from the same HTTPS server that the
  * WsRpcServer creates for WebSocket connections.
+ * The returned Promise covers all handler writes so Host shutdown can drain it.
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -18,9 +19,9 @@ type WebHandler = (req: Request) => Promise<Response> | Response
  */
 export function nodeHttpAdapter(
   handler: WebHandler,
-): (req: IncomingMessage, res: ServerResponse) => void {
+): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return (nodeReq, nodeRes) => {
-    handleRequest(handler, nodeReq, nodeRes).catch((err) => {
+    return handleRequest(handler, nodeReq, nodeRes).catch((err) => {
       console.error('[webui-adapter] Unhandled error:', err)
       if (!nodeRes.headersSent) {
         nodeRes.writeHead(500, { 'Content-Type': 'text/plain' })
