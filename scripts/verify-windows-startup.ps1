@@ -47,7 +47,9 @@ function Quit-TestApp {
   }
 }
 
-function Launch-Shortcut([string]$scenario) {
+function Launch-Shortcut([string]$scenario, [switch]$Duplicate) {
+  $existingOwners = @(Get-Process -Name Storyflow -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe -and $_.MainWindowHandle -ne 0 })
+  if ($Duplicate -and $existingOwners.Count -ne 1) { throw 'Duplicate launch requires one existing visible owner' }
   $wsh = New-Object -ComObject WScript.Shell
   $shortcut = Get-ChildItem -Path ([Environment]::GetFolderPath('Desktop')), ([Environment]::GetFolderPath('Programs')) -Filter '*.lnk' -Recurse |
     Where-Object { $wsh.CreateShortcut($_.FullName).TargetPath -eq $exe } | Select-Object -First 1
@@ -55,19 +57,28 @@ function Launch-Shortcut([string]$scenario) {
   $link = $wsh.CreateShortcut($shortcut.FullName)
   $link.Arguments = "--user-data-dir=`"$startupProfile`" --remote-debugging-port=0"
   $link.Save()
-  Start-Process $shortcut.FullName
+  $launched = Start-Process $shortcut.FullName -PassThru
+  if ($Duplicate) {
+    # The existing page is already ready. Wait for the new process to hand off
+    # before requesting quit, otherwise it can start after the old owner exits.
+    if (!$launched -or !$launched.WaitForExit(15000)) { throw 'Second launch did not hand off to the existing instance' }
+    if ($launched.ExitCode -ne 0) { throw "Second launch failed: $($launched.ExitCode)" }
+  }
   & bun e2e/core/installed-startup.ts $startupProfile | Tee-Object -FilePath (Join-Path $EvidenceDirectory "$scenario.json")
   if ($LASTEXITCODE -ne 0) { throw "Application page failed in $scenario" }
   $stored = Get-Content $configPath -Raw | ConvertFrom-Json
   if ($stored.startupPreservationMarker -ne 'keep-this-value') { throw 'Host configuration was reset' }
   $owners = @(Get-Process -Name Storyflow | Where-Object { $_.Path -eq $exe -and $_.MainWindowHandle -ne 0 })
   if ($owners.Count -ne 1) { throw "Expected one visible application owner, got $($owners.Count)" }
+  if ($Duplicate -and $owners[0].Id -ne $existingOwners[0].Id) { throw 'Second launch replaced the existing owner' }
+  @{ scenario = $scenario; ownerPid = $owners[0].Id; launchedPid = $launched.Id; duplicate = [bool]$Duplicate } |
+    ConvertTo-Json -Compress | Set-Content (Join-Path $EvidenceDirectory "$scenario-process.json")
 }
 
 try {
   Install-Version $Installer
   Launch-Shortcut 'fresh-install'
-  Launch-Shortcut 'second-launch'
+  Launch-Shortcut 'second-launch' -Duplicate
   Quit-TestApp
   Launch-Shortcut 'normal-restart'
   Stop-TestApp
