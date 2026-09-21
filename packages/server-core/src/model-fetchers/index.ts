@@ -210,6 +210,7 @@ class ModelRefreshService {
   private timers = new Map<string, ReturnType<typeof setInterval>>()
   private inFlight = new Map<string, Promise<void>>()
   private started = false
+  private stopped = false
 
   constructor(
     private fetchers: ModelFetcherMap,
@@ -222,6 +223,7 @@ class ModelRefreshService {
    * in progress, callers share the same promise instead of racing.
    */
   async refreshConnection(slug: string): Promise<void> {
+    if (this.stopped) return
     const existing = this.inFlight.get(slug)
     if (existing) return existing
 
@@ -346,6 +348,7 @@ class ModelRefreshService {
    */
   startAll(): void {
     if (this.started) return
+    this.stopped = false
     this.started = true
     const connections = getLlmConnections()
 
@@ -380,10 +383,12 @@ class ModelRefreshService {
   }
 
   /**
-   * Stop all refresh timers. Call on app quit.
+   * Stop timers and fence pending configuration writes. Call on app quit.
    */
   stopAll(): void {
     this.started = false
+    this.stopped = true
+    this.inFlight.clear()
     for (const [slug, timer] of this.timers) {
       clearInterval(timer)
       handlerLog.info(`Stopped model refresh timer for ${slug}`)
@@ -398,6 +403,7 @@ class ModelRefreshService {
    */
   async refreshNow(slug: string): Promise<void> {
     await this.refreshConnection(slug)
+    if (this.stopped) return
 
     // Ensure periodic timer is running
     const connection = getLlmConnection(slug)

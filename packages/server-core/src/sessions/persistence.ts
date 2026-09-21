@@ -1,5 +1,5 @@
 // input: Session registry access, disk session stores, boot-service hooks, and a queue-recovery callback
-// output: Startup initialization/gating, disk→memory session loading, debounced persistence, lazy message hydration, idle-release
+// output: Startup gating, disk→memory loading, debounced and invalidation-deferred writes, lazy hydration, idle-release
 // pos: Persistence subdomain under the SessionManager facade; owns initGate and message-loading dedup state
 
 import { mkdirSync } from 'node:fs'
@@ -63,6 +63,7 @@ export class SessionPersistence {
   // Deduplicates concurrent lazy loads of the same session's messages.
   private messageLoadingPromises: Map<string, Promise<void>> = new Map()
   private queuedRecoveryScheduled = new Set<string>()
+  private deferredInvalidationWrites = new WeakMap<ManagedSession, number>()
   // Coordinates startup initialization waiters from IPC handlers.
   private initGate = new InitGate()
 
@@ -241,7 +242,10 @@ export class SessionPersistence {
    */
   persistSession(managed: ManagedSession): void {
     if (this.deps.getSession(managed.id) !== managed) return
-    if (managed.runtimeState) return
+    if (managed.runtimeState) {
+      if (managed.runtimeState === 'invalidating') this.deferredInvalidationWrites.set(managed, managed.runtimeEpoch ?? 0)
+      return
+    }
     if (!managed.messagesLoaded) {
       this.hydrateMessagesForColdPersist(managed)
     }
@@ -364,12 +368,14 @@ export class SessionPersistence {
   }
 
   /** Persist the lifecycle owner's final snapshot while ordinary invalidating writes are fenced. */
-  enqueueProjectInvalidationSnapshot(managed: ManagedSession): void {
+  enqueueInvalidationSnapshot(managed: ManagedSession, pendingWritesOnly = false): void {
     if (managed.runtimeState !== 'invalidating') {
-      throw new Error(`Session ${managed.id} is not owned by a Project invalidation`)
+      throw new Error(`Session ${managed.id} is not owned by a runtime invalidation`)
     }
+    if (pendingWritesOnly && this.deferredInvalidationWrites.get(managed) !== (managed.runtimeEpoch ?? 0)) return
     if (!managed.messagesLoaded) this.hydrateMessagesForColdPersist(managed, false)
     this.enqueuePersistStrict(managed)
+    this.deferredInvalidationWrites.delete(managed)
   }
 
   // Flush a specific session immediately (call on session close/switch).

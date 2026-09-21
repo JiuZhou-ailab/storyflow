@@ -13,7 +13,8 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `client-auth-session-store.ts` - Encrypted desktop auth and Neon session persistence.
 - `deep-link.ts` - Deep-link parsing and dispatch.
 - `feedback.ts` - Feedback issue submission adapter.
-- `index.ts` - Main-process bootstrap.
+- `entry.ts` - Minimal loader with native diagnostics for module initialization failures.
+- `index.ts` - Main-process bootstrap with preflight data ownership and shared Host teardown.
 - `logger.ts` - Main-process logging setup.
 - `managed-capability-broker.ts` - Loopback bridge from Storyflow login to scoped model access plus exact search and scrape operations for child processes.
 - `menu.ts` - Application menu setup.
@@ -26,7 +27,9 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `shell-env.ts` - User shell environment loader.
 - `skills-market-client.ts` - Authenticated Skill publication without renderer token exposure.
 - `mcp-market-client.ts` - Read-only, parsed MCP subregistry discovery without contacting listed endpoints.
-- `startup-state.ts` - Startup window and stable recovery-download policy.
+- `startup-diagnostics.ts` - Bounded redacted startup receipts available before Host loading.
+- `startup-recovery.ts` - Native recovery choices independent of renderer and RPC.
+- `startup-state.ts` - Startup window, one-shot backup relaunch arguments, and recovery-download policy.
 - `thumbnail-protocol.ts` - Custom thumbnail protocol.
 - `window-manager.ts` - Native app window lifecycle.
 - `window-state.ts` - Window state persistence.

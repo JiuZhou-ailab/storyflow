@@ -20,6 +20,7 @@
  * connection is established.
  */
 
+import NodeWebSocket from 'ws'
 import { contextBridge, ipcRenderer, shell, webUtils } from 'electron'
 import { WsRpcClient, type TransportConnectionState } from '@craft-agent/server-core/transport'
 import { RoutedClient } from '../transport/routed-client'
@@ -98,11 +99,14 @@ if (isClientOnly) {
   // RoutedClient routes LOCAL_ONLY to local server, REMOTE_ELIGIBLE to
   // whichever server owns the workspace (local or remote).
 
-  const wsPort: number = ipcRenderer.sendSync('__get-ws-port')
+  const endpoint: { url: string; ca?: string } = ipcRenderer.sendSync('__get-ws-endpoint')
   const wsToken: string = ipcRenderer.sendSync('__get-ws-token')
   const workspaceId: string = ipcRenderer.sendSync('__get-workspace-id')
 
-  const localClient = new WsRpcClient(`ws://127.0.0.1:${wsPort}`, {
+  const localClient = new WsRpcClient(endpoint.url, {
+    ...(endpoint.ca ? { webSocketFactory: (url: string) => new NodeWebSocket(url, {
+      ca: endpoint.ca, allowPartialTrustChain: true,
+    }) as unknown as WebSocket } : {}),
     token: wsToken,
     workspaceId,
     webContentsId,

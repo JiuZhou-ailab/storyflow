@@ -1,5 +1,5 @@
 // input: Electron startup status plus host platform and architecture
-// output: Startup window policy and stable recovery download URL
+// output: Startup window policy, one-shot recovery arguments, and stable download URL
 // pos: Keeps startup failure and recovery behavior testable outside Electron runtime
 
 import { releaseAssetFiles } from '@craft-agent/shared/release-assets'
@@ -14,6 +14,12 @@ export interface StartupWindowPolicyInput {
 
 export function shouldCreateWindowsAfterStartup(input: StartupWindowPolicyInput): boolean {
   return input.initSucceeded && !input.isHeadless
+}
+
+export function getStartupRelaunchArgs(argv: string[], backup?: string): string[] {
+  const args = argv.slice(1).filter(arg => !arg.startsWith('--restore-config-backup='))
+  if (backup) args.push(`--restore-config-backup=${backup}`)
+  return args
 }
 
 export function getStartupRecoveryDownloadUrl(platform: string, arch: string): string {

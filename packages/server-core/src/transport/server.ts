@@ -7,7 +7,7 @@
  * Same class used locally (127.0.0.1, no auth) and remotely (0.0.0.0, auth).
  */
 
-import { WebSocketServer, type WebSocket } from 'ws'
+import { WebSocketServer, WebSocket } from 'ws'
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http'
 import { createServer as createHttpsServer, type Server as HttpsServer } from 'node:https'
 import { randomUUID } from 'node:crypto'
@@ -110,7 +110,7 @@ export interface WsRpcServerOptions {
    * WebUI from the same port as the WebSocket server.
    * Must use Node.js HTTP callback signature (IncomingMessage, ServerResponse).
    */
-  httpHandler?: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void
+  httpHandler?: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void | Promise<void>
 }
 
 const transportLog = createLogger('ws-rpc-server')
@@ -124,6 +124,8 @@ export class WsRpcServer implements RpcServer {
   private httpServer: HttpServer | null = null
   private httpsServer: HttpsServer | null = null
   private clients = new Map<string, ClientConnection>()
+  private closing: Promise<void> | undefined
+  private activeHandlers = new Set<Promise<unknown>>()
   private handlers = new Map<string, HandlerFn>()
   private pendingInvokes = new Map<string, PendingInvoke>()
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
@@ -260,7 +262,7 @@ export class WsRpcServer implements RpcServer {
             ca: this.tlsOptions.ca,
             passphrase: this.tlsOptions.passphrase,
           },
-          this.httpHandler,
+          this.httpHandler ? this.onHttpRequest : undefined,
         )
 
         this.wss = new WebSocketServer({ server: this.httpsServer })
@@ -278,7 +280,7 @@ export class WsRpcServer implements RpcServer {
       } else if (this.httpHandler) {
         // Plain WS + HTTP handler: create an HTTP server for both.
         this._protocol = 'ws'
-        this.httpServer = createHttpServer(this.httpHandler)
+        this.httpServer = createHttpServer(this.onHttpRequest)
         this.wss = new WebSocketServer({ server: this.httpServer })
 
         this.httpServer.on('error', (err) => reject(err))
@@ -319,7 +321,11 @@ export class WsRpcServer implements RpcServer {
     })
   }
 
-  close(): void {
+  close(): Promise<void> {
+    if (this.closing) return this.closing
+    let resolveClose!: () => void, rejectClose!: (error: unknown) => void
+    this.closing = new Promise((resolve, reject) => { resolveClose = resolve; rejectClose = reject })
+    const failures: unknown[] = []
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = null
@@ -333,7 +339,8 @@ export class WsRpcServer implements RpcServer {
       this.pendingInvokes.delete(id)
     }
     for (const client of this.clients.values()) {
-      client.ws.terminate()
+      client.workspaceLifetime.abort()
+      try { this.onClientDisconnected?.(client.id) } catch (error) { failures.push(error) }
     }
     this.clients.clear()
     // Clean up disconnected client timers
@@ -341,12 +348,42 @@ export class WsRpcServer implements RpcServer {
       clearTimeout(entry.timer)
     }
     this.disconnectedClients.clear()
-    this.wss?.close()
+    // Include connections whose handshake is still pending.
+    const socketsClosed = [...this.wss?.clients ?? []].map(ws => new Promise<void>(resolve => {
+      ws.once('close', () => resolve())
+      ws.terminate()
+    }))
+    const endpoints = [this.wss, this.httpServer, this.httpsServer].filter(endpoint => endpoint !== null)
+    // close() stops listening synchronously. Bun 1.3.14 never calls its HTTP
+    // close callback after a WebSocket upgrade; join sockets and handlers instead.
+    for (const endpoint of endpoints) {
+      try { endpoint.close() } catch (error) { failures.push(error) }
+    }
+    // Closing a socket does not cancel its asynchronous handler: drain both.
+    this.httpServer?.closeAllConnections()
+    this.httpsServer?.closeAllConnections()
     this.wss = null
-    this.httpServer?.close()
     this.httpServer = null
-    this.httpsServer?.close()
     this.httpsServer = null
+    void Promise.allSettled([...this.activeHandlers, ...socketsClosed]).then(() => {
+      if (failures.length) rejectClose(new AggregateError(failures, 'Transport cleanup incomplete'))
+      else resolveClose()
+    })
+    return this.closing
+  }
+
+  private trackHandler<T>(operation: Promise<T>): Promise<T> {
+    this.activeHandlers.add(operation)
+    void operation.then(() => this.activeHandlers.delete(operation), () => this.activeHandlers.delete(operation))
+    return operation
+  }
+
+  private onHttpRequest = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse): void => {
+    if (this.closing) { res.writeHead(503); res.end(); return }
+    void this.trackHandler(Promise.resolve().then(() => this.httpHandler!(req, res))).catch(() => {
+      if (!res.headersSent) res.writeHead(500)
+      res.end()
+    })
   }
 
   // -------------------------------------------------------------------------
@@ -354,6 +391,7 @@ export class WsRpcServer implements RpcServer {
   // -------------------------------------------------------------------------
 
   private onConnection(ws: WebSocket, upgradeRequestCookie: string | null): void {
+    if (this.closing) { ws.terminate(); return }
     // Reject if at capacity
     if (this.maxClients > 0 && this.clients.size >= this.maxClients) {
       transportLog.warn('Connection rejected: at capacity', {
@@ -432,6 +470,8 @@ export class WsRpcServer implements RpcServer {
             return
           }
         }
+
+        if (this.closing || ws.readyState !== WebSocket.OPEN) { ws.terminate(); return }
 
         // ── Reconnect attempt ──
         if (envelope.reconnectClientId && envelope.lastSeq != null) {
@@ -625,6 +665,7 @@ export class WsRpcServer implements RpcServer {
   private static readonly HANDLER_TIMEOUT_MS = 60_000
 
   private async onRequest(client: ClientConnection, envelope: MessageEnvelope): Promise<void> {
+    if (this.closing) return
     const { channel, id, args } = envelope
 
     if (!channel) {
@@ -645,11 +686,13 @@ export class WsRpcServer implements RpcServer {
       webContentsId: client.webContentsId,
     }
 
+    let requestTimer: ReturnType<typeof setTimeout> | undefined
     try {
+      const operation = this.trackHandler(Promise.resolve().then(() => handler(ctx, ...(args ?? []))))
       const result = await Promise.race([
-        handler(ctx, ...(args ?? [])),
+        operation,
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Handler timeout: ${channel} (${WsRpcServer.HANDLER_TIMEOUT_MS}ms)`)),
+          requestTimer = setTimeout(() => reject(new Error(`Handler timeout: ${channel} (${WsRpcServer.HANDLER_TIMEOUT_MS}ms)`)),
             WsRpcServer.HANDLER_TIMEOUT_MS),
         ),
       ])
@@ -664,6 +707,8 @@ export class WsRpcServer implements RpcServer {
       const message = err instanceof Error ? err.message : String(err)
       const code: ErrorCode = (err as any)?.code ?? 'HANDLER_ERROR'
       this.sendResponseError(client.ws, id, channel, code, message)
+    } finally {
+      if (requestTimer) clearTimeout(requestTimer)
     }
   }
 
@@ -702,6 +747,7 @@ export class WsRpcServer implements RpcServer {
       transportLog.info('Client disconnected', { clientId: client.id })
       client.workspaceLifetime.abort()
       this.clients.delete(client.id)
+      if (this.closing) return
 
       // Retain buffer for potential reconnect
       const timer = setTimeout(() => {

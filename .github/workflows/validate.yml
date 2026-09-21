@@ -13,6 +13,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  startup-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Verify shared Host startup contracts
+        shell: bash
+        run: |
+          bun test ./packages/server-core/src/bootstrap/server-lock.isolated.ts
+          bun test ./packages/server-core/src/bootstrap/startup-recovery.isolated.ts
+
   validate:
     runs-on: ubuntu-latest
 
