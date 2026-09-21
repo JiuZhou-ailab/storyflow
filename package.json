@@ -52,6 +52,7 @@
     "electron:build:renderer": "bun run scripts/electron-build-renderer.ts",
     "build:wa-worker": "bun run scripts/build-wa-worker.ts",
     "electron:build:assets": "cd apps/electron && bun scripts/copy-assets.ts",
+    "electron:package:verify": "bun run scripts/build/package-artifact.ts",
     "electron:build:validate": "cd apps/electron && bun run build:validate",
     "electron:build": "bun run electron:build:main && bun run electron:build:preload && bun run electron:build:renderer && bun run electron:build:assets && bun run electron:build:validate",
     "electron:start": "bun run electron:build && electron apps/electron",
@@ -186,6 +187,7 @@
   "patchedDependencies": {
     "app-builder-lib@26.4.0": "patches/app-builder-lib@26.4.0.patch",
     "@earendil-works/pi-ai@0.84.4": "packages/pi-agent-server/patches/@earendil-works%2Fpi-ai@0.84.4.patch",
-    "@earendil-works/pi-coding-agent@0.84.4": "packages/pi-agent-server/patches/@earendil-works%2Fpi-coding-agent@0.84.4.patch"
+    "@earendil-works/pi-coding-agent@0.84.4": "packages/pi-agent-server/patches/@earendil-works%2Fpi-coding-agent@0.84.4.patch",
+    "pdf-parse-tt-message-gone@1.1.2": "patches/pdf-parse-tt-message-gone@1.1.2.patch"
   }
 }

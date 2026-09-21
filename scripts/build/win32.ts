@@ -10,10 +10,9 @@
  */
 
 import { execSync } from 'child_process';
-import { existsSync, mkdirSync, rmSync, readdirSync, statSync, cpSync } from 'fs';
+import { existsSync, rmSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import type { BuildConfig } from './common';
-import { stageSubprocessResources } from './resource-staging';
 
 /**
  * Sleep helper (Node.js replacement for Bun.sleep)
@@ -114,14 +113,10 @@ export async function buildElectronAppWindows(config: BuildConfig): Promise<void
 
   // Build main process with shared auth-aware release guards
   buildMainProcess(config);
-  stageSubprocessResources(config);
 
-  // Build preload - invoke esbuild directly via node
-  console.log('  Building preload...');
-  run(
-    'node ./node_modules/esbuild/bin/esbuild apps/electron/src/preload/bootstrap.ts --bundle --platform=node --format=cjs --outfile=apps/electron/dist/bootstrap-preload.cjs --external:electron',
-    rootDir
-  );
+  // Use the shared entrypoint so both preloads and compression stay identical.
+  console.log('  Building preloads...');
+  run('bun run electron:build:preload', rootDir);
 
   // Build renderer - invoke vite directly via node
   console.log('  Building renderer...');
@@ -137,27 +132,9 @@ export async function buildElectronAppWindows(config: BuildConfig): Promise<void
   }
   console.log('  Renderer build verified ✓');
 
-  // Copy resources
-  console.log('  Copying resources...');
-  const resourcesSrc = join(electronDir, 'resources');
-  const resourcesDst = join(electronDir, 'dist', 'resources');
-  if (existsSync(resourcesDst)) {
-    rmSync(resourcesDst, { recursive: true, force: true });
-  }
-  cpSync(resourcesSrc, resourcesDst, { recursive: true });
-
-  // Copy doc assets (matches electron:build:assets step used by Mac/Linux builds)
-  // Without this, loadBundledDocs() can't find the docs and falls back to placeholders
-  console.log('  Copying doc assets...');
-  const docsSrc = join(rootDir, 'packages', 'shared', 'assets', 'docs');
-  const docsDst = join(electronDir, 'dist', 'assets', 'docs');
-  if (existsSync(docsSrc)) {
-    mkdirSync(join(electronDir, 'dist', 'assets'), { recursive: true });
-    cpSync(docsSrc, docsDst, { recursive: true, force: true });
-    console.log('  Doc assets copied ✓');
-  } else {
-    console.warn('  ⚠️ No doc assets found at', docsSrc);
-  }
+  // Share staging and non-empty resource validation with macOS/Linux.
+  run('bun run electron:build:assets', rootDir);
+  run('bun run electron:build:validate', rootDir);
 }
 
 /**

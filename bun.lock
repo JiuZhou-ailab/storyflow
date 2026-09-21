@@ -417,8 +417,9 @@
     "electron",
   ],
   "patchedDependencies": {
-    "app-builder-lib@26.4.0": "patches/app-builder-lib@26.4.0.patch",
+    "pdf-parse-tt-message-gone@1.1.2": "patches/pdf-parse-tt-message-gone@1.1.2.patch",
     "@earendil-works/pi-ai@0.84.4": "packages/pi-agent-server/patches/@earendil-works%2Fpi-ai@0.84.4.patch",
+    "app-builder-lib@26.4.0": "patches/app-builder-lib@26.4.0.patch",
     "@earendil-works/pi-coding-agent@0.84.4": "packages/pi-agent-server/patches/@earendil-works%2Fpi-coding-agent@0.84.4.patch",
   },
   "overrides": {

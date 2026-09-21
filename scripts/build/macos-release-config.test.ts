@@ -139,7 +139,8 @@ describe('macOS release configuration', () => {
     expect(validateWorkflow).toContain('run: bun run validate:ci');
     expect(workflow).toContain('run: bun run electron:dist:win');
     expect(workflow).not.toContain('run: bun run electron:dist:dev:win');
-    expect(windowsBuild).toMatch(/buildMainProcess\(config\);\n\s+stageSubprocessResources\(config\);/);
+    expect(windowsBuild).toContain("run('bun run electron:build:assets', rootDir)");
+    expect(windowsBuild).toContain("run('bun run electron:build:validate', rootDir)");
   });
 
   test('publishes the curated version note across release surfaces', () => {

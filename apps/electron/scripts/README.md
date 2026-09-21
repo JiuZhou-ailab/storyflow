@@ -7,4 +7,4 @@ Electron-local build, resource staging, validation, and platform packaging hooks
 - `build-linux.sh`: legacy Linux package entrypoint.
 - `build-win.ps1`: legacy Windows package entrypoint.
 - `copy-assets.ts`: stages subprocesses and copies runtime resources into `dist/`.
-- `validate-assets.ts`: rejects incomplete Electron build and resource output.
+- `validate-assets.ts`: shared nonempty runtime-asset contract used by the build and final package inspector.

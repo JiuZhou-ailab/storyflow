@@ -177,6 +177,10 @@ async function main(): Promise<void> {
       "bun", "run", "esbuild",
       "apps/electron/src/main/entry.ts",
       "--bundle",
+      // Preserve names used by runtime-sensitive dependencies.
+      "--minify-whitespace",
+      "--minify-syntax",
+      "--legal-comments=inline",
       "--platform=node",
       "--format=cjs",
       "--outfile=apps/electron/dist/main.cjs",

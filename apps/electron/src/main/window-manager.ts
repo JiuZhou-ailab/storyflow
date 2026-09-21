@@ -152,13 +152,15 @@ export class WindowManager {
     const { workspaceId, initialDeepLink, restoreUrl } = options
 
     // Load platform-specific app icon
-    // In packaged app, resources are at dist/resources/ (same level as __dirname)
+    // Packaged macOS windows reuse the bundle icon installed by electron-builder.
+    // Other packaged resources are at dist/resources/ (same level as __dirname)
     // In dev, resources are at ../resources/ (sibling of dist/)
     const getIconPath = () => {
       const iconName = process.platform === 'darwin' ? 'icon.icns'
         : process.platform === 'win32' ? 'icon.ico'
         : 'icon.png'
       return [
+        ...(app.isPackaged && process.platform === 'darwin' ? [join(process.resourcesPath, iconName)] : []),
         join(__dirname, 'resources', iconName),
         join(__dirname, '../resources', iconName),
       ].find(p => existsSync(p)) ?? join(__dirname, '../resources', iconName)

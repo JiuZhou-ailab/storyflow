@@ -3,9 +3,17 @@
 // pos: Package-size guard for desktop release artifacts
 
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { doMergeConfigs } from 'app-builder-lib/out/util/config/config';
+import type { FileMatcher } from 'app-builder-lib/out/fileMatcher';
+// This pinned runtime API is marked internal and omitted from the published .d.ts.
+const { getMainFileMatchers } = require('app-builder-lib/out/fileMatcher') as {
+  getMainFileMatchers: (from: string, to: string, expand: (value: string) => string, platform: unknown, packager: unknown, out: string, compile: boolean) => FileMatcher[];
+};
 import yaml from 'js-yaml';
+import { SUPPORTED_LANGUAGE_CODES } from '../../packages/shared/src/i18n/languages';
 
 const rootDir = join(import.meta.dir, '..', '..');
 
@@ -17,26 +25,24 @@ function readBuilderConfig(): Record<string, any> {
   return yaml.load(readRepoFile('apps/electron/electron-builder.yml')) as Record<string, any>;
 }
 
-function expectExplicitPackagedAppAllowlist(platform: 'mac' | 'win' | 'linux'): void {
-  const config = readBuilderConfig();
-  const files = effectiveFilePatterns(config, platform);
-
-  expect(Array.isArray(files), `${platform}.files must be an explicit allowlist`).toBe(true);
-  expect(files).toContain('dist/**/*');
-  expect(files).toContain('package.json');
-  expect(files).toContain('!node_modules/**/*');
-  expect(files).toContain('!src/**/*');
-  expect(files).toContain('!resources/**/*');
-  expect(files).toContain('!release/**/*');
-  expect(files).toContain('!**/*.map');
-  expect(files[0], `${platform}.files must not fall back to electron-builder's **/* default`).toBe('dist/**/*');
-}
-
-function effectiveFilePatterns(config: Record<string, any>, platform: 'mac' | 'win' | 'linux'): string[] {
-  return [
-    ...(Array.isArray(config.files) ? config.files : []),
-    ...(Array.isArray(config[platform]?.files) ? config[platform].files : []),
-  ];
+// Use the installed builder, not concatenated globs that conceal its **/* fallback.
+function selectedFiles(platform: 'mac' | 'win' | 'linux', files: string[]): string[] {
+  const dir = mkdtempSync(join(tmpdir(), 'storyflow-package-files-'));
+  try {
+    for (const file of files) {
+      mkdirSync(dirname(join(dir, file)), { recursive: true });
+      writeFileSync(join(dir, file), 'fixture');
+    }
+    const config = doMergeConfigs([readBuilderConfig()]);
+    const matchers = getMainFileMatchers(dir, join(dir, 'out'), value => value.replaceAll('${arch}', platform === 'mac' ? 'arm64' : 'x64'), config[platform], {
+      info: { config, projectDir: dir, buildResourcesDir: 'resources',
+        isPrepackedAppAsar: false, debugLogger: { isEnabled: false } },
+    } as Parameters<typeof getMainFileMatchers>[4], join(dir, 'release'), false);
+    const filters = matchers!.map(matcher => matcher.createFilter());
+    return files.filter(file => filters.some(filter => filter(join(dir, file), statSync(join(dir, file)))));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function collectExtraResourceTargets(value: unknown): string[] {
@@ -64,36 +70,43 @@ describe('Electron package size configuration', () => {
     );
   });
 
-  test('uses explicit platform allowlists instead of negative-only platform file rules', () => {
-    expectExplicitPackagedAppAllowlist('mac');
-    expectExplicitPackagedAppAllowlist('win');
-    expectExplicitPackagedAppAllowlist('linux');
+  test('Windows copies runtime content without desktop sources or a second Bun', () => {
+    const runtime = ['package.json', 'dist/main.cjs', 'dist/bootstrap-preload.cjs',
+      'dist/resources/pi-agent-server/pi-agent-server.exe',
+      'dist/resources/agent-defaults/global-skills/example/SKILL.md',
+      'dist/resources/agent-defaults/global-skills/example/scripts/tool.ts',
+      'dist/resources/scripts/markitdown_cli.py'];
+    expect(selectedFiles('win', [...runtime,
+      'vendor/bun/bun.exe', 'src/main/index.ts', 'src/main/__tests__/index.test.ts',
+      'electron-builder.yml', 'resources/icon.ico', 'dist/main.cjs.map',
+      'dist/resources/dmg-background.tiff', 'dist/resources/bin/darwin-arm64/uv',
+      'dist/resources/bin/linux-x64/uv', 'dist/resources/bin/win32-x64/uv.exe',
+    ])).toEqual(runtime);
   });
 
-  test('keeps runtime resources single-rooted under dist/resources in packaged app payload', () => {
-    const config = readBuilderConfig();
-    const allFilePatterns = [
-      ...config.files,
-      ...config.mac.files,
-      ...config.win.files,
-      ...config.linux.files,
-    ];
-
-    expect(allFilePatterns).not.toContain('resources/bridge-mcp-server/**/*');
-    expect(allFilePatterns).not.toContain('resources/pi-agent-server/**/*');
-    expect(allFilePatterns).not.toContain('resources/bin/darwin-arm64/**/*');
-    expect(allFilePatterns).not.toContain('resources/bin/win32-x64/**/*');
-    expect(allFilePatterns).not.toContain('resources/bin/linux-x64/**/*');
-  });
-
-  test('does not include source directories in effective app file patterns', () => {
-    const config = readBuilderConfig();
-
+  test('all platforms exclude build-only icons while keeping runtime scripts and native binaries', () => {
     for (const platform of ['mac', 'win', 'linux'] as const) {
-      const patterns = effectiveFilePatterns(config, platform);
-      const positivePatterns = patterns.filter((pattern) => !pattern.startsWith('!'));
+      const runtime = ['dist/main.cjs', 'dist/resources/icon.png', 'dist/resources/icon.ico',
+        'dist/resources/scripts/markitdown_cli.py', 'dist/resources/agent-defaults/global-skills/example/SKILL.md'];
+      if (platform !== 'win') runtime.push('vendor/bun/bun');
+      if (platform === 'mac') runtime.push('dist/resources/bin/darwin-arm64/uv');
+      if (platform === 'linux') runtime.push('dist/resources/bin/linux-x64/uv');
+      const otherPlatform = platform === 'mac' ? 'linux' : 'darwin';
+      expect(selectedFiles(platform, [...runtime, 'src/main/index.ts', 'dist/main.cjs.map',
+        'dist/resources/Assets.car', 'dist/resources/icon.icns', 'dist/resources/icon.icon/Assets/icon.png',
+        `dist/resources/bin/${otherPlatform}-arm64/uv`, 'dist/resources/dmg-background.tiff',
+      ])).toEqual(runtime);
+    }
+  });
 
-      expect(positivePatterns.filter((pattern) => /(^|\/)src(\/|$)/.test(pattern))).toEqual([]);
+  test('Electron locales cover the product catalog and English fallbacks on every platform', () => {
+    const config = readBuilderConfig();
+    for (const platform of ['mac', 'win', 'linux']) {
+      const aliases: Record<string, string[]> = platform === 'mac'
+        ? { en: ['en', 'en_GB'], 'zh-Hans': ['zh_CN'] }
+        : { en: ['en-US', 'en-GB'], 'zh-Hans': ['zh-CN'] };
+      const expected = SUPPORTED_LANGUAGE_CODES.flatMap(code => aliases[code] ?? [code]);
+      expect((config[platform].electronLanguages ?? config.electronLanguages)?.slice().sort()).toEqual(expected.sort());
     }
   });
 

@@ -2,7 +2,22 @@
 // output: Regression coverage for packaged-window paint stability
 // pos: Isolated regression coverage for native packaged client window defaults
 
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
+
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+// Model Electron's packaged resources boundary with a real temporary icon.
+const resources = mkdtempSync(join(tmpdir(), 'storyflow-window-icon-'))
+const resourceDescriptor = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
+Object.defineProperty(process, 'resourcesPath', { value: resources, configurable: true })
+writeFileSync(join(resources, 'icon.icns'), 'icon fixture')
+afterAll(() => {
+  if (resourceDescriptor) Object.defineProperty(process, 'resourcesPath', resourceDescriptor)
+  else Reflect.deleteProperty(process, 'resourcesPath')
+  rmSync(resources, { recursive: true, force: true })
+})
 
 const createdWindowOptions: any[] = []
 const createdWindows: any[] = []
@@ -104,6 +119,11 @@ describe('WindowManager', () => {
     manager.createWindow({ workspaceId: 'workspace-1' })
 
     expect(createdWindowOptions[0]?.backgroundColor).toBe('#fafafb')
+  })
+
+  it.skipIf(process.platform !== 'darwin')('reuses the packaged bundle icon for macOS windows', () => {
+    new WindowManager().createWindow({ workspaceId: 'workspace-1' })
+    expect(createdWindowOptions[0]?.icon).toBe(join(resources, 'icon.icns'))
   })
 
   it('keeps native renderer zoom stable for smooth window resizing', () => {

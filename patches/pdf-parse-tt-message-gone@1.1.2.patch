@@ -1,0 +1,10 @@
+diff --git a/lib/pdf-parse.js b/lib/pdf-parse.js
+index a282bbb53cf96c4148b3373c1e8daa55e6fb222b..f8de3fd9ddc760034c884d46c7089051613497af 100644
+--- a/lib/pdf-parse.js
++++ b/lib/pdf-parse.js
+@@ -63 +63,4 @@ async function PDF(dataBuffer, options) {
+-    PDFJS = PDFJS ? PDFJS : require(`./pdf.js/${options.version}/build/pdf.js`);
++    if (options.version !== DEFAULT_OPTIONS.version) {
++        throw new Error('Storyflow packages only the default PDF.js parser');
++    }
++    PDFJS = PDFJS ? PDFJS : require('./pdf.js/v1.10.100/build/pdf.js');

@@ -12,7 +12,11 @@ TypeScript build/dev entrypoints.
 - `desktop-auth-build-config.ts` - validates packaged Electron client-auth broker settings.
 - `desktop-trust-boundaries.test.ts` - guards desktop auth, telemetry, TLS, and production packaging boundaries.
 - `environment-contract.test.ts` - regression tests for env-var lifecycle boundaries.
-- `electron-package-size-config.test.ts` - regression tests for Electron package-size inputs.
+- `electron-package-size-config.test.ts` - tests real builder file selection and product locale coverage.
+- `package-artifact.ts` / `.test.ts` - checks final app/archive contents, hashes, component sizes and reviewed budgets before publication.
+- `package-size-budgets.json` - per-target byte ceilings; unapproved entries fail release verification.
+- `attachment-package.isolated.ts` - real bundled PDF conversion and original-byte regression check.
+
 - `electron-main-build-config.test.ts` - regression tests for Electron main process bundling constraints.
 - `file-stability.test.ts` - checks shared build-output stabilization and timeout behavior.
 - `linux.ts` - Linux packaging helpers.
@@ -23,3 +27,5 @@ TypeScript build/dev entrypoints.
 - `resource-staging.ts` - stages built subprocess bundles into Electron resources.
 - `win32.ts` - Windows packaging helpers.
 - `windows-git-installer.test.ts` - guards automatic Git for Windows provisioning in fresh NSIS installs.
+
+Package acceptance and budget approval: [QA runbook](../../docs/package-size-qa.md).

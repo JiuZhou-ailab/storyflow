@@ -28,13 +28,15 @@ test.each(['stop', 'length'])('compiled server executes its own subagent with gl
     return new Response(chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
   } });
   try {
-    const binary = join(root, 'pi-agent-server');
-    const build = Bun.spawn(getPiAgentServerCompileArgs({ platform: process.platform as 'darwin' | 'linux' | 'win32', arch: process.arch as 'arm64' | 'x64', outputPath: binary }), {
-      cwd: resolve(import.meta.dir, '..'), stdout: 'pipe', stderr: 'pipe',
-    });
-    const buildError = new Response(build.stderr).text();
-    await new Response(build.stdout).text();
-    expect(await build.exited, await buildError).toBe(0);
+    const binary = process.env.CRAFT_E2E_PI_SERVER_BIN ?? join(root, 'pi-agent-server');
+    if (!process.env.CRAFT_E2E_PI_SERVER_BIN) {
+      const build = Bun.spawn(getPiAgentServerCompileArgs({ platform: process.platform as 'darwin' | 'linux' | 'win32', arch: process.arch as 'arm64' | 'x64', outputPath: binary }), {
+        cwd: resolve(import.meta.dir, '..'), stdout: 'pipe', stderr: 'pipe',
+      });
+      const buildError = new Response(build.stderr).text();
+      await new Response(build.stdout).text();
+      expect(await build.exited, await buildError).toBe(0);
+    }
     const agentDir = join(root, 'agent');
     await mkdir(join(agentDir, 'extensions'), { recursive: true });
     await writeFile(join(root, 'source.txt'), 'EXACT SOURCE BYTES');

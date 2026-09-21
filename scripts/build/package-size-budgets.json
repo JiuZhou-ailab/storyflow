@@ -1,0 +1,5 @@
+{
+  "darwin-arm64": { "application": 466616320, "dmg": 174063616, "zip": 181403648 },
+  "darwin-x64": { "application": null, "dmg": null, "zip": null },
+  "win32-x64": { "application": null, "exe": null }
+}

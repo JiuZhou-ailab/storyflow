@@ -87,6 +87,10 @@ async function main(): Promise<void> {
       "bun", "run", "esbuild",
       SOURCE,
       "--bundle",
+      // Preserve names used by runtime-sensitive dependencies.
+      "--minify-whitespace",
+      "--minify-syntax",
+      "--legal-comments=inline",
       "--platform=node",
       "--format=cjs",
       "--target=node20",

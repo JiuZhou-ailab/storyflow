@@ -32,6 +32,10 @@ async function buildEntry(entry: string, outfile: string): Promise<number> {
       "bun", "run", "esbuild",
       entry,
       "--bundle",
+      // Preserve names used by runtime-sensitive dependencies.
+      "--minify-whitespace",
+      "--minify-syntax",
+      "--legal-comments=inline",
       "--platform=node",
       "--format=cjs",
       `--outfile=${outfile}`,

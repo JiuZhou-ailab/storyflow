@@ -271,6 +271,11 @@ jobs:
         env:
           CRAFT_E2E_ELECTRON_BIN: ${{ github.workspace }}/apps/electron/release/${{ matrix.arch == 'arm64' && 'mac-arm64' || 'mac' }}/Storyflow.app/Contents/MacOS/Storyflow
 
+      - name: Verify packaged Pi Extension loader
+        run: bun test packages/pi-agent-server/src/compiled-subagent.test.ts
+        env:
+          CRAFT_E2E_PI_SERVER_BIN: ${{ github.workspace }}/apps/electron/release/${{ matrix.arch == 'arm64' && 'mac-arm64' || 'mac' }}/Storyflow.app/Contents/Resources/app/dist/resources/pi-agent-server/pi-agent-server
+
       - name: Verify macOS signing and notarization
         run: |
           set -euo pipefail
@@ -292,6 +297,17 @@ jobs:
             "${{ matrix.arch }}=$manifest"
           mv "$manifest.tmp" "$manifest"
           cp "$manifest" "apps/electron/release/latest-mac-${{ matrix.arch }}.yml"
+
+      - name: Verify macOS package content and size budgets
+        run: bun run electron:package:verify -- --platform=darwin --arch=${{ matrix.arch }}
+
+      - name: Save macOS package evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-evidence-darwin-${{ matrix.arch }}
+          path: apps/electron/release/package-report-*.json
+          if-no-files-found: error
 
       - name: Upload macOS artifacts to release
         env:
@@ -369,6 +385,11 @@ jobs:
         env:
           CRAFT_E2E_ELECTRON_BIN: ${{ github.workspace }}\apps\electron\release\win-unpacked\Storyflow.exe
 
+      - name: Verify packaged Pi Extension loader
+        run: bun test packages/pi-agent-server/src/compiled-subagent.test.ts
+        env:
+          CRAFT_E2E_PI_SERVER_BIN: ${{ github.workspace }}\apps\electron\release\win-unpacked\resources\app\dist\resources\pi-agent-server\pi-agent-server.exe
+
       - name: Verify Windows installer startup and upgrade
         shell: pwsh
         env:
@@ -391,6 +412,17 @@ jobs:
           name: windows-startup-evidence
           path: startup-evidence/
           if-no-files-found: warn
+
+      - name: Verify Windows package content and size budgets
+        run: bun run electron:package:verify -- --platform=win32 --arch=x64
+
+      - name: Save Windows package evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-evidence-win32-x64
+          path: apps/electron/release/package-report-*.json
+          if-no-files-found: error
 
       - name: Upload Windows artifacts to release
         shell: bash

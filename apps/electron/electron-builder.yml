@@ -3,6 +3,9 @@ productName: Storyflow
 copyright: Copyright © 2026 Craft Docs Ltd.
 
 electronVersion: "39.2.7"
+# Mirrors the product catalog; the regression check rejects missing new languages.
+# Chromium falls back to English for unsupported system locales.
+electronLanguages: [en-US, en-GB, es, zh-CN, ja, hu, de, pl]
 
 # Hook to compile macOS 26+ Liquid Glass icon after packaging
 afterPack: scripts/afterPack.cjs
@@ -11,22 +14,8 @@ directories:
   output: release
   buildResources: resources
 
-files:
-  - dist/**/*
-  - package.json
-  # Bundled assets and subprocess entrypoints are copied to dist/resources/
-  # by build:copy and included through dist/**/* above. Do not also package
-  # the top-level resources/ tree, or uv and subprocess bundles are duplicated.
-  # Include bundled Bun runtime (platform-specific, set by build script)
-  - vendor/bun/**/*
-  # Exclude development-only trees and generated source maps from app payload.
-  - "!node_modules/**/*"
-  - "!src/**/*"
-  - "!resources/**/*"
-  - "!release/**/*"
-  - "!dist/**/*.map"
-  - "!**/*.map"
-  - "!dist/resources/dmg-background*"
+# Keep exactly one complete files allowlist per platform. Top-level files become
+# an independent matcher; platform exclusions cannot subtract from that matcher.
 
 # Ripgrep is sourced from the target-specific optional package installed by
 # `@vscode/ripgrep` and staged as the stable `ripgrep-binary` alias.
@@ -43,6 +32,7 @@ publish:
 asar: false
 
 mac:
+  electronLanguages: [en, en_GB, es, zh_CN, ja, hu, de, pl]
   category: public.app-category.productivity
   icon: resources/icon.icns
   # macOS 26+ Liquid Glass: Tell macOS to look for icon in Assets.car
@@ -77,8 +67,13 @@ mac:
     - "!dist/**/*.map"
     - "!**/*.map"
     - "!dist/resources/dmg-background*"
-    - "!**/resources/bin/win32-*/**"
-    - "!**/resources/bin/linux-*/**"
+    - "!dist/resources/Assets.car"
+    - "!dist/resources/icon.icns"
+    - "!dist/resources/icon.icon/**/*"
+    - "!dist/resources/scripts/tests/**/*"
+    - "!dist/resources/**/__pycache__/**/*"
+    - "!dist/resources/generate-icons.sh"
+    - "!dist/resources/bin/!(darwin-${arch})/**/*"
   # Use predictable naming for macOS packages (applies to zip; dmg uses its own config below)
   artifactName: "Storyflow-${arch}.${ext}"
   # Official macOS releases must be Developer ID signed and Apple notarized.
@@ -88,6 +83,7 @@ mac:
   notarize: true
 
 dmg:
+  format: UDBZ
   # Use predictable naming: Storyflow-arm64.dmg, Storyflow-x64.dmg
   artifactName: "Storyflow-${arch}.dmg"
   sign: true
@@ -117,10 +113,22 @@ win:
         - x64
   # Use predictable naming: Storyflow-x64.exe
   artifactName: "Storyflow-${arch}.${ext}"
-  # Top-level files already include dist/**/* and package.json. Keep Windows
-  # here to platform-specific exclusions only; repeating positive patterns can
-  # produce duplicate copy tasks for dist/main.cjs on Windows Server 2025.
+  # Stage executables via extraResources below; this allowlist owns only app content.
   files:
+    - dist/**/*
+    - package.json
+    - "!node_modules/**/*"
+    - "!src/**/*"
+    - "!resources/**/*"
+    - "!release/**/*"
+    - "!**/*.map"
+    - "!dist/resources/dmg-background*"
+    - "!dist/resources/Assets.car"
+    - "!dist/resources/icon.icns"
+    - "!dist/resources/icon.icon/**/*"
+    - "!dist/resources/scripts/tests/**/*"
+    - "!dist/resources/**/__pycache__/**/*"
+    - "!dist/resources/generate-icons.sh"
     - "!**/resources/bin/darwin-*/**"
     - "!**/resources/bin/linux-*/**"
     # WORKAROUND: Exclude bun and uv from regular files on Windows.
@@ -177,5 +185,10 @@ linux:
     - "!dist/**/*.map"
     - "!**/*.map"
     - "!dist/resources/dmg-background*"
-    - "!**/resources/bin/darwin-*/**"
-    - "!**/resources/bin/win32-*/**"
+    - "!dist/resources/Assets.car"
+    - "!dist/resources/icon.icns"
+    - "!dist/resources/icon.icon/**/*"
+    - "!dist/resources/scripts/tests/**/*"
+    - "!dist/resources/**/__pycache__/**/*"
+    - "!dist/resources/generate-icons.sh"
+    - "!dist/resources/bin/!(linux-${arch})/**/*"
