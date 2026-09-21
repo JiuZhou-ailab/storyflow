@@ -33,3 +33,24 @@ retry support: the outer AgentSession has its own classifier and budget.
 Bun applies patches from root `package.json` on install. Avoid stale package-local
 `node_modules/@earendil-works` copies shadowing the root installation; verify module
 resolution when testing a dependency upgrade.
+
+## Long-task budgets (#43)
+
+The coding-agent patch adds optional public `compaction.maxSummaryTokens` to
+SettingsManager and native compaction preparation. Storyflow applies 8192 without
+writing user settings. Reserve space no longer implicitly enlarges summary calls.
+The ai patch makes explicit `maxTokens` cap the combined response in budget-based
+thinking adapters; reasoning fits inside the cap instead of adding to it. Unset
+native requests still use model capacity. Registered model declarations stay intact.
+
+`AgentSession.maxOutputTokens` records that caller budget for native length recovery;
+the product stream wrapper enforces the same cap. Reaching the caller budget is not
+a recoverable context truncation, even when model capacity is larger. Anthropic and
+Bedrock disable budget-based thinking when the final (possibly context-clamped)
+ceiling cannot fit the 1,024-token thinking minimum plus the SDK's answer reserve.
+Adaptive thinking is unchanged; the caller's output cap is never increased.
+
+Remove these hunks when upstream exposes the same contracts and the real Provider
+checks in `runtime-budgets.test.ts` and `managed-access-contract.test.ts` pass
+without the patches, including Anthropic thinking and all four supported protocols.
+Include `thinking-budget.test.ts` for the small-budget and context-clamped cases.

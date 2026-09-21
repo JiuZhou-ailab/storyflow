@@ -1,6 +1,8 @@
 // input: Parent Pi runtime dependencies, a delegated task, and a fixed capability profile
-// output: A Pi Extension tool that runs an isolated in-memory AgentSession and returns its result
+// output: A custom tool and Pi lifecycle Extension that runs an isolated in-memory AgentSession and returns its result
 // pos: Built-in transient execution boundary between the parent Agent and host-governed subagents
+
+import { setOutputBudget } from './runtime-budgets.ts';
 
 import { Type } from '@sinclair/typebox';
 import {
@@ -147,189 +149,199 @@ function createConcurrencyGate(limit: number) {
 
 export function createSubagentExtension(
   options: CreateSubagentExtensionOptions,
-): InlineExtension {
+): InlineExtension & { tool: ToolDefinition<typeof SubagentParameters> } {
   const createSession = options.createSession ?? (async sessionOptions => {
     const { session } = await createAgentSession(sessionOptions);
     await session.bindExtensions({});
+    setOutputBudget(session);
     return session;
   });
   const withConcurrencySlot = createConcurrencyGate(MAX_CONCURRENT_TASKS);
 
+  let callsThisTurn = 0;
+  let turnCapability: SubagentCapability | undefined;
+  const tool: ToolDefinition<typeof SubagentParameters> = {
+    name: 'subagent',
+    label: 'Subagent',
+    description: 'Run one isolated temporary task with a host-enforced tool capability. Each call is one independently visible subagent.',
+    promptSnippet: 'Run one isolated temporary task with host-limited tools.',
+    promptGuidelines: [
+      'Use subagent only for isolated temporary work that needs tools; use call_llm for tool-free reasoning and spawn_session for persistent user-visible work.',
+      'For multiple independent tasks, emit one subagent call per task in the same assistant response. Never combine multiple tasks into one call, and use at most four calls per response.',
+      'Parallel sibling calls must all use read_only. A workspace_write call must be the only subagent call in that assistant response.',
+    ],
+    executionMode: 'parallel',
+    parameters: SubagentParameters,
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      callsThisTurn += 1;
+      const violatesTaskLimit = callsThisTurn > MAX_TASKS_PER_TURN;
+      const mixesWorkspaceWrite = turnCapability !== undefined && (
+        turnCapability === 'workspace_write'
+        || params.capability === 'workspace_write'
+      );
+      if (violatesTaskLimit || mixesWorkspaceWrite) {
+        const error = violatesTaskLimit
+          ? `A maximum of ${MAX_TASKS_PER_TURN} subagent calls is allowed per assistant response`
+          : 'workspace_write must be the only subagent call in an assistant response';
+        return {
+          content: [{ type: 'text', text: error }],
+          details: {
+            kind: PI_SUBAGENT_DETAILS_KIND,
+            isError: true,
+            usage: EMPTY_USAGE,
+          } satisfies SubagentDetails,
+          isError: true,
+        };
+      }
+      turnCapability = params.capability;
+
+      const result = await withConcurrencySlot(signal, async (): Promise<SubagentResult> => {
+        const allowedNames: string[] = params.capability === 'workspace_write'
+          ? [...WORKSPACE_WRITE_TOOLS]
+          : [...READ_ONLY_TOOLS];
+        const hookContext: SubagentHookContext = {
+          session: null,
+          userRequest: params.task,
+        };
+        let session: AgentSession | null = null;
+        let unsubscribe = () => {};
+        let abortSession: (() => void) | undefined;
+        let providerError = '';
+        let stopReason: string | undefined;
+
+        try {
+          if (signal?.aborted) {
+            throw new Error('Subagent execution aborted');
+          }
+          const settingsManager = SettingsManager.inMemory();
+          const resourceLoader = new DefaultResourceLoader({
+            cwd: options.cwd,
+            agentDir: options.agentDir,
+            settingsManager,
+            extensionFactories: [
+              ...(options.createProviderHooks ? [options.createProviderHooks(() => session)] : []),
+              createOpenAIEncryptedReasoningCompat(),
+              options.createSessionHooks(hookContext),
+            ],
+            noExtensions: true,
+            noSkills: true,
+            noPromptTemplates: true,
+            noThemes: true,
+            noContextFiles: true,
+          });
+          await resourceLoader.reload();
+
+          session = await createSession({
+            cwd: options.cwd,
+            agentDir: options.agentDir,
+            modelRuntime: options.modelRuntime,
+            model: ctx.model,
+            thinkingLevel: options.thinkingLevel,
+            customTools: options.toolDefinitions.filter(
+              tool => allowedNames.includes(tool.name),
+            ),
+            tools: allowedNames,
+            sessionManager: SessionManager.inMemory(options.cwd),
+            settingsManager,
+            resourceLoader,
+          });
+          hookContext.session = session;
+          options.activeSessions?.add(session);
+          abortSession = () => {
+            void session?.abort().catch(() => {});
+          };
+          signal?.addEventListener('abort', abortSession, { once: true });
+          if (typeof session.subscribe === 'function') {
+            unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+              if (event.type !== 'message_end') return;
+              const message = event.message as {
+                role?: string;
+                stopReason?: string;
+                errorMessage?: string;
+              };
+              if (message.role !== 'assistant') return;
+              stopReason = message.stopReason;
+              providerError = message.stopReason === 'error' && message.errorMessage
+                ? message.errorMessage
+                : '';
+            });
+          }
+
+          if (signal?.aborted) {
+            await session.abort();
+            throw new Error('Subagent execution aborted');
+          }
+          await session.prompt([
+            'Complete this isolated delegated task.',
+            'Use only the available tools. Do not delegate or create sessions.',
+            params.capability === 'read_only'
+              ? 'Do not modify files or external state.'
+              : 'Modify only what the task requires and verify the result.',
+            `Task: ${params.task}`,
+          ].join('\n'));
+          if (signal?.aborted) {
+            throw new Error('Subagent execution aborted');
+          }
+          if (providerError) {
+            throw new Error(providerError);
+          }
+
+          const output = session.getLastAssistantText() ?? '';
+          return {
+            task: params.task,
+            capability: params.capability,
+            status: stopReason === 'aborted' ? 'cancelled' : stopReason === 'length' || !output.trim() ? 'incomplete' : 'completed',
+            stopReason,
+            output: output || '(no output)',
+            usage: getUsage(session),
+          };
+        } catch (error) {
+          if (signal?.aborted) {
+            throw new Error('Subagent execution aborted');
+          }
+          return {
+            task: params.task,
+            capability: params.capability,
+            status: 'failed',
+            output: error instanceof Error ? error.message : String(error),
+            usage: session ? getUsage(session) : EMPTY_USAGE,
+          };
+        } finally {
+          unsubscribe();
+          if (abortSession) {
+            signal?.removeEventListener('abort', abortSession);
+          }
+          if (session) {
+            options.activeSessions?.delete(session);
+            session.dispose();
+          }
+        }
+      });
+
+      const details: SubagentDetails = {
+        kind: PI_SUBAGENT_DETAILS_KIND,
+        result,
+        usage: result.usage,
+      };
+
+      return {
+        content: [{ type: 'text', text: result.output }],
+        details,
+        isError: result.status !== 'completed',
+      };
+    },
+  };
   return {
+    tool,
     name: PI_SUBAGENT_DETAILS_KIND,
     factory(pi) {
-      let callsThisTurn = 0;
-      let turnCapability: SubagentCapability | undefined;
+      pi.on('tool_result', event => {
+        const details = event.details as SubagentDetails | undefined;
+        if (details?.kind === PI_SUBAGENT_DETAILS_KIND && (details.isError || (details.result && details.result.status !== 'completed'))) return { isError: true };
+      });
       pi.on('turn_start', () => {
         callsThisTurn = 0;
         turnCapability = undefined;
-      });
-
-      pi.registerTool({
-        name: 'subagent',
-        label: 'Subagent',
-        description: 'Run one isolated temporary task with a host-enforced tool capability. Each call is one independently visible subagent.',
-        promptSnippet: 'Run one isolated temporary task with host-limited tools.',
-        promptGuidelines: [
-          'Use subagent only for isolated temporary work that needs tools; use call_llm for tool-free reasoning and spawn_session for persistent user-visible work.',
-          'For multiple independent tasks, emit one subagent call per task in the same assistant response. Never combine multiple tasks into one call, and use at most four calls per response.',
-          'Parallel sibling calls must all use read_only. A workspace_write call must be the only subagent call in that assistant response.',
-        ],
-        executionMode: 'parallel',
-        parameters: SubagentParameters,
-        async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-          callsThisTurn += 1;
-          const violatesTaskLimit = callsThisTurn > MAX_TASKS_PER_TURN;
-          const mixesWorkspaceWrite = turnCapability !== undefined && (
-            turnCapability === 'workspace_write'
-            || params.capability === 'workspace_write'
-          );
-          if (violatesTaskLimit || mixesWorkspaceWrite) {
-            const error = violatesTaskLimit
-              ? `A maximum of ${MAX_TASKS_PER_TURN} subagent calls is allowed per assistant response`
-              : 'workspace_write must be the only subagent call in an assistant response';
-            return {
-              content: [{ type: 'text', text: error }],
-              details: {
-                kind: PI_SUBAGENT_DETAILS_KIND,
-                usage: EMPTY_USAGE,
-              } satisfies SubagentDetails,
-              isError: true,
-            };
-          }
-          turnCapability = params.capability;
-
-          const result = await withConcurrencySlot(signal, async (): Promise<SubagentResult> => {
-            const allowedNames: string[] = params.capability === 'workspace_write'
-              ? [...WORKSPACE_WRITE_TOOLS]
-              : [...READ_ONLY_TOOLS];
-            const hookContext: SubagentHookContext = {
-              session: null,
-              userRequest: params.task,
-            };
-            let session: AgentSession | null = null;
-            let unsubscribe = () => {};
-            let abortSession: (() => void) | undefined;
-            let providerError = '';
-
-            try {
-              if (signal?.aborted) {
-                throw new Error('Subagent execution aborted');
-              }
-              const settingsManager = SettingsManager.inMemory();
-              const resourceLoader = new DefaultResourceLoader({
-                cwd: options.cwd,
-                agentDir: options.agentDir,
-                settingsManager,
-                extensionFactories: [
-                  ...(options.createProviderHooks ? [options.createProviderHooks(() => session)] : []),
-                  createOpenAIEncryptedReasoningCompat(),
-                  options.createSessionHooks(hookContext),
-                ],
-                noExtensions: true,
-                noSkills: true,
-                noPromptTemplates: true,
-                noThemes: true,
-                noContextFiles: true,
-              });
-              await resourceLoader.reload();
-
-              session = await createSession({
-                cwd: options.cwd,
-                agentDir: options.agentDir,
-                modelRuntime: options.modelRuntime,
-                model: ctx.model,
-                thinkingLevel: options.thinkingLevel,
-                customTools: options.toolDefinitions.filter(
-                  tool => allowedNames.includes(tool.name),
-                ),
-                tools: allowedNames,
-                sessionManager: SessionManager.inMemory(options.cwd),
-                settingsManager,
-                resourceLoader,
-              });
-              hookContext.session = session;
-              options.activeSessions?.add(session);
-              abortSession = () => {
-                void session?.abort().catch(() => {});
-              };
-              signal?.addEventListener('abort', abortSession, { once: true });
-              if (typeof session.subscribe === 'function') {
-                unsubscribe = session.subscribe((event: AgentSessionEvent) => {
-                  if (event.type !== 'message_end') return;
-                  const message = event.message as {
-                    role?: string;
-                    stopReason?: string;
-                    errorMessage?: string;
-                  };
-                  if (message.role !== 'assistant') return;
-                  providerError = message.stopReason === 'error' && message.errorMessage
-                    ? message.errorMessage
-                    : '';
-                });
-              }
-
-              if (signal?.aborted) {
-                await session.abort();
-                throw new Error('Subagent execution aborted');
-              }
-              await session.prompt([
-                'Complete this isolated delegated task.',
-                'Use only the available tools. Do not delegate or create sessions.',
-                params.capability === 'read_only'
-                  ? 'Do not modify files or external state.'
-                  : 'Modify only what the task requires and verify the result.',
-                `Task: ${params.task}`,
-              ].join('\n'));
-              if (signal?.aborted) {
-                throw new Error('Subagent execution aborted');
-              }
-              if (providerError) {
-                throw new Error(providerError);
-              }
-
-              return {
-                task: params.task,
-                capability: params.capability,
-                status: 'completed',
-                output: session.getLastAssistantText()?.trim() || '(no output)',
-                usage: getUsage(session),
-              };
-            } catch (error) {
-              if (signal?.aborted) {
-                throw new Error('Subagent execution aborted');
-              }
-              return {
-                task: params.task,
-                capability: params.capability,
-                status: 'failed',
-                output: error instanceof Error ? error.message : String(error),
-                usage: session ? getUsage(session) : EMPTY_USAGE,
-              };
-            } finally {
-              unsubscribe();
-              if (abortSession) {
-                signal?.removeEventListener('abort', abortSession);
-              }
-              if (session) {
-                options.activeSessions?.delete(session);
-                session.dispose();
-              }
-            }
-          });
-
-          const details: SubagentDetails = {
-            kind: PI_SUBAGENT_DETAILS_KIND,
-            result,
-            usage: result.usage,
-          };
-
-          return {
-            content: [{ type: 'text', text: result.output }],
-            details,
-            isError: result.status === 'failed',
-          };
-        },
       });
     },
   };

@@ -11,6 +11,27 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { PiEventAdapter } from '../backend/pi/event-adapter.ts';
 
+it('settles incomplete output with a usable error and usage in a fresh headless process', () => {
+  const adapterPath = import.meta.resolve('../backend/pi/event-adapter.ts');
+  const script = `
+    import { PiEventAdapter } from ${JSON.stringify(adapterPath)};
+    const adapter = new PiEventAdapter();
+    adapter.startTurn();
+    [...adapter.adaptEvent({ type: 'message_end', message: {
+      role: 'assistant', model: 'fixture', stopReason: 'length',
+      content: [{ type: 'text', text: 'Partial' }],
+      usage: { input: 13, output: 7, cacheRead: 0, cacheWrite: 0, cost: { total: 0.42 } },
+    } })];
+    console.log(JSON.stringify([...adapter.adaptEvent({ type: 'agent_settled' })]));
+  `;
+  const child = Bun.spawnSync([process.execPath, '--eval', script]);
+  expect(child.exitCode).toBe(0);
+  const events = JSON.parse(child.stdout.toString());
+  expect(events[0]).toMatchObject({ type: 'error', message: expect.stringContaining('incomplete') });
+  expect(events[1]).toMatchObject({ type: 'complete', status: 'incomplete',
+    usage: { inputTokens: 13, outputTokens: 7, costUsd: 0.42 } });
+});
+
 // Helper: collect all events from a generator
 function collect(gen: Generator<any>): any[] {
   return [...gen];
@@ -97,7 +118,7 @@ describe('PiEventAdapter', () => {
 
       const events = collect(adapter.adaptEvent({ type: 'agent_settled' } as any));
 
-      expect(events).toEqual([{
+      expect(events).toMatchObject([{
         type: 'complete',
         usage: {
           inputTokens: 365,
@@ -172,7 +193,7 @@ describe('PiEventAdapter', () => {
         },
       } as any));
 
-      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toEqual([{
+      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([{
         type: 'complete',
         usage: {
           inputTokens: 500,
@@ -208,7 +229,7 @@ describe('PiEventAdapter', () => {
 
       adapter.startTurn();
 
-      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toEqual([
+      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([
         { type: 'complete' },
       ]);
     });
@@ -1152,7 +1173,7 @@ describe('PiEventAdapter', () => {
         message: {
           role: 'assistant',
           stopReason: 'stop',
-          content: '',
+          content: 'Complete response',
           usage: {
             input: 100_000,
             output: 100,
@@ -1184,7 +1205,7 @@ describe('PiEventAdapter', () => {
           },
         },
       ]);
-      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toEqual([{
+      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([{
         type: 'complete',
         usage: {
           inputTokens: 100_000,
@@ -1431,7 +1452,7 @@ describe('PiEventAdapter', () => {
     it('surfaces the original overflow if Pi settles without recovery events', () => {
       collect(adapter.adaptEvent({ type: 'message_end', message: overflowMessage } as any));
       collect(adapter.adaptEvent({ type: 'agent_end' } as any));
-      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toEqual([
+      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([
         { type: 'error', message: overflowMessage.errorMessage },
         { type: 'complete' },
       ]);
@@ -1480,5 +1501,19 @@ describe('PiEventAdapter', () => {
         { type: 'complete' },
       ]);
     });
+  });
+});
+
+describe('settled output integrity', () => {
+  it('defers length until settlement and permits native recovery', () => {
+    const adapter = new PiEventAdapter();
+    adapter.startTurn();
+    const message = (stopReason: string, content: unknown[]) => ({ type: 'message_end', message: { role: 'assistant', model: 'fixture', stopReason, content } }) as any;
+    expect(collect(adapter.adaptEvent(message('length', [{ type: 'text', text: 'partial' }]))).some(e => e.type === 'error')).toBe(false);
+    collect(adapter.adaptEvent(message('stop', [{ type: 'text', text: 'complete' }])));
+    expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([{ type: 'complete', status: 'completed', stopReason: 'stop', model: 'fixture' }]);
+    adapter.startTurn();
+    collect(adapter.adaptEvent(message('length', [{ type: 'thinking', thinking: 'only reasoning' }])));
+    expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([{ type: 'error' }, { type: 'complete', status: 'incomplete', stopReason: 'length' }]);
   });
 });

@@ -24,6 +24,7 @@ import {
   isPiSubagentDetails,
   parsePiSubagentUsage,
 } from './subagent-contract.ts';
+import { setupI18n } from '../../../i18n/index.ts';
 import { parseError } from '../../errors.ts';
 import { createLogger } from '../../../utils/debug.ts';
 
@@ -101,9 +102,12 @@ export class PiEventAdapter {
 
   // Raw overflow errors stay hidden while Pi attempts its native compact-and-retry.
   // If Pi settles without recovery or an explicit compaction failure, surface it once.
+  private outcome: { status: 'completed' | 'incomplete' | 'failed' | 'cancelled'; stopReason?: string; model?: string } = { status: 'completed' };
+
   private pendingOverflowError: string | null = null;
 
   startTurn(turnId?: string): void {
+    this.outcome = { status: 'completed' };
     this.turnIndex++;
     this.commandOutput.clear();
     this.readCommands.clear();
@@ -241,8 +245,8 @@ export class PiEventAdapter {
   private completeEvent(): ProductAgentEvent {
     const usage = this.getTurnUsageSnapshot();
     return usage
-      ? { type: 'complete', usage }
-      : { type: 'complete' };
+      ? { type: 'complete', usage, ...this.outcome }
+      : { type: 'complete', ...this.outcome };
   }
 
   getTurnUsageSnapshot(): TurnUsage | undefined {
@@ -300,6 +304,7 @@ export class PiEventAdapter {
         break;
 
       case 'agent_settled':
+        if (this.outcome.status === 'incomplete') yield { type: 'error', message: setupI18n().t('chat.modelOutputIncomplete') };
         if (this.pendingOverflowError) {
           yield { type: 'error', message: this.pendingOverflowError };
           this.pendingOverflowError = null;
@@ -384,6 +389,10 @@ export class PiEventAdapter {
         const eventMetadata = event as { sdkTurnAnchor?: string; contextWindow?: number };
         const sdkTurnAnchor = eventMetadata.sdkTurnAnchor;
         if (msg?.role !== 'assistant') break;
+        const hasText = !!this.extractTextFromMessage(event.message)?.trim();
+        this.outcome = { stopReason: msg.stopReason, model: msg.model, status:
+          msg.stopReason === 'aborted' ? 'cancelled' : msg.stopReason === 'error' ? 'failed'
+          : msg.stopReason === 'length' || (!hasText && msg.stopReason !== 'toolUse') ? 'incomplete' : 'completed' };
 
         if (
           typeof eventMetadata.contextWindow === 'number' &&

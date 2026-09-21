@@ -111,6 +111,7 @@ const pendingConversationRewinds = new Map<string, {
   reject: (error: Error) => void;
 }>();
 const activeSubagentSessions = new Set<AgentSession>();
+let queryCancellationEpoch = 0;
 
 // Proxy tool definitions from main process
 let proxyToolDefs: PiProxyToolDefinition[] = [];
@@ -206,8 +207,11 @@ const {
 
 async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
   if (!initConfig) throw new Error('Cannot run queryLlm: init not received');
+  const epoch = queryCancellationEpoch;
   const piModels = await modelRuntime.getModelsRuntime();
+  if (epoch !== queryCancellationEpoch) return { text: '', status: 'cancelled', stopReason: 'aborted' };
   return queryLlmWithEphemeralPiSession(request, {
+    isCancelled: () => epoch !== queryCancellationEpoch,
     config: initConfig,
     getConfig: () => initConfig!,
     activeSessions: activeSubagentSessions,
@@ -228,7 +232,7 @@ async function preExecuteCallLlm(input: Record<string, unknown>): Promise<LLMQue
 async function runMiniCompletion(prompt: string): Promise<string | null> {
   try {
     const result = await queryLlm({ prompt });
-    const text = result.text || null;
+    const text = result.status && result.status !== 'completed' ? null : result.text || null;
     debugLog(`[runMiniCompletion] Result: ${text ? `"${text.slice(0, 200)}"` : 'null'}`);
     return text;
   } catch (error) {
@@ -502,12 +506,14 @@ function handlePreToolUseResponse(msg: Extract<PiInboundMessage, { type: 'pre_to
 }
 
 async function abortActiveSubagentSessions(): Promise<void> {
+  queryCancellationEpoch++;
   await Promise.allSettled(
     [...activeSubagentSessions].map(session => session.abort()),
   );
 }
 
 async function handleAbort(): Promise<void> {
+  queryCancellationEpoch++;
   const sessions = [
     ...(piSession ? [piSession] : []),
     ...activeSubagentSessions,

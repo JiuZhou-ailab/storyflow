@@ -6,7 +6,8 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 
 - `patches/` — Version-pinned Bun patches for upstream Pi protocol defects.
 - `src/index.ts` — JSONL process boundary and persistent parent AgentSession lifecycle.
-- `src/ephemeral-llm-query.ts` — Disposable Pi session lifecycle for `call_llm` and mini-completions.
+- `src/ephemeral-llm-query.ts` — Disposable Pi queries with explicit budgets, deadlines, schema validation and output integrity.
+- `src/runtime-budgets.ts` — Non-persistent compaction defaults and output budgets over Pi public APIs.
 - `src/primary-session.ts` — Primary Pi AgentSession construction, resources, Extensions, tools, and resume/branch setup.
 - `src/pi-model-runtime.ts` — Pi provider credentials, custom endpoint registration, and model resolution.
 - `src/pi-tool-runtime.ts` — Pi Extension permission hooks, Host capability proxying, large-result handling, and product rewind handshake.
@@ -29,3 +30,8 @@ explicit `fallbackCapabilities` on both source and candidate. The approved chat
 families have documented declarations; gateway discovery alone never qualifies a
 candidate. Capability ceilings do not increase the existing 8192-token request budget.
 See [QA](../../docs/model-fallback-qa.md) and [pinned Pi patches](patches/README.md).
+
+Long-task defaults and the compiled-binary release gate are documented in
+[long-task QA](../../docs/long-task-runtime-qa.md). Built-in `subagent` uses Pi
+customTools precedence; its Extension owns lifecycle and result hooks. Global resources
+and non-conflicting Extension tools remain Pi-owned.

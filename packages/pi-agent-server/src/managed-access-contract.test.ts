@@ -23,7 +23,12 @@ for (const [api, models] of protocols) {
       await session.waitForIdle();
       expect(requests.map(request => request.model)).toEqual([models[0], models[0], models[1]]);
       expect(session.getLastAssistantText()).toBe('OK');
-      expect(session.model?.maxTokens).toBe(8192);
+      expect(session.model?.maxTokens).toBe(cloneManagedModelCatalog(api).find(model => model.id === session.model?.id)!.fallbackCapabilities!.maxOutputTokens);
+      for (const { body } of requests) {
+        const budget = body.max_tokens ?? body.max_completion_tokens ?? body.max_output_tokens
+          ?? (body.generationConfig as { maxOutputTokens?: number } | undefined)?.maxOutputTokens;
+        expect(budget).toBe(8192);
+      }
     }, (model, index) => index < 3 ? Response.json({ error: { message: '503 unavailable' } }, { status: 503 })
       : protocolCompletion(api, model), undefined,
     { api, models: [...models], catalog: cloneManagedModelCatalog(api).filter(model => models.includes(model.id as never)) });

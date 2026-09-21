@@ -1,11 +1,5 @@
-diff --git a/node_modules/@earendil-works/pi-ai/.bun-tag-4bd7bf1c4277ec59 b/.bun-tag-4bd7bf1c4277ec59
-new file mode 100644
-index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
-diff --git a/node_modules/@earendil-works/pi-ai/.bun-tag-9062831cdd24513 b/.bun-tag-9062831cdd24513
-new file mode 100644
-index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/api/anthropic-messages.js b/dist/api/anthropic-messages.js
-index d04d7a9f59f3700a7e3bacb02aa68256215bee27..d463751b807ca80843fb7e596b669b3995211ed6 100644
+index d04d7a9f59f3700a7e3bacb02aa68256215bee27..486c1fb0f6d16514cab3fe21fc45a74766bacd9f 100644
 --- a/dist/api/anthropic-messages.js
 +++ b/dist/api/anthropic-messages.js
 @@ -380,6 +380,11 @@ export const stream = (model, context, options) => {
@@ -20,6 +14,42 @@ index d04d7a9f59f3700a7e3bacb02aa68256215bee27..d463751b807ca80843fb7e596b669b39
                  maxRetries: options?.maxRetries,
                  maxRetryDelayMs: options?.maxRetryDelayMs,
                  signal: options?.signal,
+@@ -650,11 +655,12 @@ export const streamSimple = (model, context, options) => {
+     // Do not coerce to 0 here, or the thinking budget would become the entire max_tokens value.
+     const adjusted = adjustMaxTokensForThinking(base.maxTokens, model.maxTokens, options.reasoning, options.thinkingBudgets);
+     const maxTokens = clampMaxTokensToContext(model, context, adjusted.maxTokens);
++    const thinkingBudget = Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024));
+     return stream(model, context, {
+         ...base,
+         maxTokens,
+-        thinkingEnabled: true,
+-        thinkingBudgetTokens: Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024)),
++        thinkingEnabled: thinkingBudget >= 1024,
++        thinkingBudgetTokens: thinkingBudget,
+     });
+ };
+ function isOAuthToken(apiKey) {
+diff --git a/dist/api/bedrock-converse-stream.js b/dist/api/bedrock-converse-stream.js
+index 6bc6312906ec3d75f31d190994d21c87f1d0767d..38c5c63e3b0676f403c5051d2d690e9c6b7189f8 100644
+--- a/dist/api/bedrock-converse-stream.js
++++ b/dist/api/bedrock-converse-stream.js
+@@ -400,13 +400,14 @@ export const streamSimple = (model, context, options) => {
+         // Do not coerce to 0 here, or the thinking budget would become the entire maxTokens value.
+         const adjusted = adjustMaxTokensForThinking(base.maxTokens, model.maxTokens, options.reasoning, options.thinkingBudgets);
+         const maxTokens = clampMaxTokensToContext(model, context, adjusted.maxTokens);
++        const thinkingBudget = Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024));
+         return stream(model, context, {
+             ...base,
+             maxTokens,
+-            reasoning: options.reasoning,
++            reasoning: thinkingBudget >= 1024 ? options.reasoning : undefined,
+             thinkingBudgets: {
+                 ...(options.thinkingBudgets || {}),
+-                [clampReasoning(options.reasoning)]: Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024)),
++                [clampReasoning(options.reasoning)]: thinkingBudget,
+             },
+         });
+     }
 diff --git a/dist/api/google-generative-ai.js b/dist/api/google-generative-ai.js
 index e5db9352c61629ab16158b78ee3a6bbd96bf1a9b..6efc5c19dd00f0500e766f51dc7044cec8e540a1 100644
 --- a/dist/api/google-generative-ai.js
@@ -84,7 +114,7 @@ index 0fb7e8b26f323f2b44a5a4b760bccedc4c3abdd0..e53c4bdfcd2900826cfea97c58eeaa0a
                  maxRetryDelayMs: options?.maxRetryDelayMs,
                  signal: options?.signal,
 diff --git a/dist/api/simple-options.js b/dist/api/simple-options.js
-index 216a45feebc02acef047d1ff133729fb0751b76c..664734e38d5247a1552a7461bf752ab66784fab4 100644
+index 216a45feebc02acef047d1ff133729fb0751b76c..7e7fd167efc6028b9b6cd272bf6f45930acc2304 100644
 --- a/dist/api/simple-options.js
 +++ b/dist/api/simple-options.js
 @@ -23,6 +23,7 @@ export function buildBaseOptions(model, context, options, apiKey) {
@@ -95,6 +125,15 @@ index 216a45feebc02acef047d1ff133729fb0751b76c..664734e38d5247a1552a7461bf752ab6
          onPayload: options?.onPayload,
          onResponse: options?.onResponse,
          timeoutMs: options?.timeoutMs,
+@@ -57,7 +58,7 @@ export function adjustMaxTokensForThinking(
+ // Undefined means no explicit caller cap. Use the model cap and fit thinking inside it.
+ baseMaxTokens, modelMaxTokens, reasoningLevel, customBudgets) {
+     let thinkingBudget = thinkingBudgetForLevel(reasoningLevel, customBudgets);
+-    const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
++    const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens, modelMaxTokens);
+     if (maxTokens <= thinkingBudget) {
+         thinkingBudget = clampThinkingBudgetToAnswerRoom(thinkingBudget, maxTokens);
+     }
 diff --git a/dist/models.js b/dist/models.js
 index 2e415e0b3a95527bfa8b4ad67664c94c2ac9549e..6ee49fa32df9f4e2e7fbf8f89b2b9e0979536f06 100644
 --- a/dist/models.js

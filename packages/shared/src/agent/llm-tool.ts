@@ -41,6 +41,10 @@ export interface LLMQueryRequest {
   model?: string;
   /** Max output tokens */
   maxTokens?: number;
+  /** Explicit long-form queries default to 16,384 output tokens and a 300s deadline. */
+  longOutput?: boolean;
+  thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  timeoutMs?: number;
   /** Sampling temperature 0-1 */
   temperature?: number;
   /** Structured output JSON schema — backends may handle natively when possible */
@@ -51,6 +55,12 @@ export interface LLMQueryRequest {
  * Result from an agent-native queryFn callback.
  */
 export interface LLMQueryResult {
+  status?: 'completed' | 'incomplete' | 'failed' | 'cancelled';
+  stopReason?: string;
+  maxTokens?: number;
+  /** Query preference; Pi may clamp or disable thinking for the model and response budget. */
+  requestedThinkingLevel?: LLMQueryRequest['thinkingLevel'];
+  timeoutMs?: number;
   text: string;
   model?: string;
   inputTokens?: number;
@@ -231,7 +241,7 @@ export async function buildCallLlmRequest(
     }
   }
 
-1    // Build system prompt with structured output injection if needed
+  // Build system prompt with structured output injection if needed
   let systemPrompt = (input.systemPrompt as string) || '';
   const outputFormat = input.outputFormat as string | undefined;
   const outputSchema = input.outputSchema as Record<string, unknown> | undefined;
@@ -252,6 +262,9 @@ export async function buildCallLlmRequest(
     prompt: textParts.join('\n\n'),
     systemPrompt: systemPrompt || undefined,
     model,
+    longOutput: input.longOutput as boolean | undefined,
+    thinkingLevel: input.thinkingLevel as LLMQueryRequest['thinkingLevel'],
+    timeoutMs: input.timeoutMs as number | undefined,
     maxTokens: input.maxTokens as number | undefined,
     temperature: input.temperature as number | undefined,
     outputSchema: schema ?? undefined,

@@ -121,6 +121,11 @@ export const CredentialPromptSchema = z.object({
 });
 
 export const CallLlmSchema = z.object({
+  outputPath: z.string().min(1).optional().describe('Optional create-only output file in an existing directory, subject to Host write permission. Only complete results are published; returns a path and bounded preview.'),
+  longOutput: z.boolean().optional().describe('Explicit long-form generation: defaults to 16384 tokens and 300 seconds, within model capability.'),
+  maxTokens: z.number().int().min(1).max(32768).optional().describe('Output budget, capped by declared model capability; ordinary default 8192.'),
+  thinkingLevel: z.enum(['off', 'low', 'medium', 'high', 'xhigh', 'max']).optional().describe('Query reasoning effort; defaults to medium independently of the parent.'),
+  timeoutMs: z.number().int().min(1).max(300000).optional().describe('Query deadline; ordinary default 120000 milliseconds.'),
   prompt: z.string().describe('Instructions for the LLM'),
   attachments: z.array(z.union([
     z.string().describe('Simple file path'),
@@ -133,12 +138,12 @@ export const CallLlmSchema = z.object({
   model: z.string().optional().describe('Model ID or short name. Defaults to a fast model.'),
   systemPrompt: z.string().optional().describe('Optional system prompt'),
   outputFormat: z.enum(['summary', 'classification', 'extraction', 'analysis', 'comparison', 'validation']).optional()
-    .describe('Predefined JSON shape enforced through prompt instructions'),
+    .describe('Predefined JSON shape validated before accepting a completed result'),
   outputSchema: z.object({
     type: z.literal('object'),
     properties: z.record(z.string(), z.unknown()),
     required: z.array(z.string()).optional(),
-  }).optional().describe('Custom JSON Schema enforced through prompt instructions; validate the returned JSON before relying on it'),
+  }).optional().describe('Custom JSON Schema validated against the actual result without coercion or repair'),
 });
 
 export const UpdatePreferencesSchema = z.object({

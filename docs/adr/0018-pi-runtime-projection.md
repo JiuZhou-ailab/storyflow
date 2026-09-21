@@ -117,3 +117,19 @@ SDK 合成默认值不构成能力证据。没有兼容候选就交还 Pi 原生
 后台摘要、compaction 和 branch summary 不参与。Pi 上游尚未提供的错误 header、
 原生 session backoff 和并发模型选择修复以版本固定 Bun patch 维护；退出条件及真实
 Session 回归测试见 `packages/pi-agent-server/patches/README.md`。
+
+## 长任务预算与结果契约（#43）
+
+Storyflow 通过公开 SettingsManager 临时覆盖缺省压缩预算：当前窗口 80% 阈值、
+32,000 近期 tokens（小窗口不超过目标一半），用户原生显式选择优先。模型切换和
+资源刷新后重新解析，不把计算结果写入全局偏好。摘要输出上限独立为 8,192，
+由版本固定 SDK 补丁的公开设置表达，退出条件见 patches/README.md。
+
+模型能力声明保留真实上限；单次输出预算使用公开 Agent.streamFunction 的 options，
+普通缺省 8,192，显式长查询 16,384，可显式选 32,768。临时查询自行拥有 deadline，
+Host 不设第二套倒计时。完成状态投影为 completed/incomplete/failed/cancelled，
+长度终态和无正文结果不作为成功；主会话仅在 agent_settled 后投影最终完整性。
+
+call_llm 文件交付仍由 Product Host 拥有权限与 create-only 发布；推理前检查权限、
+路径和目标存在性，生成完整后原子发布。原文及生成正文的工具输出不得被有损摘要替代，
+超限时返回完整文件引用和明确 preview；日志仍可摘要并保留原件。

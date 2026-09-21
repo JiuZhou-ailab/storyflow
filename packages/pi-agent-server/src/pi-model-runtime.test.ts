@@ -31,7 +31,7 @@ describe('PiModelRuntime', () => {
     expect(models.getModel('custom-endpoint', 'deepseek-v4-flash')?.maxTokens).toBe(4096);
     config.customModels = catalog;
     runtime.refreshCustomEndpointModels(models);
-    expect(models.getModel('custom-endpoint', 'deepseek-v4-flash')?.maxTokens).toBe(8192);
+    expect(models.getModel('custom-endpoint', 'deepseek-v4-flash')?.maxTokens).toBe(384_000);
     config.customModels = catalog.map(({ fallbackCapabilities: _capabilities, ...model }) => model);
     runtime.refreshCustomEndpointModels(models);
     expect(models.getModel('custom-endpoint', 'deepseek-v4-flash')?.maxTokens).toBe(8192);

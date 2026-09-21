@@ -50,7 +50,7 @@ import { getSessionPlansPath } from '../sessions/storage.ts';
 import { parseError, type AgentError } from './errors.ts';
 
 // LLM tool types
-import { LLM_QUERY_TIMEOUT_MS, type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
+import { type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
 
 // ============================================================
 // PiAgent Implementation
@@ -394,6 +394,7 @@ export class PiAgent extends PiAgentToolHost {
   }
 
   async abort(reason?: string): Promise<void> {
+    this.queryCancellationEpoch++;
     // Fire Stop hook event (fire-and-forget)
     this.emitAutomationEvent('Stop', { hook_event_name: 'Stop' });
 
@@ -410,6 +411,7 @@ export class PiAgent extends PiAgentToolHost {
   }
 
   forceAbort(reason: AbortReason): void {
+    this.queryCancellationEpoch++;
     // Fire Stop hook event (fire-and-forget)
     this.emitAutomationEvent('Stop', { hook_event_name: 'Stop' });
 
@@ -525,6 +527,7 @@ export class PiAgent extends PiAgentToolHost {
    * Used before an idle runtime restart so we don't leave transient children behind.
    */
   private async killSubprocessGracefully(timeoutMs = 2_000): Promise<void> {
+    this.queryCancellationEpoch++;
     const child = this.subprocess;
     if (!child) {
       this.killSubprocess();
@@ -582,6 +585,7 @@ export class PiAgent extends PiAgentToolHost {
    * Kill the subprocess and clean up resources.
    */
   private killSubprocess(): void {
+    this.queryCancellationEpoch++;
     this.stopReadingStdout?.();
     this.stopReadingStdout = null;
 
@@ -610,7 +614,7 @@ export class PiAgent extends PiAgentToolHost {
   async runMiniCompletion(prompt: string): Promise<string | null> {
     try {
       const result = await this.queryLlm({ prompt });
-      const text = result.text || null;
+      const text = result.status && result.status !== 'completed' ? null : result.text || null;
       this.debug(`[runMiniCompletion] Result: ${text ? `"${text.slice(0, 200)}"` : 'null'}`);
       return text;
     } catch (error) {
@@ -632,26 +636,25 @@ export class PiAgent extends PiAgentToolHost {
   async queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
     this.debug('[PiAgent.queryLlm] Starting');
 
+    const epoch = this.queryCancellationEpoch;
     await this.ensureSubprocess();
+    if (epoch !== this.queryCancellationEpoch) return { text: '', status: 'cancelled', stopReason: 'aborted' };
 
     const id = `llm-${++this.rpcIdCounter}`;
     const resultPromise = new Promise<LLMQueryResult>((resolve, reject) => {
       this.pendingLlmQueries.set(id, { resolve, reject });
     });
 
-    this.send({ type: 'llm_query', id, request });
+    try {
+      if (!this.send({ type: 'llm_query', id, request })) throw new Error('Pi subprocess is not writable');
+    } catch (error) {
+      this.pendingLlmQueries.get(id)?.reject(error instanceof Error ? error : new Error(String(error)));
+      this.pendingLlmQueries.delete(id);
+    }
 
-    // Keep this aligned with the subprocess-side queryLlm timeout.
-    const timeout = new Promise<LLMQueryResult>((_, reject) => {
-      setTimeout(() => {
-        if (this.pendingLlmQueries.has(id)) {
-          this.pendingLlmQueries.delete(id);
-          reject(new Error(`queryLlm timed out after ${LLM_QUERY_TIMEOUT_MS / 1000}s`));
-        }
-      }, LLM_QUERY_TIMEOUT_MS);
-    });
-
-    return Promise.race([resultPromise, timeout]);
+    // The query runtime owns the deadline and abort/disposal. Process exit also
+    // rejects pending RPCs; a Host timer must not leave inference running.
+    return resultPromise;
   }
 
   // ============================================================

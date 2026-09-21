@@ -1,8 +1,30 @@
+diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
+index 8c7cfec6fc0ec004f17c08c52a58c354b28b3978..831c8e20b09497076a5f38ca5020f5993579a4ba 100644
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -195,6 +195,8 @@ export interface SessionStats {
+     contextUsage?: ContextUsage;
+ }
+ export declare class AgentSession {
++    /** Caller output budget before context clamping. Custom streams must enforce the same cap. */
++    maxOutputTokens?: number;
+     readonly agent: Agent;
+     readonly sessionManager: SessionManager;
+     readonly settingsManager: SettingsManager;
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b38c073b26 100644
+index fd82b71cf332715f185d07459429f04ed7491ce9..1d57d1f993cca0fcd097215469582b21a34707ad 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -102,6 +102,9 @@ export class AgentSession {
+@@ -75,6 +75,8 @@ function estimateMessagesTokens(messages) {
+ // AgentSession Class
+ // ============================================================================
+ export class AgentSession {
++    // Caller output budget before provider context clamping; model capacity stays unchanged.
++    maxOutputTokens;
+     agent;
+     sessionManager;
+     settingsManager;
+@@ -102,6 +104,9 @@ export class AgentSession {
      // Retry state
      _retryAbortController = undefined;
      _retryAttempt = 0;
@@ -12,7 +34,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
      // Bash execution state
      _bashAbortControllers = new Set();
      _pendingBashMessages = [];
-@@ -137,6 +140,16 @@ export class AgentSession {
+@@ -137,6 +142,16 @@ export class AgentSession {
      _systemPromptOverride;
      constructor(config) {
          this.agent = config.agent;
@@ -29,7 +51,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
          this.sessionManager = config.sessionManager;
          this.settingsManager = config.settingsManager;
          this._scopedModels = config.scopedModels ?? [];
-@@ -582,6 +595,7 @@ export class AgentSession {
+@@ -582,6 +597,7 @@ export class AgentSession {
       * Call this when completely done with the session.
       */
      dispose() {
@@ -37,7 +59,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
          try {
              this.abortRetry();
              this.abortCompaction();
-@@ -769,15 +783,21 @@ export class AgentSession {
+@@ -769,15 +785,21 @@ export class AgentSession {
      // =========================================================================
      // Prompting
      // =========================================================================
@@ -61,7 +83,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
              this._systemPromptOverride = undefined;
              this._flushPendingBashMessages();
              this._flushPendingCustomMessages();
-@@ -819,6 +839,7 @@ export class AgentSession {
+@@ -819,6 +841,7 @@ export class AgentSession {
       * @throws Error if no model selected or no API key available (when not streaming)
       */
      async prompt(text, options) {
@@ -69,7 +91,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
          const expandPromptTemplates = options?.expandPromptTemplates ?? true;
          const preflightResult = options?.preflightResult;
          let messages;
-@@ -946,7 +967,7 @@ export class AgentSession {
+@@ -946,7 +969,7 @@ export class AgentSession {
              return;
          }
          preflightResult?.(true);
@@ -78,7 +100,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
      }
      /**
       * Try to execute an extension command. Returns true if command was found and executed.
-@@ -1220,6 +1241,7 @@ export class AgentSession {
+@@ -1220,6 +1243,7 @@ export class AgentSession {
       * Abort current operation and wait for agent to become idle.
       */
      async abort() {
@@ -86,7 +108,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
          this.abortRetry();
          this.agent.abort();
          await this.waitForIdle();
-@@ -1250,9 +1272,11 @@ export class AgentSession {
+@@ -1250,9 +1274,11 @@ export class AgentSession {
       * @throws Error if no auth is configured for the model
       */
      async setModel(model, options = {}) {
@@ -98,7 +120,17 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
          const previousModel = this.model;
          const thinkingLevel = this._getThinkingLevelForModelSwitch(model);
          this.agent.state.model = model;
-@@ -2239,6 +2263,10 @@ export class AgentSession {
+@@ -1650,7 +1676,7 @@ export class AgentSession {
+-        // A length stop is recoverable when output ended below the model's original desired limit,
++        // A length stop is recoverable below the caller's desired budget, bounded by model capacity,
+         // independent of the configured context size or any context-clamped provider request limit.
+         const contextOverflow = sameModel && isContextOverflow(assistantMessage, contextWindow);
+-        const recoverableLength = sameModel && isRecoverableLength(assistantMessage, this.model?.maxTokens ?? 0);
++        const recoverableLength = sameModel && isRecoverableLength(assistantMessage, Math.min(this.maxOutputTokens ?? Infinity, this.model?.maxTokens ?? 0));
+         if (contextOverflow || recoverableLength) {
+             const willRetry = assistantMessage.stopReason !== "stop";
+             // Case 2: the response completed successfully. Compact, but do not retry because
+@@ -2239,6 +2265,10 @@ export class AgentSession {
       * Context overflow errors are NOT retryable (handled by compaction instead).
       */
      _isRetryableError(message) {
@@ -109,7 +141,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
          // Context overflow is handled by compaction, not retry.
          if (isContextOverflow(message, this.model?.contextWindow ?? 0))
              return false;
-@@ -2287,7 +2315,14 @@ export class AgentSession {
+@@ -2287,7 +2317,14 @@ export class AgentSession {
              this._retryAttempt--;
              return false;
          }
@@ -125,7 +157,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
          this._emit({
              type: "auto_retry_start",
              attempt: this._retryAttempt,
-@@ -2300,8 +2335,7 @@ export class AgentSession {
+@@ -2300,8 +2337,7 @@ export class AgentSession {
          if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
              this.agent.state.messages = messages.slice(0, -1);
          }
@@ -135,6 +167,33 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..7bed309e7e059141d99bbdb871c6b7b3
          try {
              await sleep(delayMs, this._retryAbortController.signal);
          }
+diff --git a/dist/core/compaction/compaction.d.ts b/dist/core/compaction/compaction.d.ts
+index 6f867f98bac5a371ca2bfbe0a9db6344e1a42b3f..94e87cb231c259ea0840fa101b6be55b8a6ed988 100644
+--- a/dist/core/compaction/compaction.d.ts
++++ b/dist/core/compaction/compaction.d.ts
+@@ -26,6 +26,7 @@ export interface CompactionResult<T = unknown> {
+     details?: T;
+ }
+ export interface CompactionSettings {
++    maxSummaryTokens?: number;
+     enabled: boolean;
+     reserveTokens: number;
+     keepRecentTokens: number;
+diff --git a/dist/core/compaction/compaction.js b/dist/core/compaction/compaction.js
+index e936db7dc2617b5c0ff43ea11942c5a79b672dc6..e5ef9bd4eee47ae863eb8423c57b58a90b28ea07 100644
+--- a/dist/core/compaction/compaction.js
++++ b/dist/core/compaction/compaction.js
+@@ -608,6 +608,10 @@ Be concise. Focus on what's needed to understand the kept suffix.`;
+  */
+ export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel, streamFn, env, retry, callbacks, sessionId) {
+     const { firstKeptEntryId, messagesToSummarize, turnPrefixMessages, isSplitTurn, tokensBefore, previousSummary, fileOps, settings, } = preparation;
++    // Product reserve space must not implicitly enlarge summary output.
++    if (Number.isFinite(settings.maxSummaryTokens) && settings.maxSummaryTokens > 0) {
++        model = { ...model, maxTokens: Math.min(model.maxTokens > 0 ? model.maxTokens : Infinity, settings.maxSummaryTokens) };
++    }
+     // Generate summaries and merge into one
+     let summary;
+     let summaryUsage;
 diff --git a/dist/core/model-runtime.js b/dist/core/model-runtime.js
 index 7d93ba62bdb5d47e129751e8075cbb34620322ad..d089d3fb0819c7992f3a3680718527f5f1fd25e5 100644
 --- a/dist/core/model-runtime.js
@@ -147,3 +206,36 @@ index 7d93ba62bdb5d47e129751e8075cbb34620322ad..d089d3fb0819c7992f3a3680718527f5
          const env = resolution.env || providerOptions.env
              ? { ...(resolution.env ?? {}), ...(providerOptions.env ?? {}) }
              : undefined;
+diff --git a/dist/core/settings-manager.d.ts b/dist/core/settings-manager.d.ts
+index f93ac1aa9f8f45977863021c4ea3a486ecb489ab..4136cc6da637803ffaa49a6c49ac36dd2adbe254 100644
+--- a/dist/core/settings-manager.d.ts
++++ b/dist/core/settings-manager.d.ts
+@@ -2,6 +2,8 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+ import type { Transport } from "@earendil-works/pi-ai";
+ import type { TuiMode as RendererTuiMode, ScrollViewScrollbar, TerminalCapabilities } from "@earendil-works/pi-tui";
+ export interface CompactionSettings {
++    /** Independent summary output budget, capped by model capability. */
++    maxSummaryTokens?: number;
+     enabled?: boolean;
+     reserveTokens?: number;
+     keepRecentTokens?: number;
+@@ -221,6 +223,7 @@ export declare class SettingsManager {
+     getCompactionReserveTokens(): number;
+     getCompactionKeepRecentTokens(): number;
+     getCompactionSettings(): {
++        maxSummaryTokens?: number;
+         enabled: boolean;
+         reserveTokens: number;
+         keepRecentTokens: number;
+diff --git a/dist/core/settings-manager.js b/dist/core/settings-manager.js
+index f0f936eb01afe5d158f1834c5e40421e36af0d24..4c423c80537c77c77b4a632dc3a39f715481120d 100644
+--- a/dist/core/settings-manager.js
++++ b/dist/core/settings-manager.js
+@@ -564,6 +564,7 @@ export class SettingsManager {
+     }
+     getCompactionSettings() {
+         return {
++            maxSummaryTokens: this.settings.compaction?.maxSummaryTokens,
+             enabled: this.getCompactionEnabled(),
+             reserveTokens: this.getCompactionReserveTokens(),
+             keepRecentTokens: this.getCompactionKeepRecentTokens(),

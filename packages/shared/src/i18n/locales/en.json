@@ -180,6 +180,7 @@
   "chat.learnMore": "Learn More",
   "chat.mentionFilesSkillsSources": "Attach files, folders, sources",
   "chat.modelFallback": "{{from}} failed repeatedly; switched to {{to}}.",
+  "chat.modelOutputIncomplete": "The model output is incomplete. Partial content is preserved; retry or continue explicitly.",
   "chat.modelPicker.supportsImagesOff": "Image input disabled — click to enable",
   "chat.modelPicker.supportsImagesOn": "Image input enabled",
   "chat.modelPicker.toggleVisionFailed": "Failed to update image support",

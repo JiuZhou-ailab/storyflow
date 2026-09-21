@@ -3527,7 +3527,13 @@ export class SessionManager implements ISessionManager {
     }
 
     try {
-      return await this.withAgentRuntimeLease(managed, agent => agent.queryLlm(request))
+      const result = await this.withAgentRuntimeLease(managed, agent => agent.queryLlm(request))
+      // This published RPC is success-or-error; partial runtime results must not
+      // become replacement text in clients that predate structured outcomes.
+      if (result.status && result.status !== 'completed') {
+        throw new Error(result.warning || `LLM query ${result.status}`)
+      }
+      return result
     } catch (error) {
       const connectionSlug = resolveManagedConnectionSlug(managed)
       const errorText = error instanceof Error ? error.message : String(error)

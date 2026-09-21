@@ -107,6 +107,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
   // State
   protected _isProcessing: boolean = false;
   protected abortReason?: AbortReason;
+  protected queryCancellationEpoch = 0;
   protected activePromptId: string | null = null;
   /** Host may reconsider eviction after a cancelled native turn finally settles. */
   onNativeTurnSettled?: () => void;
@@ -626,13 +627,14 @@ export abstract class PiAgentTransport extends PiAgentHost {
   /**
    * Send a JSONL command to the subprocess stdin.
    */
-  protected send(cmd: PiInboundMessage): void {
+  protected send(cmd: PiInboundMessage): boolean {
     if (!this.subprocess?.stdin?.writable) {
       this.debug('Cannot send to subprocess: stdin not writable');
-      return;
+      return false;
     }
     const line = JSON.stringify(cmd);
     this.subprocess.stdin.write(line + '\n');
+    return true;
   }
 
   /**

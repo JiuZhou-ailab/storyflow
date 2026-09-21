@@ -714,7 +714,7 @@ test("managed ephemeral queries bind the same extension and report the actual mo
         "deepseek-v4-flash",
         "deepseek-v4-pro",
       ]);
-      expect(result).toEqual({ text: "OK", model: "deepseek-v4-pro" });
+      expect(result).toMatchObject({ text: "OK", model: "deepseek-v4-pro", status: "completed" });
       expect(session.messages).toHaveLength(0);
     },
     (model, index) =>
@@ -750,7 +750,7 @@ test("managed fixed mini-model rejection never enters the old model-not-found se
             debug() {},
           },
         ),
-      ).rejects.toThrow("model_not_found");
+      ).resolves.toMatchObject({ status: "failed", warning: expect.stringContaining("model_not_found") });
       expect(requests).toHaveLength(1);
     },
     () =>
