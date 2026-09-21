@@ -184,7 +184,9 @@ test('embedded TLS uses the published endpoint and scoped certificate trust', as
         webSocketFactory: url => new NodeWebSocket(url) });
       try { await assert.rejects(untrusted.invoke('test:hello')); } finally { untrusted.destroy(); }
     `], { stdout: 'pipe', stderr: 'pipe' })
-    const deadline = setTimeout(() => proc.kill(), 4000)
+    // Leave room for cold Node startup on Windows; keep the child deadline
+    // below the test budget so cleanup completes before the runner times out.
+    const deadline = setTimeout(() => proc.kill(), 15_000)
     try {
       const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
       expect({ code, stderr }).toEqual({ code: 0, stderr: '' })
@@ -193,7 +195,7 @@ test('embedded TLS uses the published endpoint and scoped certificate trust', as
       if (proc.exitCode === null) { proc.kill(); await proc.exited }
     }
   } finally { await instance.stop() }
-})
+}, 30_000)
 
 test('shutdown snapshots drained messages without reviving deletes or losing healthy writes behind a missing transcript', async () => {
   const { SessionManager, createManagedSession } = await import('../sessions/SessionManager')
