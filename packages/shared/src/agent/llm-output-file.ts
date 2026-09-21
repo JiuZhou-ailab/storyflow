@@ -11,6 +11,7 @@ import type { LLMQueryResult } from './llm-tool.ts';
 const publishScript = `
 const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
+try {
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const same = s => String(s.dev) === input.dev && String(s.ino) === input.ino;
 if (!same(fs.statSync('.')) || !same(fs.statSync(input.parent))) throw new Error('Output directory changed');
@@ -38,6 +39,11 @@ try {
     try { fs.unlinkSync(temporary); }
     catch (error) { if (!published) throw error; console.error('Published output; temporary cleanup failed'); }
   }
+}
+} catch (error) {
+  // Bun 1.3.14 can lose uncaught errors after reading piped stdin.
+  fs.writeSync(2, String(error.stack || error));
+  process.exitCode = 1;
 }
 `;
 
