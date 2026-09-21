@@ -2,12 +2,13 @@
 // output: Managed BrowserWindow instances with workspace-aware routing and native window behavior
 // pos: Owns desktop app window creation, restoration, and per-window lifecycle wiring
 
-import { BrowserWindow, shell, nativeTheme, Menu, app, screen } from 'electron'
+import { BrowserWindow, shell, nativeTheme, Menu, app, screen, dialog } from 'electron'
 import { windowLog } from './logger'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { release } from 'os'
 import { RPC_CHANNELS, type WindowCloseRequestSource } from '../shared/types'
+import { i18n } from '@craft-agent/shared/i18n'
 import type { SavedWindow } from './window-state'
 
 // Vite dev server URL for hot reload
@@ -77,6 +78,10 @@ export interface CreateWindowOptions {
 }
 
 export class WindowManager {
+  constructor(private readonly onLoadFailure: (error: Error) => void = () => {
+    dialog.showErrorBox(i18n.t('startup.title'), i18n.t('startup.reason.renderer'))
+  }) {}
+
   private windows: Map<number, ManagedWindow> = new Map()  // webContents.id → ManagedWindow
   private pendingCloseTimeouts: Map<number, NodeJS.Timeout> = new Map()  // Fallback timeouts for window close
   private eventSink: ((channel: string, target: import('@craft-agent/shared/protocol').PushTarget, ...args: any[]) => void) | null = null
@@ -256,67 +261,43 @@ export class WindowManager {
     const webContentsId = window.webContents.id
     this.windows.set(webContentsId, { window, workspaceId })
 
-    // Load the renderer - use restoreUrl if provided, otherwise build from options
+    let failed = false
+    let retry: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    const query: Record<string, string> = { workspaceId }
     if (restoreUrl) {
-      // Restore from saved URL - need to adapt for dev vs prod
-      if (VITE_DEV_SERVER_URL) {
-        // In dev mode, replace the base URL but keep the path and query
-        try {
-          const savedUrl = new URL(restoreUrl)
-          const devUrl = new URL(VITE_DEV_SERVER_URL)
-          // Preserve pathname and search from saved URL, use dev server host
-          devUrl.pathname = savedUrl.pathname
-          devUrl.search = savedUrl.search
-          window.loadURL(devUrl.toString())
-        } catch {
-          // Fallback if URL parsing fails
-          windowLog.warn('Failed to parse restoreUrl, using default:', restoreUrl)
-          const params = new URLSearchParams({ workspaceId }).toString()
-          window.loadURL(`${VITE_DEV_SERVER_URL}?${params}`)
-        }
-      } else {
-        // In prod, always extract query params and load from current __dirname.
-        // Never load file:// URLs directly — the path may be stale (e.g. Linux AppImage
-        // mounts to a different /tmp dir on each launch). See #13.
-        try {
-          const savedUrl = new URL(restoreUrl)
-          const query: Record<string, string> = {}
-          savedUrl.searchParams.forEach((value, key) => { query[key] = value })
-          window.loadFile(join(__dirname, 'renderer/index.html'), { query })
-        } catch {
-          window.loadFile(join(__dirname, 'renderer/index.html'), { query: { workspaceId } })
-        }
-      }
-    } else {
-      // Build URL from options
-      const query: Record<string, string> = { workspaceId }
-
-      if (VITE_DEV_SERVER_URL) {
-        const params = new URLSearchParams(query).toString()
-        window.loadURL(`${VITE_DEV_SERVER_URL}?${params}`)
-      } else {
-        window.loadFile(join(__dirname, 'renderer/index.html'), { query })
-      }
+      try { new URL(restoreUrl).searchParams.forEach((value, key) => { query[key] = value }) }
+      catch { /* Invalid saved navigation falls back to the current workspace. */ }
     }
-
-    // Fallback: if the renderer fails to load (e.g. stale path, disk error),
-    // recover gracefully by loading the default state instead of showing a white screen. See #13.
-    // In dev mode, retry the Vite dev server (it may not be ready yet) instead of falling back
-    // to file:// which doesn't exist during development.
-    let failLoadRetries = 0
-    window.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
-      windowLog.warn('Failed to load renderer:', errorCode, errorDescription)
-      if (VITE_DEV_SERVER_URL && failLoadRetries < 5) {
-        failLoadRetries++
-        windowLog.info(`Retrying Vite dev server (attempt ${failLoadRetries}/5)...`)
-        setTimeout(() => {
-          const params = new URLSearchParams({ workspaceId }).toString()
-          window.loadURL(`${VITE_DEV_SERVER_URL}?${params}`)
-        }, 1000)
-      } else {
-        window.loadFile(join(__dirname, 'renderer/index.html'), { query: { workspaceId } })
-      }
+    const fail = (code: string): void => {
+      if (failed || window.isDestroyed() || this.isAppQuitting) return
+      failed = true
+      if (retry) clearTimeout(retry)
+      window.show()
+      this.onLoadFailure(Object.assign(new Error('Application renderer unavailable'), { code }))
+    }
+    const load = (): void => {
+      if (failed || window.isDestroyed() || this.isAppQuitting) return
+      const loading = VITE_DEV_SERVER_URL
+        ? window.loadURL(`${VITE_DEV_SERVER_URL}?${new URLSearchParams(query)}`)
+        : window.loadFile(join(__dirname, 'renderer/index.html'), { query })
+      // did-fail-load owns retry decisions; always consume the load rejection.
+      void loading.catch((error: { code?: string; errno?: number }) => {
+        if (error.code === 'ERR_ABORTED' || error.errno === -3) return
+        if (!retry) fail('RENDERER_LOAD')
+      })
+    }
+    window.webContents.on('did-fail-load', (_event, code, _description, _url, isMainFrame) => {
+      if (!isMainFrame || code === -3 || failed || window.isDestroyed() || this.isAppQuitting) return
+      if (VITE_DEV_SERVER_URL && attempts++ < 5) {
+        if (retry) clearTimeout(retry)
+        retry = setTimeout(() => { retry = undefined; load() }, 1000)
+      } else fail('RENDERER_LOAD')
     })
+    window.webContents.on('preload-error', () => fail('PRELOAD'))
+    window.webContents.on('render-process-gone', () => fail('RENDERER_CRASH'))
+    window.once('closed', () => { if (retry) clearTimeout(retry) })
+    load()
 
     // If an initial deep link was provided, navigate to it after the window is ready
     if (initialDeepLink) {

@@ -47,10 +47,10 @@
 
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { readFileSync, existsSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { version as packageVersion } from '../package.json'
 import { enableDebug } from '@craft-agent/shared/utils/debug'
-import { bootstrapServer, releaseServerLock, startHealthHttpServer, generateServerToken } from '@craft-agent/server-core/bootstrap'
+import { bootstrapServer, loadServerTls, startHealthHttpServer, generateServerToken } from '@craft-agent/server-core/bootstrap'
 import {
   validateSession,
   createWebuiHandler,
@@ -69,7 +69,6 @@ if (process.argv.includes('--generate-token')) {
   console.log(generateServerToken())
   process.exit(0)
 }
-import type { WsRpcTlsOptions } from '@craft-agent/server-core/transport'
 import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { initModelRefreshService, resolveModelRefreshCredentials, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
@@ -131,20 +130,7 @@ const bundledAssetsRoot = process.env.CRAFT_BUNDLED_ASSETS_ROOT
   ?? join(import.meta.dir, '..', '..', '..', '..')
 
 // TLS configuration — when cert + key paths are provided, server listens on wss://
-let tls: WsRpcTlsOptions | undefined
-const tlsCertPath = process.env.CRAFT_RPC_TLS_CERT
-const tlsKeyPath = process.env.CRAFT_RPC_TLS_KEY
-if (tlsCertPath || tlsKeyPath) {
-  if (!tlsCertPath || !tlsKeyPath) {
-    console.error('TLS requires both CRAFT_RPC_TLS_CERT and CRAFT_RPC_TLS_KEY.')
-    process.exit(1)
-  }
-  tls = {
-    cert: readFileSync(tlsCertPath),
-    key: readFileSync(tlsKeyPath),
-    ...(process.env.CRAFT_RPC_TLS_CA ? { ca: readFileSync(process.env.CRAFT_RPC_TLS_CA) } : {}),
-  }
-}
+const tls = loadServerTls(process.env.CRAFT_RPC_TLS_CERT, process.env.CRAFT_RPC_TLS_KEY, process.env.CRAFT_RPC_TLS_CA)
 
 // Web UI configuration
 const webuiDir = process.env.CRAFT_WEBUI_DIR || undefined
@@ -377,18 +363,13 @@ const instance = await (async () => {
       initializeSessionManager: async (sessionManager) => {
         await sessionManager.initialize()
       },
-      cleanupSessionManager: async (sessionManager) => {
-        try {
-          await sessionManager.flushAllSessions()
-        } finally {
-          sessionManager.cleanup()
-        }
+      cleanupSessionManager: async (sessionManager, requestsDrained) => {
+        await Promise.all([sessionManager.shutdown(requestsDrained), messagingHandle?.dispose()])
       },
       cleanupClientResources: cleanupSessionFileWatchForClient,
     })
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
-    releaseServerLock()
     process.exit(1)
   }
 })()
@@ -477,15 +458,13 @@ if (!isLocalBind && instance.protocol === 'ws') {
 const shutdown = async () => {
   webuiHandler?.dispose()
   healthServer?.stop()
-  if (messagingHandle) {
-    try {
-      await messagingHandle.dispose()
-    } catch (error) {
-      console.error('[messaging] dispose failed:', error)
-    }
+  try {
+    await instance.stop()
+    process.exit(0)
+  } catch (error) {
+    console.error('[server] Shutdown incomplete:', error instanceof Error ? error.message : 'cleanup failed')
+    process.exit(1)
   }
-  await instance.stop()
-  process.exit(0)
 }
 
 process.on('SIGINT', shutdown)

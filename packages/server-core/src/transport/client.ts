@@ -82,6 +82,8 @@ export interface TransportConnectionState {
 // ---------------------------------------------------------------------------
 
 export interface WsRpcClientOptions {
+  /** Native hosts may supply per-connection trust without changing remote/browser TLS. */
+  webSocketFactory?: (url: string) => WebSocket
   /** Workspace ID sent on handshake. */
   workspaceId?: string
   /** Electron webContents.id, sent on handshake for local clients. */
@@ -145,6 +147,7 @@ export class WsRpcClient implements RpcClient {
   private readonly autoReconnect: boolean
   private readonly connectTimeout: number
   private readonly mode: TransportMode
+  private readonly webSocketFactory: (url: string) => WebSocket
 
   constructor(url: string, opts?: WsRpcClientOptions) {
     this.url = url
@@ -157,6 +160,7 @@ export class WsRpcClient implements RpcClient {
     this.autoReconnect = opts?.autoReconnect ?? true
     this.connectTimeout = opts?.connectTimeout ?? 10_000
     this.mode = opts?.mode ?? this.inferMode(url)
+    this.webSocketFactory = opts?.webSocketFactory ?? (url => new WebSocket(url))
 
     this.connectionState = {
       mode: this.mode,
@@ -364,7 +368,7 @@ export class WsRpcClient implements RpcClient {
       }
     }, this.connectTimeout)
 
-    const ws = new WebSocket(this.url)
+    const ws = this.webSocketFactory(this.url)
     this.ws = ws
 
     ws.onopen = () => {

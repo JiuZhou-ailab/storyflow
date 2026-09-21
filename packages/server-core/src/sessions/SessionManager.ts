@@ -1,5 +1,5 @@
 // input: Workspace sessions, Pi product projections, persistence stores, and Host services
-// output: Atomic durable send admission, projected Pi events, user commands, and bound automation dispatch
+// output: Atomic send admission, projected Pi events, user commands, automation dispatch, and drained Host teardown
 // pos: Storyflow Product Host session boundary; Pi owns Agent turn execution
 
 import type { EventSink } from '@craft-agent/server-core/transport'
@@ -398,7 +398,7 @@ export class SessionManager implements ISessionManager {
   /** Serializes runtime acquisition and exclusive control-plane mutations per session. */
   // Per-session runtime mutex + shared-subprocess lease state live in AgentRuntimeLease.
   private agentLease = new AgentRuntimeLease({
-    isSessionTracked: managed => this.sessions.get(managed.id) === managed,
+    isSessionTracked: managed => !this.shuttingDown && this.sessions.get(managed.id) === managed,
     refreshSessionWorkspace: managed => this.refreshSessionWorkspace(managed),
     revalidateAgentWorkingDirectory: managed => {
       if (isFreeConversationWorkspaceId(managed.workspace.id)) return false
@@ -415,7 +415,7 @@ export class SessionManager implements ISessionManager {
   })
   // Pi subprocess lifecycle (create/refresh/rotate/dispose) lives in AgentRuntime.
   private agentRuntime = new AgentRuntime({
-    isSessionTracked: managed => this.sessions.get(managed.id) === managed,
+    isSessionTracked: managed => !this.shuttingDown && this.sessions.get(managed.id) === managed,
     allSessions: () => this.sessions.values(),
     hasActiveOperations: id => this.agentLease.hasActiveOperations(id),
     hasPendingInteraction: id => [...this.pendingPermissionRequests.values()].some(request => request.sessionId === id)
@@ -539,6 +539,7 @@ export class SessionManager implements ISessionManager {
     rootKeys: readonly string[],
     token?: symbol,
   ): void {
+    if (this.shuttingDown) throw new Error('Host is shutting down')
     const projectOwner = projectId
       ? this.projectLifecycleTransitions.get(projectId)
       : undefined
@@ -1009,6 +1010,7 @@ export class SessionManager implements ISessionManager {
    * workspaceId must be the global config ID (what the renderer knows).
    */
   setupConfigWatcher(workspaceRootPath: string, workspaceId: string): void {
+    if (this.shuttingDown) return
     // Project roots are user-owned locators. Runtime observers must never recreate
     // a missing or invalid Project before the user explicitly relinks it.
     const registeredWorkspace = resolveRuntimeWorkspaceById(workspaceId)
@@ -1171,6 +1173,7 @@ export class SessionManager implements ISessionManager {
   }
 
   private setupAutomationSystem(workspaceRootPath: string, workspaceId: string): void {
+    if (this.shuttingDown) return
     if (this.automationSystems.has(workspaceRootPath)) return
 
     const automationSystem = new AutomationSystem({
@@ -5674,6 +5677,35 @@ export class SessionManager implements ISessionManager {
       workspaceId,
       () => this.exportImport.importSession(workspaceId, bundle, mode),
     )
+  }
+
+  private shuttingDown = false
+
+  /** Host teardown joins Pi's real exit and accepted requests before the final flush. */
+  async shutdown(requestsDrained: Promise<void> = Promise.resolve()): Promise<void> {
+    this.shuttingDown = true
+    const managedSessions = [...this.sessions.values()]
+    const automationSystems = [...this.automationSystems.values()]
+    this.automationSystems.clear()
+    for (const managed of managedSessions) {
+      managed.runtimeState = 'invalidating'
+      managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
+      managed.stopRequested = true
+    }
+    const results = await Promise.allSettled([
+      Promise.resolve().then(() => this.cleanup()),
+      ...automationSystems.map(async system => system.dispose()),
+      ...managedSessions.map(async managed => {
+        // Dispose first to unblock active turns; then join the runtime mutex to
+        // catch a factory/refresh already in flight when shutdown began.
+        await this.disposeManagedAgentRuntime(managed, 'Host shutdown')
+        await this.withAgentRuntimeLock(managed, () => this.disposeManagedAgentRuntime(managed, 'Host shutdown drain'), true)
+      }),
+    ])
+    await requestsDrained
+    await this.flushAllSessions()
+    const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Host runtime cleanup incomplete')
   }
 
   /**

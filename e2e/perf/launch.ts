@@ -3,7 +3,7 @@
 // pos: Shared launch/teardown/interaction boundary for the perf harness; owns no measurement policy itself
 
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { CdpClient, evaluate } from './cdp.ts'
@@ -40,6 +40,8 @@ export interface LaunchAppOptions {
   executablePath?: string
   packaged?: boolean
   preserveServerLockState?: boolean
+  /** Keep the same Electron profile across restart/upgrade acceptance. */
+  userDataDir?: string
 }
 
 /**
@@ -58,7 +60,7 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
   if (!packaged && !existsSync(BUILT_MAIN)) throw new Error(`Built main not found at ${BUILT_MAIN}. Run \`cd apps/electron && bun run build\`.`)
   if (!existsSync(join(fixtureDir, 'config.json'))) throw new Error(`Fixture config.json missing under ${fixtureDir}. Run scripts/perf/generate-fixture.ts first.`)
 
-  if (!options.preserveServerLockState) {
+  if (options.preserveServerLockState === false) {
     // The fixture is harness-owned and single-use, so clearing its lock state before launch is safe.
     rmSync(join(fixtureDir, '.server.lock'), { recursive: true, force: true })
     rmSync(join(fixtureDir, '.server.lease'), { recursive: true, force: true })
@@ -66,7 +68,8 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
 
   const perfLines: PerfLogLine[] = []
   const processLines: string[] = []
-  const userDataDir = mkdtempSync(join(fixtureDir, '.electron-userdata-'))
+  const userDataDir = options.userDataDir ?? mkdtempSync(join(fixtureDir, '.electron-userdata-'))
+  mkdirSync(userDataDir, { recursive: true })
 
   const spawnedAt = Date.now()
   const proc = spawn(
@@ -77,6 +80,8 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
       env: {
         ...process.env,
         CRAFT_CONFIG_DIR: fixtureDir,
+        HOME: fixtureDir,
+        ...(process.platform === 'win32' ? { USERPROFILE: fixtureDir } : {}),
         CRAFT_DEBUG: '1',
         CRAFT_IS_PACKAGED: String(packaged),
         CRAFT_DISABLE_FILE_LOG: '1',
@@ -186,7 +191,7 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
         }
       }
       cdp.close()
-      rmSync(userDataDir, { recursive: true, force: true })
+      if (!options.userDataDir) rmSync(userDataDir, { recursive: true, force: true })
     },
   } as LaunchedApp
   return app
