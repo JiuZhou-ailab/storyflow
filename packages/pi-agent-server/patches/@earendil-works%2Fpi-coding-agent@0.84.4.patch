@@ -1,8 +1,30 @@
+diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
+index 8c7cfec6fc0ec004f17c08c52a58c354b28b3978..831c8e20b09497076a5f38ca5020f5993579a4ba 100644
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -195,6 +195,8 @@ export interface SessionStats {
+     contextUsage?: ContextUsage;
+ }
+ export declare class AgentSession {
++    /** Caller output budget before context clamping. Custom streams must enforce the same cap. */
++    maxOutputTokens?: number;
+     readonly agent: Agent;
+     readonly sessionManager: SessionManager;
+     readonly settingsManager: SettingsManager;
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159ce3e151b9 100644
+index fd82b71cf332715f185d07459429f04ed7491ce9..1d57d1f993cca0fcd097215469582b21a34707ad 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -102,6 +102,9 @@ export class AgentSession {
+@@ -75,6 +75,8 @@ function estimateMessagesTokens(messages) {
+ // AgentSession Class
+ // ============================================================================
+ export class AgentSession {
++    // Caller output budget before provider context clamping; model capacity stays unchanged.
++    maxOutputTokens;
+     agent;
+     sessionManager;
+     settingsManager;
+@@ -102,6 +104,9 @@ export class AgentSession {
      // Retry state
      _retryAbortController = undefined;
      _retryAttempt = 0;
@@ -12,7 +34,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
      // Bash execution state
      _bashAbortControllers = new Set();
      _pendingBashMessages = [];
-@@ -137,6 +140,16 @@ export class AgentSession {
+@@ -137,6 +142,16 @@ export class AgentSession {
      _systemPromptOverride;
      constructor(config) {
          this.agent = config.agent;
@@ -29,7 +51,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
          this.sessionManager = config.sessionManager;
          this.settingsManager = config.settingsManager;
          this._scopedModels = config.scopedModels ?? [];
-@@ -582,6 +595,7 @@ export class AgentSession {
+@@ -582,6 +597,7 @@ export class AgentSession {
       * Call this when completely done with the session.
       */
      dispose() {
@@ -37,7 +59,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
          try {
              this.abortRetry();
              this.abortCompaction();
-@@ -769,15 +783,21 @@ export class AgentSession {
+@@ -769,15 +785,21 @@ export class AgentSession {
      // =========================================================================
      // Prompting
      // =========================================================================
@@ -61,7 +83,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
              this._systemPromptOverride = undefined;
              this._flushPendingBashMessages();
              this._flushPendingCustomMessages();
-@@ -819,6 +839,7 @@ export class AgentSession {
+@@ -819,6 +841,7 @@ export class AgentSession {
       * @throws Error if no model selected or no API key available (when not streaming)
       */
      async prompt(text, options) {
@@ -69,7 +91,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
          const expandPromptTemplates = options?.expandPromptTemplates ?? true;
          const preflightResult = options?.preflightResult;
          let messages;
-@@ -946,7 +967,7 @@ export class AgentSession {
+@@ -946,7 +969,7 @@ export class AgentSession {
              return;
          }
          preflightResult?.(true);
@@ -78,7 +100,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
      }
      /**
       * Try to execute an extension command. Returns true if command was found and executed.
-@@ -1220,6 +1241,7 @@ export class AgentSession {
+@@ -1220,6 +1243,7 @@ export class AgentSession {
       * Abort current operation and wait for agent to become idle.
       */
      async abort() {
@@ -86,7 +108,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
          this.abortRetry();
          this.agent.abort();
          await this.waitForIdle();
-@@ -1250,9 +1272,11 @@ export class AgentSession {
+@@ -1250,9 +1274,11 @@ export class AgentSession {
       * @throws Error if no auth is configured for the model
       */
      async setModel(model, options = {}) {
@@ -98,7 +120,17 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
          const previousModel = this.model;
          const thinkingLevel = this._getThinkingLevelForModelSwitch(model);
          this.agent.state.model = model;
-@@ -2239,6 +2263,10 @@ export class AgentSession {
+@@ -1650,7 +1676,7 @@ export class AgentSession {
+-        // A length stop is recoverable when output ended below the model's original desired limit,
++        // A length stop is recoverable below the caller's desired budget, bounded by model capacity,
+         // independent of the configured context size or any context-clamped provider request limit.
+         const contextOverflow = sameModel && isContextOverflow(assistantMessage, contextWindow);
+-        const recoverableLength = sameModel && isRecoverableLength(assistantMessage, this.model?.maxTokens ?? 0);
++        const recoverableLength = sameModel && isRecoverableLength(assistantMessage, Math.min(this.maxOutputTokens ?? Infinity, this.model?.maxTokens ?? 0));
+         if (contextOverflow || recoverableLength) {
+             const willRetry = assistantMessage.stopReason !== "stop";
+             // Case 2: the response completed successfully. Compact, but do not retry because
+@@ -2239,6 +2265,10 @@ export class AgentSession {
       * Context overflow errors are NOT retryable (handled by compaction instead).
       */
      _isRetryableError(message) {
@@ -109,7 +141,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
          // Context overflow is handled by compaction, not retry.
          if (isContextOverflow(message, this.model?.contextWindow ?? 0))
              return false;
-@@ -2287,7 +2315,14 @@ export class AgentSession {
+@@ -2287,7 +2317,14 @@ export class AgentSession {
              this._retryAttempt--;
              return false;
          }
@@ -125,7 +157,7 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
          this._emit({
              type: "auto_retry_start",
              attempt: this._retryAttempt,
-@@ -2300,8 +2335,7 @@ export class AgentSession {
+@@ -2300,8 +2337,7 @@ export class AgentSession {
          if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
              this.agent.state.messages = messages.slice(0, -1);
          }

@@ -11,6 +11,27 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { PiEventAdapter } from '../backend/pi/event-adapter.ts';
 
+it('settles incomplete output with a usable error and usage in a fresh headless process', () => {
+  const adapterPath = import.meta.resolve('../backend/pi/event-adapter.ts');
+  const script = `
+    import { PiEventAdapter } from ${JSON.stringify(adapterPath)};
+    const adapter = new PiEventAdapter();
+    adapter.startTurn();
+    [...adapter.adaptEvent({ type: 'message_end', message: {
+      role: 'assistant', model: 'fixture', stopReason: 'length',
+      content: [{ type: 'text', text: 'Partial' }],
+      usage: { input: 13, output: 7, cacheRead: 0, cacheWrite: 0, cost: { total: 0.42 } },
+    } })];
+    console.log(JSON.stringify([...adapter.adaptEvent({ type: 'agent_settled' })]));
+  `;
+  const child = Bun.spawnSync([process.execPath, '--eval', script]);
+  expect(child.exitCode).toBe(0);
+  const events = JSON.parse(child.stdout.toString());
+  expect(events[0]).toMatchObject({ type: 'error', message: expect.stringContaining('incomplete') });
+  expect(events[1]).toMatchObject({ type: 'complete', status: 'incomplete',
+    usage: { inputTokens: 13, outputTokens: 7, costUsd: 0.42 } });
+});
+
 // Helper: collect all events from a generator
 function collect(gen: Generator<any>): any[] {
   return [...gen];

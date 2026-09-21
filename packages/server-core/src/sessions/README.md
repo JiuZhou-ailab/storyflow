@@ -25,6 +25,8 @@ Pre-existing support modules: `managed-session.ts` (ManagedSession state assembl
 
 Module wiring rule: stateful modules receive a narrow deps object of arrow functions resolving through the Facade (`this`) at call time, so per-instance test stubs on SessionManager keep working; stateless helpers are plain functions taking `ManagedSession` directly. Adjacent `*.test.ts` files verify these boundaries and durable session behavior.
 
+The published `queryOnce` RPC remains success-or-error: failed, cancelled and incomplete Pi results reject before any legacy consumer can use partial text as a rewrite. Successful results pass through unchanged, including older runtime responses without a status field.
+
 Automatic Session cleanup uses the `deleteIfEmpty` Session command. The Host checks loaded messages and active operations atomically with the deletion tombstone under the Project lock; cold or busy Sessions are retained. Explicit user deletion remains separate. Clients never fall back to unconditional deletion when an older server rejects the new command. Send acknowledgement loss is an unknown outcome, not permission to delete or replay the request.
 
 Permission responses must match a pending request owned by the live Session and still awaited by Pi. The explicit `permissionMode: 'allow-all'` response option uses the same metadata mutation as the mode selector before resuming Pi's native `tool_call` hook; this updates the runtime, broadcasts the mode, and persists its metadata. Project execute consent remains process-scoped: writable Session metadata does not restore authorization after restart. Single-tool and administrator approvals do not implicitly change Session mode.

@@ -58,7 +58,8 @@ export interface LLMQueryResult {
   status?: 'completed' | 'incomplete' | 'failed' | 'cancelled';
   stopReason?: string;
   maxTokens?: number;
-  thinkingLevel?: string;
+  /** Query preference; Pi may clamp or disable thinking for the model and response budget. */
+  requestedThinkingLevel?: LLMQueryRequest['thinkingLevel'];
   timeoutMs?: number;
   text: string;
   model?: string;

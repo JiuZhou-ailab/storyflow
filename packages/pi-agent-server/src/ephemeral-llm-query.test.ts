@@ -2,7 +2,7 @@
 // output: Output integrity, request budget and cancellation regression coverage
 // pos: call_llm public query boundary for spec #43
 import { expect, test } from 'bun:test';
-import { fixture } from './managed-fallback.fixture.ts';
+import { fixture, protocolCompletion } from './managed-fallback.fixture.ts';
 import { queryLlmWithEphemeralPiSession } from './ephemeral-llm-query.ts';
 
 function response(text: string, reason = 'stop', thinkingOnly = false) {
@@ -23,6 +23,23 @@ function context(f: Parameters<Parameters<typeof fixture>[0]>[0]) {
   };
 }
 
+test('implicit model fallback shares one query deadline and disposes the timed-out attempt', async () => {
+  await fixture(async f => {
+    const activeSessions = new Set<import('@earendil-works/pi-coding-agent').AgentSession>();
+    const queryContext = context(f);
+    queryContext.config = { ...f.config, miniModel: 'deepseek-v4-flash', piAuth: { provider: 'fixture' }, managedConnection: undefined } as never;
+    const result = await queryLlmWithEphemeralPiSession({ prompt: 'One operation', timeoutMs: 1000 }, { ...queryContext, activeSessions });
+    expect(f.requests.map(request => request.model)).toEqual(['deepseek-v4-flash', 'gpt-5-mini']);
+    expect(result).toMatchObject({ status: 'cancelled', stopReason: 'aborted', timeoutMs: 1000 });
+    expect(activeSessions.size).toBe(0);
+  }, async model => {
+    await Bun.sleep(600);
+    return model === 'deepseek-v4-flash'
+      ? Response.json({ error: { message: 'model_not_found' } }, { status: 404 })
+      : response('Too late');
+  }, undefined, { custom: true, models: ['deepseek-v4-flash', 'gpt-5-mini'] });
+});
+
 test('a length-limited query returns incomplete, preserving partial text and actual model', async () => {
   await fixture(async f => {
     const result = await queryLlmWithEphemeralPiSession({ prompt: 'Write an episode.' }, context(f));
@@ -34,10 +51,23 @@ test('a length-limited query returns incomplete, preserving partial text and act
 test('query defaults do not inherit parent max thinking and ordinary budget reaches provider', async () => {
   await fixture(async f => {
     const result = await queryLlmWithEphemeralPiSession({ prompt: 'Say OK' }, context(f));
-    expect(result).toMatchObject({ status: 'completed', maxTokens: 8192, thinkingLevel: 'medium', timeoutMs: 120000 });
+    expect(result).toMatchObject({ status: 'completed', maxTokens: 8192, requestedThinkingLevel: 'medium', timeoutMs: 120000 });
     expect(f.requests[0]!.body.max_tokens ?? f.requests[0]!.body.max_completion_tokens).toBe(8192);
     expect(f.requests[0]!.body.reasoning_effort).toBe('medium');
   }, () => response('OK'), undefined, { catalog: [{ id: 'deepseek-v4-flash', name: 'Fixture', supportsThinking: true } as never] });
+});
+
+test('small-budget thinking diagnostics identify the request preference, not an effective provider setting', async () => {
+  await fixture(async f => {
+    const result = await queryLlmWithEphemeralPiSession({ prompt: 'Reply OK', model: 'claude-haiku-4-5', maxTokens: 1536 }, context(f));
+    expect(result).toMatchObject({ status: 'completed', requestedThinkingLevel: 'medium' });
+    expect(result).not.toHaveProperty('thinkingLevel');
+    expect(f.requests[0]!.body.thinking).toEqual({ type: 'disabled' });
+    expect(f.requests[0]!.body.max_tokens).toBe(1536);
+  }, model => protocolCompletion('anthropic-messages', model), undefined, {
+    api: 'anthropic-messages', models: ['claude-haiku-4-5'],
+    catalog: [{ id: 'claude-haiku-4-5', name: 'Claude', supportsThinking: true } as never],
+  });
 });
 
 for (const text of ['not JSON', '{"count":"2"}', '{}']) {
@@ -56,7 +86,7 @@ for (const text of ['not JSON', '{"count":"2"}', '{}']) {
 test('explicit long budget is capped by trusted capacity, deadline aborts and disposes query', async () => {
   await fixture(async f => {
     const result = await queryLlmWithEphemeralPiSession({ prompt: 'Long', longOutput: true, maxTokens: 32768, thinkingLevel: 'high' }, context(f));
-    expect(result).toMatchObject({ maxTokens: 32768, timeoutMs: 300000, thinkingLevel: 'high' });
+    expect(result).toMatchObject({ maxTokens: 32768, timeoutMs: 300000, requestedThinkingLevel: 'high' });
     expect(f.requests[0]!.body.max_tokens ?? f.requests[0]!.body.max_completion_tokens).toBe(32768);
   }, () => response('Long result'), undefined, { catalog: [{ id: 'deepseek-v4-flash', name: 'Fixture', contextWindow: 1000000, supportsThinking: true,
     fallbackCapabilities: { maxOutputTokens: 32768, tools: true, structuredOutput: 'prompt' } } as never] });

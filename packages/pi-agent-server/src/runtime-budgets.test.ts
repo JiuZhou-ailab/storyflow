@@ -2,6 +2,31 @@ import { expect, test } from 'bun:test';
 import { SettingsManager } from '@earendil-works/pi-coding-agent';
 import { applyCompactionDefaults, compactionDefaults } from './runtime-budgets.ts';
 
+for (const outputTokens of [8192, 4096]) {
+  test(`length at ${outputTokens} tokens respects the request budget during native recovery`, async () => {
+    const { fixture, completion } = await import('./managed-fallback.fixture.ts');
+    await fixture(async f => {
+      applyCompactionDefaults(f.session.settingsManager, 1_000_000);
+      await f.session.prompt('seed ' + 'word '.repeat(35000));
+      await f.session.prompt('more ' + 'word '.repeat(35000));
+      await f.session.prompt('write at the ordinary budget');
+      await f.session.waitForIdle();
+      expect(f.session.model?.maxTokens).toBe(32768);
+      expect(f.requests[2]!.body.max_tokens ?? f.requests[2]!.body.max_completion_tokens).toBe(8192);
+      expect(f.requests).toHaveLength(outputTokens === 8192 ? 3 : 5);
+      expect(f.session.getLastAssistantText()).toBe(outputTokens === 8192 ? 'Partial output' : 'OK');
+    }, (model, index) => {
+      if (index !== 3) return completion(model);
+      const chunks = [
+        { choices: [{ index: 0, delta: { role: 'assistant', content: 'Partial output' }, finish_reason: null }] },
+        { choices: [{ index: 0, delta: {}, finish_reason: 'length' }], usage: { prompt_tokens: 88000, completion_tokens: outputTokens, total_tokens: 88000 + outputTokens } },
+      ];
+      return new Response(chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+    }, undefined, { catalog: [{ id: 'deepseek-v4-flash', name: 'Fixture', contextWindow: 1_000_000,
+      fallbackCapabilities: { maxOutputTokens: 32768, tools: true, structuredOutput: 'prompt' } } as never] });
+  });
+}
+
 test('window-relative defaults recompute and preserve explicit native settings', () => {
   expect(compactionDefaults(1_000_000)).toEqual({ reserveTokens: 200000, keepRecentTokens: 32000 });
   expect(compactionDefaults(262144)).toEqual({ reserveTokens: 52429, keepRecentTokens: 32000 });

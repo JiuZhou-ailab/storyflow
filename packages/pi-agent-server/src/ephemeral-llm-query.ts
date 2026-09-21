@@ -48,14 +48,15 @@ export async function queryLlmWithEphemeralPiSession(
   const { config, modelRuntime, preferCustomEndpoint, debug } = context;
   debug('[queryLlm] Starting');
 
-  const piThinkingLevel = THINKING_TO_PI[
-    request.thinkingLevel ?? 'medium'
-  ];
+  const requestedThinkingLevel = request.thinkingLevel ?? 'medium';
+  const piThinkingLevel = THINKING_TO_PI[requestedThinkingLevel];
   const requestedBudget = request.maxTokens ?? (request.longOutput ? 16384 : 8192);
   const timeoutMs = request.timeoutMs ?? (request.longOutput ? 300000 : LLM_QUERY_TIMEOUT_MS);
   if (!Number.isInteger(requestedBudget) || requestedBudget < 1 || requestedBudget > 32768) throw new Error('maxTokens must be between 1 and 32768');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300000) throw new Error('timeoutMs must be between 1 and 300000');
   if (!Object.hasOwn(THINKING_TO_PI, request.thinkingLevel ?? 'medium')) throw new Error('Invalid thinkingLevel');
+  const deadline = performance.now() + timeoutMs;
+  const timeoutWarning = `queryLlm timed out after ${timeoutMs / 1000}s`;
   let model = request.model ?? config.miniModel ?? getDefaultSummarizationModel();
   const piAuthProvider = config.piAuth?.provider;
 
@@ -77,6 +78,7 @@ export async function queryLlmWithEphemeralPiSession(
   }
 
   const runQueryWithModel = async (modelId: string): Promise<LLMQueryResult> => {
+    if (performance.now() >= deadline) return { text: '', status: 'cancelled', stopReason: 'aborted', timeoutMs, warning: timeoutWarning };
     debug(`[queryLlm] Using model: ${modelId}`);
     const piModel = resolvePiModel(
       modelRuntime,
@@ -123,13 +125,12 @@ export async function queryLlmWithEphemeralPiSession(
 
     const { session } = await createAgentSession(ephemeralOptions);
     const maxTokens = Math.min(requestedBudget, Number.isSafeInteger(piModel.maxTokens) && piModel.maxTokens > 0 ? piModel.maxTokens : 8192);
+    session.maxOutputTokens = maxTokens;
     let effectiveMaxTokens = maxTokens;
-    let effectiveThinkingLevel = 'off';
     const stream = session.agent.streamFunction;
     session.agent.streamFunction = (model, input, options) => {
       effectiveMaxTokens = Math.min(maxTokens, Number.isSafeInteger(model.maxTokens) && model.maxTokens > 0 ? model.maxTokens : 8192);
-      effectiveThinkingLevel = options?.reasoning ?? 'off';
-      debug(`[queryLlm] model=${model.id} budget=${effectiveMaxTokens} thinking=${effectiveThinkingLevel} deadlineMs=${timeoutMs}`);
+      debug(`[queryLlm] model=${model.id} budget=${effectiveMaxTokens} requestedThinking=${requestedThinkingLevel} deadlineMs=${timeoutMs}`);
       return stream(model, input, { ...options, maxTokens: effectiveMaxTokens,
         ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
       });
@@ -139,6 +140,8 @@ export async function queryLlmWithEphemeralPiSession(
       context.activeSessions?.add(session);
       await session.bindExtensions({});
       if (context.isCancelled?.()) return { text: '', status: 'cancelled', model: piModel.id, stopReason: 'aborted' };
+      const remainingMs = deadline - performance.now();
+      if (remainingMs <= 0) return { text: '', status: 'cancelled', model: piModel.id, stopReason: 'aborted', timeoutMs, warning: timeoutWarning };
 
       debug(`[queryLlm] Created ephemeral session: ${session.sessionId}`);
       let result = '';
@@ -178,9 +181,10 @@ export async function queryLlmWithEphemeralPiSession(
       try {
         await withTimeout(
           (async () => { await session.prompt(request.prompt); await session.waitForIdle(); })(),
-          timeoutMs,
-          `queryLlm timed out after ${timeoutMs / 1000}s`,
+          remainingMs,
+          timeoutWarning,
         );
+        if (performance.now() >= deadline) throw new Error(timeoutWarning);
         debug(`[queryLlm] Result length: ${result.trim().length}`);
         if (lastError && !config.managedConnection && !request.model && isModelNotFoundError(lastError)) throw new Error(lastError);
         if (!lastError && stopReason !== 'length' && request.outputSchema) {
@@ -193,7 +197,7 @@ export async function queryLlmWithEphemeralPiSession(
         }
         const status = context.isCancelled?.() || stopReason === 'aborted' ? 'cancelled' : lastError ? 'failed'
           : stopReason === 'length' || !result.trim() ? 'incomplete' : 'completed';
-        return { text: result, model: effectiveModel, status, stopReason, maxTokens: effectiveMaxTokens, thinkingLevel: effectiveThinkingLevel, timeoutMs,
+        return { text: result, model: effectiveModel, status, stopReason, maxTokens: effectiveMaxTokens, requestedThinkingLevel, timeoutMs,
           inputTokens: usage?.input, outputTokens: usage?.output,
           ...(status !== 'completed' ? { warning: lastError || 'Model output is incomplete.' } : {}),
         };
@@ -201,7 +205,7 @@ export async function queryLlmWithEphemeralPiSession(
         const warning = error instanceof Error ? error.message : String(error);
         if (!config.managedConnection && !request.model && isModelNotFoundError(warning)) throw error;
         return { text: result, model: effectiveModel, status: context.isCancelled?.() || warning.startsWith('queryLlm timed out') ? 'cancelled' : 'failed', stopReason: context.isCancelled?.() || warning.startsWith('queryLlm timed out') ? 'aborted' : 'error', warning,
-          maxTokens: effectiveMaxTokens, thinkingLevel: effectiveThinkingLevel, timeoutMs, inputTokens: usage?.input, outputTokens: usage?.output };
+          maxTokens: effectiveMaxTokens, requestedThinkingLevel, timeoutMs, inputTokens: usage?.input, outputTokens: usage?.output };
       } finally {
         unsubscribe();
       }

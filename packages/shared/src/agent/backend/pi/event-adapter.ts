@@ -24,7 +24,7 @@ import {
   isPiSubagentDetails,
   parsePiSubagentUsage,
 } from './subagent-contract.ts';
-import { i18n } from '../../../i18n/index.ts';
+import { setupI18n } from '../../../i18n/index.ts';
 import { parseError } from '../../errors.ts';
 import { createLogger } from '../../../utils/debug.ts';
 
@@ -304,7 +304,7 @@ export class PiEventAdapter {
         break;
 
       case 'agent_settled':
-        if (this.outcome.status === 'incomplete') yield { type: 'error', message: i18n.t('chat.modelOutputIncomplete') };
+        if (this.outcome.status === 'incomplete') yield { type: 'error', message: setupI18n().t('chat.modelOutputIncomplete') };
         if (this.pendingOverflowError) {
           yield { type: 'error', message: this.pendingOverflowError };
           this.pendingOverflowError = null;

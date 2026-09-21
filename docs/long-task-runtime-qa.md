@@ -19,6 +19,15 @@ tokens, capped at half the target for small windows. Native explicit settings wi
 including disabled compaction. `compaction.maxSummaryTokens` independently limits
 native summary generation (product default 8,192, capped by model capacity).
 
+Native length recovery uses the caller's output budget, not model capacity: reaching
+8,192 in a long ordinary conversation stays incomplete without summary or replay.
+Budget-based Anthropic/Bedrock thinking is disabled when the final ceiling cannot
+fit its minimum and the SDK answer reserve; the output ceiling is never raised.
+Each query has one deadline shared by model fallback and setup. Cleanup completes
+before replying, and no attempt starts inference after that deadline.
+Query results expose `requestedThinkingLevel` as the query preference; it is not
+an assertion that the Provider enabled thinking after model and budget clamping.
+
 `call_llm.outputPath` names a new file in an existing directory. The Host checks
 write permissions and conflicts before inference. Safe mode rejects file output.
 Only `completed` results are published; a complete temporary file is hard-linked
@@ -32,6 +41,7 @@ Run the following without real model credentials or a paid Provider:
 
 ```sh
 bun test packages/pi-agent-server/src/runtime-budgets.test.ts
+bun test packages/pi-agent-server/src/thinking-budget.test.ts
 bun test packages/pi-agent-server/src/ephemeral-llm-query.test.ts
 bun test packages/pi-agent-server/src/managed-access-contract.test.ts
 bun test packages/pi-agent-server/src/subagent-tool.test.ts
@@ -39,6 +49,7 @@ bun test packages/pi-agent-server/src/exact-tool-output.test.ts
 bun test packages/shared/src/agent/__tests__/llm-output-file.test.ts
 bun test packages/shared/src/agent/__tests__/pi-event-adapter.test.ts
 bun test packages/shared/src/agent/__tests__/pi-query-llm.test.ts
+bun test packages/server-core/src/sessions/sendmessage-oauth-refresh.test.ts
 bun test packages/pi-agent-server/src/compiled-subagent.test.ts
 ```
 
@@ -105,3 +116,22 @@ browser-prerequisite failures caused by the concurrent stored-config change.
 Pi-server typechecking passes; the latest whole-repository check reaches Electron
 and is blocked by an unused `oauthFlowStore` in another in-progress change.
 Unrelated working-tree changes were preserved and excluded from this commit.
+
+## PR review fixes verification (2026-09-21)
+
+The review fixes were checked together with startup-recovery PR #47 at
+`dbce068a387477e12fe78bd8705b450b4f938c22`, using Bun 1.3.14. This supersedes
+the initial validation snapshot above: `validate:ci` passed all typechecks,
+19 Python document-tool checks, 5,949 Bun tests (11 skipped, zero failures),
+and locale parity, ordering and coverage checks. Both compiled child smokes passed.
+
+Regression coverage now verifies caller-budget length recovery, valid small-budget
+Anthropic/Bedrock requests, headless incomplete errors with preserved usage, one
+deadline across model fallback, and rejection of partial one-shot/rewrite results.
+Success payloads retain their existing shape; thinking diagnostics name the
+requested preference. Standards and Spec follow-up reviews have no remaining findings.
+
+The combined Electron build, `e2e:core`, and all four `startup-recovery.ts` checks
+passed with isolated local fixtures and no paid Provider calls. These checks cover
+the development build on macOS; Windows installation and upgrade evidence must
+still be refreshed for the final combined release artifact.

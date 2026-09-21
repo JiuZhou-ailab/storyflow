@@ -29,6 +29,7 @@ export function createBudgetHooks(getSession: () => AgentSession | null): Inline
 }
 
 export function setOutputBudget(session: AgentSession, budget = 8192) {
+  session.maxOutputTokens = budget;
   const stream = session.agent.streamFunction;
   session.agent.streamFunction = (model, input, options) => stream(model, input, {
     ...options, maxTokens: Math.min(budget, Number.isSafeInteger(model.maxTokens) && model.maxTokens > 0 ? model.maxTokens : 8192, options?.maxTokens ?? Infinity),
