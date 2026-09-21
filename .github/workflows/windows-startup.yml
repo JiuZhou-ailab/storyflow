@@ -1,0 +1,74 @@
+name: Windows installed startup
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-startup.yml'
+      - 'apps/electron/src/main/**'
+      - 'apps/electron/src/preload/**'
+      - 'apps/electron/electron-builder.yml'
+      - 'packages/server-core/src/bootstrap/**'
+      - 'packages/server-core/src/sessions/**'
+      - 'packages/server-core/src/transport/**'
+      - 'packages/shared/src/config/**'
+      - 'scripts/build/**'
+      - 'scripts/build.ts'
+      - 'scripts/verify-windows-startup.ps1'
+      - 'e2e/core/**'
+      - 'e2e/perf/launch.ts'
+      - 'package.json'
+      - 'bun.lock'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-startup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installed-startup:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: astral-sh/setup-uv@v7
+      - run: bun install --frozen-lockfile --linker=hoisted --ignore-scripts
+      - name: Build Windows installer
+        run: bun run electron:dist:win
+        env:
+          CRAFT_SKIP_INSTALL: '1'
+          CRAFT_CLIENT_AUTH_REQUIRED: 'true'
+          CRAFT_CLIENT_AUTH_BROKER_URL: ${{ vars.CRAFT_CLIENT_AUTH_BROKER_URL }}
+          CRAFT_CLIENT_FEISHU_APP_ID: ${{ vars.CRAFT_CLIENT_FEISHU_APP_ID }}
+          CRAFT_CLIENT_NEON_AUTH_BASE_URL: ${{ vars.CRAFT_CLIENT_NEON_AUTH_BASE_URL }}
+          CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN: ${{ vars.CRAFT_CLIENT_NEON_AUTH_USERNAME_EMAIL_DOMAIN }}
+          CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED: ${{ vars.CRAFT_CLIENT_NEON_AUTH_SIGN_UP_ENABLED }}
+      - name: Run packaged core E2E
+        run: bun run e2e:core
+        env:
+          CRAFT_E2E_ELECTRON_BIN: ${{ github.workspace }}\apps\electron\release\win-unpacked\Storyflow.exe
+      - name: Verify installed startup and upgrade
+        shell: pwsh
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $releases = gh release list --repo $env:GH_REPO --exclude-drafts --exclude-pre-releases --limit 1 --json tagName | ConvertFrom-Json
+          $baseline = $releases | Select-Object -First 1
+          if (!$baseline) { throw 'No published upgrade baseline available' }
+          $baselineDir = Join-Path $env:RUNNER_TEMP 'storyflow-upgrade-baseline'
+          gh release download $baseline.tagName --repo $env:GH_REPO --pattern 'Storyflow-x64.exe' --dir $baselineDir
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to obtain upgrade baseline' }
+          ./scripts/verify-windows-startup.ps1 -Installer apps/electron/release/Storyflow-x64.exe -BaselineInstaller (Join-Path $baselineDir 'Storyflow-x64.exe')
+      - name: Save startup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-pr-startup-evidence
+          path: startup-evidence/
+          if-no-files-found: warn

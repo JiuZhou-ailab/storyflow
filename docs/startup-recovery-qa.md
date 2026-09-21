@@ -23,6 +23,8 @@ Host/profile 从上一个已发布安装器升级到当前安装器。升级链�
 CDP 必须看到可见应用页面并成功执行工作区 RPC；进程存在或出现任意窗口均不算成功。
 验收只允许在临时 CI runner 执行；证据作为 `windows-startup-evidence` 上传。
 共享 bootstrap 合同还在 Windows、macOS、Linux 的 validate matrix 执行。
+触及启动相关路径的 PR 还运行 `windows-startup.yml`，复用同一构建器与安装验收脚本，
+将 `windows-pr-startup-evidence` 保存为 CI artifact；该工作流只有读取仓库和发布记录的权限。
 
 ## Windows 现场 QA
 
