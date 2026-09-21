@@ -15,6 +15,7 @@ import {
   type InlineExtension,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { setOutputBudget } from './runtime-budgets.ts';
 import { createProviderHooks } from "./provider-hooks.ts";
 import type { ModelDefinition } from '../../shared/src/config/models.ts';
 import { buildCustomEndpointModelDef } from './custom-endpoint-models.ts';
@@ -168,6 +169,8 @@ export async function fixture(
       },
     });
     const notices: string[] = [];
+    const extraExtension = options.extensionFactory?.(modelRuntime, config, root);
+    const customTools = [...(options.tools ?? []), ...(extraExtension && typeof extraExtension === 'object' && 'tool' in extraExtension ? [extraExtension.tool as ToolDefinition] : [])];
     const resourceLoader = new DefaultResourceLoader({
       cwd: root,
       agentDir: root,
@@ -188,9 +191,7 @@ export async function fixture(
           },
         }),
         ...(extra ? [extra] : []),
-        ...(options.extensionFactory
-          ? [options.extensionFactory(modelRuntime, config, root)]
-          : []),
+        ...(extraExtension ? [extraExtension] : []),
       ],
     });
     await resourceLoader.reload();
@@ -200,13 +201,14 @@ export async function fixture(
       settingsManager,
       resourceLoader,
       model: modelRuntime.getModel("fixture", ids[0]!),
-      customTools: options.tools,
+      customTools,
       tools: [
-        ...(options.tools?.map((t) => t.name) ?? []),
+        ...customTools.map((t) => t.name),
         ...(options.extraTools ?? []),
       ],
       sessionManager: SessionManager.inMemory(root),
     }));
+    setOutputBudget(session);
     await session.bindExtensions({});
     const events: string[] = [];
     session.subscribe((e) => events.push(e.type));

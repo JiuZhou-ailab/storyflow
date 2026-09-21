@@ -40,6 +40,7 @@ function installFakeSubprocess(agent: PiAgent): { sent: Array<Record<string, unk
   (agent as any).ensureSubprocess = async () => {};
   (agent as any).send = (cmd: Record<string, unknown>) => {
     sent.push(cmd);
+    return true;
   };
   return { sent };
 }
@@ -218,33 +219,15 @@ describe('PiAgent.queryLlm — subprocess RPC round-trip', () => {
     agent.destroy();
   });
 
-  it('rejects queryLlm with a timeout message when no result arrives in time', async () => {
+  it('leaves the deadline to the query runtime and preserves its cancellation status', async () => {
     const agent = new PiAgent(createConfig());
-    installFakeSubprocess(agent);
-
-    // Shrink the wait so we don't actually block for 120s in the test.
-    // The implementation uses LLM_QUERY_TIMEOUT_MS via setTimeout; we intercept
-    // setTimeout to fire the timer synchronously-ish.
-    const originalSetTimeout = globalThis.setTimeout;
-    (globalThis as any).setTimeout = ((fn: () => void) => {
-      return originalSetTimeout(fn, 1);
-    }) as typeof setTimeout;
-
-    try {
-      let rejection: Error | null = null;
-      try {
-        await agent.queryLlm({ prompt: 'hi' });
-      } catch (err) {
-        rejection = err as Error;
-      }
-
-      expect(rejection).not.toBeNull();
-      expect(rejection!.message).toMatch(/timed out/i);
-      expect((agent as any).pendingLlmQueries.size).toBe(0);
-    } finally {
-      (globalThis as any).setTimeout = originalSetTimeout;
-    }
-
+    const { sent } = installFakeSubprocess(agent);
+    const pending = agent.queryLlm({ prompt: 'hi', timeoutMs: 300000 });
+    await flushMicrotasks();
+    (agent as any).handleLine(JSON.stringify({ type: 'llm_query_result', id: sent[0]!.id,
+      result: { text: '', status: 'cancelled', stopReason: 'aborted', warning: 'queryLlm timed out' } }));
+    await expect(pending).resolves.toMatchObject({ status: 'cancelled', stopReason: 'aborted' });
+    expect((agent as any).pendingLlmQueries.size).toBe(0);
     agent.destroy();
   });
 
@@ -270,4 +253,13 @@ describe('PiAgent.queryLlm — subprocess RPC round-trip', () => {
 
     agent.destroy();
   });
+});
+
+it('rejects an unsent query immediately without retaining a pending RPC', async () => {
+  const agent = new PiAgent(createConfig());
+  installFakeSubprocess(agent);
+  (agent as any).send = () => false;
+  await expect(agent.queryLlm({ prompt: 'hi' })).rejects.toThrow('not writable');
+  expect((agent as any).pendingLlmQueries.size).toBe(0);
+  agent.destroy();
 });

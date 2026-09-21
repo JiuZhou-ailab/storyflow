@@ -13,6 +13,7 @@ import type {
   ImageContent as PiImageContent,
   TextContent as PiTextContent,
 } from '@earendil-works/pi-ai';
+import type { LLMQueryResult } from '../../shared/src/agent/llm-tool.ts';
 import { handleLargeResponse, estimateTokens, tokenLimitFor } from '../../shared/src/utils/large-response.ts';
 import { getSessionPath } from '../../shared/src/sessions/storage.ts';
 import { PI_TOOL_NAME_MAP } from '../../shared/src/agent/backend/pi/constants.ts';
@@ -48,7 +49,7 @@ interface PiToolRuntimeContext {
   send(message: PiOutboundMessage): void;
   debug(message: string): void;
   runMiniCompletion(prompt: string): Promise<string | null>;
-  preExecuteCallLlm(input: Record<string, unknown>): Promise<{ text: string; warning?: string }>;
+  preExecuteCallLlm(input: Record<string, unknown>): Promise<LLMQueryResult>;
 }
 
 export function createPiToolRuntime(context: PiToolRuntimeContext) {
@@ -170,7 +171,8 @@ async function postprocessToolResult(
         intent,
         userRequest: state.getUserRequest(),
       },
-      summarize: runMiniCompletion,
+      // Read and generated text promise exact content; logs/search allow summaries.
+      summarize: event.toolName === 'read' || event.toolName === 'mcp__session__call_llm' ? undefined : runMiniCompletion,
       contextWindow: modelContextWindow,
       thresholdTokens: remainingTokens,
     });
@@ -179,8 +181,8 @@ async function postprocessToolResult(
       state.toolResultTokens += estimateTokens(largeResult.message);
       return {
         content: [{ type: 'text', text: largeResult.message }],
-        details: event.details,
-        isError: event.isError,
+        details: { ...(event.details as object ?? {}), representation: largeResult.wasSummarized ? 'summary' : 'preview', fullContentPath: largeResult.filePath },
+        isError: !largeResult.filePath || event.isError,
       };
     }
   } catch (error) {
@@ -212,12 +214,14 @@ function buildProxyTools(): ToolDefinition<any, any>[] {
       _toolCallId: string,
       params: any,
     ): Promise<AgentToolResult<any>> => {
-      if (def.name === 'mcp__session__call_llm') {
+      if (def.name === 'mcp__session__call_llm' && params.outputPath === undefined) {
         try {
           const result = await preExecuteCallLlm(params as Record<string, unknown>);
+          if (result.status && result.status !== 'completed') throw new Error(JSON.stringify(result));
+          const { text, ...details } = result;
           return {
-            content: [{ type: 'text', text: result.text || '(Model returned empty response)' }],
-            details: result.warning ? { warning: result.warning } : undefined,
+            content: [{ type: 'text', text: text || '(Model returned empty response)' }],
+            details,
           };
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -226,6 +230,7 @@ function buildProxyTools(): ToolDefinition<any, any>[] {
       }
 
       const result = await requestHostTool(def.name, params as Record<string, unknown>);
+      if (result.isError) throw new Error(result.content);
 
       return {
         content: [{ type: 'text', text: result.content }],

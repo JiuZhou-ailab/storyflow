@@ -97,7 +97,7 @@ describe('PiEventAdapter', () => {
 
       const events = collect(adapter.adaptEvent({ type: 'agent_settled' } as any));
 
-      expect(events).toEqual([{
+      expect(events).toMatchObject([{
         type: 'complete',
         usage: {
           inputTokens: 365,
@@ -172,7 +172,7 @@ describe('PiEventAdapter', () => {
         },
       } as any));
 
-      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toEqual([{
+      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([{
         type: 'complete',
         usage: {
           inputTokens: 500,
@@ -208,7 +208,7 @@ describe('PiEventAdapter', () => {
 
       adapter.startTurn();
 
-      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toEqual([
+      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([
         { type: 'complete' },
       ]);
     });
@@ -1152,7 +1152,7 @@ describe('PiEventAdapter', () => {
         message: {
           role: 'assistant',
           stopReason: 'stop',
-          content: '',
+          content: 'Complete response',
           usage: {
             input: 100_000,
             output: 100,
@@ -1184,7 +1184,7 @@ describe('PiEventAdapter', () => {
           },
         },
       ]);
-      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toEqual([{
+      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([{
         type: 'complete',
         usage: {
           inputTokens: 100_000,
@@ -1431,7 +1431,7 @@ describe('PiEventAdapter', () => {
     it('surfaces the original overflow if Pi settles without recovery events', () => {
       collect(adapter.adaptEvent({ type: 'message_end', message: overflowMessage } as any));
       collect(adapter.adaptEvent({ type: 'agent_end' } as any));
-      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toEqual([
+      expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([
         { type: 'error', message: overflowMessage.errorMessage },
         { type: 'complete' },
       ]);
@@ -1480,5 +1480,19 @@ describe('PiEventAdapter', () => {
         { type: 'complete' },
       ]);
     });
+  });
+});
+
+describe('settled output integrity', () => {
+  it('defers length until settlement and permits native recovery', () => {
+    const adapter = new PiEventAdapter();
+    adapter.startTurn();
+    const message = (stopReason: string, content: unknown[]) => ({ type: 'message_end', message: { role: 'assistant', model: 'fixture', stopReason, content } }) as any;
+    expect(collect(adapter.adaptEvent(message('length', [{ type: 'text', text: 'partial' }]))).some(e => e.type === 'error')).toBe(false);
+    collect(adapter.adaptEvent(message('stop', [{ type: 'text', text: 'complete' }])));
+    expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([{ type: 'complete', status: 'completed', stopReason: 'stop', model: 'fixture' }]);
+    adapter.startTurn();
+    collect(adapter.adaptEvent(message('length', [{ type: 'thinking', thinking: 'only reasoning' }])));
+    expect(collect(adapter.adaptEvent({ type: 'agent_settled' } as any))).toMatchObject([{ type: 'error' }, { type: 'complete', status: 'incomplete', stopReason: 'length' }]);
   });
 });

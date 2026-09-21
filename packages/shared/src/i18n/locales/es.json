@@ -180,6 +180,7 @@
   "chat.learnMore": "Más información",
   "chat.mentionFilesSkillsSources": "Adjunta archivos, carpetas, fuentes",
   "chat.modelFallback": "{{from}} falló repetidamente; se cambió a {{to}}.",
+  "chat.modelOutputIncomplete": "La respuesta del modelo está incompleta. Se conserva el contenido parcial; vuelve a intentar o continúa explícitamente.",
   "chat.modelPicker.supportsImagesOff": "Imágenes deshabilitadas — haz clic para habilitar",
   "chat.modelPicker.supportsImagesOn": "Imágenes habilitadas",
   "chat.modelPicker.toggleVisionFailed": "No se pudo actualizar el soporte de imágenes",

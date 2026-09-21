@@ -43,9 +43,45 @@ import { isLocalMcpEnabled } from '../workspaces/storage.ts';
 // PiAgent Implementation
 // ============================================================
 
+import { prepareLlmOutputFile } from './llm-output-file.ts';
+import type { LLMQueryResult } from './llm-tool.ts';
 import { PiAgentTransport } from './pi-agent-transport.ts';
 
 export abstract class PiAgentToolHost extends PiAgentTransport {
+  protected override async preExecuteCallLlm(input: Record<string, unknown>): Promise<LLMQueryResult> {
+    if (input.outputPath === undefined) return super.preExecuteCallLlm(input);
+    const epoch = this.queryCancellationEpoch;
+    const isCancelled = () => epoch !== this.queryCancellationEpoch;
+    if (typeof input.outputPath !== 'string') throw new Error('outputPath must be a path string');
+    if (this.permissionManager.getPermissionMode() === 'safe') throw new Error('File output is not allowed in safe mode');
+    const output = await prepareLlmOutputFile(input.outputPath, this.workingDirectory);
+    const check = runPreToolUseChecks({
+      toolName: 'Write', input: { file_path: output.path }, sessionId: this._sessionId,
+      permissionMode: this.permissionManager.getPermissionMode(),
+      workspaceRootPath: this.config.workspace.rootPath, workingDirectory: this.workingDirectory,
+      fileAccessBoundary: this.config.fileAccessBoundary,
+      allowProjectGrants: isFreeConversationWorkspaceId(this.config.workspace.id),
+      activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
+      activeSources: this.getActiveSourcePermissionRefs(), allSourceSlugs: [], hasSourceActivation: false,
+      permissionManager: this.permissionManager,
+    });
+    if (check.type === 'prompt') {
+      if (!this.onPermissionRequest) throw new Error('File output requires a permission handler');
+      const requestId = `llm-output-${crypto.randomUUID()}`;
+      const permission = new Promise<boolean>(resolve => this.pendingPermissions.set(requestId, { resolve, toolName: 'Write' }));
+      try {
+        this.onPermissionRequest({ requestId, toolName: 'Write', command: output.path,
+          description: check.description, type: check.promptType });
+        if (!await permission) throw new Error('Permission denied by user');
+      } finally { this.pendingPermissions.delete(requestId); }
+    } else if (check.type !== 'allow') {
+      throw new Error(check.type === 'block' ? check.reason : 'Output path requires a different write operation');
+    }
+    if (isCancelled()) throw new Error('Query cancelled');
+    const result = await super.preExecuteCallLlm(input);
+    return output.publish(result, isCancelled);
+  }
+
   private getActiveSourcePermissionRefs(): ActiveSourcePermissionRef[] {
     const activeSlugs = this.sourceManager.getActiveSlugs();
     return this.sourceManager.getAllSources()
@@ -393,7 +429,9 @@ export abstract class PiAgentToolHost extends PiAgentTransport {
       if (toolName === 'call_llm') {
         try {
           const result = await this.preExecuteCallLlm(args);
-          return { content: result.text || '(Model returned empty response)', isError: false };
+          return { content: result.status && result.status !== 'completed'
+            ? JSON.stringify(result) : result.text || '(Model returned empty response)',
+            isError: !!result.status && result.status !== 'completed' };
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           return { content: `call_llm failed: ${msg}`, isError: true };

@@ -180,6 +180,7 @@
   "chat.learnMore": "Tudj meg többet",
   "chat.mentionFilesSkillsSources": "Fájlok, mappák, források csatolása",
   "chat.modelFallback": "A(z) {{from}} többször hibázott; átváltás erre: {{to}}.",
+  "chat.modelOutputIncomplete": "A modell válasza hiányos. A részleges tartalom megmaradt; próbáld újra, vagy kérd a folytatást.",
   "chat.modelPicker.supportsImagesOff": "Képbevitel kikapcsolva — kattints a bekapcsoláshoz",
   "chat.modelPicker.supportsImagesOn": "Képbevitel bekapcsolva",
   "chat.modelPicker.toggleVisionFailed": "Nem sikerült frissíteni a képtámogatást",

@@ -16,7 +16,8 @@ export interface PiSubagentUsage {
 export interface PiSubagentTaskResult {
   task: string;
   capability: 'read_only' | 'workspace_write';
-  status: 'completed' | 'failed';
+  status: 'completed' | 'incomplete' | 'failed' | 'cancelled';
+  stopReason?: string;
   output: string;
   usage: PiSubagentUsage;
 }
@@ -24,6 +25,7 @@ export interface PiSubagentTaskResult {
 export interface PiSubagentDetails {
   kind: typeof PI_SUBAGENT_DETAILS_KIND;
   result?: PiSubagentTaskResult;
+  isError?: boolean;
   usage: PiSubagentUsage;
 }
 

@@ -153,19 +153,25 @@ Key integration points:
 ## `PiAgent.queryLlm` contract
 
 `PiAgent.queryLlm(request: LLMQueryRequest)` MUST:
-- honor `request.model` (with backend-specific fallback only when the model is
-  unresolvable/unsupported; always report the *effective* model in
-  `LLMQueryResult.model`)
+- honor explicit `request.model`, rejecting unavailable explicit models; use
+  native fallback only for implicit selection and report the effective model in
+  `LLMQueryResult.model`
 - honor `request.systemPrompt`
+- honor `request.maxTokens`, `request.thinkingLevel`, `request.timeoutMs` and
+  `request.temperature` through Pi's public stream options; capability ceilings
+  are separate from per-request budgets
+- validate actual JSON against `request.outputSchema` without coercion or repair
+- return completed/incomplete/failed/cancelled plus actual stop reason and model;
+  length or thinking-only results are never successful text
+- own the query deadline in the runtime and abort/dispose before replying;
+  the Host must not add a competing timeout or replay
 
-SHOULD:
-- honor `request.outputSchema` (at minimum via prompt injection — see
-  `buildCallLlmRequest` in `agent/llm-tool.ts`, which already handles this
-  before runtime dispatch)
-
-MAY:
-- honor `request.maxTokens` and `request.temperature` if the underlying SDK
-  supports passing these to its generation call
+`call_llm` defaults to 8192 tokens, medium thinking, 120 seconds independently
+of the parent. Explicit `longOutput` selects 16384 tokens and 300 seconds;
+explicit `maxTokens` can select up to 32768 within declared capability.
+`outputPath` is optional, checked by the Host as a write before inference, and
+publishes only completed output with create-only protection. It returns a bounded
+preview and exact file reference. Safe mode cannot use file delivery.
 
 MUST NOT:
 - return a fabricated `LLMQueryResult.model` that doesn't match what was actually

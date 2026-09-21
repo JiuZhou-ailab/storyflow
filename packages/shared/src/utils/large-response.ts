@@ -8,7 +8,7 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { join, relative } from 'path';
 import { debug } from './debug.ts';
 import {
@@ -112,10 +112,10 @@ export function saveLargeResponse(
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
     const safeLabel = label.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
-    const filename = `${timestamp}_${toolName}_${safeLabel}.txt`;
+    const filename = `${timestamp}_${toolName}_${safeLabel}_${randomUUID()}.txt`;
     const absolutePath = join(responsesDir, filename);
 
-    writeFileSync(absolutePath, content, 'utf-8');
+    writeFileSync(absolutePath, content, { encoding: 'utf-8', flag: 'wx' });
 
     const relativePath = relative(sessionPath, absolutePath);
 

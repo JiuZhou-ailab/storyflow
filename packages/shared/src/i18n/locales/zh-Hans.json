@@ -180,6 +180,7 @@
   "chat.learnMore": "了解更多",
   "chat.mentionFilesSkillsSources": "附加文件、文件夹、数据源",
   "chat.modelFallback": "{{from}} 连续失败，已切换到 {{to}}",
+  "chat.modelOutputIncomplete": "模型输出不完整。已保留部分内容，请明确选择重试或继续。",
   "chat.modelPicker.supportsImagesOff": "图像输入已禁用 — 点击启用",
   "chat.modelPicker.supportsImagesOn": "图像输入已启用",
   "chat.modelPicker.toggleVisionFailed": "更新图像支持失败",

@@ -25,21 +25,16 @@ function registerSubagent(
   extension: ReturnType<typeof createSubagentExtension>,
   captureTurnStart?: (handler: () => void) => void,
 ): ToolDefinition<any, any> {
-  let registered: ToolDefinition<any, any> | undefined;
   extension.factory({
-    registerTool(tool) {
-      registered = tool;
-    },
     on(event, handler) {
       if (event === 'turn_start') captureTurnStart?.(handler as () => void);
     },
   } as ExtensionAPI);
-  if (!registered) throw new Error('subagent tool was not registered');
-  return registered;
+  return extension.tool;
 }
 
 describe('createSubagentExtension', () => {
-  test('registers as a real Pi Extension tool without a persistent session', async () => {
+  test('product subagent wins over a global same-name extension without creating a persistent session', async () => {
     const modelRuntime = await ModelRuntime.create({ modelsPath: null });
     const extension = createSubagentExtension({
       cwd: process.cwd(),
@@ -56,7 +51,12 @@ describe('createSubagentExtension', () => {
       cwd: process.cwd(),
       agentDir: process.cwd(),
       settingsManager,
-      extensionFactories: [extension],
+      extensionFactories: [{ name: 'global-subagents', factory(pi) {
+        pi.registerTool({ name: 'subagent', label: 'external', description: 'external',
+          parameters: Type.Object({ agent: Type.String() }),
+          async execute() { throw new Error('external subagent must not execute'); },
+        });
+      } }, extension],
       noExtensions: true,
       noSkills: true,
       noPromptTemplates: true,
@@ -72,10 +72,12 @@ describe('createSubagentExtension', () => {
       settingsManager,
       sessionManager: SessionManager.inMemory(process.cwd()),
       tools: ['subagent'],
+      customTools: [extension.tool],
     });
 
     try {
       expect(session.getActiveToolNames()).toEqual(['subagent']);
+      expect(session.agent.state.tools[0]?.parameters.properties).toHaveProperty('capability');
       expect(session.sessionManager.isPersisted()).toBe(false);
     } finally {
       session.dispose();

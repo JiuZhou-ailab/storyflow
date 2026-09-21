@@ -180,6 +180,7 @@
   "chat.learnMore": "詳細を見る",
   "chat.mentionFilesSkillsSources": "ファイル、フォルダ、ソースを添付",
   "chat.modelFallback": "{{from}} で失敗が続いたため、{{to}} に切り替えました。",
+  "chat.modelOutputIncomplete": "モデルの出力は未完了です。途中の内容は保持されています。再試行または続行を明示的に選択してください。",
   "chat.modelPicker.supportsImagesOff": "画像入力は無効 — クリックして有効化",
   "chat.modelPicker.supportsImagesOn": "画像入力は有効",
   "chat.modelPicker.toggleVisionFailed": "画像サポートの更新に失敗しました",

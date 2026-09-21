@@ -84,7 +84,7 @@ index 0fb7e8b26f323f2b44a5a4b760bccedc4c3abdd0..e53c4bdfcd2900826cfea97c58eeaa0a
                  maxRetryDelayMs: options?.maxRetryDelayMs,
                  signal: options?.signal,
 diff --git a/dist/api/simple-options.js b/dist/api/simple-options.js
-index 216a45feebc02acef047d1ff133729fb0751b76c..664734e38d5247a1552a7461bf752ab66784fab4 100644
+index 216a45feebc02acef047d1ff133729fb0751b76c..7e7fd167efc6028b9b6cd272bf6f45930acc2304 100644
 --- a/dist/api/simple-options.js
 +++ b/dist/api/simple-options.js
 @@ -23,6 +23,7 @@ export function buildBaseOptions(model, context, options, apiKey) {
@@ -95,6 +95,15 @@ index 216a45feebc02acef047d1ff133729fb0751b76c..664734e38d5247a1552a7461bf752ab6
          onPayload: options?.onPayload,
          onResponse: options?.onResponse,
          timeoutMs: options?.timeoutMs,
+@@ -57,7 +58,7 @@ export function adjustMaxTokensForThinking(
+ // Undefined means no explicit caller cap. Use the model cap and fit thinking inside it.
+ baseMaxTokens, modelMaxTokens, reasoningLevel, customBudgets) {
+     let thinkingBudget = thinkingBudgetForLevel(reasoningLevel, customBudgets);
+-    const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
++    const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens, modelMaxTokens);
+     if (maxTokens <= thinkingBudget) {
+         thinkingBudget = clampThinkingBudgetToAnswerRoom(thinkingBudget, maxTokens);
+     }
 diff --git a/dist/models.js b/dist/models.js
 index 2e415e0b3a95527bfa8b4ad67664c94c2ac9549e..6ee49fa32df9f4e2e7fbf8f89b2b9e0979536f06 100644
 --- a/dist/models.js

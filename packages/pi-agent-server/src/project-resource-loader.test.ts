@@ -410,7 +410,7 @@ describe("createProjectResourceLoader", () => {
     expect(settingsManager.getHttpIdleTimeoutMs()).toBe(5 * 60 * 1000);
   });
 
-  it("keeps Pi auto-compaction enabled without rewriting user settings", async () => {
+  it("preserves explicit Pi auto-compaction settings without rewriting user settings", async () => {
     const agentDir = join(createRoot(), "agent");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(
@@ -427,7 +427,7 @@ describe("createProjectResourceLoader", () => {
     });
 
     expect(settingsManager.getCompactionSettings()).toMatchObject({
-      enabled: true,
+      enabled: false,
       keepRecentTokens: 12_345,
     });
     expect(

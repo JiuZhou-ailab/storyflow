@@ -180,6 +180,7 @@
   "chat.learnMore": "Mehr erfahren",
   "chat.mentionFilesSkillsSources": "Dateien, Ordner oder Quellen anhängen",
   "chat.modelFallback": "{{from}} ist wiederholt fehlgeschlagen; zu {{to}} gewechselt.",
+  "chat.modelOutputIncomplete": "Die Modellausgabe ist unvollständig. Teilinhalte bleiben erhalten; erneut versuchen oder ausdrücklich fortsetzen.",
   "chat.modelPicker.supportsImagesOff": "Bildeingabe deaktiviert — klicken zum Aktivieren",
   "chat.modelPicker.supportsImagesOn": "Bildeingabe aktiviert",
   "chat.modelPicker.toggleVisionFailed": "Bildunterstützung konnte nicht aktualisiert werden",

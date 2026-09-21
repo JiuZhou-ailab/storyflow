@@ -2,6 +2,8 @@
 // output: One fully bound primary Pi AgentSession plus its system-prompt projection
 // pos: Pi SDK session construction boundary, separate from JSONL command dispatch
 
+import { createBudgetHooks, applyCompactionDefaults, setOutputBudget } from './runtime-budgets.ts';
+
 import { join } from "node:path";
 import { mkdirSync, readdirSync, statSync, existsSync } from "node:fs";
 import {
@@ -186,6 +188,8 @@ export async function createPrimaryPiSession(
         toolResultTokens: 0,
       }),
   });
+  customTools.push(subagentExtension.tool);
+  toolAllowlist.push(subagentExtension.tool.name);
   debugLog(
     `Session tools: ${nativeToolNames.length} Pi native + ${webTools.length} web + ${proxyTools.length} proxy`,
   );
@@ -206,11 +210,13 @@ export async function createPrimaryPiSession(
     {
       cwd,
       contextRoot: config.projectRoot,
+      getContextWindow: () => activeSession?.model?.contextWindow,
       agentDir,
       systemPromptOverride: systemPromptOverride.overrideResourcePrompt,
       extensionFactories: [
         systemPromptOverride.extension,
         providerHooks,
+        createBudgetHooks(() => activeSession),
         createOpenAIEncryptedReasoningCompat(),
         toolHooks,
         subagentExtension,
@@ -343,6 +349,8 @@ export async function createPrimaryPiSession(
   // Create the session with Pi-native tools plus explicit Product Host capabilities.
   const { session } = await createAgentSession(sessionOptions);
   activeSession = session;
+  applyCompactionDefaults(settingsManager, session.model?.contextWindow);
+  setOutputBudget(session);
 
   const notifyExtension = (
     message: string,

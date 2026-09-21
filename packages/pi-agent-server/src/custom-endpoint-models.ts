@@ -123,8 +123,7 @@ export function buildCustomEndpointModelDef(
     input,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: overrides?.contextWindow ?? 131_072,
-    // Capability is not an output budget: qualifying a fallback must not raise
-    // the existing per-request limit (and potential spend) on either model.
-    maxTokens: Math.min(overrides?.fallbackCapabilities?.maxOutputTokens ?? 8_192, 8_192),
+    // Request budgets are applied separately through Pi's public stream function.
+    maxTokens: overrides?.fallbackCapabilities?.maxOutputTokens ?? 8_192,
   }
 }
