@@ -19,6 +19,7 @@ $env:CRAFT_DEBUG = '1'
 $configPath = Join-Path $config 'config.json'
 '{"workspaces":[],"activeWorkspaceId":null,"activeSessionId":null,"startupPreservationMarker":"keep-this-value"}' | Set-Content -Encoding utf8 $configPath
 $exe = Join-Path $installDir 'Storyflow.exe'
+$script:startupCdpEndpoint = $null
 
 function Stop-TestApp {
   Get-Process -Name Storyflow -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
@@ -38,7 +39,7 @@ function Install-Version([string]$path) {
 }
 
 function Quit-TestApp {
-  & bun e2e/core/installed-startup.ts $startupProfile --quit
+  & bun e2e/core/installed-startup.ts $startupProfile "--endpoint=$script:startupCdpEndpoint" --quit
   if ($LASTEXITCODE -ne 0) { throw 'Could not request a normal application quit' }
   $deadline = (Get-Date).AddSeconds(10)
   while (Get-Process -Name Storyflow -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }) {
@@ -64,8 +65,13 @@ function Launch-Shortcut([string]$scenario, [switch]$Duplicate) {
     if (!$launched -or !$launched.WaitForExit(15000)) { throw 'Second launch did not hand off to the existing instance' }
     if ($launched.ExitCode -ne 0) { throw "Second launch failed: $($launched.ExitCode)" }
   }
-  & bun e2e/core/installed-startup.ts $startupProfile | Tee-Object -FilePath (Join-Path $EvidenceDirectory "$scenario.json")
+  $probeArgs = @($startupProfile)
+  # The duplicate briefly replaces DevToolsActivePort before handing off. Probe
+  # the original owner, whose endpoint was verified by the previous launch.
+  if ($Duplicate) { $probeArgs += "--endpoint=$script:startupCdpEndpoint" }
+  $startupResult = & bun e2e/core/installed-startup.ts @probeArgs | Tee-Object -FilePath (Join-Path $EvidenceDirectory "$scenario.json")
   if ($LASTEXITCODE -ne 0) { throw "Application page failed in $scenario" }
+  $script:startupCdpEndpoint = ($startupResult | ConvertFrom-Json).endpoint
   $stored = Get-Content $configPath -Raw | ConvertFrom-Json
   if ($stored.startupPreservationMarker -ne 'keep-this-value') { throw 'Host configuration was reset' }
   $owners = @(Get-Process -Name Storyflow | Where-Object { $_.Path -eq $exe -and $_.MainWindowHandle -ne 0 })

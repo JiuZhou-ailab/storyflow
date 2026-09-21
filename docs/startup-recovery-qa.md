@@ -21,6 +21,8 @@ Windows release job 在上传资产前执行 `scripts/verify-windows-startup.ps1
 通过安装器创建的快捷方式验证首屏、二次启动、正常退出重开和强制结束后重开；再使用独立
 Host/profile 从上一个已发布安装器升级到当前安装器。升级链中不删锁、不换 profile。
 CDP 必须看到可见应用页面并成功执行工作区 RPC；进程存在或出现任意窗口均不算成功。
+二次启动须先完成进程交接，再通过首个 owner 已验证的 CDP endpoint 检查页面和正常退出；
+重复进程可能覆盖 profile 的 `DevToolsActivePort`，真正重启时才重新发现 endpoint。
 验收只允许在临时 CI runner 执行；证据作为 `windows-startup-evidence` 上传。
 共享 bootstrap 合同还在 Windows、macOS、Linux 的 validate matrix 执行。
 触及启动相关路径的 PR 还运行 `windows-startup.yml`，复用同一构建器与安装验收脚本，
