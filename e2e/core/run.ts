@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     configureAccountSmokeEnvironment()
     configureModel(fixture, model.url)
     seedIncompatibleV017ServerLock(fixture.configDir)
-    app = await launchApp(fixture.configDir, { ...launchOptions, preserveServerLockState: true })
+    app = await launchApp(fixture.configDir, { ...launchOptions, preserveServerLockState: true, userDataDir: join(fixture.configDir, 'electron-profile') })
     assert.equal(lstatSync(join(fixture.configDir, '.server.lock')).isFile(), true)
     assert.equal(lstatSync(join(fixture.configDir, '.server.lease')).isDirectory(), true)
 
@@ -177,7 +177,7 @@ async function main(): Promise<void> {
     await app.close()
     assert.equal(existsSync(join(fixture.configDir, '.server.lock')), false)
     assert.equal(existsSync(join(fixture.configDir, '.server.lease')), false)
-    app = await launchApp(fixture.configDir, { ...launchOptions, preserveServerLockState: true })
+    app = await launchApp(fixture.configDir, { ...launchOptions, preserveServerLockState: true, userDataDir: join(fixture.configDir, 'electron-profile') })
 
     const recovered = await callOn<Array<{ id: string }>>(
       app,

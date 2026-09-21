@@ -2,14 +2,13 @@
 // output: A compatibility-upgraded, transport-ready server with an explicitly startable Agent runtime
 // pos: Owns the two-stage server lifecycle shared by Electron and headless hosts
 
-import { lstatSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
-import { uptime as osUptime } from 'node:os'
-import { join } from 'node:path'
-import * as lockfile from 'proper-lockfile'
+import { acquireServerLock, hasServerLock, releaseServerLock } from './server-lock'
+export { acquireServerLock, releaseServerLock, ServerLockError } from './server-lock'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { seedDefaultAgentResources } from '@craft-agent/shared/agent-defaults'
-import { ensureConfigDir, loadStoredConfig, saveConfig } from '@craft-agent/shared/config'
+import { ensureConfigDir, loadStoredConfig, restoreStoredConfigBackup, saveConfig } from '@craft-agent/shared/config'
 import { CONFIG_DIR } from '@craft-agent/shared/config/paths'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
 import { migrateLegacyLocalProjectDirectoryIdentities } from '@craft-agent/shared/workspaces'
@@ -37,15 +36,21 @@ export interface ServerBootstrapOptions<TSessionManager, THandlerDeps> {
     oauthFlowStore: OAuthFlowStore
   }) => THandlerDeps
   registerAllRpcHandlers: (server: RpcServer, deps: THandlerDeps, serverCtx: ServerHandlerContext) => void
-  initializeSessionManager: (sessionManager: TSessionManager) => Promise<void>
+  initializeSessionManager: (sessionManager: TSessionManager, signal: AbortSignal) => Promise<void>
   /**
    * Return once the RPC transport is ready, leaving Agent/session initialization
    * to startRuntime(). Headless hosts remain eager by default.
    */
   deferRuntimeInitialization?: boolean
+  /** Failed or timed-out stop retains the lease until the host actually exits. */
+  stopTimeoutMs?: number
+  /** Explicit user selection, applied only after exclusive ownership. */
+  restoreConfigBackup?: string
+  /** Desktop preflight already owns the lease; verified before reuse. */
+  reuseServerLock?: boolean
   setSessionEventSink: (sessionManager: TSessionManager, sink: EventSink) => void
   initModelRefreshService: () => ModelRefreshServiceLike
-  cleanupSessionManager?: (sessionManager: TSessionManager) => Promise<void> | void
+  cleanupSessionManager?: (sessionManager: TSessionManager, requestsDrained: Promise<void>) => Promise<void> | void
   cleanupClientResources?: (clientId: string) => void
   onClientConnected?: (info: { clientId: string; webContentsId: number | null; workspaceId: string | null }) => void
   serverId?: string
@@ -59,7 +64,7 @@ export interface ServerBootstrapOptions<TSessionManager, THandlerDeps> {
    * Optional HTTP request handler for non-WebSocket requests on the RPC port.
    * When provided, the WsRpcServer serves HTTP (e.g. WebUI) on the same port.
    */
-  httpHandler?: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void
+  httpHandler?: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void | Promise<void>
 }
 
 export interface ServerHandlerContext {
@@ -125,225 +130,6 @@ export function generateServerToken(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Startup lease
-// ---------------------------------------------------------------------------
-
-const LOCK_FILE = join(CONFIG_DIR, '.server.lock')
-const LEASE_PATH = join(CONFIG_DIR, '.server.lease')
-const INCOMPATIBLE_LEASE_OWNER_FILE = join(LOCK_FILE, 'owner.json')
-const SERVER_LEASE_VERSION = 1
-const LOCK_STALE_MS = 60_000
-const LOCK_UPDATE_MS = LOCK_STALE_MS / 2
-const LOCK_RETRY_MS = 500
-let serverLockHeld = false
-
-interface ServerLockPayload {
-  pid: number
-  startedAt: number
-  leaseVersion?: number
-}
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM'
-  }
-}
-
-/**
- * Parse the compatibility lock file. Current releases write JSON while older
- * releases may still leave a plain PID.
- */
-function parseLockContent(raw: string): ServerLockPayload | null {
-  const trimmed = raw.trim()
-  // Try the structured format first.
-  if (trimmed.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(trimmed) as Record<string, unknown>
-      const pid = typeof parsed.pid === 'number' ? parsed.pid : NaN
-      const startedAt = typeof parsed.startedAt === 'number' ? parsed.startedAt : 0
-      const leaseVersion = typeof parsed.leaseVersion === 'number' ? parsed.leaseVersion : undefined
-      if (!isNaN(pid)) return { pid, startedAt, leaseVersion }
-    } catch { /* fall through to legacy parse */ }
-  }
-  // Legacy format: plain PID number
-  const pid = parseInt(trimmed, 10)
-  if (!isNaN(pid)) return { pid, startedAt: 0 }
-  return null
-}
-
-/**
- * Returns true if the lock's `startedAt` timestamp predates the most recent
- * system boot. This means the lock was written in a previous boot cycle and
- * the PID has been reused by an unrelated process.
- */
-function isLockFromPreviousBoot(startedAt: number): boolean {
-  if (startedAt <= 0) return false // legacy lock without timestamp — can't tell
-  const bootTime = Date.now() - osUptime() * 1000
-  return startedAt < bootTime
-}
-
-function isLiveForeignOwner(owner: ServerLockPayload | null): owner is ServerLockPayload {
-  return owner !== null
-    && owner.pid !== process.pid
-    && isProcessAlive(owner.pid)
-    && !isLockFromPreviousBoot(owner.startedAt)
-}
-
-function prepareCompatibilityLock(logger: PlatformServices['logger']): void {
-  let stats: ReturnType<typeof lstatSync>
-  try {
-    stats = lstatSync(LOCK_FILE)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-    throw error
-  }
-
-  // v0.17.0 briefly used the released file path as a lease directory. Migrate
-  // it once, but never steal it from a live owner or an in-progress startup.
-  if (stats.isDirectory()) {
-    let owner: ServerLockPayload | null = null
-    try {
-      owner = parseLockContent(readFileSync(INCOMPATIBLE_LEASE_OWNER_FILE, 'utf-8'))
-    } catch {
-      // A missing owner is safe to remove only after its lease heartbeat expires.
-    }
-
-    if (isLiveForeignOwner(owner)) {
-      throw new Error(`Another Storyflow server instance is active (PID ${owner.pid}). Close it and retry.`)
-    }
-    if (!owner && stats.mtimeMs >= Date.now() - LOCK_STALE_MS) {
-      throw new Error('Another Storyflow server instance may be starting. Retry shortly.')
-    }
-
-    rmSync(LOCK_FILE, { recursive: true })
-    logger.warn('[bootstrap] Migrated incompatible v0.17.0 server lease directory')
-    return
-  }
-
-  if (!stats.isFile()) {
-    throw new Error(`Unsupported server lock at ${LOCK_FILE}. Remove it after verifying no Storyflow server is running.`)
-  }
-
-  const legacyLock = parseLockContent(readFileSync(LOCK_FILE, 'utf-8'))
-
-  if (legacyLock?.leaseVersion === SERVER_LEASE_VERSION) {
-    const leaseActive = lockfile.checkSync(CONFIG_DIR, {
-      lockfilePath: LEASE_PATH,
-      realpath: false,
-      stale: LOCK_STALE_MS,
-    })
-    const ownerAlive = isLiveForeignOwner(legacyLock)
-    if (leaseActive && ownerAlive) {
-      throw new Error(`Another Storyflow server instance is active (PID ${legacyLock.pid}). Close it and retry.`)
-    }
-    if (!leaseActive && ownerAlive && stats.mtimeMs >= Date.now() - LOCK_STALE_MS) {
-      throw new Error('Another Storyflow server instance may be starting. Retry shortly.')
-    }
-    // Only the owner process heartbeats the lease. A fresh lease whose owner
-    // PID is gone was orphaned by an abrupt exit within the last stale window;
-    // reclaim it now instead of forcing the user to wait out the heartbeat.
-    if (leaseActive) {
-      rmSync(LEASE_PATH, { recursive: true, force: true })
-      logger.warn(`[bootstrap] Reclaimed orphaned server lease from exited PID ${legacyLock.pid}`)
-    }
-  } else if (isLiveForeignOwner(legacyLock)) {
-    throw new Error(
-      `A legacy Storyflow server lock may still be active (PID ${legacyLock.pid}). ` +
-      `Close Storyflow and retry; only delete ${LOCK_FILE} once if that PID is unrelated.`,
-    )
-  }
-
-  try {
-    unlinkSync(LOCK_FILE)
-    logger.warn('[bootstrap] Removed stale legacy server lock')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-    throw error
-  }
-}
-
-function removeOwnedCompatibilityLock(): void {
-  try {
-    const owner = parseLockContent(readFileSync(LOCK_FILE, 'utf-8'))
-    if (owner?.pid === process.pid && owner.leaseVersion === SERVER_LEASE_VERSION) unlinkSync(LOCK_FILE)
-  } catch {
-    // Best-effort cleanup
-  }
-}
-
-export async function acquireServerLock(logger: PlatformServices['logger']): Promise<void> {
-  if (serverLockHeld) throw new Error('This process already owns the Storyflow server lease.')
-
-  prepareCompatibilityLock(logger)
-  try {
-    writeFileSync(
-      LOCK_FILE,
-      JSON.stringify({ pid: process.pid, startedAt: Date.now(), leaseVersion: SERVER_LEASE_VERSION }),
-      { encoding: 'utf-8', flag: 'wx' },
-    )
-  } catch (error) {
-    if (['EEXIST', 'EISDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) {
-      throw new Error('Another Storyflow server instance became active during startup. Retry shortly.')
-    }
-    throw error
-  }
-
-  try {
-    await lockfile.lock(CONFIG_DIR, {
-      lockfilePath: LEASE_PATH,
-      realpath: false,
-      stale: LOCK_STALE_MS,
-      update: LOCK_UPDATE_MS,
-      retries: {
-        retries: LOCK_STALE_MS / LOCK_RETRY_MS,
-        factor: 1,
-        minTimeout: LOCK_RETRY_MS,
-        maxTimeout: LOCK_RETRY_MS,
-        randomize: false,
-      },
-      onCompromised(error) {
-        logger.error('[bootstrap] Server lease was compromised; exiting to prevent concurrent writers', error)
-        process.exit(1)
-      },
-    })
-    serverLockHeld = true
-  } catch (error) {
-    removeOwnedCompatibilityLock()
-    if ((error as NodeJS.ErrnoException).code === 'ELOCKED') {
-      throw new Error('Another Storyflow server instance is active. Close it and retry.')
-    }
-    throw error
-  }
-}
-
-/**
- * Release the lease if it belongs to the current process.
- * Exported so consumers (e.g. the Electron before-quit handler) can call it
- * directly without going through `instance.stop()`.
- */
-export function releaseServerLock(): void {
-  if (!serverLockHeld) return
-
-  let leaseReleased = false
-  try {
-    lockfile.unlockSync(CONFIG_DIR, { lockfilePath: LEASE_PATH, realpath: false })
-    leaseReleased = true
-  } catch {
-    // Best-effort cleanup
-  } finally {
-    if (leaseReleased) removeOwnedCompatibilityLock()
-    serverLockHeld = false
-  }
-}
-
-// A normal process exit permits synchronous lock cleanup; SIGKILL still relies
-// on proper-lockfile's stale lease recovery and owner-PID guard.
-process.on('exit', releaseServerLock)
-
-// ---------------------------------------------------------------------------
 // Config artifacts
 // ---------------------------------------------------------------------------
 
@@ -367,7 +153,19 @@ function ensureGlobalConfigExists(platform: PlatformServices): void {
   platform.logger.info('[bootstrap] Initialized missing global config')
 }
 
-export async function bootstrapServer<TSessionManager, THandlerDeps>(
+let pendingBootstrap: { options: object; promise: Promise<ServerInstance<unknown>> } | undefined
+
+export function bootstrapServer<TSessionManager, THandlerDeps>(options: ServerBootstrapOptions<TSessionManager, THandlerDeps>): Promise<ServerInstance<TSessionManager>> {
+  if (pendingBootstrap) {
+    if (pendingBootstrap.options !== options) return Promise.reject(new Error('A different Host bootstrap is already in progress'))
+    return pendingBootstrap.promise as Promise<ServerInstance<TSessionManager>>
+  }
+  const promise = startServer(options).finally(() => { pendingBootstrap = undefined })
+  pendingBootstrap = { options, promise }
+  return promise
+}
+
+async function startServer<TSessionManager, THandlerDeps>(
   options: ServerBootstrapOptions<TSessionManager, THandlerDeps>,
 ): Promise<ServerInstance<TSessionManager>> {
   const serverToken = options.serverToken ?? process.env.CRAFT_SERVER_TOKEN
@@ -393,173 +191,118 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
 
   options.applyPlatformToSubsystems?.(platform)
 
-  bootstrapConfigArtifacts(platform)
-  await acquireServerLock(platform.logger)
-  try {
-  seedDefaultAgentResources()
-  ensureGlobalConfigExists(platform)
-
-  // Transfer each reachable v0.17 locator and cwd into Host-owned grants.
-  // Unresolved Projects remain unmarked and retry on the next startup.
-  const directoryMigration = await migrateLegacyLocalProjectDirectoryIdentities()
-  for (const projectId of directoryMigration.restoredProjectIds) {
-    platform.logger.info(`Restored directory identity for Project ${projectId}`)
-  }
-  for (const unresolved of directoryMigration.unresolvedProjects) {
-    platform.logger.warn(`Project ${unresolved.projectId} still requires path recovery: ${unresolved.reason}`)
-  }
-
-  const modelRefreshService = options.initModelRefreshService()
-  const sessionManager = options.createSessionManager()
-
-  const rpcHost = options.rpcHost ?? process.env.CRAFT_RPC_HOST ?? '127.0.0.1'
-  const rpcPortRaw = options.rpcPort ?? parseInt(process.env.CRAFT_RPC_PORT ?? '9100', 10)
-  if (!Number.isFinite(rpcPortRaw) || rpcPortRaw < 0 || rpcPortRaw > 65535) {
-    throw new Error(`Invalid RPC port: ${rpcPortRaw}`)
-  }
-  const rpcPort = Math.trunc(rpcPortRaw)
-
-  const wsServer = new WsRpcServer({
-    host: rpcHost,
-    port: rpcPort,
-    requireAuth: true,
-    validateToken: async (t) => t === serverToken,
-    validateSessionCookie: options.validateSessionCookie,
-    serverId: options.serverId ?? 'headless',
-    serverVersion: options.serverVersion,
-    tls: options.tls,
-    httpHandler: options.httpHandler,
-    onClientConnected: options.onClientConnected,
-    onClientDisconnected: (clientId) => {
-      options.cleanupClientResources?.(clientId)
-    },
-  })
-
-  await wsServer.listen()
-
-  const oauthFlowStore = new OAuthFlowStore()
-
-  const deps = options.createHandlerDeps({
-    sessionManager,
-    platform,
-    oauthFlowStore,
-  })
-
-  const startedAt = Date.now()
-  const serverHandlerContext: ServerHandlerContext = {
-    getConnectedClientCount: () => wsServer.getConnectedClientCount(),
-    serverId: options.serverId ?? 'headless',
-    startedAt,
-  }
-
-  options.registerAllRpcHandlers(wsServer, deps, serverHandlerContext)
-
-  options.setSessionEventSink(sessionManager, wsServer.push.bind(wsServer))
-
-  platform.logger.info(`Storyflow server listening on ${wsServer.protocol}://${rpcHost}:${wsServer.port}`)
-
-  let stopped = false
+  mkdirSync(CONFIG_DIR, { recursive: true })
+  if (options.reuseServerLock) {
+    if (!hasServerLock()) throw new Error('Host preflight does not own the server lease')
+  } else await acquireServerLock(platform.logger)
+  let modelRefreshService: ModelRefreshServiceLike | undefined
+  let sessionManager: TSessionManager | undefined
+  let wsServer: WsRpcServer | undefined
+  let oauthFlowStore: OAuthFlowStore | undefined
   let runtimeStarted = false
+  let stopping: Promise<void> | undefined
+  const lifetime = new AbortController()
   let resolveReady!: () => void
   let rejectReady!: (error: unknown) => void
-  const ready = new Promise<void>((resolve, reject) => {
-    resolveReady = resolve
-    rejectReady = reject
-  })
+  const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })
+  // Deferred hosts may fail before they attach their readiness observer.
+  void ready.catch(() => {})
 
   const startRuntime = (): Promise<void> => {
-    if (runtimeStarted) return ready
+    if (runtimeStarted || lifetime.signal.aborted) return ready
     runtimeStarted = true
-
     void (async () => {
-      await options.initializeSessionManager(sessionManager)
-      if (stopped) return
-      modelRefreshService.startAll()
+      await options.initializeSessionManager(sessionManager!, lifetime.signal)
+      if (lifetime.signal.aborted) return
+      modelRefreshService!.startAll()
       platform.logger.info('[bootstrap] Agent runtime initialized')
     })().then(resolveReady, rejectReady)
-
     return ready
   }
 
-  const stop = async (): Promise<void> => {
-    if (stopped) return
-    stopped = true
-
-    if (!runtimeStarted) {
-      runtimeStarted = true
-      resolveReady()
-    } else {
-      // Do not dispose resources while an in-flight initialization still owns them.
+  const stop = (): Promise<void> => {
+    if (stopping) return stopping
+    lifetime.abort()
+    if (!runtimeStarted) resolveReady()
+    const errors: unknown[] = []
+    const attempt = async (action: () => unknown | Promise<unknown>) => {
+      try { await action() } catch (error) { errors.push(error) }
+    }
+    const cleanup = (async () => {
+      // Stop admission immediately, even when initialization is hung.
+      const transportClosed = attempt(() => wsServer?.close())
+      await attempt(() => oauthFlowStore?.dispose())
+      await attempt(() => modelRefreshService?.stopAll?.())
       await ready.catch(() => {})
-    }
-
-    platform.logger.info('Shutting down...')
-
-    // Notify connected clients before closing connections
-    try {
-      wsServer.push('server:shuttingDown', { to: 'all' }, {
-        reason: 'shutdown',
-        graceMs: 2000,
-        timestamp: Date.now(),
-      })
-      // Brief drain period so clients receive the notification
-      await new Promise(resolve => setTimeout(resolve, 2000))
-    } catch (error) {
-      platform.logger.error('[bootstrap] Failed to send shutdown notification:', error)
-    }
-
-    try {
-      modelRefreshService.stopAll?.()
-    } catch (error) {
-      platform.logger.error('[bootstrap] Failed to stop model refresh service:', error)
-    }
-
-    try {
-      await options.cleanupSessionManager?.(sessionManager)
-    } catch (error) {
-      platform.logger.error('[bootstrap] Failed to clean up session manager:', error)
-    }
-
-    try {
-      wsServer.close()
-    } catch (error) {
-      platform.logger.error('[bootstrap] Failed to close WS server:', error)
-    }
-
-    try {
-      oauthFlowStore.dispose()
-    } catch (error) {
-      platform.logger.error('[bootstrap] Failed to dispose OAuth flow store:', error)
-    }
-
-    releaseServerLock()
+      if (sessionManager !== undefined) await attempt(() => options.cleanupSessionManager?.(sessionManager!, transportClosed))
+      await transportClosed
+      if (errors.length) throw new AggregateError(errors, 'Host cleanup failed; ownership retained until exit')
+    })()
+    let deadline: ReturnType<typeof setTimeout>
+    stopping = Promise.race([
+      cleanup,
+      new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => reject(Object.assign(new Error('Host shutdown timed out; ownership retained until exit'), { code: 'STOP_TIMEOUT' })), options.stopTimeoutMs ?? 4500)
+      }),
+    ]).then(() => { releaseServerLock() }).finally(() => clearTimeout(deadline))
+    return stopping
   }
 
-  if (!options.deferRuntimeInitialization) {
-    try {
-      await startRuntime()
-    } catch (error) {
-      await stop()
-      throw error
+  try {
+    if (options.restoreConfigBackup) restoreStoredConfigBackup(options.restoreConfigBackup)
+    // Validate before backup rotation, defaults, or migrations can touch Host data.
+    loadStoredConfig()
+    bootstrapConfigArtifacts(platform)
+    ensureGlobalConfigExists(platform)
+    seedDefaultAgentResources()
+    const directoryMigration = await migrateLegacyLocalProjectDirectoryIdentities()
+    for (const unresolved of directoryMigration.unresolvedProjects) {
+      platform.logger.warn(`Project ${unresolved.projectId} still requires path recovery: ${unresolved.reason}`)
     }
-  }
+    modelRefreshService = options.initModelRefreshService()
+    sessionManager = options.createSessionManager()
+    const rpcHost = options.rpcHost ?? process.env.CRAFT_RPC_HOST ?? '127.0.0.1'
+    const rpcPort = options.rpcPort ?? Number(process.env.CRAFT_RPC_PORT ?? '9100')
+    if (!Number.isInteger(rpcPort) || rpcPort < 0 || rpcPort > 65535) throw new Error(`Invalid RPC port: ${rpcPort}`)
+    wsServer = new WsRpcServer({
+      host: rpcHost, port: rpcPort, requireAuth: true,
+      validateToken: async (t) => t === serverToken,
+      validateSessionCookie: options.validateSessionCookie,
+      serverId: options.serverId ?? 'headless', serverVersion: options.serverVersion,
+      tls: options.tls, httpHandler: options.httpHandler,
+      onClientConnected: options.onClientConnected,
+      onClientDisconnected: (clientId) => { options.cleanupClientResources?.(clientId) },
+    })
+    oauthFlowStore = new OAuthFlowStore()
+    const deps = options.createHandlerDeps({ sessionManager, platform, oauthFlowStore })
+    const serverHandlerContext: ServerHandlerContext = {
+      getConnectedClientCount: () => wsServer!.getConnectedClientCount(),
+      serverId: options.serverId ?? 'headless', startedAt: Date.now(),
+    }
+    options.registerAllRpcHandlers(wsServer, deps, serverHandlerContext)
+    options.setSessionEventSink(sessionManager, wsServer.push.bind(wsServer))
+    await wsServer.listen()
+    platform.logger.info(`Storyflow server listening on ${wsServer.protocol}://${rpcHost}:${wsServer.port}`)
+    if (!options.deferRuntimeInitialization) await startRuntime()
 
-  return {
-    platform,
-    sessionManager,
-    wsServer,
-    oauthFlowStore,
-    host: rpcHost,
-    port: wsServer.port,
-    protocol: wsServer.protocol,
-    token: serverToken,
-    serverHandlerContext,
-    ready,
-    startRuntime,
-    stop,
-  }
+    return {
+      platform,
+      sessionManager,
+      wsServer,
+      oauthFlowStore,
+      host: rpcHost,
+      port: wsServer.port,
+      protocol: wsServer.protocol,
+      token: serverToken,
+      serverHandlerContext,
+      ready,
+      startRuntime,
+      stop,
+    }
   } catch (error) {
-    releaseServerLock()
+    try { await stop() } catch (cleanupError) {
+      platform.logger.error('[bootstrap] Rollback incomplete; host must exit', cleanupError)
+    }
     throw error
   }
 }

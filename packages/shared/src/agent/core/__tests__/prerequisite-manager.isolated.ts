@@ -9,19 +9,17 @@
  * until required files (like guide.md) have been read.
  */
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
-import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { PrerequisiteManager } from '../prerequisite-manager.ts';
 
 // Mock existsSync to control guide.md existence
-const originalExistsSync = existsSync;
 let mockExistsPaths: Set<string> = new Set();
 
 mock.module('node:fs', () => ({
   existsSync: (path: string) => mockExistsPaths.has(path),
-  // Re-export anything else the module needs
-  readFileSync: originalExistsSync,
+  // This fixture has no persisted Host config; represent absence as the real IO contract.
+  readFileSync: () => { throw Object.assign(new Error('Fixture file does not exist'), { code: 'ENOENT' }); },
 }));
 
 const WORKSPACE_ROOT = '/test/workspace';

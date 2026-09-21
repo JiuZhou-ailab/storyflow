@@ -369,6 +369,29 @@ jobs:
         env:
           CRAFT_E2E_ELECTRON_BIN: ${{ github.workspace }}\apps\electron\release\win-unpacked\Storyflow.exe
 
+      - name: Verify Windows installer startup and upgrade
+        shell: pwsh
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          $releases = gh release list --repo $env:GH_REPO --exclude-drafts --exclude-pre-releases --limit 20 --json tagName | ConvertFrom-Json
+          $baseline = $releases | Where-Object { $_.tagName -ne $env:RELEASE_TAG } | Select-Object -First 1
+          if (!$baseline) { throw 'No published upgrade baseline available' }
+          $baselineDir = Join-Path $env:RUNNER_TEMP 'storyflow-upgrade-baseline'
+          gh release download $baseline.tagName --repo $env:GH_REPO --pattern 'Storyflow-x64.exe' --dir $baselineDir
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to obtain upgrade baseline' }
+          ./scripts/verify-windows-startup.ps1 -Installer apps/electron/release/Storyflow-x64.exe -BaselineInstaller (Join-Path $baselineDir 'Storyflow-x64.exe')
+
+      - name: Save Windows startup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-startup-evidence
+          path: startup-evidence/
+          if-no-files-found: warn
+
       - name: Upload Windows artifacts to release
         shell: bash
         env:
