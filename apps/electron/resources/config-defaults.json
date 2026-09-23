@@ -71,7 +71,7 @@
         "providerType": "pi_compat",
         "authType": "api_key_with_endpoint",
         "baseUrl": "https://storyflow-model.zjding.com/v1beta",
-        "defaultModel": "gemini-3.5-flash",
+        "defaultModel": "gemini-3.8-flash",
         "modelSelectionMode": "userDefined3Tier",
         "piAuthProvider": "google",
         "customEndpoint": {

@@ -405,3 +405,20 @@ describe('ModelRefreshService credentials', () => {
     expect(calls).toEqual(['oauth:anthropic-oauth'])
   })
 })
+
+// The deployed gateway can lag the desktop catalog during rollout.
+it('does not resurrect retired Flash models from an older live gateway', () => {
+  const configDir = setupManagedModelRefreshConfigDir()
+  const output = runModelRefreshEval(configDir, `
+    const { updateLlmConnection, getLlmConnection } = await import('@craft-agent/shared/config');
+    updateLlmConnection('storyflow-managed', { customEndpoint: { api: 'google-generative-ai' } });
+    globalThis.fetch = async () => Response.json({ data: ['gemini-3.5-flash','gemini-3.6-flash','gemini-3.7-flash','gemini-2.5-flash','gemini-3.8-flash'].map(id => ({
+      id, name: id, short_name: 'Gemini', description: '', provider: 'pi',
+      context_window: 1000000, supports_thinking: true, supports_images: true, api: 'google-generative-ai'
+    })) });
+    const service = initModelRefreshService(async () => ({ apiKey: 'managed-token' }));
+    await service.refreshNow('storyflow-managed');
+    console.log(JSON.stringify(getLlmConnection('storyflow-managed').models.map(m => m.id)));
+  `)
+  expect(JSON.parse(output)).toEqual(['gemini-3.8-flash'])
+})

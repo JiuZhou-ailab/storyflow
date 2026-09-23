@@ -140,64 +140,6 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
     api: 'google-generative-ai',
   },
   {
-    id: 'gemini-3.7-flash',
-    fallbackCapabilities: { maxOutputTokens: 65_536, tools: true, structuredOutput: 'prompt' },
-    name: 'Gemini 3.7 Flash',
-    shortName: 'Gemini',
-    description: '',
-    provider: 'pi',
-    contextWindow: 1_000_000,
-    supportsThinking: true,
-    thinkingLevelMap: {
-      off: null,
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      xhigh: null,
-      max: null,
-    },
-    supportsImages: true,
-    api: 'google-generative-ai',
-  },
-  {
-    id: 'gemini-3.6-flash',
-    fallbackCapabilities: { maxOutputTokens: 65_536, tools: true, structuredOutput: 'prompt' },
-    name: 'Gemini 3.6 Flash',
-    shortName: 'Gemini',
-    description: '',
-    provider: 'pi',
-    contextWindow: 1_000_000,
-    supportsThinking: true,
-    thinkingLevelMap: {
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      xhigh: null,
-      max: null,
-    },
-    supportsImages: true,
-    api: 'google-generative-ai',
-  },
-  {
-    id: 'gemini-3.5-flash',
-    fallbackCapabilities: { maxOutputTokens: 65_536, tools: true, structuredOutput: 'prompt' },
-    name: 'Gemini 3.5 Flash',
-    shortName: 'Gemini',
-    description: '',
-    provider: 'pi',
-    contextWindow: 1_000_000,
-    supportsThinking: true,
-    thinkingLevelMap: {
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      xhigh: null,
-      max: null,
-    },
-    supportsImages: true,
-    api: 'google-generative-ai',
-  },
-  {
     id: 'gemini-3.1-pro-preview',
     name: 'Gemini 3.1 Pro Preview',
     shortName: 'Gemini',
@@ -233,21 +175,6 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
     api: 'google-generative-ai',
   },
   {
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
-    shortName: 'Gemini',
-    description: '',
-    provider: 'pi',
-    contextWindow: 1_000_000,
-    supportsThinking: true,
-    thinkingLevelMap: {
-      xhigh: null,
-      max: null,
-    },
-    supportsImages: true,
-    api: 'google-generative-ai',
-  },
-  {
     id: 'deepseek-v4-pro',
     fallbackCapabilities: { maxOutputTokens: 384_000, tools: true, structuredOutput: 'prompt' },
     name: 'DeepSeek V4 Pro',
@@ -262,7 +189,7 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   {
     id: 'deepseek-v4-flash',
     fallbackCapabilities: { maxOutputTokens: 384_000, tools: true, structuredOutput: 'prompt' },
-    name: 'DeepSeek V4 Flash',
+    name: 'DeepSeek V4.1 Flash',
     shortName: 'DeepSeek',
     description: '',
     provider: 'pi',
@@ -273,8 +200,20 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
 ];
 
+export function isRetiredManagedModel(id: string): boolean {
+  return /^gemini-(?:3\.[567]|2\.5)-flash$/i.test(id);
+}
+
+/** Retire local product entries without adding models to an account-scoped catalog. */
+export function applyManagedModelPolicy(models: readonly ModelDefinition[]): ModelDefinition[] {
+  return models.filter(model => !isRetiredManagedModel(model.id)).map(model => ({
+    ...model,
+    name: MANAGED_MODEL_CATALOG.find(known => known.id === model.id)?.name ?? model.name,
+  }));
+}
+
 export function getManagedDynamicModel(id: string): ManagedModelDefinition | null {
-  if (!/^gemini-3\.6-[a-z0-9._-]+$/i.test(id)) return null;
+  if (isRetiredManagedModel(id) || !/^gemini-3\.6-[a-z0-9._-]+$/i.test(id)) return null;
 
   // ponytail: the inventory adapter currently passes IDs only; retain the Gemini-family
   // defaults until a verified upstream per-model capability contract is preserved through
@@ -344,5 +283,5 @@ export const MANAGED_FALLBACK_FAMILIES = [
   ['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.6-terra', 'gpt-5.6-luna'],
   ['deepseek-v4-flash', 'deepseek-v4-pro'],
   ['claude-sonnet-5', 'claude-opus-5'],
-  ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'],
+  ['gemini-3.8-flash'],
 ] as const;

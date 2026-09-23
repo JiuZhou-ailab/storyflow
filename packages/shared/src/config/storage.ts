@@ -70,7 +70,7 @@ import {
   normalizeDeprecatedModelId,
   type ModelDefinition,
 } from './models.ts';
-import { cloneManagedModelCatalog } from './managed-model-catalog.ts';
+import { cloneManagedModelCatalog, applyManagedModelPolicy } from './managed-model-catalog.ts';
 
 // Config stored in JSON file (credentials stored in encrypted file, not here)
 export interface StoredConfig {
@@ -264,7 +264,7 @@ export function applyBuiltinLlmConnectionDefaults(
       // A gateway catalog (including []) is account-specific. Bundled models only
       // bootstrap missing catalogs and migrate legacy string-only definitions.
       const retainedModels = managedModels && existing.models?.every(model => typeof model !== 'string')
-        ? existing.models : undefined;
+        ? applyManagedModelPolicy(existing.models as ModelDefinition[]) : undefined;
       const managedUpdates: Partial<LlmConnection> = {
         name: connection.name,
         providerType: connection.providerType,

@@ -67,10 +67,10 @@ describe('model thinking levels', () => {
     expect(resolveModelThinkingLevel(managedConnection, 'gpt-5.6-luna', 'max')).toBe('xhigh')
   })
 
-  it('exposes supported Gemini thinking levels without offering invalid 3.7/3.8 minimal mode', () => {
+  it('exposes supported Gemini thinking levels without offering invalid 3.8 minimal mode', () => {
     const geminiConnection = connection('pi_compat', cloneManagedModelCatalog('google-generative-ai'))
 
-    for (const modelId of ['gemini-3.8-flash', 'gemini-3.7-flash']) {
+    for (const modelId of ['gemini-3.8-flash']) {
       expect(modelSupportsThinking(geminiConnection, modelId)).toBe(true)
       expect(modelSupportsThinkingLevel(geminiConnection, modelId, 'off')).toBe(false)
       expect(modelSupportsThinkingLevel(geminiConnection, modelId, 'medium')).toBe(true)

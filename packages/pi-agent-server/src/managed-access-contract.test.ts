@@ -17,11 +17,12 @@ const protocols = [
 ] as const;
 
 for (const [api, models] of protocols) {
-  test(`${api} product catalog qualifies A,A,B with each model's native output capacity`, async () => {
-    await fixture(async ({ session, requests }) => {
+  test(`${api} product catalog preserves native output capacity across retries and available fallback`, async () => {
+    await fixture(async ({ session, requests, notices }) => {
       await session.prompt('test');
       await session.waitForIdle();
-      expect(requests.map(request => request.model)).toEqual([models[0], models[0], models[1]]);
+      expect(requests.map(request => request.model)).toEqual([models[0], models[0], api === 'google-generative-ai' ? models[0] : models[1]]);
+      if (api === 'google-generative-ai') expect(notices).toEqual([]);
       expect(session.getLastAssistantText()).toBe('OK');
       expect(session.model?.maxTokens).toBe(cloneManagedModelCatalog(api).find(model => model.id === session.model?.id)!.fallbackCapabilities!.maxOutputTokens);
       for (const { body, model } of requests) {

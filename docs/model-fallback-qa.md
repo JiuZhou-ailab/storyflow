@@ -32,6 +32,23 @@ Parent and subagent requests follow Pi's native model output capacity and
 remaining-context limits, including after fallback. Storyflow adds no global
 8192-token cap. Explicit per-call budgets (such as `call_llm`) remain separate.
 
+## Catalog retirement and Flash connectivity (2026-09-23)
+
+Gemini 3.5, 3.6, 3.7 and 2.5 Flash are retired from Storyflow's managed catalog.
+Local retirement policy applies both to persisted account catalogs and live gateway
+refreshes, so an older deployed gateway cannot restore them. Account-scoped empty
+catalogs remain empty. Earlier capability tables above are historical evidence.
+
+The UI labels the retained `deepseek-v4-flash` route as DeepSeek V4.1 Flash.
+A minimal authenticated request through the deployed Storyflow gateway returned
+HTTP 200, `OK`, `finish_reason=stop`, and model `deepseek-v4-1-flash-260910`
+(33 prompt + 17 completion tokens). The guessed ID `deepseek-v4.1-flash` was
+rejected by the gateway with HTTP 403 and was not forwarded upstream. Official
+[model documentation](https://api-docs.deepseek.com/quick_start/pricing/) names
+`deepseek-flash` and retains `deepseek-v4-flash` as a V4.1 compatibility alias.
+This verifies a text completion through the existing route, not tools, images,
+load handling or the upstream model's internal identity.
+
 ## Automated checks
 
 ```sh

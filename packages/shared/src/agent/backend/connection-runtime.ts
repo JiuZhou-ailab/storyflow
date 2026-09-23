@@ -12,6 +12,7 @@ import type {
 } from './types.ts';
 import { PiAgent } from '../pi-agent.ts';
 import { getLlmConnection, getLlmConnections, getDefaultLlmConnection, type LlmConnection } from '../../config/storage.ts';
+import { isRetiredManagedModel } from '../../config/managed-model-catalog.ts';
 import type { CustomEndpointConfig } from '../../config/llm-connections.ts';
 // Import validation helpers for provider-auth combinations
 import {
@@ -137,8 +138,9 @@ export function resolveManagedModelConnection(
     return connection;
   }
 
+  const selectedModel = isRetiredManagedModel(managedModel.replace(/^pi\//, '')) ? 'gemini-3.8-flash' : managedModel;
   const hasModel = (candidate: LlmConnection) =>
-    candidate.models?.some(model => (typeof model === 'string' ? model : model.id) === managedModel);
+    candidate.models?.some(model => (typeof model === 'string' ? model : model.id) === selectedModel);
 
   if (hasModel(connection)) return connection;
   return connections.find(candidate =>
@@ -297,7 +299,15 @@ export function resolveModelForConnection(
   managedModel: string | undefined,
   connection: LlmConnection | null
 ): string {
-  return managedModel || connection?.defaultModel || '';
+  const selectedModel = managedModel || connection?.defaultModel || '';
+  if (connection && isManagedLlmConnectionSlug(connection.slug) && isRetiredManagedModel(selectedModel.replace(/^pi\//, ''))) {
+    const replacement = 'gemini-3.8-flash';
+    if (!connection.models?.some(model => (typeof model === 'string' ? model : model.id) === replacement)) {
+      throw new Error('The replacement Gemini model is not available for this account');
+    }
+    return replacement;
+  }
+  return selectedModel;
 }
 
 // ============================================================

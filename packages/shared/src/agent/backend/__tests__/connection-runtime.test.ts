@@ -281,3 +281,17 @@ describe('PiAgent model switching', () => {
     expect(agent.getModel()).toBe('claude-sonnet-4-6');
   });
 });
+
+describe('retired managed Gemini selections', () => {
+  const managed: LlmConnection = { slug: 'storyflow-managed-gemini', name: 'Gemini', providerType: 'pi_compat', authType: 'api_key_with_endpoint', models: ['gemini-3.8-flash'], createdAt: 1 };
+  for (const id of ['gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash', 'pi/gemini-3.5-flash']) {
+    it(`resolves ${id} only within an authorized managed catalog`, () => {
+      const legacy = { ...managed, slug: 'storyflow-managed', models: ['gpt-5.5'] };
+      expect(resolveManagedModelConnection(legacy, id, [legacy, managed])).toBe(managed);
+      expect(resolveModelForConnection(id, managed)).toBe('gemini-3.8-flash');
+      expect(resolveModelForConnection(id, { ...managed, slug: 'my-google' })).toBe(id);
+      expect(() => resolveModelForConnection(id, { ...managed, models: [] })).toThrow('not available');
+      expect(() => resolveModelForConnection(id, { ...managed, models: ['gemini-3.1-pro-preview'] })).toThrow('not available');
+    });
+  }
+});

@@ -108,10 +108,10 @@ describe('buildCustomEndpointModelDef', () => {
     expect(model.contextWindow).toBe(262_144)
   })
 
-  it('carries managed Gemini 3.7/3.8 thinking levels into the Pi runtime model', () => {
+  it('carries managed Gemini 3.8 thinking levels into the Pi runtime model', () => {
     const managedModels = cloneManagedModelCatalog('google-generative-ai')
 
-    for (const modelId of ['gemini-3.8-flash', 'gemini-3.7-flash']) {
+    for (const modelId of ['gemini-3.8-flash']) {
       const managed = managedModels.find(model => model.id === modelId)
       expect(managed).toBeDefined()
 

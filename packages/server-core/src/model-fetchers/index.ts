@@ -29,6 +29,7 @@ import {
   isCompatProvider,
   getModelsForProviderType,
 } from '@craft-agent/shared/config'
+import { applyManagedModelPolicy } from '@craft-agent/shared/config/managed-model-catalog'
 import { MODEL_FETCHERS } from './registry'
 import { handlerLog } from './runtime'
 
@@ -77,7 +78,7 @@ async function fetchManagedModelCatalog(
   if (new Set(models.map(model => model.id)).size !== models.length) {
     throw new Error('Managed model catalog contains duplicate model IDs')
   }
-  return models
+  return applyManagedModelPolicy(models)
 }
 
 const THINKING_LEVEL_MAP_KEYS = new Set([

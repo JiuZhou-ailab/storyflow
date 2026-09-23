@@ -180,12 +180,8 @@ describe('model gateway worker', () => {
       'claude-sonnet-5',
       'claude-opus-5',
       'gemini-3.8-flash',
-      'gemini-3.7-flash',
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
       'gemini-3.1-pro-preview',
       'gemini-2.5-pro',
-      'gemini-2.5-flash',
       'deepseek-v4-pro',
       'deepseek-v4-flash',
       'gemini-3.6-pro-preview',
@@ -201,11 +197,8 @@ describe('model gateway worker', () => {
       short_name: 'Claude',
       api: 'anthropic-messages',
     })
-    expect(catalogBody.data.find(model => model.id === 'gemini-3.6-flash')).toMatchObject({
-      name: 'Gemini 3.6 Flash',
-      short_name: 'Gemini',
-      api: 'google-generative-ai',
-    })
+    expect(catalogBody.data.find(model => model.id === 'gemini-3.6-flash')).toBeUndefined()
+    expect(catalogBody.data.find(model => model.id === 'deepseek-v4-flash')?.name).toBe('DeepSeek V4.1 Flash')
     expect(catalogBody.data.find(model => model.id === 'gemini-3.8-flash')).toMatchObject({
       name: 'Gemini 3.8 Flash',
       supports_thinking: true,
@@ -466,7 +459,7 @@ describe('model gateway worker', () => {
     )
     const gemini = await handleRequest(
       new Request(
-        'https://model.storyflow.example.com/v1beta/models/gemini-3.6-flash:streamGenerateContent?alt=sse',
+        'https://model.storyflow.example.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse',
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
@@ -484,7 +477,7 @@ describe('model gateway worker', () => {
     expect(upstreamRequests[0]?.headers.get('anthropic-beta')).toBe('tools-2024-04-04')
     expect(gemini.status).toBe(200)
     expect(upstreamRequests[1]?.url).toBe(
-      'https://jzapi.duanju.com/v1beta/models/gemini-3.6-flash:streamGenerateContent?alt=sse',
+      'https://jzapi.duanju.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse',
     )
     expect(upstreamRequests[1]?.headers.get('x-goog-api-key')).toBe('server-only-newapi-key')
   })

@@ -377,16 +377,17 @@ for (const [api, models] of [
   ["anthropic-messages", ["claude-sonnet-5", "claude-opus-5"]],
   ["google-generative-ai", ["gemini-3.8-flash", "gemini-3.7-flash"]],
 ] as const) {
-  test(`${api} uses native protocol for same-family fallback`, async () => {
+  test(`${api} uses native protocol and only available same-family fallback`, async () => {
     await fixture(
-      async ({ session, requests }) => {
+      async ({ session, requests, notices }) => {
         await session.prompt("test");
         await session.waitForIdle();
         expect(requests.map((r) => r.model)).toEqual([
           models[0],
           models[0],
-          models[1],
+          api === "google-generative-ai" ? models[0] : models[1],
         ]);
+        if (api === "google-generative-ai") expect(notices).toEqual([]);
         expect(session.getLastAssistantText()).toBe("OK");
       },
       (model, index) =>

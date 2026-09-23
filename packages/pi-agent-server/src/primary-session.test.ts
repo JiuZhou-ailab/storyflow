@@ -4,8 +4,9 @@
 import { expect, test } from 'bun:test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fixture, completion } from './managed-fallback.fixture.ts';
+import { fixture, completion, protocolCompletion } from './managed-fallback.fixture.ts';
 import { createPrimaryPiSession } from './primary-session.ts';
+import { resolveModelForConnection } from '../../shared/src/agent/backend/connection-runtime.ts';
 import { createToolHooks } from './tool-hooks.ts';
 
 test('resuming an interrupted Pi turn preserves its raw history and never executes the partial tool', async () => {
@@ -98,4 +99,33 @@ test('resuming an interrupted Pi turn preserves its raw history and never execut
     (await completion(model).text()).replace('data: [DONE]', 'data: {"choices":[],"usage":{"prompt_tokens":100000,"completion_tokens":1,"total_tokens":100001}}\n\ndata: [DONE]'),
     { headers: { 'content-type': 'text/event-stream' } },
   ));
+});
+
+test('an upgraded managed Gemini conversation requests only its authorized replacement and retains history', async () => {
+  await fixture(async f => {
+    const sessionPath = join(f.root, 'legacy-managed'), sessionDir = join(sessionPath, '.pi-sessions');
+    mkdirSync(sessionDir, { recursive: true });
+    const file = join(sessionDir, 'legacy.jsonl');
+    const original = readFileSync(join(import.meta.dir, 'fixtures/pi-0.84.4-history.jsonl'), 'utf8');
+    writeFileSync(file, original);
+    const model = resolveModelForConnection('gemini-3.5-flash', {
+      slug: 'storyflow-managed-gemini', name: 'Gemini', providerType: 'pi_compat', authType: 'api_key_with_endpoint',
+      models: ['gemini-3.8-flash'], createdAt: 1,
+    });
+    const config = { ...f.config, sessionPath, workspaceRootPath: f.root, sessionId: 'legacy-managed', model, piAuth: { provider: 'fixture' } };
+    const { session } = await createPrimaryPiSession({
+      config, getConfig: () => config, cwd: f.root, agentDir: join(f.root, 'agent'), modelRuntime: f.session.modelRuntime,
+      activeSubagentSessions: new Set(), buildProxyTools: () => [], createSessionToolHooks: () => createToolHooks({ beforeToolCall: async event => event.input, afterToolCall: async () => {} }),
+      getCurrentUserMessage: () => 'continue', requestHostTool: async () => { throw new Error('Unexpected tool'); },
+      executeSessionRewind: async () => { throw new Error('Unexpected rewind'); }, handleShutdown() {}, send() {}, debug() {},
+    });
+    try {
+      await session.prompt('Continue the existing manuscript'); await session.waitForIdle();
+      expect(session.getLastAssistantText()).toBe('OK');
+      expect(f.requests.length).toBeGreaterThan(0);
+      expect(f.requests.every(request => request.model === 'gemini-3.8-flash')).toBe(true);
+      expect(readFileSync(file, 'utf8').startsWith(original)).toBe(true);
+    } finally { await session.abort(); session.dispose(); }
+  }, model => protocolCompletion('google-generative-ai', model), undefined,
+  { api: 'google-generative-ai', models: ['gemini-3.8-flash'] });
 });

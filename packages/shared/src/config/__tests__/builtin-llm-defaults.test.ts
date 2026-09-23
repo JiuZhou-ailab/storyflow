@@ -8,7 +8,7 @@ import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { applyBuiltinLlmConnectionDefaults, type StoredConfig } from '../storage.ts'
 import type { BuiltinLlmConnectionDefaults, ConfigDefaults } from '../config-defaults-schema.ts'
-import { MANAGED_MODEL_CATALOG, cloneManagedModelCatalog } from '../managed-model-catalog.ts'
+import { MANAGED_MODEL_CATALOG, cloneManagedModelCatalog, mergeManagedModelCatalog, isManagedModelAllowed } from '../managed-model-catalog.ts'
 
 const STORAGE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'storage.ts')).href
 const UTILS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'utils', 'index.ts')).href
@@ -148,7 +148,7 @@ describe('builtin LLM connection defaults', () => {
       {
         name: 'Gemini (GenAI)',
         baseUrl: 'https://storyflow-model.zjding.com/v1beta',
-        defaultModel: 'gemini-3.5-flash',
+        defaultModel: 'gemini-3.8-flash',
         customEndpoint: { api: 'google-generative-ai' },
       },
       {
@@ -169,12 +169,8 @@ describe('builtin LLM connection defaults', () => {
       ['storyflow-managed', ['gpt-5.5', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']],
       ['storyflow-managed-gemini', [
         'gemini-3.8-flash',
-        'gemini-3.7-flash',
-        'gemini-3.6-flash',
-        'gemini-3.5-flash',
         'gemini-3.1-pro-preview',
         'gemini-2.5-pro',
-        'gemini-2.5-flash',
       ]],
       ['storyflow-managed-anthropic', ['claude-sonnet-5', 'claude-opus-5']],
     ])
@@ -437,4 +433,28 @@ describe('builtin LLM connection defaults', () => {
     expect(readFileSync(join(configDir, 'config.json'), 'utf-8')).not.toContain('env-managed-secret')
     expect(readFileSync(join(configDir, 'config.json'), 'utf-8')).not.toContain('bundled-static-secret')
   })
+})
+
+// Retired models must not return through upstream discovery or remain routable.
+it('excludes retired Gemini Flash models and retains the DeepSeek API identity', () => {
+  const retired = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-2.5-flash']
+  const catalog = mergeManagedModelCatalog(retired)
+  for (const id of retired) {
+    expect(catalog.some(model => model.id === id)).toBe(false)
+    expect(isManagedModelAllowed(id, 'google-generative-ai')).toBe(false)
+  }
+  expect(catalog.find(model => model.id === 'deepseek-v4-flash')?.name).toBe('DeepSeek V4.1 Flash')
+})
+
+it('retires cached managed models offline without expanding an account-scoped catalog', () => {
+  const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf8')) as ConfigDefaults
+  const config = makeConfig()
+  applyBuiltinLlmConnectionDefaults(config, defaults)
+  const gemini = config.llmConnections!.find(connection => connection.slug === 'storyflow-managed-gemini')!
+  const model = cloneManagedModelCatalog('google-generative-ai')[0]!
+  gemini.models = [{ ...model, id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash' }]
+  gemini.defaultModel = 'gemini-3.6-flash'
+  applyBuiltinLlmConnectionDefaults(config, defaults)
+  expect(gemini.models).toEqual([])
+  expect(gemini.defaultModel).toBeUndefined()
 })
