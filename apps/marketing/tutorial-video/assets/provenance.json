@@ -1,0 +1,68 @@
+{
+  "capturedAt": "2026-09-14T10:29:32.246Z",
+  "commit": "81377eb7eed68f5ded4abd83042afe8527eaa995",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "deviceScaleFactor": 2,
+  "seconds": 180.00863037499997,
+  "frames": 1126,
+  "method": "Continuous CDP screencast of unmodified native Electron renderer. Isolated sample files and pre-authored conversations/tool trace; no model invocation. UI clicks, review acceptance and version save are real. No UI injection.",
+  "actions": [
+    {
+      "at": 1.9617200000000001,
+      "label": "打开正文",
+      "x": 508.53125,
+      "y": 435.578125
+    },
+    {
+      "at": 23.408831415999998,
+      "label": "阅读人物设定",
+      "x": 321.4375,
+      "y": 258.15625
+    },
+    {
+      "at": 39.40426312500001,
+      "label": "阅读创作要求",
+      "x": 334.5625,
+      "y": 280.65625
+    },
+    {
+      "at": 57.407344208000005,
+      "label": "查看任务要求和正文",
+      "x": 328.53125,
+      "y": 235.65625
+    },
+    {
+      "at": 104.427302291,
+      "label": "打开修改对比",
+      "x": 420.25,
+      "y": 309.953125
+    },
+    {
+      "at": 128.40376908300001,
+      "label": "接受示例修改",
+      "x": 1149.61328125,
+      "y": 394.625
+    },
+    {
+      "at": 141.619970291,
+      "label": "返回正文",
+      "x": 328.53125,
+      "y": 475.65625
+    },
+    {
+      "at": 150.43481487499997,
+      "label": "打开版本管理",
+      "x": 1199.5,
+      "y": 62.5
+    },
+    {
+      "at": 160.40775591599999,
+      "label": "保存当前版本",
+      "x": 920.5,
+      "y": 410.5625
+    }
+  ]
+}

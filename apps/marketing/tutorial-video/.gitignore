@@ -1,0 +1,5 @@
+renders/
+.thumbnails/
+.waveform-cache/
+.hyperframes/
+node_modules/

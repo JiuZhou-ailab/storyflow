@@ -40,6 +40,7 @@ Changes to versioned release-note Markdown on `main` also trigger this deploymen
 - `index.html` - Vite HTML shell.
 - `implementation-notes.md` - Running implementation notes for current landing-page changes.
 - `promo-video/` - HyperFrames product promo composition and rendered assets.
+- `tutorial-video/` - Three-minute native-UI beginner practice with Chinese narration and an editable HyperFrames timeline; pre-authored sample conversations are explicitly disclosed.
 - `reference-assets/` - Local landing screenshots and visual reference assets.
 - `src/App.tsx` - Landing page and same-site navigation.
 - `src/InteractiveDemo.tsx` - Product iframe, loading status and retry/tutorial recovery.
