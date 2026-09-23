@@ -95,6 +95,7 @@ import {
 import { resolveElectronRuntimePaths } from './runtime-paths'
 import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
 import {
+  createSkillsMarketCatalogLoader,
   downloadSkillFromMarket,
   getSkillDetailFromMarket,
   listSkillsFromMarket,
@@ -577,11 +578,16 @@ app.whenReady().then(async () => {
       )
     }
     let modelRefreshService: ReturnType<typeof initModelRefreshService> | null = null
+    const skillsMarketCatalog = createSkillsMarketCatalogLoader(async () => listSkillsFromMarket({
+      token: await getSkillsMarketToken(),
+      fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
+    }))
     const authService = createClientAuthService(clientAuthConfig, {
       initialSession: initialClientAuthSession,
       sessionStore: clientAuthSessionStore,
       openExternal: (url) => shell.openExternal(url).then(() => undefined),
       onAuthChange: (change) => {
+        skillsMarketCatalog.invalidate()
         broadcastClientAuthState(change.state)
         if (change.session && modelRefreshService) {
           for (const slug of MANAGED_LLM_CONNECTION_SLUGS) {
@@ -650,12 +656,7 @@ app.whenReady().then(async () => {
         ? authService.issueSkillsMarketAccessToken()
         : undefined
     }
-    ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.LIST, async () => {
-      return listSkillsFromMarket({
-        token: await getSkillsMarketToken(),
-        fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
-      })
-    })
+    ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.LIST, () => skillsMarketCatalog.load())
     ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.DETAIL, async (_event, skillSlug: string) => {
       return getSkillDetailFromMarket(skillSlug, {
         token: await getSkillsMarketToken(),
@@ -672,11 +673,13 @@ app.whenReady().then(async () => {
       const user = authService.getState().user
       if (!user) throw new Error('Sign in before publishing a Skill')
       const token = await authService.issueSkillsMarketAccessToken()
-      return publishSkillToMarket(input, {
+      const result = await publishSkillToMarket(input, {
         author: { name: user.name ?? user.email ?? user.userId },
         token,
         fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
       })
+      skillsMarketCatalog.invalidate()
+      return result
     })
     ipcMain.handle(MCP_MARKET_IPC_CHANNELS.LIST, async (_event, search: string) => {
       return listMcpServersFromMarket(typeof search === 'string' ? search : '', {

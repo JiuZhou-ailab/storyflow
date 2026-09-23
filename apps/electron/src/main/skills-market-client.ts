@@ -1,5 +1,5 @@
 // input: Exported single-Skill bundle, publication metadata, fallback author identity, and ephemeral token
-// output: Authenticated catalog reads, verified bundle downloads, and immutable publication results
+// output: Session-invalidated catalog reuse, authenticated reads, verified downloads, and publication results
 // pos: Main-process network boundary that keeps all Skills Market capabilities out of the renderer
 
 import {
@@ -22,6 +22,29 @@ type MarketFetch = (input: string | URL | Request, init?: RequestInit) => Promis
 interface MarketClientOptions {
   token?: string
   fetchImpl: MarketFetch
+}
+
+/** Session-local catalog reuse; auth changes and publication must invalidate it. */
+export function createSkillsMarketCatalogLoader(load: () => Promise<MarketSkillListResponse>) {
+  let cached: { promise: Promise<MarketSkillListResponse>; expiresAt: number } | undefined
+  return {
+    invalidate() { cached = undefined },
+    load(): Promise<MarketSkillListResponse> {
+      if (cached && Date.now() < cached.expiresAt) return cached.promise
+      const entry = { promise: Promise.resolve().then(load), expiresAt: Infinity }
+      cached = entry
+      entry.promise = entry.promise.then(result => {
+        // Do not deliver the previous account's catalog after an auth transition.
+        if (cached !== entry) throw new Error('Skills Market catalog changed; retry')
+        entry.expiresAt = Date.now() + 30_000
+        return result
+      }).catch(error => {
+        if (cached === entry) cached = undefined
+        throw error
+      })
+      return entry.promise
+    },
+  }
 }
 
 export async function listSkillsFromMarket(options: MarketClientOptions): Promise<MarketSkillListResponse> {

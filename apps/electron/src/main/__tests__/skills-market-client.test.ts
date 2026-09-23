@@ -2,9 +2,10 @@
 // output: Regression proof for main-only authenticated publication shaping
 // pos: Small executable check for the desktop-to-Market trust boundary
 
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, spyOn } from 'bun:test'
 import { sha256Hex } from '@craft-agent/shared/skills/marketplace'
 import {
+  createSkillsMarketCatalogLoader,
   downloadSkillFromMarket,
   getSkillDetailFromMarket,
   listSkillsFromMarket,
@@ -12,6 +13,43 @@ import {
 } from '../skills-market-client'
 
 describe('Skills Market client', () => {
+  it('coalesces catalog reads, expires them, and discards invalidated or failed requests', async () => {
+    const clock = spyOn(Date, 'now').mockReturnValue(1_000)
+    let calls = 0
+    let fail = false
+    const response = { total: 0, skills: [] }
+    const catalog = createSkillsMarketCatalogLoader(async () => {
+      calls++
+      if (fail) throw new Error('offline')
+      return response
+    })
+    try {
+      const first = catalog.load()
+      expect(catalog.load()).toBe(first)
+      await first
+      await catalog.load()
+      expect(calls).toBe(1)
+      clock.mockReturnValue(31_000)
+      await catalog.load()
+      expect(calls).toBe(2)
+      catalog.invalidate()
+      const stale = catalog.load()
+      catalog.invalidate()
+      const fresh = catalog.load()
+      await expect(stale).rejects.toThrow('catalog changed')
+      await expect(fresh).resolves.toBe(response)
+      expect(catalog.load()).toBe(fresh)
+      catalog.invalidate()
+      fail = true
+      await expect(catalog.load()).rejects.toThrow('offline')
+      fail = false
+      await expect(catalog.load()).resolves.toBe(response)
+      expect(calls).toBe(6)
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
   it('keeps authenticated catalog and bundle reads inside the main process', async () => {
     const raw = JSON.stringify({
       version: 1,
