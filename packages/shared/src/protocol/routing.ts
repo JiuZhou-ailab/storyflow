@@ -20,6 +20,10 @@ import type { RpcChannel } from './channels'
 type RoutingClass = 'LOCAL_ONLY' | 'REMOTE_ELIGIBLE'
 
 export const CHANNEL_ROUTING = {
+  'file:readDocument': 'REMOTE_ELIGIBLE',
+  'file:saveDocument': 'REMOTE_ELIGIBLE',
+  'file:listDocumentRecovery': 'REMOTE_ELIGIBLE',
+  'file:readDocumentRecovery': 'REMOTE_ELIGIBLE',
   // ---------------------------------------------------------------------------
   // LOCAL_ONLY — fundamentally requires local OS / Electron
   // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 // pos: Workspace file navigation boundary and React Arborist state adapter
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Tree,
   type MoveHandler,
@@ -60,6 +61,7 @@ export interface WorkspaceFileTreeProps {
   onDismissReviewDot?: (path: string) => void
   onError?: (error: unknown) => void
   /** Grow to the visible rows so an ancestor can own the only scrollbar. */
+  filter?: string
   fitContent?: boolean
 }
 
@@ -114,9 +116,12 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     hasReviewDot,
     onDismissReviewDot,
     onError,
+    filter,
     fitContent = false,
   }, forwardedRef) {
     const containerRef = React.useRef<HTMLDivElement>(null)
+    const { t } = useTranslation()
+    const [search, setSearch] = React.useState('')
     const treeRef = React.useRef<TreeApi<WorkspaceFileTreeNode> | null>(null)
     const syncingExpandedStateRef = React.useRef(false)
     const appliedExpandedIdsRef = React.useRef<Set<string>>(new Set())
@@ -307,10 +312,15 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
         className={fitContent
           ? 'w-full overflow-hidden px-2 py-1 [&_[role=tree]>div]:!overflow-hidden'
           : 'h-full min-h-0 w-full overflow-hidden px-2 py-1'}
-        style={fitContent ? { height: treeHeight + TREE_VERTICAL_PADDING } : undefined}
+        style={fitContent ? { height: treeHeight + TREE_VERTICAL_PADDING + (filter === undefined ? 40 : 0) } : undefined}
       >
         <WorkspaceFileTreeRowContext.Provider value={rowContext}>
+          {filter === undefined && <input aria-label={t('fileViewer.filterFiles')} placeholder={t('fileViewer.filterFiles')}
+            value={search} onChange={event => setSearch(event.target.value)}
+            className="m-2 w-[calc(100%-1rem)] rounded border border-border/40 bg-transparent px-2 py-1 text-xs" />}
           <Tree<WorkspaceFileTreeNode>
+            searchTerm={filter ?? search}
+            searchMatch={(node, term) => node.data.name.toLocaleLowerCase().includes(term.toLocaleLowerCase())}
             key={workspaceId}
             ref={treeRef}
             data={data}

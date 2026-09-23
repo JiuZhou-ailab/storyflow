@@ -1,21 +1,16 @@
 // input: Selected file path, optional Search Hit and explicit system-open capability
-// output: Read-only project-editor rendering for documents and bounded previews for other files
+// output: Raw source reading and bounded media previews
 // pos: Shared file presentation, independent of project editing and version management
 
-import { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { TextDocument } from './TextDocument'
+import { TextSource } from './TextSource'
 import { ExternalLink, FileText, FileVideo } from 'lucide-react'
-import { Spinner, locateSourceSearch, type DocumentSearchTarget } from '@craft-agent/ui'
+import { Spinner, type DocumentSearchTarget } from '@craft-agent/ui'
 import { classifyFile, isVideoFile } from '@craft-agent/ui/file-classification'
 import { useTheme } from '@/hooks/useTheme'
 import type { FilePreviewState } from '@/hooks/useLinkInterceptor'
-import { isNovelDocumentFilePath } from '@/lib/writing-workspace'
-
-const NovelDocumentEditorPanel = lazy(async () => {
-  const module = await import('../writing/NovelDocumentEditorPanel')
-  return { default: module.NovelDocumentEditorPanel }
-})
 
 const FilePreviewRenderer = lazy(async () => {
   const module = await import('@/components/file-preview/FilePreviewRenderer')
@@ -23,10 +18,15 @@ const FilePreviewRenderer = lazy(async () => {
 })
 
 interface FileViewerProps {
+  onOpenSavedFile?: (path: string) => void
+  workspaceId?: string
+  sessionId?: string
+  refresh?: string | number
   path: string | null
   searchTarget?: DocumentSearchTarget
   onOpenExternal?: (path: string) => void
   onClose?: () => void
+  onEditWriting?: () => void
   externalPreviewHint?: string
 }
 
@@ -34,16 +34,11 @@ function getFileName(path: string): string {
   return path.replace(/\\/g, '/').split('/').pop() ?? path
 }
 
-export function FileViewer({ path, searchTarget, onOpenExternal, onClose, externalPreviewHint }: FileViewerProps) {
+export function FileViewer({ onOpenSavedFile, workspaceId, sessionId, refresh, path, searchTarget, onOpenExternal, onClose, externalPreviewHint, onEditWriting }: FileViewerProps) {
   const { t } = useTranslation()
   const { isDark } = useTheme()
   const [content, setContent] = useState<string>('')
   const readKey = JSON.stringify([path, searchTarget?.requestId])
-  const [loadedFor, setLoadedFor] = useState<string | null>(null)
-  const matchRef = useRef<HTMLElement>(null)
-  const searchLocation = useMemo(() => searchTarget && loadedFor === readKey
-    ? locateSourceSearch(content, searchTarget) : null, [content, loadedFor, readKey, searchTarget])
-  useEffect(() => { matchRef.current?.scrollIntoView({ block: 'center' }) }, [searchLocation])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const classification = useMemo(() => path ? classifyFile(path) : null, [path])
@@ -58,7 +53,6 @@ export function FileViewer({ path, searchTarget, onOpenExternal, onClose, extern
   useEffect(() => {
     let cancelled = false
     setContent('')
-    setLoadedFor(null)
     setError(null)
 
     if (!path) {
@@ -66,7 +60,8 @@ export function FileViewer({ path, searchTarget, onOpenExternal, onClose, extern
       return () => { cancelled = true }
     }
     if (
-      isVideo
+      workspaceId
+      || isVideo
       || classification?.type === 'image'
       || !classification?.canPreview
       || !classification.type
@@ -80,7 +75,7 @@ export function FileViewer({ path, searchTarget, onOpenExternal, onClose, extern
       setIsLoading(true)
       try {
         const fileContent = await window.electronAPI.readFile(path)
-        if (!cancelled) { setContent(fileContent); setLoadedFor(readKey) }
+        if (!cancelled) { setContent(fileContent) }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load file')
@@ -93,7 +88,7 @@ export function FileViewer({ path, searchTarget, onOpenExternal, onClose, extern
 
     void loadFile()
     return () => { cancelled = true }
-  }, [classification, isVideo, path, readKey])
+  }, [classification, isVideo, path, readKey, workspaceId])
 
   if (!path) {
     return (
@@ -125,30 +120,8 @@ export function FileViewer({ path, searchTarget, onOpenExternal, onClose, extern
     </button>
   ) : null
 
-  if (isNovelDocumentFilePath(path)) {
-    return (
-      <div className="h-full min-h-0" data-file-viewer-kind={previewKind}>
-        <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner className="text-lg" /></div>}>
-          <NovelDocumentEditorPanel
-            file={{ path, relativePath: fileName }}
-            content={loadedFor === readKey ? content : ''}
-            searchTarget={searchTarget}
-            loading={isLoading || (!error && loadedFor !== readKey)}
-            error={error}
-            editable={false}
-            saving={false}
-            toolbarAccessory={openExternalButton}
-          />
-        </Suspense>
-      </div>
-    )
-  }
-
   const embeddedPreviewState: FilePreviewState | null = previewKind === 'pdf'
-    ? { type: 'pdf', filePath: path }
-    : previewKind === 'json' && !isLoading && !searchTarget
-      ? { type: 'json', filePath: path, content, error: error ?? undefined }
-      : null
+    ? { type: 'pdf', filePath: path } : null
 
   if (embeddedPreviewState) {
     return (
@@ -175,18 +148,16 @@ export function FileViewer({ path, searchTarget, onOpenExternal, onClose, extern
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-foreground/[0.06] px-3">
         <FileText className="size-4 text-muted-foreground shrink-0" />
         <p className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={path}>
-          {fileName}
+          {path}
         </p>
+        {onEditWriting && <button type="button" className="text-xs" onClick={onEditWriting}>{t('fileViewer.writingMode')}</button>}
         {openExternalButton}
       </div>
 
-      {searchLocation?.status === 'missing' || searchLocation?.status === 'relocated' ? (
-        <div role="status" className="px-3 py-2 text-xs text-muted-foreground">
-          {t(`globalSearch.location.${searchLocation.status}`)}
-        </div>
-      ) : null}
       {/* File content */}
-      {isLoading ? (
+      {workspaceId && ['code', 'text', 'markdown', 'json'].includes(previewKind ?? '') ? (
+        <TextDocument onOpenSavedFile={onOpenSavedFile ?? (() => {})} key={JSON.stringify([workspaceId, sessionId, path])} path={path} workspaceId={workspaceId} sessionId={sessionId} refresh={refresh} searchTarget={searchTarget} />
+      ) : isLoading ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
           <Spinner className="text-lg" />
           <span className="text-sm font-medium">{t("fileViewer.loadingContent")}</span>
@@ -228,17 +199,7 @@ export function FileViewer({ path, searchTarget, onOpenExternal, onClose, extern
           </p>
         </div>
       ) : (
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="p-4">
-            <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed selection:bg-foreground/20">
-              {searchLocation?.from !== undefined && searchLocation.to !== undefined ? <>
-                {content.slice(0, searchLocation.from)}
-                <mark ref={matchRef} data-document-search-match>{content.slice(searchLocation.from, searchLocation.to)}</mark>
-                {content.slice(searchLocation.to)}
-              </> : content}
-            </pre>
-          </div>
-        </ScrollArea>
+        <TextSource content={content} searchTarget={searchTarget} label={fileName} />
       )}
     </div>
   )

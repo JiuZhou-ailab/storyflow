@@ -1,6 +1,7 @@
 // input: Typed routes, external deep links, runtime activation, current project identity, and navigation events
 // output: Restored workspace/session panels, canonical session sends, settings overlay state, and verified external actions
 // pos: Renderer navigation authority; external actions must cross a visible confirmation boundary
+import { requestDocumentLeave } from '../components/files/text-document-state'
 
 /**
  * Provides a global `navigate()` function that decouples components from
@@ -871,6 +872,7 @@ export function NavigationProvider({
 
   const navigate = useCallback(
     async (route: Route, options?: NavigateOptions) => {
+      if (!await requestDocumentLeave()) return
       // Reset auto-select suppression on any normal navigation
       if (!options?.skipAutoSelect) {
         suppressAutoSelectRef.current = false
@@ -971,7 +973,8 @@ export function NavigationProvider({
   // =========================================================================
 
   useEffect(() => {
-    const handlePopState = (event: PopStateEvent) => {
+    const handlePopState = async (event: PopStateEvent) => {
+      if (!await requestDocumentLeave()) { syncUrlRef.current(false); return }
       // Update sequence tracking
       const eventSeq = event.state?.seq ?? 0
       historySeqRef.current = eventSeq

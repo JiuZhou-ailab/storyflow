@@ -60,6 +60,8 @@ try {
   await click(`document.querySelector(${JSON.stringify(selector)})`, 'right')
   await waitFor(live, menuItem)
   await click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find(e=>e.textContent.trim()==='打开文件')`, 'left')
+  await waitFor(live, `document.querySelector('[data-testid="text-source"]')?.value.includes('节拍表')`)
+  await evalOn(live, `Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='写作模式').click()`)
   await waitFor(live, `document.querySelector('.ProseMirror')?.textContent.includes('节拍表')`, 10000, 'Open file displays its contents in the side panel')
   assert.ok(await evalOn(live, `document.querySelector('.ProseMirror').getBoundingClientRect().left > document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect().right`), 'The document opens to the right of the conversation')
   if (process.env.CRAFT_E2E_SCREENSHOTS) {

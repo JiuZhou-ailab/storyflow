@@ -1359,9 +1359,31 @@ const quitCoordinator = createQuitCoordinator({
 
 // The updater must finish the same cleanup before it takes ownership of the
 // native quit flow. The coordinator makes this idempotent across all exit paths.
-setUpdateInstallPreparation(quitCoordinator.prepare)
+async function allowDocumentExit(): Promise<boolean> {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.webContents.isDestroyed() || win.webContents.isLoading()) continue
+    if (!await win.webContents.executeJavaScript('window.requestDocumentLeave ? window.requestDocumentLeave() : true')) return false
+  }
+  return true
+}
+setUpdateInstallPreparation(async () => {
+  if (!await allowDocumentExit()) throw new Error('Update cancelled: unsaved document')
+  await quitCoordinator.prepare()
+})
 
+let checkingDocumentQuit = false
 app.on('before-quit', async (event) => {
+  if (!isUpdating()) {
+    event.preventDefault()
+    if (checkingDocumentQuit) return
+    checkingDocumentQuit = true
+    try {
+      if (!await allowDocumentExit()) return
+      await quitCoordinator.handleBeforeQuit(event)
+    } catch (error) { mainLog.error('Document quit check failed', error) }
+    finally { checkingDocumentQuit = false }
+    return
+  }
   if (isUpdating()) {
     mainLog.info('Update in progress, letting electron-updater handle quit')
   }

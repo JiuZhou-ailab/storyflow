@@ -1,3 +1,4 @@
+import { requestDocumentLeave } from '../files/text-document-state'
 // input: Workspace/session state, navigation state, collapsible rail chrome, file-open intent, and shell callbacks
 // output: Responsive shell with project writing panels, compact project editor, and Free Conversation file docks
 // pos: Top-level renderer layout coordinator for workspace navigation
@@ -2507,8 +2508,9 @@ function AppShellContent({
   const [novelVersionsLoading, setNovelVersionsLoading] = React.useState(false)
   const [novelVersionSaving, setNovelVersionSaving] = React.useState(false)
   const [novelVersionRestoringHash, setNovelVersionRestoringHash] = React.useState<string | null>(null)
+  const [writingFilePath, setWritingFilePath] = React.useState<string | null>(null)
   const selectedNovelFileOpenTarget = selectedNovelFile
-    ? getWorkspaceFileOpenTarget(selectedNovelFile.path)
+    ? (writingFilePath === selectedNovelFile.path ? getWorkspaceFileOpenTarget(selectedNovelFile.path) : 'file-handler')
     : null
   const selectedNovelDocumentPath = selectedNovelFileOpenTarget === 'editor'
     ? selectedNovelFile?.path ?? null
@@ -2984,6 +2986,7 @@ function AppShellContent({
   }, [getCurrentNovelDocumentContent, markSavedNovelDocumentChangeVersion, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentContent, novelDocumentDirty, novelDocumentLoading, loadedNovelDocumentPath, savedNovelDocumentContent, selectedNovelDocumentPath, t])
 
   const ensureNovelDocumentSaved = React.useCallback(async (): Promise<boolean> => {
+    if (!await requestDocumentLeave()) return false
     if (!selectedNovelDocumentPath || !isCurrentNovelDocumentDirty()) return true
     if (novelDocumentLoading || loadedNovelDocumentPath !== selectedNovelDocumentPath) return false
 
@@ -3607,7 +3610,7 @@ function AppShellContent({
         tooltip={label}
         aria-label={label}
         aria-expanded={rightWorkspaceVisible}
-        onClick={() => setRightWorkspaceVisible((visible) => !visible)}
+        onClick={() => { void requestDocumentLeave().then(ok => { if (ok) setRightWorkspaceVisible(visible => !visible) }) }}
         className="h-[26px] w-[26px] rounded-lg"
       />
     )
@@ -4594,10 +4597,16 @@ function AppShellContent({
                 />
               ) : (
                 <FileViewer
-                  key={`${selectedNovelFile.path}:${novelDocumentReloadVersion}`}
+                  onOpenSavedFile={path => {
+                    setNovelDocumentTabs(current => openNovelDocumentTab(current, novelWorkspaceRoot, path, 'append'))
+                    setRightWorkspaceVisible(true)
+                  }}
+                  workspaceId={activeWorkspaceId ?? undefined}
+                  refresh={`${selectedNovelFile.modifiedAt}:${novelDocumentReloadVersion}`}
                   path={selectedNovelFile.path}
                   searchTarget={novelSearchTarget?.path === selectedNovelFile.path ? novelSearchTarget : undefined}
                   onClose={() => { void handleCloseNovelFileTab(selectedNovelFile.path) }}
+                  onEditWriting={getWorkspaceFileOpenTarget(selectedNovelFile.path) === 'editor' ? () => { void requestDocumentLeave().then(ok => { if (ok) setWritingFilePath(selectedNovelFile.path) }) } : undefined}
                 />
               ) : (
                 <WorkspaceEmptyState

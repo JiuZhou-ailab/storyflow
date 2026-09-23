@@ -1,3 +1,4 @@
+import { requestDocumentLeave } from '../components/files/text-document-state'
 import { useEffect } from 'react'
 import { useSetAtom, useStore } from 'jotai'
 import { useModalRegistry } from '@/context/ModalContext'
@@ -28,7 +29,9 @@ export function useWindowCloseHandler() {
   const closePanel = useSetAtom(closePanelAtom)
 
   useEffect(() => {
-    const cleanup = window.electronAPI.onCloseRequested((request: WindowCloseRequest) => {
+    const cleanup = window.electronAPI.onCloseRequested(async (request: WindowCloseRequest) => {
+      await window.electronAPI.cancelCloseWindow()
+      if (!await requestDocumentLeave()) return
       if (request.source === 'window-button') {
         window.electronAPI.confirmCloseWindow()
         return

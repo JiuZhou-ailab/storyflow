@@ -46,3 +46,7 @@ readers until the supported upgrade baseline no longer contains these released f
 The desktop trusts its explicitly configured certificate only on that connection, retaining hostname,
 validity and key checks; remote clients keep independent trust.
 See [startup QA](../../docs/startup-recovery-qa.md) for the actual acceptance commands and limitations.
+
+## Interactive text documents
+
+The file RPC includes versioned text reads/saves and recovery access. `text-document` validates Project or Session ownership, keeps attachments immutable, preserves supported UTF-8 BOM and newline conventions, rejects stale versions, and retains observed pre-save/submitted bytes before replacement. Save As creates a new target exclusively. Recovery records remain in internal workspace/session storage and are not conversation content. The serialization boundary covers these editor saves only; external filesystem writers do not participate. Legacy file writes retain their existing contract.

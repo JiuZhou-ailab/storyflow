@@ -1,3 +1,5 @@
+import { DocumentLeaveDialog } from './components/files/DocumentLeaveDialog'
+import { requestDocumentLeave } from './components/files/text-document-state'
 // input: Electron preload API, persisted app/workspace/session state, and renderer navigation events
 // output: Top-level renderer state orchestration, account settings data, and AppShell context wiring
 // pos: Root renderer application component
@@ -1906,6 +1908,7 @@ function AppContent() {
     workspaceId: string,
     landingRoute?: Route,
   ) => {
+    if (!await requestDocumentLeave()) return
     const nextWorkspace = await withTimeout(
       window.electronAPI.resolveRuntimeWorkspace(workspaceId),
       WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
@@ -2571,6 +2574,7 @@ function AppContent() {
         <DismissibleLayerProvider>
         <ModalProvider>
         <TooltipProvider delayDuration={0}>
+        <DocumentLeaveDialog />
         <NavigationProvider
           workspaceId={windowWorkspaceId}
           workspaceRouteKey={windowWorkspaceId}

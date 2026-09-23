@@ -30,9 +30,14 @@ import {
   validateWorkspaceSearchBasePath,
   withWorkspaceMutation,
 } from './file-workspace-scope'
+import { registerTextDocumentHandlers } from './text-document'
 import { notifyConfigWatcherForWrite } from './workspace-file-effects'
 
 export const HANDLED_CHANNELS = [
+  RPC_CHANNELS.file.READ_DOCUMENT,
+  RPC_CHANNELS.file.SAVE_DOCUMENT,
+  RPC_CHANNELS.file.LIST_DOCUMENT_RECOVERY,
+  RPC_CHANNELS.file.READ_DOCUMENT_RECOVERY,
   RPC_CHANNELS.file.READ,
   RPC_CHANNELS.file.WRITE,
   RPC_CHANNELS.file.DELETE,
@@ -476,6 +481,7 @@ async function collectFileSearchSnapshot(
 }
 
 export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): void {
+  registerTextDocumentHandlers(server, deps)
   // Read a file (with path validation to prevent traversal attacks)
   server.handle(RPC_CHANNELS.file.READ, async (ctx, path: string) => {
     const workspaceId = resolveContextWorkspaceId(ctx, deps)

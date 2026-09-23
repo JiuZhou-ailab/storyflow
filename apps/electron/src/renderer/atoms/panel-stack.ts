@@ -1,6 +1,7 @@
 // input: View routes and panel mutation requests from renderer navigation
 // output: Ordered content panels that explicitly exclude utility overlays
 // pos: Canonical renderer panel-state boundary
+import { hasDirtyDocuments, requestDocumentLeave } from '../components/files/text-document-state'
 
 /**
  * Panel Stack State
@@ -24,7 +25,15 @@ export interface PanelStackEntry {
 }
 
 export const panelStackAtom = atom<PanelStackEntry[]>([])
-export const focusedPanelIdAtom = atom<string | null>(null)
+const focusedPanelIdValueAtom = atom<string | null>(null)
+export const focusedPanelIdAtom = atom(
+  get => get(focusedPanelIdValueAtom),
+  (get, set, id: string | null) => {
+    if (id === get(focusedPanelIdValueAtom)) return
+    if (!hasDirtyDocuments()) { set(focusedPanelIdValueAtom, id); return }
+    void requestDocumentLeave().then(ok => { if (ok) set(focusedPanelIdValueAtom, id) })
+  },
+)
 
 export const panelCountAtom = atom((get) => get(panelStackAtom).length)
 
@@ -120,6 +129,7 @@ export const pushPanelAtom = atom(
 export const closePanelAtom = atom(
   null,
   (get, set, id: string) => {
+    if (hasDirtyDocuments()) { void requestDocumentLeave().then(ok => { if (ok) set(closePanelAtom, id) }); return }
     const stack = get(panelStackAtom)
     const idx = stack.findIndex(p => p.id === id)
     if (idx === -1) return
