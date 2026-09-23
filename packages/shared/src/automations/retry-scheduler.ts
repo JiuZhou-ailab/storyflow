@@ -167,7 +167,9 @@ export class RetryScheduler {
   }
 
   private processQueue(): Promise<void> {
-    // ponytail: hold one per-Project queue lock across network retries; split read/commit if enqueue latency matters.
+    // ponytail: hold the per-Project queue lock across retries (up to 30s per webhook);
+    // split read/commit only if concurrent enqueue timings show user-visible waits caused
+    // by this lock, preserving durable entries and preventing duplicate retry execution.
     return withRetryQueueMutation(this.workspaceRootPath, async () => {
       try {
       let queuePath = resolveAutomationOwnedPath(

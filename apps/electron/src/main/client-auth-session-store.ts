@@ -89,8 +89,8 @@ async function clearStoredSession(credentialManager: ClientAuthCredentialManager
   if (failure) throw failure.reason
 }
 
-// ponytail: exact one-release cleanup for pre-migration projections; remove
-// after supported installations can no longer contain these reserved IDs.
+// ponytail: cleanup is limited to reserved pre-migration credential IDs; remove only
+// when supported upgrade paths prove these IDs cannot remain, not merely after one release.
 async function clearManagedModelCredentials(
   credentialManager: ClientAuthCredentialManager,
 ): Promise<void> {

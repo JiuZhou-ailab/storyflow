@@ -20,7 +20,9 @@ function normalizeRootComparablePath(path: string): string {
   return resolve(path).replace(/\\/g, '/').replace(/\/+$/, '')
 }
 
-// ponytail: process-local root cache; add config-triggered invalidation if roots retarget live.
+// ponytail: realpath results live for the process, keyed by lexical root; a new locator
+// gets a new entry. Invalidate or resolve afresh before supporting same-path root/symlink
+// replacement in a live process; verify old targets are denied and new targets are accepted.
 const rootComparablePathCache = new Map<string, Promise<string[]>>()
 
 async function resolveRootComparablePaths(rootPath: string, rawRootPath: string): Promise<string[]> {

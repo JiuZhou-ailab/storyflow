@@ -22,7 +22,9 @@ async function statIfPresent(path: string) {
 
 export async function getConversationFiles(sessionPath: string): Promise<ConversationFiles> {
   const result: ConversationFiles = { groups: [], truncated: false }
-  // ponytail: one bounded eager tree; use lazy children if large conversations need full browsing.
+  // ponytail: projection shares a 500-entry budget and reports truncation, but directory
+  // enumeration/sorting remains eager; use lazy children when a reproduced conversation
+  // browsing task needs entries beyond that budget.
   let remaining = 500
   const take = () => {
     if (remaining > 0) { remaining -= 1; return true }

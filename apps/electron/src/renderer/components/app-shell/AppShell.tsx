@@ -220,7 +220,10 @@ import type { FileChange } from "@craft-agent/ui"
 import { RPC_CHANNELS, type FileSearchBatchRequest, type FileSearchBatchResult } from "@craft-agent/shared/protocol"
 import { FREE_CONVERSATION_WORKSPACE_ID } from "@craft-agent/shared/protocol"
 
-// ponytail: process-local replay guard for passive file-change refreshes; explicit file operations refresh directly.
+// ponytail: completed root/signature keys live for the renderer lifetime and grow with unique changes;
+// replace with lifecycle-bounded replay tracking if the standard long-session heap check fails
+// due to retained keys, or a reproduced independent change reuses a key and loses its refresh.
+// Explicit file operations refresh directly; pending keys are removed when refresh settles.
 const completedNovelFileChangeRefreshKeys = new Set<string>()
 const pendingNovelFileChangeRefreshKeys = new Set<string>()
 

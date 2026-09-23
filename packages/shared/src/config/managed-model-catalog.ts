@@ -276,8 +276,9 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
 export function getManagedDynamicModel(id: string): ManagedModelDefinition | null {
   if (!/^gemini-3\.6-[a-z0-9._-]+$/i.test(id)) return null;
 
-  // ponytail: JZ inventory exposes IDs only; use conservative Gemini-family
-  // capabilities until its model metadata includes per-model capability fields.
+  // ponytail: the inventory adapter currently passes IDs only; retain the Gemini-family
+  // defaults until a verified upstream per-model capability contract is preserved through
+  // discovery and registration. Do not infer that omitted fields mean unsupported capability.
   const name = id
     .split('-')
     .map(part => part === 'gemini' ? 'Gemini' : part.replace(/^\w/, char => char.toUpperCase()))

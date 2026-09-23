@@ -65,7 +65,10 @@ export function cleanupSessionFileWatchForClient(clientId: string, consumerId?: 
 }
 
 // Recursive directory scanner for session files.
-// ponytail: capped eager tree; switch to lazy child loading if users need huge session trees.
+// ponytail: process at most 500 non-hidden entries; each directory is still fully
+// enumerated and sorted. Use lazy children when a reproduced browsing task needs omitted
+// entries. This legacy array has no truncation flag; an expanded contract must expose
+// omissions and bound directory enumeration as well as returned nodes.
 async function scanSessionDirectory(
   dirPath: string,
   budget = { remaining: SESSION_FILE_TREE_MAX_ENTRIES },

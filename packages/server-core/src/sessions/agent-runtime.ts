@@ -110,7 +110,9 @@ export class AgentRuntime {
   }
 
   private async reclaimIdleRuntimes(): Promise<void> {
-    // ponytail: scan the Host registry on operation drain; index only if measured at larger scale.
+    // ponytail: scan/sort the Host registry on operation drain; add an index only when
+    // profiling at the standard session scale attributes interaction-budget misses to this
+    // sweep, preserving the locked recheck of active operations before disposal.
     const candidates = [...this.deps.allSessions()].filter(managed => this.isIdleCandidate(managed))
       .sort((a, b) => (b.runtimeLastUsedAt ?? 0) - (a.runtimeLastUsedAt ?? 0))
     const idleRuntimeLimit = 3

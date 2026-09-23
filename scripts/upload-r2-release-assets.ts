@@ -271,7 +271,8 @@ async function uploadTasks(params: {
   publicBaseUrl: string;
   dryRun: boolean;
 }): Promise<void> {
-  // ponytail: two uploads saturate the hosted runner without making R2 retries noisy.
+  // ponytail: fixed batches of two uploads; revisit when release-job timings show upload
+  // wait dominates and a same-runner comparison improves throughput without more R2 retries.
   for (let index = 0; index < params.tasks.length; index += 2) {
     await Promise.all(params.tasks.slice(index, index + 2).map(async ({ filePath, target }) => {
       const publicUrl = `${params.publicBaseUrl}/${target.key}`;

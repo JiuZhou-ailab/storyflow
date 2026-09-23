@@ -29,7 +29,9 @@ import {
 
 const ROW_HEIGHT = 30
 const TREE_OVERSCAN_ROWS = 8
-// ponytail: The DOM exposes no OS double-click interval; add preview-tab state only if this delay becomes noticeable.
+// ponytail: the DOM exposes no OS double-click interval, so single-click open waits 250ms;
+// consider preview-tab state when a reproduced file-open interaction exceeds its agreed
+// responsiveness budget, preserving double-click behavior without duplicate opens.
 const FILE_OPEN_DOUBLE_CLICK_DELAY_MS = 250
 
 export type { WorkspaceFileTreeMenuAction, WorkspaceFileTreeNode }

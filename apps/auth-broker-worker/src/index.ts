@@ -423,8 +423,9 @@ async function verifyClientSessionToken(
   if (accessRequired(env) && !readString(payload.sid)) throw new ManagedAccessError('legacy_session')
   const subject = readString(payload.sub)
   if (!subject) throw new Error('Client session subject is required')
-  // ponytail: accept the published pre-0019 scope until all 90-day sessions
-  // minted before this migration have expired; new sessions use capability:issue.
+  // ponytail: accept the published pre-0019 scope until 90 days after the last deployed
+  // issuer of model:issue is retired (including rollback paths); verify deployment evidence
+  // before removal. New sessions use capability:issue without extending original expiry.
   if (payload.scope !== 'capability:issue' && payload.scope !== 'model:issue') {
     throw new Error('Client session scope is invalid')
   }

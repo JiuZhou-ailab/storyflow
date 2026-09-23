@@ -76,7 +76,9 @@ class CatalogRepository:
         )
 
     def _connect(self):
-        # ponytail: one short-lived connection per operation; pool after measured demand.
+        # ponytail: one short-lived connection per operation; consider pooling only when
+        # representative request timings attribute a latency bottleneck to connection setup,
+        # and a comparison under the same DB connection limit demonstrates an improvement.
         return pymysql.connect(
             host=self.settings.db_host,
             port=self.settings.db_port,

@@ -54,8 +54,9 @@ export async function prepareLlmOutputFile(path: string, cwd: string) {
     async publish(result: LLMQueryResult, isCancelled = () => false): Promise<LLMQueryResult> {
       if (isCancelled()) return { ...result, status: 'cancelled', warning: 'Query cancelled' };
       if (result.status !== 'completed') return result;
-      // ponytail: bounded synchronous publication serializes the commit with Host
-      // cancellation; move to a native directory-relative API if this becomes a latency bottleneck.
+      // ponytail: synchronous publication (5s timeout) serializes commit with Host cancellation;
+      // use a native directory-relative API if representative output sizes show this blocking
+      // the Host responsiveness budget, preserving create-only publication and directory identity.
       const published = spawnSync(process.execPath, ['-e', publishScript], {
         cwd: parent, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
         input: JSON.stringify({ parent, name: basename(target), dev: String(parentIdentity.dev),
