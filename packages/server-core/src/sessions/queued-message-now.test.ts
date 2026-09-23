@@ -12,13 +12,17 @@ import { SessionManager, createManagedSession } from './SessionManager.ts'
 describe('queued message send-now', () => {
   let tmpRoot: string
   let sm: SessionManager
+  let processingSession: ReturnType<typeof createManagedSession> | undefined
 
   beforeEach(() => {
+    processingSession = undefined
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-queued-now-'))
     sm = new SessionManager((_workspaceId, managed) => managed.workspace)
   })
 
   afterEach(async () => {
+    // The fake agent has no generator to finish its abort before fixture removal.
+    if (processingSession) processingSession.isProcessing = false
     await sm.flushAllSessions()
     sm.cleanup()
     rmSync(tmpRoot, { recursive: true, force: true })
@@ -36,6 +40,7 @@ describe('queued message send-now', () => {
       } as never,
       { messagesLoaded: true },
     )
+    processingSession = managed
     managed.isProcessing = true
     managed.messages = [
       { id: 'first', role: 'user', content: 'first', timestamp: 1 },
