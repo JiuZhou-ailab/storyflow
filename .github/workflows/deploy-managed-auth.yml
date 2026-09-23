@@ -248,7 +248,7 @@ jobs:
             const available = new Set(body.data.flatMap((model) =>
               model && typeof model === "object" && typeof model.id === "string" ? [model.id] : []
             ));
-            for (const model of ["gemini-3.8-flash", "gemini-3.7-flash"]) {
+            for (const model of ["gemini-3.8-flash"]) {
               if (!available.has(model)) {
                 console.error(`Missing managed release model: ${model}`);
                 process.exit(1);
@@ -256,7 +256,7 @@ jobs:
             }
           '
 
-          for model in gemini-3.8-flash gemini-3.7-flash; do
+          for model in gemini-3.8-flash; do
             response_path="$RUNNER_TEMP/gemini-canary-$model.json"
             status="$(curl --silent --show-error --max-time 60 --output "$response_path" \
               --write-out '%{http_code}' \
