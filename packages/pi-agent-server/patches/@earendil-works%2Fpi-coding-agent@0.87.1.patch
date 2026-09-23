@@ -1,7 +1,28 @@
+diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -193,6 +193,8 @@
+     contextUsage?: ContextUsage;
+ }
+ export declare class AgentSession {
++    /** Caller output cap before context clamping; custom streams enforce the same cap. */
++    maxOutputTokens?: number;
+     readonly agent: Agent;
+     readonly sessionManager: SessionManager;
+     readonly settingsManager: SettingsManager;
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -103,6 +103,9 @@
+@@ -75,6 +75,8 @@
+ // AgentSession Class
+ // ============================================================================
+ export class AgentSession {
++    // Optional caller cap for native length recovery; custom streams enforce the same cap.
++    maxOutputTokens;
+     agent;
+     sessionManager;
+     settingsManager;
+@@ -103,6 +105,9 @@
      // Retry state
      _retryAbortController = undefined;
      _retryAttempt = 0;
@@ -11,7 +32,7 @@ diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
      // Bash execution state
      _bashAbortControllers = new Set();
      _pendingBashMessages = [];
-@@ -147,6 +150,16 @@
+@@ -147,6 +152,16 @@
      _runSystemPromptOptions;
      constructor(config) {
          this.agent = config.agent;
@@ -28,7 +49,7 @@ diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
          this.sessionManager = config.sessionManager;
          this.settingsManager = config.settingsManager;
          this._scopedModels = config.scopedModels ?? [];
-@@ -820,6 +833,8 @@
+@@ -820,6 +835,8 @@
       * Call this when completely done with the session.
       */
      dispose() {
@@ -37,7 +58,7 @@ diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
          try {
              this.abortRetry();
              this.abortCompaction();
-@@ -1075,10 +1090,11 @@
+@@ -1075,10 +1092,11 @@
      // =========================================================================
      // Prompting
      // =========================================================================
@@ -51,7 +72,7 @@ diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
              await this.agent.prompt(messages);
              while (!this._agentRunAbortRequested) {
                  if (await this._handlePostAgentRun()) {
-@@ -1205,6 +1221,7 @@
+@@ -1205,6 +1223,7 @@
       * @throws Error if no model selected or no API key available (when not streaming)
       */
      async prompt(text, options) {
@@ -59,7 +80,7 @@ diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
          if (this._isEmittingAgentSettled) {
              this._deferredSettledActions.push(async () => await this.prompt(text, options));
              return;
-@@ -1328,7 +1345,7 @@
+@@ -1328,7 +1347,7 @@
              return;
          }
          preflightResult?.(true);
@@ -68,7 +89,7 @@ diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
      }
      /**
       * Try to execute an extension command. Returns true if command was found and executed.
-@@ -1606,6 +1623,7 @@
+@@ -1606,6 +1625,7 @@
       * Abort current operation and wait for agent to become idle.
       */
      async abort() {
@@ -76,7 +97,7 @@ diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
          if (this._isAgentRunActive) {
              this._agentRunAbortRequested = true;
          }
-@@ -1643,9 +1661,11 @@
+@@ -1643,9 +1663,11 @@
       * @throws Error if no auth is configured for the model
       */
      async setModel(model, options = {}) {
@@ -88,7 +109,25 @@ diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
          const previousModel = this.model;
          const thinkingLevel = this._getThinkingLevelForModelSwitch(model);
          this.agent.state.model = model;
-@@ -2632,6 +2652,9 @@
+@@ -2046,7 +2068,7 @@
+             return false;
+         }
+         // Automatic cases 1 and 2: context overflow.
+-        // A length stop is recoverable when output ended below the model's original desired limit,
++        // A length stop is recoverable below the caller cap, bounded by model capacity,
+         // independent of the configured context size or any context-clamped provider request limit.
+         const currentProjection = this.sessionManager.buildSessionProjection();
+         const assistantEntryId = this._findPersistedMessageEntryId(assistantMessage);
+@@ -2068,7 +2090,7 @@
+         const contextOverflow = sameModel &&
+             ((explicitOverflow && assistantRetainedForExplicitRecovery) ||
+                 (assistantUsageMatchesProjection && isContextOverflow(assistantMessage, contextWindow)));
+-        const recoverableLength = sameModel && assistantIsProjected && isRecoverableLength(assistantMessage, this.model?.maxTokens ?? 0);
++        const recoverableLength = sameModel && assistantIsProjected && isRecoverableLength(assistantMessage, Math.min(this.maxOutputTokens ?? this.model?.maxTokens ?? 0, this.model?.maxTokens ?? 0));
+         if (contextOverflow || recoverableLength) {
+             const willRetry = assistantMessage.stopReason !== "stop";
+             // Case 2: the response completed successfully. Compact, but do not retry because
+@@ -2632,6 +2654,9 @@
       * Context overflow errors are NOT retryable (handled by compaction instead).
       */
      _isRetryableError(message) {
@@ -98,7 +137,7 @@ diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
          // Context overflow is handled by compaction, not retry.
          if (isContextOverflow(message, this.model?.contextWindow ?? 0))
              return false;
-@@ -2692,7 +2715,13 @@
+@@ -2692,7 +2717,13 @@
              this._retryAttempt--;
              return false;
          }
@@ -113,7 +152,7 @@ diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
          this._emit({
              type: "auto_retry_start",
              attempt: this._retryAttempt,
-@@ -2702,8 +2731,7 @@
+@@ -2702,8 +2733,7 @@
          });
          // Keep the failed attempt in raw history while durably omitting it from model projection.
          this._omitRecoveryAttempt(message);
@@ -150,10 +189,10 @@ diff --git a/dist/core/compaction/compaction.js b/dist/core/compaction/compactio
      }
      if (response.stopReason === "length") {
          return `${label} failed: generation hit the token cap and the summary is incomplete`;
-     }
++    }
 +    if (!contentText(response.content).trim()) {
 +        return `${label} failed: summary is empty`;
-+    }
+     }
      return undefined;
  }
 @@ -705,6 +708,13 @@

@@ -74,7 +74,7 @@ import { recordStartupFailure, showStartupRecovery } from './startup-recovery'
 import { createQuitCoordinator } from './quit-coordinator'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
-import { shouldCreateWindowsAfterStartup } from './startup-state'
+import { getStartupRelaunchArgs, shouldCreateWindowsAfterStartup } from './startup-state'
 import {
   createClientAuthConfigFromRuntimeEnv,
   createClientAuthService,
@@ -338,9 +338,7 @@ async function recoverStartup(error: unknown, stage: string): Promise<void> {
     if (!mainStartupIsHeadless) {
       const choice = await showStartupRecovery(error, stage)
       if (choice.restart) {
-        const args = process.argv.slice(1).filter(arg => !arg.startsWith('--restore-config-backup='))
-        if (choice.backup) args.push(`--restore-config-backup=${choice.backup}`)
-        app.relaunch({ args })
+        app.relaunch({ args: getStartupRelaunchArgs(process.argv, choice.backup) })
         fatalStartup = false
       }
     } else recordStartupFailure(error, stage)
@@ -1060,7 +1058,7 @@ app.whenReady().then(async () => {
 
       // App relaunch (for server config changes — NOT an update install)
       ipcMain.handle('app:relaunch', () => {
-        app.relaunch()
+        app.relaunch({ args: getStartupRelaunchArgs(process.argv) })
         app.quit()
       })
 

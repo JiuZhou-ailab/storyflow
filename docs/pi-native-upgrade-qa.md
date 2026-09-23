@@ -130,3 +130,19 @@ subprocess build, and 3 compiled smoke tests (31 assertions) passed. Tests use
 loopback providers. The full suite and desktop packaged QA were not repeated for
 this follow-up. Revert this cleanup commit to restore the previous policy; no
 persisted format or user settings changed.
+
+## Release integration with v0.23.0
+
+The integration branch merges origin/main 708393cbe into ca1b75311 while preserving
+Pi 0.87.1 and native compaction defaults. Published startup shutdown/drain, one-shot
+relaunch arguments, Windows identity fallback and installer acceptance are retained.
+The published Bun 1.3 helper error reporting and whole-query deadline are retained.
+The retired non-managed model-switch loop is not restored; a setup-deadline regression
+replaces its obsolete cross-model test. Requested thinking preference remains distinct
+from effective provider behavior.
+
+The 0.84.4 small-budget Anthropic/Bedrock fixes and optional caller cap for native
+length recovery are ported to 0.87.1. Before the port, 8 thinking cases and the
+explicit-cap recovery case failed; after the port all 39 budget/query cases pass.
+No product compaction defaults or main-session output cap are reinstated.
+Desktop release gate above remains pending until candidate-specific artifacts exist.

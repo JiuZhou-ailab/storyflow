@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | 配置、回滚、停止、TLS | `bun test ./packages/server-core/src/bootstrap/startup-recovery.isolated.ts` | 真实文件、socket 与共享 bootstrap/stop |
 | 活 owner、崩溃恢复、旧代 release | `bun test ./packages/server-core/src/bootstrap/server-lock.isolated.ts` | 两个真实进程和历史格式 |
-| 页面/preload/renderer/模块加载失败 | `bun e2e/core/native-startup.ts` | 真实 Electron，受控缺失资源；不是发行安装包证明 |
+| 页面/preload/renderer/模块加载失败、恢复参数只使用一次 | `bun e2e/core/native-startup.ts` | 真实 Electron，受控缺失资源与原生 relaunch；不是发行安装包证明 |
 | 原生入口配置/权限/owner/TLS 失败 | `bun e2e/core/startup-faults.ts` | 构建后的完整应用入口；用 headless 错误退出避免人工关闭对话框 |
 | 相同 profile 连续重启 | `bun e2e/core/startup-recovery.ts` | 真实首屏、会话与文件面板 |
 | 发行包核心闭环 | `CRAFT_E2E_ELECTRON_BIN=<exe> bun run e2e:core` | 实际发行可执行文件与本地模型 stub |
@@ -21,8 +21,12 @@ Windows release job 在上传资产前执行 `scripts/verify-windows-startup.ps1
 通过安装器创建的快捷方式验证首屏、二次启动、正常退出重开和强制结束后重开；再使用独立
 Host/profile 从上一个已发布安装器升级到当前安装器。升级链中不删锁、不换 profile。
 CDP 必须看到可见应用页面并成功执行工作区 RPC；进程存在或出现任意窗口均不算成功。
+二次启动须先完成进程交接，再通过首个 owner 已验证的 CDP endpoint 检查页面和正常退出；
+重复进程可能覆盖 profile 的 `DevToolsActivePort`，真正重启时才重新发现 endpoint。
 验收只允许在临时 CI runner 执行；证据作为 `windows-startup-evidence` 上传。
 共享 bootstrap 合同还在 Windows、macOS、Linux 的 validate matrix 执行。
+触及启动相关路径的 PR 还运行 `windows-startup.yml`，复用同一构建器与安装验收脚本，
+将 `windows-pr-startup-evidence` 保存为 CI artifact；该工作流只有读取仓库和发布记录的权限。
 
 ## Windows 现场 QA
 
@@ -39,13 +43,15 @@ CDP 必须看到可见应用页面并成功执行工作区 RPC；进程存在或
 
 ## 证据限制
 
-本次本地验证：`bun run test` 共 5,927 项通过、11 项跳过、0 失败；
-`typecheck:all`、完整 Electron 构建及资源校验通过。真实 Electron 的 native-startup、
-startup-faults（含实际 WSS preload）、core 与相同 profile 的 startup-recovery 均通过。
-Standards 与 Spec 独立审查发现的退出竞态、HTTP drain、旧锁墙钟推断、重复清理和取消导航问题
-已修正并复核。提交快照的 i18n coverage 通过；工作区另有本单之外的 `chat.openFolder` 缺失。
+PR #47 的隔离分支使用 CI 固定的 Bun 1.3.14 验证共享 bootstrap/stop、模型刷新停止、
+会话尾部落盘与重启参数；关闭完成后还验证原端口可重新绑定。TLS 合同使用真实 Node 客户端，
+避免把 Bun 的 HTTP 实现当作 Electron 的客户端。
+`typecheck:all`、完整 Electron 构建及资源校验通过；真实 Electron 的 native-startup、
+startup-faults（含实际 WSS preload）、core 与相同 profile 的 startup-recovery 均有本机通过证据。
+完整测试和三平台 matrix 的最终状态以 PR 最新提交的检查结果为准，历史工作区的通过数不能替代它。
 
 2026-09-21 本机为 macOS；原生故障注入和连续重启有实际执行证据。
-Windows NSIS 安装升级与 Linux/Windows matrix 在本机不能执行，需 CI 提供证据。
+Windows NSIS 安装升级与 Linux/Windows matrix 在本机不能执行，需 CI 提供证据；
+PR 的共享合同 matrix 不等同于 release job 的真实安装升级验收。
 用户原始 Windows 故障的弹窗原文、安装版本与 owner 状态仍未取得，不能认定现场已归因。
 在 Windows 原生验收通过前，不关闭 #45，也不将本地构建通过称为修复版本已发布。

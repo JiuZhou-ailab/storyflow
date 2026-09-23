@@ -1,3 +1,132 @@
+diff --git a/dist/api/anthropic-messages.js b/dist/api/anthropic-messages.js
+--- a/dist/api/anthropic-messages.js
++++ b/dist/api/anthropic-messages.js
+@@ -391,6 +391,11 @@
+                 maxRetries: 0,
+             };
+             const response = await retryProviderRequest(() => client.beta.messages.create(params, requestOptions).asResponse(), {
++                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
++                onError: async (error) => {
++                    if (typeof error?.status === "number" && error.headers instanceof Headers)
++                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
++                },
+                 maxRetries: options?.maxRetries,
+                 maxRetryDelayMs: options?.maxRetryDelayMs,
+                 signal: options?.signal,
+@@ -685,11 +690,12 @@
+     // Do not coerce to 0 here, or the thinking budget would become the entire max_tokens value.
+     const adjusted = adjustMaxTokensForThinking(base.maxTokens, model.maxTokens, options.reasoning, options.thinkingBudgets);
+     const maxTokens = clampMaxTokensToContext(model, context, adjusted.maxTokens);
++    const thinkingBudget = Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024));
+     return stream(model, context, {
+         ...base,
+         maxTokens,
+-        thinkingEnabled: true,
+-        thinkingBudgetTokens: Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024)),
++        thinkingEnabled: thinkingBudget >= 1024,
++        thinkingBudgetTokens: thinkingBudget,
+     });
+ };
+ function isOAuthToken(apiKey) {
+diff --git a/dist/api/bedrock-converse-stream.js b/dist/api/bedrock-converse-stream.js
+--- a/dist/api/bedrock-converse-stream.js
++++ b/dist/api/bedrock-converse-stream.js
+@@ -406,13 +406,14 @@
+         // Do not coerce to 0 here, or the thinking budget would become the entire maxTokens value.
+         const adjusted = adjustMaxTokensForThinking(base.maxTokens, model.maxTokens, options.reasoning, options.thinkingBudgets);
+         const maxTokens = clampMaxTokensToContext(model, context, adjusted.maxTokens);
++        const thinkingBudget = Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024));
+         return stream(model, context, {
+             ...base,
+             maxTokens,
+-            reasoning: options.reasoning,
++            reasoning: thinkingBudget >= 1024 ? options.reasoning : undefined,
+             thinkingBudgets: {
+                 ...(options.thinkingBudgets || {}),
+-                [clampReasoning(options.reasoning)]: Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024)),
++                [clampReasoning(options.reasoning)]: thinkingBudget,
+             },
+         });
+     }
+diff --git a/dist/api/google-generative-ai.js b/dist/api/google-generative-ai.js
+--- a/dist/api/google-generative-ai.js
++++ b/dist/api/google-generative-ai.js
+@@ -46,7 +46,13 @@
+             if (nextParams !== undefined) {
+                 params = nextParams;
+             }
+-            const googleStream = await retryGoogleRequest(() => client.models.generateContentStream(params), options);
++            const googleStream = await retryGoogleRequest(() => client.models.generateContentStream(params), {
++                ...options,
++                beforeRetry: async () => {
++                    const headers = await options?.refreshHeaders?.();
++                    if (headers) params.config = { ...params.config, httpOptions: { ...params.config?.httpOptions, headers: providerHeadersToRecord(headers) } };
++                },
++            });
+             stream.push({ type: "start", partial: output });
+             let currentBlock = null;
+             const blocks = output.content;
+diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
+--- a/dist/api/google-shared.js
++++ b/dist/api/google-shared.js
+@@ -443,6 +443,7 @@
+             throw error;
+         }
+     }, {
++        beforeRetry: options?.beforeRetry,
+         maxRetries: options?.maxRetries,
+         maxRetryDelayMs: options?.maxRetryDelayMs,
+         signal: options?.signal,
+diff --git a/dist/api/openai-completions.js b/dist/api/openai-completions.js
+--- a/dist/api/openai-completions.js
++++ b/dist/api/openai-completions.js
+@@ -195,6 +195,11 @@
+                 maxRetries: 0,
+             };
+             const { data: openaiStream, response } = await retryProviderRequest(() => client.chat.completions.create(params, requestOptions).withResponse(), {
++                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
++                onError: async (error) => {
++                    if (typeof error?.status === "number" && error.headers instanceof Headers)
++                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
++                },
+                 maxRetries: options?.maxRetries,
+                 maxRetryDelayMs: options?.maxRetryDelayMs,
+                 signal: options?.signal,
+diff --git a/dist/api/openai-responses.js b/dist/api/openai-responses.js
+--- a/dist/api/openai-responses.js
++++ b/dist/api/openai-responses.js
+@@ -120,6 +120,11 @@
+                 maxRetries: 0,
+             };
+             const { data: openaiStream, response } = await retryProviderRequest(() => client.responses.create(params, requestOptions).withResponse(), {
++                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
++                onError: async (error) => {
++                    if (typeof error?.status === "number" && error.headers instanceof Headers)
++                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
++                },
+                 maxRetries: options?.maxRetries,
+                 maxRetryDelayMs: options?.maxRetryDelayMs,
+                 signal: options?.signal,
+diff --git a/dist/api/simple-options.js b/dist/api/simple-options.js
+--- a/dist/api/simple-options.js
++++ b/dist/api/simple-options.js
+@@ -23,6 +23,7 @@
+         cacheRetention: options?.cacheRetention,
+         sessionId: options?.sessionId,
+         headers: options?.headers,
++        refreshHeaders: options?.refreshHeaders,
+         onPayload: options?.onPayload,
+         onResponse: options?.onResponse,
+         timeoutMs: options?.timeoutMs,
+@@ -57,7 +58,7 @@
+ // Undefined means no explicit caller cap. Use the model cap and fit thinking inside it.
+ baseMaxTokens, modelMaxTokens, reasoningLevel, customBudgets) {
+     let thinkingBudget = thinkingBudgetForLevel(reasoningLevel, customBudgets);
+-    const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
++    const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens, modelMaxTokens);
+     if (maxTokens <= thinkingBudget) {
+         thinkingBudget = clampThinkingBudgetToAnswerRoom(thinkingBudget, maxTokens);
+     }
 diff --git a/dist/utils/provider-retry.js b/dist/utils/provider-retry.js
 --- a/dist/utils/provider-retry.js
 +++ b/dist/utils/provider-retry.js
@@ -82,97 +211,3 @@ diff --git a/dist/utils/retry.js b/dist/utils/retry.js
      // OpenCode Go/free-tier limits returned as 429 JSON error types by OpenCode's
      // Zen API. These are subscription/account limits, not transient throttles.
      "GoUsageLimitError",
-diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
---- a/dist/api/google-shared.js
-+++ b/dist/api/google-shared.js
-@@ -443,6 +443,7 @@
-             throw error;
-         }
-     }, {
-+        beforeRetry: options?.beforeRetry,
-         maxRetries: options?.maxRetries,
-         maxRetryDelayMs: options?.maxRetryDelayMs,
-         signal: options?.signal,
-diff --git a/dist/api/anthropic-messages.js b/dist/api/anthropic-messages.js
---- a/dist/api/anthropic-messages.js
-+++ b/dist/api/anthropic-messages.js
-@@ -391,6 +391,11 @@
-                 maxRetries: 0,
-             };
-             const response = await retryProviderRequest(() => client.beta.messages.create(params, requestOptions).asResponse(), {
-+                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
-+                onError: async (error) => {
-+                    if (typeof error?.status === "number" && error.headers instanceof Headers)
-+                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
-+                },
-                 maxRetries: options?.maxRetries,
-                 maxRetryDelayMs: options?.maxRetryDelayMs,
-                 signal: options?.signal,
-diff --git a/dist/api/simple-options.js b/dist/api/simple-options.js
---- a/dist/api/simple-options.js
-+++ b/dist/api/simple-options.js
-@@ -23,6 +23,7 @@
-         cacheRetention: options?.cacheRetention,
-         sessionId: options?.sessionId,
-         headers: options?.headers,
-+        refreshHeaders: options?.refreshHeaders,
-         onPayload: options?.onPayload,
-         onResponse: options?.onResponse,
-         timeoutMs: options?.timeoutMs,
-@@ -57,7 +58,7 @@
- // Undefined means no explicit caller cap. Use the model cap and fit thinking inside it.
- baseMaxTokens, modelMaxTokens, reasoningLevel, customBudgets) {
-     let thinkingBudget = thinkingBudgetForLevel(reasoningLevel, customBudgets);
--    const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
-+    const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens, modelMaxTokens);
-     if (maxTokens <= thinkingBudget) {
-         thinkingBudget = clampThinkingBudgetToAnswerRoom(thinkingBudget, maxTokens);
-     }
-diff --git a/dist/api/openai-responses.js b/dist/api/openai-responses.js
---- a/dist/api/openai-responses.js
-+++ b/dist/api/openai-responses.js
-@@ -120,6 +120,11 @@
-                 maxRetries: 0,
-             };
-             const { data: openaiStream, response } = await retryProviderRequest(() => client.responses.create(params, requestOptions).withResponse(), {
-+                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
-+                onError: async (error) => {
-+                    if (typeof error?.status === "number" && error.headers instanceof Headers)
-+                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
-+                },
-                 maxRetries: options?.maxRetries,
-                 maxRetryDelayMs: options?.maxRetryDelayMs,
-                 signal: options?.signal,
-diff --git a/dist/api/google-generative-ai.js b/dist/api/google-generative-ai.js
---- a/dist/api/google-generative-ai.js
-+++ b/dist/api/google-generative-ai.js
-@@ -46,7 +46,13 @@
-             if (nextParams !== undefined) {
-                 params = nextParams;
-             }
--            const googleStream = await retryGoogleRequest(() => client.models.generateContentStream(params), options);
-+            const googleStream = await retryGoogleRequest(() => client.models.generateContentStream(params), {
-+                ...options,
-+                beforeRetry: async () => {
-+                    const headers = await options?.refreshHeaders?.();
-+                    if (headers) params.config = { ...params.config, httpOptions: { ...params.config?.httpOptions, headers: providerHeadersToRecord(headers) } };
-+                },
-+            });
-             stream.push({ type: "start", partial: output });
-             let currentBlock = null;
-             const blocks = output.content;
-diff --git a/dist/api/openai-completions.js b/dist/api/openai-completions.js
---- a/dist/api/openai-completions.js
-+++ b/dist/api/openai-completions.js
-@@ -195,6 +195,11 @@
-                 maxRetries: 0,
-             };
-             const { data: openaiStream, response } = await retryProviderRequest(() => client.chat.completions.create(params, requestOptions).withResponse(), {
-+                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
-+                onError: async (error) => {
-+                    if (typeof error?.status === "number" && error.headers instanceof Headers)
-+                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
-+                },
-                 maxRetries: options?.maxRetries,
-                 maxRetryDelayMs: options?.maxRetryDelayMs,
-                 signal: options?.signal,

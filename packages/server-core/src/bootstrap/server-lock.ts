@@ -30,7 +30,7 @@ function processIdentity(pid: number): { identity: string; startedAt?: number } 
     }
     if (process.platform === 'win32') {
       const value = execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
-        `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o')`],
+        `[System.Diagnostics.Process]::GetProcessById(${pid}).StartTime.ToUniversalTime().ToString('o')`],
       { encoding: 'utf8', timeout: 3000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim()
       if (!value || !Number.isFinite(Date.parse(value))) return null
       return { identity: value, startedAt: Date.parse(value) }
@@ -121,8 +121,9 @@ export async function acquireServerLock(logger: PlatformServices['logger']): Pro
   const lease = join(root, '.server.lease')
   const compatibility = join(root, '.server.lock')
   const identity = processIdentity(process.pid)
-  if (!identity) throw new ServerLockError('OWNER_UNKNOWN', process.pid)
-  const owner: Owner = { pid: process.pid, startedAt: Date.now(), processIdentity: identity.identity, acquisitionId: randomUUID(), leaseVersion: 2 }
+  // Publishing a nonempty generation establishes fresh ownership even if our
+  // birth query is unavailable. Peers must still prove an existing owner exited.
+  const owner: Owner = { pid: process.pid, startedAt: Date.now(), processIdentity: identity?.identity, acquisitionId: randomUUID(), leaseVersion: 2 }
   const marker = `owner-${owner.acquisitionId}.json`
   const staging = mkdtempSync(join(root, '.server-acquire-'))
   let published = false

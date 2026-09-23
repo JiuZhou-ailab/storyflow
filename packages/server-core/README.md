@@ -32,6 +32,8 @@ RPC and HTTP handler Promises drain before the final Session flush and ownership
 New acquisitions publish a nonempty `.server.lease` directory by rename, containing one unique
 `owner-<acquisitionId>.json`; `.server.lock` remains a JSON compatibility file (`leaseVersion: 2`).
 OS process creation identity is separate from acquisition identity. Heartbeat age never proves death.
+If the new process's birth query is unavailable, it may still acquire an unowned directory atomically.
+Its live PID then remains unknown to peers; after a crash, PID reuse without birth metadata also fails closed.
 Only a proven exited/reused owner is reclaimed; unknown or incomplete historical metadata fails closed.
 Legacy live PIDs remain unknown: wall-clock timestamps cannot prove process reuse after clock changes.
 Release removes only its own marker and uses nonrecursive rmdir, so a stale release cannot remove a

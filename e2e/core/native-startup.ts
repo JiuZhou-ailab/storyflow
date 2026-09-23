@@ -3,7 +3,7 @@
 // pos: Native half of #45 startup acceptance; no network/model calls
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -27,6 +27,20 @@ try {
     assert.ok(!receipt.includes(root) && !receipt.includes('secret-fixture-content'))
     console.log(`PASS ${scenario}: one visible recovery, no unhandled rejection, redacted receipt`)
   }
+  const relaunch = Bun.spawn([electron, join(root, 'main.cjs'), '--restore-config-backup=once.json'], {
+    env: { ...process.env, STARTUP_FIXTURE_ROOT: root, STARTUP_FIXTURE_CASE: 'relaunch', HOME: root },
+    stdout: 'ignore', stderr: 'ignore',
+  })
+  const relaunchDeadline = setTimeout(() => relaunch.kill(), 10_000)
+  try {
+    assert.equal(await relaunch.exited, 0)
+    const result = join(root, 'relaunch-result.json')
+    const deadline = Date.now() + 10_000
+    while (!existsSync(result) && Date.now() < deadline) await Bun.sleep(100)
+    const args: string[] = JSON.parse(readFileSync(result, 'utf8'))
+    assert.ok(!args.some(arg => arg.startsWith('--restore-config-backup=')))
+    console.log('PASS relaunch: real Electron consumes the one-shot backup argument')
+  } finally { clearTimeout(relaunchDeadline) }
   await build({ entryPoints: [join(import.meta.dir, '../../apps/electron/src/main/entry.ts')], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outfile: join(root, 'module.cjs'),
     plugins: [{ name: 'missing-main-fixture', setup(builder) {
       builder.onResolve({ filter: /^\.\/index$/ }, args => args.importer.endsWith('/main/entry.ts') ? { path: './missing-main.cjs', external: true } : undefined)

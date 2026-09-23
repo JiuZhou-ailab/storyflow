@@ -130,3 +130,30 @@ test('explicit summary budget caps actual requests without changing native model
     expect(f.session.model!.maxTokens).toBe(capacity);
   }, completion);
 });
+
+for (const outputTokens of [8192, 4096]) {
+  test(`length at ${outputTokens} tokens respects the request budget during native recovery`, async () => {
+    const { fixture, completion } = await import('./managed-fallback.fixture.ts');
+    await fixture(async f => {
+      f.session.maxOutputTokens = 8192;
+      const stream = f.session.agent.streamFunction;
+      f.session.agent.streamFunction = (model, context, options) => stream(model, context, { ...options, maxTokens: 8192 });
+      await f.session.prompt('seed ' + 'word '.repeat(35000));
+      await f.session.prompt('more ' + 'word '.repeat(35000));
+      await f.session.prompt('write at the ordinary budget');
+      await f.session.waitForIdle();
+      expect(f.session.model?.maxTokens).toBe(32768);
+      expect(f.requests[2]!.body.max_tokens ?? f.requests[2]!.body.max_completion_tokens).toBe(8192);
+      expect(f.requests).toHaveLength(outputTokens === 8192 ? 3 : 5);
+      expect(f.session.getLastAssistantText()).toBe(outputTokens === 8192 ? 'Partial output' : 'OK');
+    }, (model, index) => {
+      if (index !== 3) return completion(model);
+      const chunks = [
+        { choices: [{ index: 0, delta: { role: 'assistant', content: 'Partial output' }, finish_reason: null }] },
+        { choices: [{ index: 0, delta: {}, finish_reason: 'length' }], usage: { prompt_tokens: 88000, completion_tokens: outputTokens, total_tokens: 88000 + outputTokens } },
+      ];
+      return new Response(chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+    }, undefined, { catalog: [{ id: 'deepseek-v4-flash', name: 'Fixture', contextWindow: 1_000_000,
+      fallbackCapabilities: { maxOutputTokens: 32768, tools: true, structuredOutput: 'prompt' } } as never] });
+  });
+}

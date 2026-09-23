@@ -240,6 +240,28 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     expect(queryCalls).toBe(1)
   })
 
+  for (const status of ['completed', 'incomplete', 'failed', 'cancelled'] as const) {
+    it(`one-shot and rewrite consumers only accept completed output (${status})`, async () => {
+      const managed = buildSession(`query-result-${status}`)
+      let calls = 0
+      ;(sm as any).getOrCreateAgentLocked = async () => ({
+        queryLlm: async () => {
+          calls++
+          return { text: 'Replacement text', status, warning: status === 'completed' ? undefined : `Query ${status}` }
+        },
+      })
+      const query = sm.queryOnce(managed.id, { prompt: 'rewrite' })
+      if (status === 'completed') await expect(query).resolves.toMatchObject({ text: 'Replacement text', status })
+      else await expect(query).rejects.toThrow(`Query ${status}`)
+      const rewrite = sm.rewriteNovelSelection(managed.id, {
+        filePath: join(tmpRoot, 'chapter.md'), relativePath: 'chapter.md', selectedText: 'Original', instruction: 'Rewrite',
+      })
+      if (status === 'completed') await expect(rewrite).resolves.toEqual({ replacement: 'Replacement text' })
+      else await expect(rewrite).rejects.toThrow(`Query ${status}`)
+      expect(calls).toBe(2)
+    })
+  }
+
   it('refreshes invalid managed access for a later one-shot call without replaying', async () => {
     const managed = buildSession('query-once-managed-auth-refresh')
     managed.llmConnection = 'storyflow-managed'

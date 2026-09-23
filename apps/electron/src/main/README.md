@@ -29,7 +29,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `mcp-market-client.ts` - Read-only, parsed MCP subregistry discovery without contacting listed endpoints.
 - `startup-diagnostics.ts` - Bounded redacted startup receipts available before Host loading.
 - `startup-recovery.ts` - Native recovery choices independent of renderer and RPC.
-- `startup-state.ts` - Startup window and stable recovery-download policy.
+- `startup-state.ts` - Startup window, one-shot backup relaunch arguments, and recovery-download policy.
 - `thumbnail-protocol.ts` - Custom thumbnail protocol.
 - `window-manager.ts` - Native app window lifecycle.
 - `window-state.ts` - Window state persistence.

@@ -349,20 +349,23 @@ export class WsRpcServer implements RpcServer {
     }
     this.disconnectedClients.clear()
     // Include connections whose handshake is still pending.
-    for (const ws of this.wss?.clients ?? []) ws.terminate()
+    const socketsClosed = [...this.wss?.clients ?? []].map(ws => new Promise<void>(resolve => {
+      ws.once('close', () => resolve())
+      ws.terminate()
+    }))
     const endpoints = [this.wss, this.httpServer, this.httpsServer].filter(endpoint => endpoint !== null)
-    const endpointsClosed = Promise.all(endpoints.map(endpoint => new Promise<void>((resolve, reject) => {
-      endpoint.close(error => error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING' ? reject(error) : resolve())
-    })))
+    // close() stops listening synchronously. Bun 1.3.14 never calls its HTTP
+    // close callback after a WebSocket upgrade; join sockets and handlers instead.
+    for (const endpoint of endpoints) {
+      try { endpoint.close() } catch (error) { failures.push(error) }
+    }
     // Closing a socket does not cancel its asynchronous handler: drain both.
     this.httpServer?.closeAllConnections()
     this.httpsServer?.closeAllConnections()
     this.wss = null
     this.httpServer = null
     this.httpsServer = null
-    void Promise.allSettled([...this.activeHandlers, endpointsClosed]).then(results => {
-      const endpointResult = results[results.length - 1]!
-      if (endpointResult.status === 'rejected') failures.push(endpointResult.reason)
+    void Promise.allSettled([...this.activeHandlers, ...socketsClosed]).then(() => {
       if (failures.length) rejectClose(new AggregateError(failures, 'Transport cleanup incomplete'))
       else resolveClose()
     })

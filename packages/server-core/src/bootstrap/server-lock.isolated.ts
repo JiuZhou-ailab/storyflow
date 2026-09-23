@@ -35,8 +35,11 @@ afterEach(() => {
   rmSync(leasePath, { recursive: true, force: true })
 })
 
-function contender() {
-  const process = spawn(Bun.which('bun')!, [join(import.meta.dir, 'server-lock.fixture.ts')], { env: { ...Bun.env, CRAFT_CONFIG_DIR: configDir }, stdio: ['pipe', 'pipe', 'inherit'] })
+function contender(identityUnavailable = false) {
+  const process = spawn(Bun.which('bun')!, [join(import.meta.dir, 'server-lock.fixture.ts')], {
+    env: { ...Bun.env, CRAFT_CONFIG_DIR: configDir, ...(identityUnavailable ? { CRAFT_TEST_IDENTITY_UNAVAILABLE: '1' } : {}) },
+    stdio: ['pipe', 'pipe', 'inherit'],
+  })
   const exited = new Promise<void>(resolve => process.once('exit', () => resolve()))
   process.stdin.on('error', () => {}) // command() reports write failures when the ownership monitor exits.
   const lines = createInterface({ input: process.stdout })[Symbol.asyncIterator]()
@@ -60,11 +63,13 @@ function contender() {
 test('two real processes exclude a live expired owner and recover after actual process exit', async () => {
   const first = contender(), second = contender()
   try {
-    expect((await first.command('acquire')).ok).toBe(true)
+    expect(await first.command('acquire')).toMatchObject({ ok: true })
     const expired = new Date(Date.now() - 120_000)
     utimesSync(lockPath, expired, expired)
     utimesSync(leasePath, expired, expired)
-    expect(await second.command('acquire')).toEqual({ ok: false, code: 'OWNER_ACTIVE' })
+    const denied = await second.command('acquire')
+    expect(denied.ok).toBe(false)
+    expect(['OWNER_ACTIVE', 'OWNER_UNKNOWN']).toContain(denied.code ?? '')
     await first.close()
     expect((await second.command('acquire')).ok).toBe(true)
     expect((await second.command('release')).ok).toBe(true)
@@ -72,6 +77,18 @@ test('two real processes exclude a live expired owner and recover after actual p
     if (first.process.exitCode === null && first.process.signalCode === null) await first.close()
     await second.close()
   }
+})
+
+test('an unavailable own birth probe permits fresh ownership but never stealing a live unknown owner', async () => {
+  const first = contender(true)
+  try {
+    expect(await first.command('acquire')).toMatchObject({ ok: true })
+    expect(JSON.parse(readFileSync(lockPath, 'utf8')).processIdentity).toBeUndefined()
+    await expect(acquireServerLock(logger)).rejects.toMatchObject({ code: 'OWNER_UNKNOWN' })
+    await first.close()
+    await acquireServerLock(logger)
+    expect(existsSync(leasePath)).toBe(true)
+  } finally { await first.close() }
 })
 
 test('an obsolete release cannot remove a replacement generation', async () => {

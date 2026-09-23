@@ -3,8 +3,14 @@
 // pos: Verifies startup failures or corrupt state cannot create broken UI windows
 
 import { describe, expect, it } from 'bun:test'
-import { getStartupRecoveryDownloadUrl, shouldCreateWindowsAfterStartup } from '../startup-state'
+import { getStartupRecoveryDownloadUrl, getStartupRelaunchArgs, shouldCreateWindowsAfterStartup } from '../startup-state'
 import { parseWindowState } from '../window-state'
+
+it('relaunch consumes an old backup selection and preserves the remaining arguments', () => {
+  const argv = ['/Electron', '/app', '--user-data-dir=/profile', '--restore-config-backup=old.json']
+  expect(getStartupRelaunchArgs(argv)).toEqual(['/app', '--user-data-dir=/profile'])
+  expect(getStartupRelaunchArgs(argv, 'new.json')).toEqual(['/app', '--user-data-dir=/profile', '--restore-config-backup=new.json'])
+})
 
 describe('getStartupRecoveryDownloadUrl', () => {
   it('selects the stable installer for the current platform and architecture', () => {
