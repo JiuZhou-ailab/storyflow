@@ -36,7 +36,7 @@ export enum AbortReason {
   InternalError = 'internal_error',
 }
 
-import type { ModelDefinition, ModelProvider, ModelThinkingLevelMap } from '../../config/models.ts';
+import type { CustomEndpointModelConfig, ModelProvider } from '../../config/models.ts';
 
 // Import LLM connection types for auth
 import type { CustomEndpointConfig, LlmAuthType, LlmProviderType } from '../../config/llm-connections.ts';
@@ -51,14 +51,7 @@ export interface BackendRuntimeUpdate {
     piAuthProvider?: string;
     customEndpoint?: CustomEndpointConfig;
     managedConnection?: { slug: string; autoFallback: boolean };
-    customModels?: Array<string | {
-      id: string;
-      contextWindow?: number;
-      supportsImages?: boolean;
-      supportsThinking?: boolean;
-      thinkingLevelMap?: ModelThinkingLevelMap;
-      fallbackCapabilities?: ModelDefinition['fallbackCapabilities'];
-    }>;
+    customModels?: CustomEndpointModelConfig[];
     [key: string]: unknown;
   };
 }
@@ -257,9 +250,6 @@ export interface CoreBackendConfig {
   /** Callback when SDK session ID is captured/updated */
   onSdkSessionIdUpdate?: (sdkSessionId: string) => void;
 
-  /** Callback when SDK session ID is cleared (e.g., after failed resume) */
-  onSdkSessionIdCleared?: () => void;
-
   /** Reserve, commit, or abort one Pi-owned rewind against the product transcript. */
   onConversationRewind?: (
     request: ConversationRewindRequest,
@@ -276,8 +266,7 @@ export interface CoreBackendConfig {
    * spawn failed before establishing a child session.
    *
    * Implementations MUST clear all four fields (including sdkSessionId)
-   * atomically and persist. `onSdkSessionIdCleared` is insufficient because
-   * it only clears sdkSessionId — branch fields would reload from disk
+   * atomically and persist, so stale branch fields cannot reload from disk
    * on next launch and re-trigger the failure.
    */
   onBranchForkInvalidated?: () => void;

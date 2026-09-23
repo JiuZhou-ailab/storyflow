@@ -5,12 +5,10 @@
 import type { AgentProvider, BackendConfig, LlmAuthType, LlmProviderType } from '../types.ts';
 import type { LlmConnection } from '../../../config/storage.ts';
 import type { CustomEndpointConfig } from '../../../config/llm-connections.ts';
-import type { ModelDefinition, ModelThinkingLevelMap } from '../../../config/models.ts';
+import type { CustomEndpointModelConfig } from '../../../config/models.ts';
 
 export interface BackendRuntimePaths {
-  copilotCli?: string;
   node?: string;
-  bridgeServer?: string;
   piServer?: string;
 }
 
@@ -23,14 +21,7 @@ export interface BackendRuntimePayload extends Record<string, unknown> {
   customEndpoint?: CustomEndpointConfig;
   /** Models registered for a custom endpoint. Strings default to 128K context; objects allow overrides. */
   managedConnection?: { slug: string; autoFallback: boolean };
-  customModels?: Array<string | {
-    id: string;
-    contextWindow?: number;
-    supportsImages?: boolean;
-    supportsThinking?: boolean;
-    thinkingLevelMap?: ModelThinkingLevelMap;
-    fallbackCapabilities?: ModelDefinition['fallbackCapabilities'];
-  }>;
+  customModels?: CustomEndpointModelConfig[];
 }
 
 export interface BackendResolutionContext {

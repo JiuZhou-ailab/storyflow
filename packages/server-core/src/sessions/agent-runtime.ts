@@ -588,13 +588,6 @@ export class AgentRuntime {
         sessionPersistenceQueue.flush(managed.id)
       }
 
-      const onSdkSessionIdCleared = () => {
-        managed.sdkSessionId = undefined
-        getSessionLog().info(`SDK session ID cleared for ${managed.id} (resume recovery)`)
-        this.deps.persistSession(managed)
-        sessionPersistenceQueue.flush(managed.id)
-      }
-
       const onBranchForkInvalidated = () => {
         managed.sdkSessionId = undefined
         clearSdkForkFields(managed)
@@ -687,7 +680,6 @@ export class AgentRuntime {
           managedModelAccess,
           session: sessionConfig,
           onSdkSessionIdUpdate,
-          onSdkSessionIdCleared,
           onBranchForkInvalidated,
           onConversationRewind: request => this.deps.handleConversationRewind(managed, request),
           onCredentialRotated: async () => {

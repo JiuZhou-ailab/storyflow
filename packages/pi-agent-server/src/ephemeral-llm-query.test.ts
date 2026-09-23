@@ -132,3 +132,16 @@ test('long defaults cannot raise unknown capacity and use 16384 only with a decl
   }, () => response('OK'), undefined, { catalog: [{ id: 'deepseek-v4-flash', name: 'Fixture',
     fallbackCapabilities: { maxOutputTokens: 32768, tools: true, structuredOutput: 'prompt' } } as never] });
 });
+
+test('non-managed model rejection fails without a second model session', async () => {
+  await fixture(async f => {
+    const activeSessions = new Set<any>();
+    const result = await queryLlmWithEphemeralPiSession({ prompt: 'Say OK' }, { ...context(f), activeSessions });
+    expect(result).toMatchObject({ status: 'failed', model: 'deepseek-v4-flash' });
+    expect(result.warning).toContain('model_not_found');
+    expect(f.requests.map(request => request.model)).toEqual(['deepseek-v4-flash']);
+    expect(activeSessions.size).toBe(0);
+  }, (_model, index) => index === 1
+    ? Response.json({ error: { message: 'model_not_found', type: 'invalid_request_error', code: 'model_not_found' } }, { status: 404 })
+    : response('unexpected fallback'), undefined, { custom: true, models: ['deepseek-v4-flash', 'gpt-5-mini'] });
+});

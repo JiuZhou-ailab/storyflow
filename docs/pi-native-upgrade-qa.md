@@ -115,3 +115,18 @@ passed. Standards review found the resumed cwd mismatch; Spec review found empty
 history initialization and loss of explicit summary caps. Each was corrected with
 a failing-then-passing regression. Both review axes report zero remaining findings.
 Desktop packaged QA and release-layout backup restoration remain pending as above.
+
+## Boundary cleanup follow-up (2026-09-23)
+
+Removed the unused pi-ai Models header-forwarding hunk (ModelRuntime owns product
+requests), dead session-cleared callback and runtime paths, and the non-managed
+query model-switch loop with its error-text classifier. Runtime creation and refresh
+now share CustomEndpointModelConfig from the existing model configuration module.
+The query rejection regression failed before the change by silently succeeding on
+a second model, then passed with one request, the original error and no active session.
+
+Validation: 137 related tests (403 assertions), all workspace typechecks, canonical
+subprocess build, and 3 compiled smoke tests (31 assertions) passed. Tests use
+loopback providers. The full suite and desktop packaged QA were not repeated for
+this follow-up. Revert this cleanup commit to restore the previous policy; no
+persisted format or user settings changed.

@@ -41,3 +41,7 @@ Long-task contracts and the compiled-binary release gate are documented in
 [long-task QA](../../docs/long-task-runtime-qa.md). Built-in `subagent` uses Pi
 customTools precedence; its Extension owns lifecycle and result hooks. Global resources
 and non-conflicting Extension tools remain Pi-owned.
+
+Ephemeral queries select a compatible model before execution. Non-managed provider
+rejections return failure without starting a second session or switching models;
+managed queries use the same native retry hook as primary sessions.

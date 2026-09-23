@@ -127,6 +127,10 @@ Pi 0.87.1 的原生压缩阈值、近期窗口和摘要预算作为缺省；用�
 保留普通 8,192、longOutput 16,384 及显式最高 32,768 的公开业务预算。
 显式 maxTokens 必须包含 thinking，不能被底层适配器额外放大。
 
+非托管临时查询只在发起请求前选择兼容模型；Provider 拒绝后返回原始失败，
+不再根据错误文本另开会话换模型。托管 fallback 仅由上述原生 retry 入口负责。
+创建与刷新共用 config/models.ts 的 CustomEndpointModelConfig 契约。
+
 临时查询自行拥有 deadline，
 Host 不设第二套倒计时。完成状态投影为 completed/incomplete/failed/cancelled，
 长度终态和无正文结果不作为成功；主会话仅在 agent_settled 后投影最终完整性。

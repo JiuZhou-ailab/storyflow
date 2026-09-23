@@ -11,6 +11,7 @@ Contracts: [#41](https://github.com/JiuZhou-ailab/storyflow/issues/41),
 | --- | --- | --- |
 | pi-ai provider onResponse | Retain for rejected HTTP, all four APIs; expose permanent denial before outer retries | managed-access-contract.test.ts, permanent 401/403 and x-should-retry=false |
 | pi-ai retry classifier / provider-retry | Retain permanent denial precedence, bounded JSON metadata for Google lost headers, server delay and timer overflow handling | managed-access-contract.test.ts, managed-fallback.test.ts |
+| pi-ai Models refreshHeaders | Delete duplicate forwarding; product sessions prepare requests through coding-agent ModelRuntime | managed-access-contract.test.ts and managed-fallback.test.ts pass without the hunk |
 | pi-ai beforeRetry / refreshHeaders forwarding | Retain actual transport-attempt correlation with stable logical call id | managed-fallback.test.ts, transport attempts and parallel sessions |
 | pi-ai simple-options thinking | Retain explicit maxTokens as combined output cap; unset requests retain native model capacity | managed-access-contract.test.ts, four protocols and thinking budgets |
 | coding-agent model-runtime | Retain refreshed headers through ModelRuntime | same correlation checks |

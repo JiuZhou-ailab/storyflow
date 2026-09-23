@@ -3,7 +3,7 @@
 // pos: Stable process boundary between Storyflow orchestration and the Pi execution runtime
 
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent';
-import type { ModelDefinition, ModelThinkingLevelMap } from '../../../config/models.ts';
+import type { ModelDefinition, CustomEndpointModelConfig } from '../../../config/models.ts';
 import type { LLMQueryRequest, LLMQueryResult } from '../../llm-tool.ts';
 import type {
   ConversationRewindRequest,
@@ -28,17 +28,8 @@ export type PiCustomEndpointApi =
   | 'anthropic-messages'
   | 'google-generative-ai';
 
-export type PiCustomEndpointModelConfig = string | {
-  id: string;
-  contextWindow?: number;
-  supportsImages?: boolean;
-  supportsThinking?: boolean;
-  thinkingLevelMap?: ModelThinkingLevelMap;
-  fallbackCapabilities?: ModelDefinition['fallbackCapabilities'];
-};
-
 /** One projection for initial creation and in-place refresh; capability fields must survive both. */
-export function toPiCustomEndpointModelConfig(model: ModelDefinition | string): PiCustomEndpointModelConfig {
+export function toPiCustomEndpointModelConfig(model: ModelDefinition | string): CustomEndpointModelConfig {
   if (typeof model === 'string') return model;
   const { id, contextWindow, thinkingLevelMap, fallbackCapabilities } = model;
   const supportsImages = typeof model.supportsImages === 'boolean' ? model.supportsImages : undefined;
@@ -83,7 +74,7 @@ export interface PiInitMessage {
   branchFromSessionPath?: string;
   branchFromSdkTurnId?: string;
   customEndpoint?: { api: PiCustomEndpointApi; supportsImages?: boolean };
-  customModels?: PiCustomEndpointModelConfig[];
+  customModels?: CustomEndpointModelConfig[];
   piAuth?: { provider: string; credential: PiCredential };
   enable1MContext?: boolean;
   managedConnection?: { slug: string; autoFallback: boolean };
@@ -97,7 +88,7 @@ export interface PiRuntimeConfigUpdateMessage {
   authType?: string;
   baseUrl?: string;
   customEndpoint?: { api: PiCustomEndpointApi; supportsImages?: boolean };
-  customModels?: PiCustomEndpointModelConfig[];
+  customModels?: CustomEndpointModelConfig[];
   managedConnection?: PiInitMessage['managedConnection'];
 }
 

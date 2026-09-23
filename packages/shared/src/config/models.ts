@@ -1,5 +1,5 @@
 // input: Provider model IDs and built-in model metadata
-// output: Canonical model definitions, names, capabilities, and lookup helpers
+// output: Canonical model definitions, runtime connection metadata, names, capabilities, and lookup helpers
 // pos: Shared model catalog and display contract for all application surfaces
 
 /**
@@ -132,6 +132,11 @@ export interface ModelDefinition {
     structuredOutput: 'prompt';
   };
 }
+
+/** Connection model metadata shared by runtime creation and refresh. */
+export type CustomEndpointModelConfig = string | (Pick<ModelDefinition, 'id'> & Partial<Pick<
+  ModelDefinition, 'contextWindow' | 'supportsImages' | 'supportsThinking' | 'thinkingLevelMap' | 'fallbackCapabilities'
+>>);
 
 // ============================================
 // MODEL REGISTRY (Single Source of Truth)

@@ -75,19 +75,3 @@ export function resolvePiModel(
 
   return undefined;
 }
-
-/**
- * Returns true when an error message indicates the requested model is unavailable and a
- * different model should be tried. Matches both the standard OpenAI "model not found"
- * shapes and the ChatGPT-account Codex "… is not supported" refusal.
- */
-export function isModelNotFoundError(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes('model_not_found') ||
-    normalized.includes('does not exist') ||
-    normalized.includes('no such model') ||
-    normalized.includes('is not supported') ||
-    (normalized.includes('requested model') && normalized.includes('not') && normalized.includes('exist'))
-  );
-}

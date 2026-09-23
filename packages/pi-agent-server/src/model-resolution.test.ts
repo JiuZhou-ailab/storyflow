@@ -3,7 +3,7 @@
 // pos: Unit contract for the Pi subprocess model resolver
 
 import { describe, expect, it } from 'bun:test';
-import { resolvePiModel, isDeniedMiniModelId, isModelNotFoundError } from './model-resolution.ts';
+import { resolvePiModel, isDeniedMiniModelId } from './model-resolution.ts';
 
 /**
  * Minimal mock of Pi ModelRuntime.
@@ -234,33 +234,5 @@ describe('isDeniedMiniModelId', () => {
   it('treats unset piAuthProvider as unrestricted (only the hardcoded denylist applies)', () => {
     expect(isDeniedMiniModelId('gpt-5.1-codex-mini')).toBe(false);
     expect(isDeniedMiniModelId('gpt-5-mini')).toBe(false);
-  });
-});
-
-describe('isModelNotFoundError', () => {
-  it('matches the ChatGPT-account Codex refusal', () => {
-    expect(
-      isModelNotFoundError(
-        "The 'gpt-5.1-codex-mini' model is not supported when using Codex with a ChatGPT account.",
-      ),
-    ).toBe(true);
-  });
-
-  it('matches classic OpenAI model_not_found shapes', () => {
-    expect(isModelNotFoundError('The model `gpt-99` does not exist')).toBe(true);
-    expect(isModelNotFoundError('Error code: model_not_found')).toBe(true);
-    expect(isModelNotFoundError('No such model: foo-bar')).toBe(true);
-    expect(isModelNotFoundError('The requested model is not available or does not exist')).toBe(true);
-  });
-
-  it('is case-insensitive', () => {
-    expect(isModelNotFoundError('MODEL_NOT_FOUND')).toBe(true);
-    expect(isModelNotFoundError('Is Not Supported')).toBe(true);
-  });
-
-  it('does not match unrelated errors', () => {
-    expect(isModelNotFoundError('rate limit exceeded')).toBe(false);
-    expect(isModelNotFoundError('invalid api key')).toBe(false);
-    expect(isModelNotFoundError('')).toBe(false);
   });
 });

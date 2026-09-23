@@ -2,8 +2,7 @@
 // output: Normalized model definitions plus provider/auth routing decisions for Pi.
 // pos: Shared, side-effect-free policy for registering and authenticating custom endpoint models.
 
-import type { ModelDefinition, ModelThinkingLevelMap } from '../../shared/src/config/models.ts'
-import type { PiCustomEndpointModelConfig } from '../../shared/src/agent/backend/pi/protocol.ts'
+import type { CustomEndpointModelConfig, ModelDefinition, ModelThinkingLevelMap } from '../../shared/src/config/models.ts'
 
 export type CustomEndpointInput = 'text' | 'image'
 
@@ -84,7 +83,7 @@ export function shouldUseCustomEndpointBearerAuthHeader(providerName: string): b
  * `supportsImages: false` is meaningful because it can override a global
  * endpoint default of `supportsImages: true` for text-only models.
  */
-export function normalizeCustomEndpointModelEntry(model: PiCustomEndpointModelConfig): CustomEndpointModelEntry {
+export function normalizeCustomEndpointModelEntry(model: CustomEndpointModelConfig): CustomEndpointModelEntry {
   if (typeof model === 'string') {
     return { id: stripPiPrefix(model) }
   }

@@ -27,7 +27,7 @@ import {
 } from '../../shared/src/agent/llm-tool.ts';
 import { createProviderHooks } from './provider-hooks.ts';
 import { createSystemPromptOverride } from './system-prompt-override.ts';
-import { resolvePiModel, isDeniedMiniModelId, isModelNotFoundError } from './model-resolution.ts';
+import { resolvePiModel, isDeniedMiniModelId } from './model-resolution.ts';
 import { pickProviderAppropriateMiniModel } from './pick-mini-model.ts';
 
 interface EphemeralLlmQueryContext {
@@ -182,7 +182,6 @@ export async function queryLlmWithEphemeralPiSession(
           `queryLlm timed out after ${timeoutMs / 1000}s`,
         );
         debug(`[queryLlm] Result length: ${result.trim().length}`);
-        if (lastError && !config.managedConnection && !request.model && isModelNotFoundError(lastError)) throw new Error(lastError);
         if (!lastError && stopReason !== 'length' && request.outputSchema) {
           try {
             const original = JSON.parse(result);
@@ -199,7 +198,6 @@ export async function queryLlmWithEphemeralPiSession(
         };
       } catch (error) {
         const warning = error instanceof Error ? error.message : String(error);
-        if (!config.managedConnection && !request.model && isModelNotFoundError(warning)) throw error;
         return { text: result, model: effectiveModel, status: context.isCancelled?.() || warning.startsWith('queryLlm timed out') ? 'cancelled' : 'failed', stopReason: context.isCancelled?.() || warning.startsWith('queryLlm timed out') ? 'aborted' : 'error', warning,
           maxTokens: effectiveMaxTokens, thinkingLevel: effectiveThinkingLevel, timeoutMs, inputTokens: usage?.input, outputTokens: usage?.output };
       } finally {
@@ -212,44 +210,5 @@ export async function queryLlmWithEphemeralPiSession(
     }
   };
 
-  if (config.managedConnection || request.model) return runQueryWithModel(model);
-
-  const fallbackCandidates = [
-    'pi/gpt-5-mini',
-    config.miniModel,
-    getDefaultSummarizationModel(),
-  ].filter((candidate): candidate is string => (
-    !!candidate && !isDeniedMiniModelId(candidate, piAuthProvider)
-  ));
-
-  const triedModels = new Set<string>();
-  let currentModel = model;
-  while (true) {
-    triedModels.add(currentModel);
-    try {
-      return await runQueryWithModel(currentModel);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!isModelNotFoundError(message)) throw error;
-
-      const retryModel = fallbackCandidates.find(candidate => {
-        if (triedModels.has(candidate)) return false;
-        const resolved = resolvePiModel(
-          modelRuntime,
-          candidate,
-          config.piAuth?.provider,
-          preferCustomEndpoint,
-        );
-        if (!resolved) return false;
-        const provider = (resolved as { provider?: string }).provider;
-        return !config.piAuth
-          || provider === config.piAuth.provider
-          || provider === 'custom-endpoint';
-      });
-      if (!retryModel) throw error;
-
-      debug(`[queryLlm] Model ${currentModel} not found, retrying with ${retryModel}`);
-      currentModel = retryModel;
-    }
-  }
+  return runQueryWithModel(model);
 }
