@@ -14,6 +14,12 @@ Shared Storyflow domain glossary. Definitions only — no implementation details
 - **Document Representation** — A traceable, rebuildable form of a Source Document for a particular consumer, such as Markdown, a thumbnail, or bounded model input.
 - **Model Input** — The Document Representation selected for one model invocation. It is transport state, not conversation history or document truth.
 
+## Workspace browser
+
+**Browser Tab**:
+A web page with a stable identity and an owning Session, presented in the conversation's workspace. Navigating the page changes its content, not its identity or ownership; hiding the workspace does not close the page.
+_Avoid_: URL identity, globally active browser
+
 ## Performance
 
 - **Performance scope** — In this project, "performance" means three axes only: *interaction responsiveness* (typing latency, list scrolling, panel switching), *startup time* (cold start to first usable frame), and *memory footprint* (growth over long-running sessions, pressure from large sessions). Backend/worker throughput is explicitly out of scope.
