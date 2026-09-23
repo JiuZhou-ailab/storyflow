@@ -203,7 +203,7 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
     )
     const selectByPathSource = appShellSource.slice(
       appShellSource.indexOf('const handleSelectNovelFileByPath = React.useCallback'),
-      appShellSource.indexOf('const handleOpenNovelWorkspaceStart'),
+      appShellSource.indexOf('const handleCloseNovelFileTab'),
     )
     expect(selectHandlerSource).not.toContain('onOpenWritingWorkspace()')
     expect(selectHandlerSource).toContain('if (!saved) return false')

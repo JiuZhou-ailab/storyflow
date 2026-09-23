@@ -214,7 +214,7 @@ function ConversationFilesContent({ sessionId, requestedFile, onClose, compact }
   const header = <NovelDocumentTabStrip
     files={selected ? [{ path: selected.path, relativePath: selected.name }] : []}
     activePath={selectedPath ?? null} onActivate={file => setSelectedPath(file.path)}
-    onClose={() => setSelectedPath(undefined)} onOpenStart={() => setSelectedPath(undefined)}
+    onClose={() => setSelectedPath(undefined)}
     trailingActions={<>
       {selected && !selected.unavailable && <WorkspaceFileHeaderActions path={selected.path} readOnly={selected.readOnly} onRefresh={() => setRevision(value => value + 1)} />}
       <HeaderIconButton icon={<FolderOpen className="h-4 w-4" strokeWidth={1.7} />} tooltip={directoryLabel} aria-label={directoryLabel} aria-expanded={directoryVisible} data-state={directoryVisible ? 'open' : 'closed'} onClick={() => setDirectoryVisible(value => !value)} className="h-[26px] w-[26px] rounded-lg" />

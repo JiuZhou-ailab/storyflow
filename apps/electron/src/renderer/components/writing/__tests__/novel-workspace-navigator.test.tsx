@@ -42,7 +42,7 @@ describe('novel writing workspace layout', () => {
         activePath="/novel/b.md"
         onActivate={() => {}}
         onClose={() => {}}
-        onOpenStart={() => {}}
+        onCreateFile={() => {}}
         trailingActions={<button type="button">目录</button>}
       />
     )
@@ -52,8 +52,26 @@ describe('novel writing workspace layout', () => {
     expect(html).toContain('aria-selected="true"')
     expect(html).toContain('a.md')
     expect(html).toContain('b.md')
-    expect(html).toMatch(/aria-label="[^"]+" title="[^"]+"/)
+    expect(html).toContain('data-workspace-action="create-file"')
+    expect(html).toContain('aria-label="New file"')
+    expect(html).toContain('title="New file"')
+    expect(html).not.toContain('Where would you like to start?')
     expect(html).toContain('目录')
+  })
+
+  it('hides the new-file control when the surface cannot create files', () => {
+    const html = renderLocalized(
+      <NovelDocumentTabStrip
+        files={[{ path: '/novel/a.md', relativePath: 'a.md' }]}
+        activePath="/novel/a.md"
+        onActivate={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    expect(html).toContain('a.md')
+    expect(html).not.toContain('data-workspace-action="create-file"')
+    expect(html).not.toContain('aria-label="New file"')
   })
 
   it('renders the selected Markdown document in a single editable writing surface', () => {

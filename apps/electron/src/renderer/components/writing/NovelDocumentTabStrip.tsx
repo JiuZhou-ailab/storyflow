@@ -1,5 +1,5 @@
-// input: Open file descriptors, active path, start-page action, and trailing header controls
-// output: Shared closable file-tab header with a workspace start-page button
+// input: Open file descriptors, active path, optional create-file action, and trailing header controls
+// output: Shared closable file-tab header with an optional new-file button
 // pos: Workspace chrome shared by project documents and conversation previews
 
 import * as React from 'react'
@@ -14,7 +14,7 @@ export interface NovelDocumentTabStripProps {
   activePath: string | null
   onActivate: (file: NovelWorkspaceFile) => void
   onClose: (path: string) => void
-  onOpenStart: () => void
+  onCreateFile?: () => void
   trailingActions?: React.ReactNode
 }
 
@@ -23,7 +23,7 @@ export function NovelDocumentTabStrip({
   activePath,
   onActivate,
   onClose,
-  onOpenStart,
+  onCreateFile,
   trailingActions,
 }: NovelDocumentTabStripProps) {
   const { t } = useTranslation()
@@ -72,15 +72,18 @@ export function NovelDocumentTabStrip({
             </div>
           )
         })}
-        <button
-          type="button"
-          aria-label={t('chatOpening.project.emptyTitle', '从哪里开始？')}
-          title={t('chatOpening.project.emptyTitle', '从哪里开始？')}
-          onClick={onOpenStart}
-          className="titlebar-no-drag inline-flex h-full w-10 shrink-0 items-center justify-center text-foreground/75 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-        </button>
+        {onCreateFile ? (
+          <button
+            type="button"
+            data-workspace-action="create-file"
+            aria-label={t('writing.createFile.menu', '新建文件')}
+            title={t('writing.createFile.menu', '新建文件')}
+            onClick={onCreateFile}
+            className="titlebar-no-drag inline-flex h-full w-10 shrink-0 items-center justify-center text-foreground/75 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+          </button>
+        ) : null}
       </div>
       {trailingActions ? (
         <div className="titlebar-no-drag flex shrink-0 items-center gap-1 px-2 [&_.header-icon-btn]:text-foreground/75 [&_.header-icon-btn:hover]:text-foreground [&_.header-icon-btn[data-state=open]]:text-foreground [&_.header-icon-btn[data-state=open]]:bg-foreground/[0.08] [&_.header-icon-btn_svg]:stroke-2">

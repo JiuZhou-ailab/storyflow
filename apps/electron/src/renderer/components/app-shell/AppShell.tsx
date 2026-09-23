@@ -3102,12 +3102,6 @@ function AppShellContent({
     }
   }, [activeWritingWorkspaceRoot, handleSelectNovelFile, isCurrentNovelDocumentDirty, navState, novelWorkspaceFileByPath, novelWorkspaceRoot, onOpenFile, onOpenWritingWorkspace, selectedNovelDocumentPath])
 
-  const handleOpenNovelWorkspaceStart = React.useCallback(async () => {
-    if (!selectedNovelFilePath) return
-    if (!await ensureNovelDocumentSaved()) return
-    setNovelDocumentTabs(current => ({ ...current, activePath: null }))
-  }, [ensureNovelDocumentSaved, selectedNovelFilePath])
-
   const handleCloseNovelFileTab = React.useCallback(async (filePath: string) => {
     if (filePath !== selectedNovelFilePath) {
       setNovelDocumentTabs(current => closeNovelDocumentTab(current, filePath))
@@ -4649,7 +4643,7 @@ function AppShellContent({
       activePath={selectedNovelFilePath}
       onActivate={(file) => { void handleSelectNovelFile(file) }}
       onClose={(filePath) => { void handleCloseNovelFileTab(filePath) }}
-      onOpenStart={() => { void handleOpenNovelWorkspaceStart() }}
+      onCreateFile={() => handleWorkspaceOpeningCommand('create-file')}
       trailingActions={(
         <>
           {selectedNovelFile && <WorkspaceFileHeaderActions
