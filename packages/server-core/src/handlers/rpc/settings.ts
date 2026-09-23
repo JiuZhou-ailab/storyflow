@@ -51,6 +51,8 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.tools.GET_BROWSER_TOOL_ENABLED,
   RPC_CHANNELS.tools.SET_BROWSER_TOOL_ENABLED,
   RPC_CHANNELS.settings.GET_NETWORK_PROXY,
+  RPC_CHANNELS.settings.GET_FREE_STORAGE,
+  RPC_CHANNELS.settings.SET_FREE_STORAGE,
   RPC_CHANNELS.dialog.OPEN_FOLDER,
 ] as const
 
@@ -391,6 +393,15 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
   // Network Proxy Settings
   // ============================================================
+
+  server.handle(RPC_CHANNELS.settings.GET_FREE_STORAGE, async () => {
+    const { getFreeConversationStorage } = await import('@craft-agent/shared/workspaces')
+    return getFreeConversationStorage()
+  })
+  server.handle(RPC_CHANNELS.settings.SET_FREE_STORAGE, async (_ctx, parent: string | null) => {
+    const { scheduleFreeConversationStorage } = await import('@craft-agent/shared/workspaces')
+    return scheduleFreeConversationStorage(parent)
+  })
 
   // Get network proxy settings
   server.handle(RPC_CHANNELS.settings.GET_NETWORK_PROXY, async () => {

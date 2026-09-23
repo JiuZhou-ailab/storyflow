@@ -7,9 +7,9 @@ Reusable WS/headless server infrastructure extracted from `apps/electron`.
 - WS RPC transport primitives (`server`, `codec`, `types`, `capabilities`)
 - Runtime platform contracts (`PlatformServices`) and headless implementation
 - Generic handler dependency contracts
-- Reusable headless bootstrap orchestration
+- Reusable headless bootstrap orchestration, including deferred Free Conversation storage migration under the exclusive Host lease
 - Session lifecycle orchestration and its runtime state/persistence projections
-- Authenticated model catalog synchronization: an empty success replaces cached models; fetch failures preserve them; identity replacement refreshes independently of pending old-account requests
+- Authenticated model catalog synchronization: an empty success replaces cached models; fetch failures preserve them; local retirement and display-name policy also applies to stored and refreshed catalogs; identity replacement refreshes independently of pending old-account requests
 - Session file RPCs with a bounded conversation-content projection and independent per-client file-watch consumers
 
 ## Out of scope

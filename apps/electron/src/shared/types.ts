@@ -730,6 +730,8 @@ export interface ElectronAPI {
   setEnable1MContext(enabled: boolean): Promise<void>
 
   // Network proxy settings
+  getFreeConversationStorage(): Promise<import('@craft-agent/shared/workspaces').FreeConversationStorage>
+  setFreeConversationStorage(parent: string | null): Promise<import('@craft-agent/shared/workspaces').FreeConversationStorage>
   getNetworkProxySettings(): Promise<NetworkProxySettings | undefined>
   setNetworkProxySettings(settings: NetworkProxySettings): Promise<void>
 

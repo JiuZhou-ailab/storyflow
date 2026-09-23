@@ -34,6 +34,7 @@ import {
   SettingsToggle,
   SettingsInput,
 } from '@/components/settings'
+import { FreeConversationStorageSettings } from './FreeConversationStorageSettings'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 
 // ============================================
@@ -227,6 +228,8 @@ export default function AppSettingsPage() {
                   />
                 </SettingsCard>
               </SettingsSection>
+
+              {isElectron && <FreeConversationStorageSettings />}
 
               {/* Network */}
               <SettingsSection title={t("settings.network.title")}>

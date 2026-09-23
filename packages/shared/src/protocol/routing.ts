@@ -181,6 +181,8 @@ export const CHANNEL_ROUTING = {
   'onboarding:validateMcp': 'LOCAL_ONLY',
   'onboarding:startMcpOAuth': 'LOCAL_ONLY',
   'onboarding:deferSetup': 'LOCAL_ONLY',
+  'settings:getFreeConversationStorage': 'LOCAL_ONLY',
+  'settings:setFreeConversationStorage': 'LOCAL_ONLY',
   'settings:getNetworkProxy': 'LOCAL_ONLY',
   'settings:setNetworkProxy': 'LOCAL_ONLY',
 

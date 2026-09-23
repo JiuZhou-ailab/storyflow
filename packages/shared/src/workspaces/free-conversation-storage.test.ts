@@ -131,3 +131,39 @@ test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('a failed 
   renameSync(parent, join(base, 'old-disk-offline'))
   expect(readFileSync(join(root, 'result.md'), 'utf8')).toBe('user continued working')
 })
+
+for (const action of ['cancel', 'reschedule', 'offline'] as const) {
+  test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(`keeps a verified move recoverable after ${action}`, async () => {
+    const { base, config, root, parent } = fixture()
+    scheduleFreeConversationStorage(parent, config); await applyPendingFreeConversationStorage(config)
+    const second = join(base, 'second'); mkdirSync(second)
+    const target = scheduleFreeConversationStorage(second, config).pendingPath!
+    chmodSync(dirname(root), 0o555)
+    try { await applyPendingFreeConversationStorage(config) } finally { chmodSync(dirname(root), 0o755) }
+    writeFileSync(join(root, 'result.md'), 'continued work')
+    if (action === 'cancel') {
+      expect(() => scheduleFreeConversationStorage(null, config)).toThrow('already switching')
+    }
+    if (action === 'reschedule') {
+      const third = join(base, 'third'); mkdirSync(third)
+      expect(() => scheduleFreeConversationStorage(third, config)).toThrow('already switching')
+    }
+    renameSync(parent, join(base, 'old-disk-offline'))
+    await applyPendingFreeConversationStorage(config)
+    expect(realpathSync(root)).toBe(target)
+    expect(readFileSync(join(root, 'result.md'), 'utf8')).toBe('continued work')
+    expect(getFreeConversationStorage(config).pendingPath).toBeUndefined()
+  })
+}
+
+test('restores an unactivated source backup when the destination goes offline', async () => {
+  const { config, root, parent } = fixture()
+  const target = scheduleFreeConversationStorage(parent, config).pendingPath!
+  const backup = `${root}.backup-test`
+  renameSync(root, backup)
+  writeFileSync(join(config, 'free-conversation-storage.json'), JSON.stringify({ phase: 'switching', pendingPath: target, sourcePath: root, backupPath: backup }))
+  await applyPendingFreeConversationStorage(config)
+  expect(readFileSync(join(root, 'result.md'), 'utf8')).toBe('原始作品\n')
+  expect(getFreeConversationStorage(config).pendingPath).toBeUndefined()
+  expect(getFreeConversationStorage(config).error).toBeDefined()
+})

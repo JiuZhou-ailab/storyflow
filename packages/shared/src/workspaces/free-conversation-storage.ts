@@ -14,7 +14,7 @@ export interface FreeConversationStorage {
   backupPath?: string
   error?: string
 }
-type RecordState = Omit<FreeConversationStorage, 'path'> & { sourcePath?: string }
+type RecordState = Omit<FreeConversationStorage, 'path'> & { sourcePath?: string; phase?: 'switching' }
 const logicalRoot = (configDir: string) => join(configDir, 'runtime', 'free')
 const recordPath = (configDir: string) => join(configDir, 'free-conversation-storage.json')
 
@@ -25,6 +25,7 @@ function readState(configDir: string): RecordState {
   if (!state || typeof state !== 'object' || Array.isArray(state)
     || ['pendingPath', 'backupPath', 'sourcePath'].some(key => state[key] !== undefined && (typeof state[key] !== 'string' || !isAbsolute(state[key])))
     || (state.error !== undefined && typeof state.error !== 'string')) throw new Error('Invalid Free Conversation storage settings')
+  if (state.phase !== undefined && (state.phase !== 'switching' || !state.pendingPath || !state.sourcePath || !state.backupPath)) throw new Error('Invalid storage migration phase')
   if (state.sourcePath && state.backupPath && !state.backupPath.startsWith(`${state.sourcePath}.backup-`)) throw new Error('Invalid migration backup path')
   return state
 }
@@ -38,7 +39,8 @@ function saveState(configDir: string, state: RecordState): void {
 
 export function getFreeConversationStorage(configDir = CONFIG_DIR): FreeConversationStorage {
   const root = logicalRoot(configDir)
-  return { ...readState(configDir), path: existsSync(root) ? realpathSync(root) : root }
+  const state = readState(configDir)
+  return { path: existsSync(root) ? realpathSync(root) : root, pendingPath: state.phase ? undefined : state.pendingPath, backupPath: state.backupPath, error: state.error }
 }
 
 function inside(parent: string, child: string): boolean {
@@ -49,6 +51,7 @@ function inside(parent: string, child: string): boolean {
 /** Null cancels a pending move. An existing destination is never merged or replaced. */
 export function scheduleFreeConversationStorage(parent: string | null, configDir = CONFIG_DIR): FreeConversationStorage {
   const state = readState(configDir)
+  if (state.phase === 'switching') throw new Error('Storage move is already switching; restart to finish before choosing another location')
   if (parent === null) {
     saveState(configDir, { backupPath: state.backupPath })
     return getFreeConversationStorage(configDir)
@@ -105,22 +108,51 @@ async function pointLogicalRoot(root: string, target: string, configDir: string,
   }
 }
 
+/** The verified destination is authoritative; an offline old disk cannot invalidate it. */
+async function finishVerifiedMove(configDir: string, state: RecordState): Promise<void> {
+  const root = logicalRoot(configDir), source = state.sourcePath!, target = state.pendingPath!
+  try {
+    if (!existsSync(target) || !lstatSync(target).isDirectory()) throw new Error('New storage is unavailable; reconnect it to finish moving')
+    if (existsSync(dirname(source))) {
+      const entry = lstatSync(source, { throwIfNoEntry: false })
+      if (entry && !entry.isSymbolicLink()) {
+        if (existsSync(state.backupPath!)) throw new Error('Storage backup already exists; original storage retained')
+        await rename(source, state.backupPath!)
+      }
+      if (!lstatSync(source, { throwIfNoEntry: false })) await symlink(target, source, process.platform === 'win32' ? 'junction' : 'dir')
+    }
+    await pointLogicalRoot(root, target, configDir, state)
+  } catch (error) {
+    // A missing alias means activation never happened; restore only that untouched backup.
+    if (!lstatSync(source, { throwIfNoEntry: false }) && state.backupPath && existsSync(state.backupPath)) await rename(state.backupPath, source)
+    // If activation never happened, continue on the original data and abandon the stale copy.
+    const originalUsable = existsSync(root) && realpathSync(root) !== target
+    saveState(configDir, { ...(originalUsable ? { backupPath: state.backupPath } : state), error: error instanceof Error ? error.message : String(error) })
+    if (!existsSync(root)) throw error
+  }
+}
+
 /** Run only under the Host lease, before sessions, watchers or writers are initialized. */
 export async function applyPendingFreeConversationStorage(configDir = CONFIG_DIR): Promise<void> {
   const state = readState(configDir)
   const target = state.pendingPath
   if (!target) return
   const root = logicalRoot(configDir)
+  if (state.phase === 'switching') {
+    await finishVerifiedMove(configDir, state)
+    return
+  }
   // Recovery after a process exit between renaming the old root and installing the link.
   if (state.sourcePath && !existsSync(state.sourcePath) && state.backupPath && existsSync(state.backupPath)) renameSync(state.backupPath, state.sourcePath)
   if ((existsSync(root) && realpathSync(root) === target)
     || (state.sourcePath && existsSync(state.sourcePath) && realpathSync(state.sourcePath) === target)) {
-    await pointLogicalRoot(root, target, configDir, state)
+    const switching: RecordState = { ...state, phase: 'switching' }
+    saveState(configDir, switching)
+    await finishVerifiedMove(configDir, switching)
     return
   }
   const source = existsSync(root) ? realpathSync(root) : root
   const backup = `${source}.backup-${randomUUID()}`
-  const next = `${source}.next-${randomUUID()}`
   try {
     mkdirSync(dirname(root), { recursive: true })
     if (lstatSync(root, { throwIfNoEntry: false })?.isSymbolicLink() && !existsSync(root)) throw new Error('Current storage is unavailable; reconnect it before moving')
@@ -131,18 +163,14 @@ export async function applyPendingFreeConversationStorage(configDir = CONFIG_DIR
       await cp(source, target, { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true, verbatimSymlinks: true })
       await verifyCopy(source, target)
     } else mkdirSync(target)
-    await symlink(target, next, process.platform === 'win32' ? 'junction' : 'dir')
-    saveState(configDir, { pendingPath: target, sourcePath: source, backupPath: backup })
-    if (existsSync(source)) await rename(source, backup)
-    await rename(next, source)
+    saveState(configDir, { phase: 'switching', pendingPath: target, sourcePath: source, backupPath: backup })
   } catch (error) {
     // Never delete either copy on failure. Restore the stable path if the switch was interrupted.
     if (!existsSync(source) && existsSync(backup)) await rename(backup, source)
-    if (existsSync(next) && lstatSync(next).isSymbolicLink()) await unlink(next)
     saveState(configDir, { backupPath: existsSync(backup) ? backup : state.backupPath, error: error instanceof Error ? error.message : String(error) })
     return
   }
   // Keep the journal until the stable entry no longer depends on a previous disk.
   // Normal upgrades never schedule a move; completed moves do no further filesystem work.
-  await pointLogicalRoot(root, target, configDir, { pendingPath: target, sourcePath: source, backupPath: existsSync(backup) ? backup : undefined })
+  await finishVerifiedMove(configDir, { phase: 'switching', pendingPath: target, sourcePath: source, backupPath: backup })
 }

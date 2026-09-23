@@ -89,3 +89,6 @@ export {
   CONFIG_DIR,
   DEFAULT_WORKSPACES_DIR,
 } from './storage.ts';
+
+export { getFreeConversationStorage, scheduleFreeConversationStorage, applyPendingFreeConversationStorage } from './free-conversation-storage.ts';
+export type { FreeConversationStorage } from './free-conversation-storage.ts';

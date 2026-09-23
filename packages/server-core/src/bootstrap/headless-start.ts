@@ -1,7 +1,8 @@
 // input: Server transport options, Host Project registrations, and host-provided SessionManager/RPC dependencies
-// output: A compatibility-upgraded, transport-ready server with an explicitly startable Agent runtime
+// output: A compatibility-upgraded, storage-migrated, transport-ready server with an explicitly startable Agent runtime
 // pos: Owns the two-stage server lifecycle shared by Electron and headless hosts
 
+import { applyPendingFreeConversationStorage } from '@craft-agent/shared/workspaces'
 import { mkdirSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { acquireServerLock, hasServerLock, releaseServerLock } from './server-lock'
@@ -260,6 +261,7 @@ async function startServer<TSessionManager, THandlerDeps>(
       platform.logger.warn(`Project ${unresolved.projectId} still requires path recovery: ${unresolved.reason}`)
     }
     modelRefreshService = options.initModelRefreshService()
+    await applyPendingFreeConversationStorage()
     sessionManager = options.createSessionManager()
     const rpcHost = options.rpcHost ?? process.env.CRAFT_RPC_HOST ?? '127.0.0.1'
     const rpcPort = options.rpcPort ?? Number(process.env.CRAFT_RPC_PORT ?? '9100')
