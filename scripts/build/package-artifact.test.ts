@@ -80,6 +80,7 @@ test('Windows gate extracts the embedded 7z payload and rejects a missing worker
   const f = fixture('win32');
   try {
     const archive = join(f.root, 'Storyflow-x64.exe');
+    if (process.platform !== 'win32') chmodSync(path7za, 0o755);
     execFileSync(path7za, ['a', '-t7z', archive, '.'], { cwd: f.app, stdio: 'pipe' });
     writeFileSync(archive, Buffer.concat([Buffer.from('MZ installer stub'), readFileSync(archive), Buffer.from('installer tail')]));
     expect((await verifyArchive(archive, f.app, 'win32', 'x64')).contentVerified).toBe(true);

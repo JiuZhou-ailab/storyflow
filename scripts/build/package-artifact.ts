@@ -3,7 +3,7 @@
 // pos: Final desktop artifact boundary before publishing; also supports explicit local measurement
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createReadStream, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, createReadStream, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseArgs } from 'node:util';
@@ -139,6 +139,7 @@ export async function verifyArchive(archive: string, appPath: string, platform: 
     } else if (extension === 'exe' && platform === 'win32') {
       // 7zip-bin also recognizes electron-builder's embedded NSIS 7z payload.
       // It fails if the installer changes format; never treat an empty listing as success.
+      if (process.platform !== 'win32') chmodSync(path7za, 0o755);
       execFileSync(path7za, ['x', '-y', `-o${temp}`, archive], { stdio: 'pipe' });
     } else throw new Error(`Unsupported archive: ${archive}`);
     const extractedApp = platform === 'darwin' ? join(temp, 'Storyflow.app') : temp;
