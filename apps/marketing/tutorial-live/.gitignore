@@ -1,0 +1,7 @@
+renders/
+.thumbnails/
+.waveform-cache/
+.hyperframes/
+node_modules/
+assets/storyflow-live-raw.mov
+assets/live-seekable.mp4

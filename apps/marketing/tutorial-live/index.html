@@ -1,0 +1,122 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8">
+<!-- input: Uninterrupted real Storyflow capture, edit.json and Chinese narration
+output: 80-second HyperFrames tutorial with original live model results
+pos: Independent tutorial-live composition; does not change the website or previous draft -->
+<meta name="viewport" content="width=2560,height=1440">
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}html,body{width:2560px;height:1440px;overflow:hidden;background:#f5f5f3;color:#202124;font-family:sans-serif;-webkit-font-smoothing:antialiased}
+#root{position:relative;width:2560px;height:1440px;overflow:hidden}
+.stage{position:absolute;left:200px;top:200px;width:2160px;height:1181.3878px;overflow:hidden;border-radius:18px;border:1px solid #20212422;box-shadow:0 20px 70px #20212414;background:#f5f5f3}
+.shot{width:100%;height:100%;position:absolute;inset:0}.shot video{display:block;width:100%;height:100%;object-fit:contain}
+.chapter{position:absolute;inset:65px 100px auto;height:70px;display:flex;align-items:center;gap:24px}.number{font-size:25px;color:#2456d6;font-weight:600}h2{font-size:38px;font-weight:600;letter-spacing:-1px}.chapter span:last-child{margin-left:auto;font-size:24px;color:#53565d}
+.caption{position:absolute;left:100px;right:100px;top:135px;height:52px;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:500;z-index:5}
+.footer{position:absolute;top:24px;height:30px;left:100px;right:100px;display:flex;justify-content:space-between;align-items:center;color:#53565d;font-size:22px;z-index:4}.footer strong{color:#202124;font-size:24px;margin-right:24px;font-weight:600}
+.cover{position:absolute;inset:0;background:#f5f5f3;z-index:2}.scene-content{width:100%;height:100%;padding:160px 240px;display:flex;flex-direction:column;justify-content:center;gap:36px}
+.kicker{font-size:28px;color:#2456d6;letter-spacing:4px;font-weight:600}h1{font-size:112px;letter-spacing:-4px;line-height:1.2;font-weight:600;max-width:2000px}.deck{font-size:42px;line-height:1.55;color:#53565d;max-width:1850px}.steps{display:flex;gap:36px;font-size:32px;margin-top:28px}.steps span:nth-child(even){color:#53565d}.rule{height:1px;width:100%;background:#20212422;margin-top:16px}.detail{font-size:26px;color:#53565d}.url{font-size:34px;color:#2456d6}
+.transition{position:absolute;inset:0;background:#f5f5f3;z-index:6;pointer-events:none}.progress{position:absolute;bottom:0;left:0;right:0;height:5px;background:#20212412;z-index:8}.fill{height:100%;background:#2456d6;transform:scaleX(0);transform-origin:left center}
+</style></head><body><div id="root" data-composition-id="main" data-start="0" data-duration="80" data-width="2560" data-height="1440">
+<div class="stage" data-layout-allow-overflow>
+<div class="shot" id="shot-0"><video id="video-0" class="clip" data-start="5" data-duration="8" data-media-start="10" data-track-index="0" src="assets/live-seekable.mp4" muted playsinline></video></div>
+<div class="shot" id="shot-1"><video id="video-1" class="clip" data-start="13" data-duration="10" data-media-start="24" data-track-index="0" src="assets/live-seekable.mp4" muted playsinline></video></div>
+<div class="shot" id="shot-2"><video id="video-2" class="clip" data-start="23" data-duration="8" data-media-start="124" data-track-index="0" src="assets/live-seekable.mp4" muted playsinline></video></div>
+<div class="shot" id="shot-3"><video id="video-3" class="clip" data-start="31" data-duration="12" data-media-start="147" data-track-index="0" src="assets/live-seekable.mp4" muted playsinline></video></div>
+<div class="shot" id="shot-4"><video id="video-4" class="clip" data-start="43" data-duration="10" data-media-start="165" data-track-index="0" src="assets/live-seekable.mp4" muted playsinline></video></div>
+<div class="shot" id="shot-5"><video id="video-5" class="clip" data-start="53" data-duration="12" data-media-start="225" data-track-index="0" src="assets/live-seekable.mp4" muted playsinline></video></div>
+<div class="shot" id="shot-6"><video id="video-6" class="clip" data-start="65" data-duration="8" data-media-start="287" data-track-index="0" src="assets/live-seekable.mp4" muted playsinline></video></div>
+</div>
+<div id="intro" class="cover clip" data-start="0" data-duration="5" data-track-index="4"><div class="scene-content"><div class="kicker">STORYFLOW / 第一次真实写作</div><h1>把想法，写成故事。</h1><p class="deck">从一句任务，到一份经过审阅的开场。</p><div class="steps"><span>说清任务</span><span>→</span><span>检查正文</span><span>→</span><span>审阅修改</span></div><div class="rule"></div><p class="detail">5 分钟真实操作，剪成 80 秒。</p></div></div>
+<div id="outro" class="cover clip" data-start="73" data-duration="7" data-track-index="4"><div class="scene-content"><div class="kicker">现在，换你来试一次</div><h1>开始你的创作。</h1><p class="deck">给出目标，读懂结果，再决定保留什么。</p><div class="url">分步教程 · story.zjding.com/docs/</div></div></div>
+<div class="footer"><div><strong>Storyflow</strong>真实运行 · DeepSeek V4 Flash</div><span>等待与排障已剪短 · 中文合成旁白 · 01:20</span></div><div class="progress"><div class="fill"></div></div>
+<div id="chapter-0" class="chapter clip" data-start="5" data-duration="8" data-track-index="3"><span class="number">01</span><h2>确认项目与模型</h2><span>雨夜便利店 / 第一次练习</span></div>
+<div id="chapter-1" class="chapter clip" data-start="13" data-duration="10" data-track-index="3"><span class="number">02</span><h2>说清一个小任务</h2><span>雨夜便利店 / 第一次练习</span></div>
+<div id="chapter-2" class="chapter clip" data-start="23" data-duration="8" data-track-index="3"><span class="number">03</span><h2>允许这次写入</h2><span>雨夜便利店 / 第一次练习</span></div>
+<div id="chapter-3" class="chapter clip" data-start="31" data-duration="12" data-track-index="3"><span class="number">04</span><h2>打开真实初稿</h2><span>雨夜便利店 / 第一次练习</span></div>
+<div id="chapter-4" class="chapter clip" data-start="43" data-duration="10" data-track-index="3"><span class="number">05</span><h2>按你的想法修改</h2><span>雨夜便利店 / 第一次练习</span></div>
+<div id="chapter-5" class="chapter clip" data-start="53" data-duration="12" data-track-index="3"><span class="number">06</span><h2>对比之后，再保留</h2><span>雨夜便利店 / 第一次练习</span></div>
+<div id="chapter-6" class="chapter clip" data-start="65" data-duration="8" data-track-index="3"><span class="number">07</span><h2>让结果可以被检查</h2><span>雨夜便利店 / 第一次练习</span></div>
+<audio id="voice-0" data-start="0.5" data-duration="4.442667" data-track-index="1" src="assets/narration/voice-00.wav" data-volume="1"></audio>
+<audio id="voice-1" data-start="5.6" data-duration="4.250667" data-track-index="1" src="assets/narration/voice-01.wav" data-volume="1"></audio>
+<audio id="voice-2" data-start="13.6" data-duration="7.226667" data-track-index="1" src="assets/narration/voice-02.wav" data-volume="1"></audio>
+<audio id="voice-3" data-start="23.6" data-duration="6.242667" data-track-index="1" src="assets/narration/voice-03.wav" data-volume="1"></audio>
+<audio id="voice-4" data-start="31.6" data-duration="8.258667" data-track-index="1" src="assets/narration/voice-04.wav" data-volume="1"></audio>
+<audio id="voice-5" data-start="43.6" data-duration="7.394667" data-track-index="1" src="assets/narration/voice-05.wav" data-volume="1"></audio>
+<audio id="voice-6" data-start="53.6" data-duration="8.186667" data-track-index="1" src="assets/narration/voice-06.wav" data-volume="1"></audio>
+<audio id="voice-7" data-start="65.6" data-duration="6.074667" data-track-index="1" src="assets/narration/voice-07.wav" data-volume="1"></audio>
+<audio id="voice-8" data-start="74" data-duration="5.8005" data-track-index="1" src="assets/narration/voice-08.wav" data-volume="1"></audio>
+<audio id="music" data-start="0" data-duration="80" data-track-index="9" src="assets/narration/music-ducked.wav" data-volume="1"></audio>
+<div id="caption-0" class="caption clip" data-start="0.6" data-duration="2.7222" data-track-index="2">一个想法，怎么变成故事？</div>
+<div id="caption-1" class="caption clip" data-start="3.3222" data-duration="1.5721000000000003" data-track-index="2">一起试试。</div>
+<div id="caption-2" class="caption clip" data-start="5.7" data-duration="4.1507" data-track-index="2">打开项目，选好模型，就可以开始创作了。</div>
+<div id="caption-3" class="caption clip" data-start="13.7" data-duration="2.0649000000000015" data-track-index="2">告诉它你想写什么。</div>
+<div id="caption-4" class="caption clip" data-start="15.7649" data-duration="5.012899999999998" data-track-index="2">人物是谁，故事发生在哪儿，最后保存成什么文件。</div>
+<div id="caption-5" class="caption clip" data-start="23.7" data-duration="3.0701" data-track-index="2">核对文件位置，点击允许。</div>
+<div id="caption-6" class="caption clip" data-start="26.7701" data-duration="3.0284000000000013" data-track-index="2">这份初稿，就保存到项目里了。</div>
+<div id="caption-7" class="caption clip" data-start="31.7" data-duration="3.817499999999999" data-track-index="2">生成之后，点开文件，读一遍正文。</div>
+<div id="caption-8" class="caption clip" data-start="35.5175" data-duration="4.2913" data-track-index="2">看看人物、情节和语气，是不是你想要的。</div>
+<div id="caption-9" class="caption clip" data-start="43.7" data-duration="2.619099999999996" data-track-index="2">想怎么改，直接告诉它。</div>
+<div id="caption-10" class="caption clip" data-start="46.3191" data-duration="4.639099999999999" data-track-index="2">可以改一句，也可以调整章节，或者整体重写。</div>
+<div id="caption-11" class="caption clip" data-start="53.7" data-duration="1.8973999999999975" data-track-index="2">打开修改对比。</div>
+<div id="caption-12" class="caption clip" data-start="55.5974" data-duration="3.324799999999996" data-track-index="2">红色是删去的，绿色是新增的。</div>
+<div id="caption-13" class="caption clip" data-start="58.9222" data-duration="2.822100000000006" data-track-index="2">确认满意，再点击接受。</div>
+<div id="caption-14" class="caption clip" data-start="65.7" data-duration="3.3536" data-track-index="2">这次，悬念落在了人物的动作上。</div>
+<div id="caption-15" class="caption clip" data-start="69.0536" data-duration="2.590199999999996" data-track-index="2">他攥着钱，没有回头。</div>
+<div id="caption-16" class="caption clip" data-start="74.0955" data-duration="3.816900000000004" data-track-index="2">说出想法，检查结果，再慢慢打磨。</div>
+<div id="caption-17" class="caption clip" data-start="77.9124" data-duration="1.8455000000000013" data-track-index="2">开始你的创作吧。</div>
+<div id="transition-0" class="transition clip" data-start="4.75" data-duration=".5" data-track-index="7"></div>
+<div id="transition-1" class="transition clip" data-start="12.75" data-duration=".5" data-track-index="7"></div>
+<div id="transition-2" class="transition clip" data-start="22.75" data-duration=".5" data-track-index="7"></div>
+<div id="transition-3" class="transition clip" data-start="30.75" data-duration=".5" data-track-index="7"></div>
+<div id="transition-4" class="transition clip" data-start="42.75" data-duration=".5" data-track-index="7"></div>
+<div id="transition-5" class="transition clip" data-start="52.75" data-duration=".5" data-track-index="7"></div>
+<div id="transition-6" class="transition clip" data-start="64.75" data-duration=".5" data-track-index="7"></div>
+<div id="transition-7" class="transition clip" data-start="72.75" data-duration=".5" data-track-index="7"></div>
+</div><script>const tl=gsap.timeline({paused:true});
+tl.from('#shot-0',{opacity:0,duration:.45,ease:'sine.out'},5);tl.to('#shot-0',{scale:1.65,transformOrigin:'70% 100%',duration:1.1,ease:'power2.inOut'},5.45);
+tl.from('#shot-1',{opacity:0,duration:.45,ease:'sine.out'},13);tl.to('#shot-1',{scale:1.35,transformOrigin:'50% 100%',duration:1.1,ease:'power2.inOut'},13.45);
+tl.from('#shot-2',{opacity:0,duration:.45,ease:'sine.out'},23);tl.to('#shot-2',{scale:1.4,transformOrigin:'50% 100%',duration:1.1,ease:'power2.inOut'},23.45);
+tl.from('#shot-3',{opacity:0,duration:.45,ease:'sine.out'},31);tl.to('#shot-3',{scale:1.22,transformOrigin:'100% 45%',duration:1.1,ease:'power2.inOut'},31.45);
+tl.from('#shot-4',{opacity:0,duration:.45,ease:'sine.out'},43);tl.to('#shot-4',{scale:1.48,transformOrigin:'0% 100%',duration:1.1,ease:'power2.inOut'},43.45);
+tl.from('#shot-5',{opacity:0,duration:.45,ease:'sine.out'},53);tl.to('#shot-5',{scale:1.35,transformOrigin:'100% 45%',duration:1.1,ease:'power2.inOut'},53.45);
+tl.from('#shot-6',{opacity:0,duration:.45,ease:'sine.out'},65);tl.to('#shot-6',{scale:1.7,transformOrigin:'0% 40%',duration:1.1,ease:'power2.inOut'},65.45);
+tl.from('#chapter-0 .number',{opacity:0,y:8,duration:.4,ease:'sine.out'},5.1);tl.from('#chapter-0 h2',{opacity:0,y:14,duration:.55,ease:'power3.out'},5.15);tl.from('#chapter-0 span:last-child',{opacity:0,duration:.5,ease:'power1.out'},5.2);
+tl.from('#chapter-1 .number',{opacity:0,y:8,duration:.4,ease:'sine.out'},13.1);tl.from('#chapter-1 h2',{opacity:0,y:14,duration:.55,ease:'power3.out'},13.15);tl.from('#chapter-1 span:last-child',{opacity:0,duration:.5,ease:'power1.out'},13.2);
+tl.from('#chapter-2 .number',{opacity:0,y:8,duration:.4,ease:'sine.out'},23.1);tl.from('#chapter-2 h2',{opacity:0,y:14,duration:.55,ease:'power3.out'},23.15);tl.from('#chapter-2 span:last-child',{opacity:0,duration:.5,ease:'power1.out'},23.2);
+tl.from('#chapter-3 .number',{opacity:0,y:8,duration:.4,ease:'sine.out'},31.1);tl.from('#chapter-3 h2',{opacity:0,y:14,duration:.55,ease:'power3.out'},31.15);tl.from('#chapter-3 span:last-child',{opacity:0,duration:.5,ease:'power1.out'},31.2);
+tl.from('#chapter-4 .number',{opacity:0,y:8,duration:.4,ease:'sine.out'},43.1);tl.from('#chapter-4 h2',{opacity:0,y:14,duration:.55,ease:'power3.out'},43.15);tl.from('#chapter-4 span:last-child',{opacity:0,duration:.5,ease:'power1.out'},43.2);
+tl.from('#chapter-5 .number',{opacity:0,y:8,duration:.4,ease:'sine.out'},53.1);tl.from('#chapter-5 h2',{opacity:0,y:14,duration:.55,ease:'power3.out'},53.15);tl.from('#chapter-5 span:last-child',{opacity:0,duration:.5,ease:'power1.out'},53.2);
+tl.from('#chapter-6 .number',{opacity:0,y:8,duration:.4,ease:'sine.out'},65.1);tl.from('#chapter-6 h2',{opacity:0,y:14,duration:.55,ease:'power3.out'},65.15);tl.from('#chapter-6 span:last-child',{opacity:0,duration:.5,ease:'power1.out'},65.2);
+tl.from('#caption-0',{opacity:0,duration:.18,ease:'sine.out'},0.6);tl.set('#caption-0',{opacity:0},3.3222);
+tl.from('#caption-1',{opacity:0,duration:.18,ease:'sine.out'},3.3222);tl.set('#caption-1',{opacity:0},4.8943);
+tl.from('#caption-2',{opacity:0,duration:.18,ease:'sine.out'},5.7);tl.set('#caption-2',{opacity:0},9.8507);
+tl.from('#caption-3',{opacity:0,duration:.18,ease:'sine.out'},13.7);tl.set('#caption-3',{opacity:0},15.7649);
+tl.from('#caption-4',{opacity:0,duration:.18,ease:'sine.out'},15.7649);tl.set('#caption-4',{opacity:0},20.7778);
+tl.from('#caption-5',{opacity:0,duration:.18,ease:'sine.out'},23.7);tl.set('#caption-5',{opacity:0},26.7701);
+tl.from('#caption-6',{opacity:0,duration:.18,ease:'sine.out'},26.7701);tl.set('#caption-6',{opacity:0},29.7985);
+tl.from('#caption-7',{opacity:0,duration:.18,ease:'sine.out'},31.7);tl.set('#caption-7',{opacity:0},35.5175);
+tl.from('#caption-8',{opacity:0,duration:.18,ease:'sine.out'},35.5175);tl.set('#caption-8',{opacity:0},39.8088);
+tl.from('#caption-9',{opacity:0,duration:.18,ease:'sine.out'},43.7);tl.set('#caption-9',{opacity:0},46.3191);
+tl.from('#caption-10',{opacity:0,duration:.18,ease:'sine.out'},46.3191);tl.set('#caption-10',{opacity:0},50.9582);
+tl.from('#caption-11',{opacity:0,duration:.18,ease:'sine.out'},53.7);tl.set('#caption-11',{opacity:0},55.5974);
+tl.from('#caption-12',{opacity:0,duration:.18,ease:'sine.out'},55.5974);tl.set('#caption-12',{opacity:0},58.9222);
+tl.from('#caption-13',{opacity:0,duration:.18,ease:'sine.out'},58.9222);tl.set('#caption-13',{opacity:0},61.7443);
+tl.from('#caption-14',{opacity:0,duration:.18,ease:'sine.out'},65.7);tl.set('#caption-14',{opacity:0},69.0536);
+tl.from('#caption-15',{opacity:0,duration:.18,ease:'sine.out'},69.0536);tl.set('#caption-15',{opacity:0},71.6438);
+tl.from('#caption-16',{opacity:0,duration:.18,ease:'sine.out'},74.0955);tl.set('#caption-16',{opacity:0},77.9124);
+tl.from('#caption-17',{opacity:0,duration:.18,ease:'sine.out'},77.9124);tl.set('#caption-17',{opacity:0},79.7579);
+tl.fromTo('#transition-0',{opacity:0},{opacity:1,duration:.25,ease:'sine.inOut'},4.75);tl.to('#transition-0',{opacity:0,duration:.25,ease:'sine.inOut'},5);
+tl.fromTo('#transition-1',{opacity:0},{opacity:1,duration:.25,ease:'sine.inOut'},12.75);tl.to('#transition-1',{opacity:0,duration:.25,ease:'sine.inOut'},13);
+tl.fromTo('#transition-2',{opacity:0},{opacity:1,duration:.25,ease:'sine.inOut'},22.75);tl.to('#transition-2',{opacity:0,duration:.25,ease:'sine.inOut'},23);
+tl.fromTo('#transition-3',{opacity:0},{opacity:1,duration:.25,ease:'sine.inOut'},30.75);tl.to('#transition-3',{opacity:0,duration:.25,ease:'sine.inOut'},31);
+tl.fromTo('#transition-4',{opacity:0},{opacity:1,duration:.25,ease:'sine.inOut'},42.75);tl.to('#transition-4',{opacity:0,duration:.25,ease:'sine.inOut'},43);
+tl.fromTo('#transition-5',{opacity:0},{opacity:1,duration:.25,ease:'sine.inOut'},52.75);tl.to('#transition-5',{opacity:0,duration:.25,ease:'sine.inOut'},53);
+tl.fromTo('#transition-6',{opacity:0},{opacity:1,duration:.25,ease:'sine.inOut'},64.75);tl.to('#transition-6',{opacity:0,duration:.25,ease:'sine.inOut'},65);
+tl.fromTo('#transition-7',{opacity:0},{opacity:1,duration:.25,ease:'sine.inOut'},72.75);tl.to('#transition-7',{opacity:0,duration:.25,ease:'sine.inOut'},73);
+tl.from('#intro .kicker',{opacity:0,y:12,duration:0.4,ease:'sine.out'},0.15);
+tl.from('#intro h1',{opacity:0,y:32,duration:0.7,ease:'power3.out'},0.3);
+tl.from('#intro .deck',{opacity:0,y:18,duration:0.6,ease:'power2.out'},0.55);
+tl.from('#outro .kicker',{opacity:0,y:12,duration:0.4,ease:'sine.out'},73.15);
+tl.from('#outro h1',{opacity:0,y:32,duration:0.7,ease:'power3.out'},73.3);
+tl.from('#outro .deck',{opacity:0,y:18,duration:0.6,ease:'power2.out'},73.55);
+tl.from('#intro .steps',{opacity:0,y:18,duration:.5,ease:'sine.out'},.8);tl.from('#intro .rule',{scaleX:0,transformOrigin:'left center',duration:.8,ease:'power2.out'},.9);tl.from('#intro .detail',{opacity:0,duration:.5,ease:'power1.out'},1.1);tl.from('#outro .url',{opacity:0,y:12,duration:.5,ease:'sine.out'},73.8);tl.to('.fill',{scaleX:1,duration:80,ease:'none'},0);
+window.__timelines=window.__timelines||{};window.__timelines["main"]=tl;</script></body></html>

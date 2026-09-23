@@ -1,0 +1,37 @@
+{
+  "app": "/Applications/Storyflow.app",
+  "version": "0.21.3",
+  "account": "normally signed-in user account",
+  "model": "deepseek-v4-flash",
+  "sessionId": "session_382fc643-2e70-4350-8c16-251c030681c5",
+  "sessionSource": "/Users/dingzhijian/Documents/Storyflow演示/雨夜便利店/.craft-agent/sessions/session_382fc643-2e70-4350-8c16-251c030681c5/session.jsonl",
+  "fixture": false,
+  "rawRecording": "assets/storyflow-live-raw.mov",
+  "duration": 299.998333,
+  "capture": "macOS screencapture -v -V300 -l130193 -k -x; no microphone",
+  "rawSha256": "c00c5bb9c694bfd6e97a5da84d3c2a97a1dcf397f0bfe279973441b4a076c4e7",
+  "firstDraftSha256": "c656f5e2b46412d422b7119debbe1f5092e947609c3e577cedac9dd8280be4e6",
+  "revisedDraftSha256": "50298e3b1af565b7922209febba04ed9d468aa3b74e468ccfce389ba3e1b4eb0",
+  "changedLines": [
+    15
+  ],
+  "outputFile": "/Users/dingzhijian/Documents/Storyflow演示/雨夜便利店/opening.md",
+  "knownIssues": [
+    "ask_user failed; model recovered with ask_user_question",
+    "Edit first required Read; model read then retried successfully",
+    "Model included book-title brackets in filename; corrected to opening.md in Finder after recording",
+    "In-app rename did not surface an editable field during capture"
+  ],
+  "cutPolicy": "Original chronological clips, no generated UI; waiting/retries/file-name troubleshooting omitted. Chinese synthetic narration added afterwards.",
+  "recordingStartedAt": "2026-09-14T11:15:42Z",
+  "audioRevision": {
+    "voice": "zh-CN-XiaoxiaoNeural",
+    "rate": "-3%",
+    "subtitles": "18 provider-timed sentences, all narration burned in and optional soft captions",
+    "music": "Original synthesized soft keys and warm chords; no third-party recording",
+    "narrationLUFS": -16.15,
+    "musicLUFS": -37.73,
+    "footageCutsChanged": false,
+    "instruction": "Revision scope is unrestricted; sentence, chapter and whole-document edits are possible."
+  }
+}

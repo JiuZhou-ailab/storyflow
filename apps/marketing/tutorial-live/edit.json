@@ -1,0 +1,140 @@
+{
+  "duration": 80,
+  "cuts": [
+    {
+      "start": 5,
+      "duration": 8,
+      "source": 10,
+      "title": "确认项目与模型",
+      "focus": [
+        1.65,
+        "70% 100%"
+      ]
+    },
+    {
+      "start": 13,
+      "duration": 10,
+      "source": 24,
+      "title": "说清一个小任务",
+      "focus": [
+        1.35,
+        "50% 100%"
+      ]
+    },
+    {
+      "start": 23,
+      "duration": 8,
+      "source": 124,
+      "title": "允许这次写入",
+      "focus": [
+        1.4,
+        "50% 100%"
+      ]
+    },
+    {
+      "start": 31,
+      "duration": 12,
+      "source": 147,
+      "title": "打开真实初稿",
+      "focus": [
+        1.22,
+        "100% 45%"
+      ]
+    },
+    {
+      "start": 43,
+      "duration": 10,
+      "source": 165,
+      "title": "按你的想法修改",
+      "focus": [
+        1.48,
+        "0% 100%"
+      ]
+    },
+    {
+      "start": 53,
+      "duration": 12,
+      "source": 225,
+      "title": "对比之后，再保留",
+      "focus": [
+        1.35,
+        "100% 45%"
+      ]
+    },
+    {
+      "start": 65,
+      "duration": 8,
+      "source": 287,
+      "title": "让结果可以被检查",
+      "focus": [
+        1.7,
+        "0% 40%"
+      ]
+    }
+  ],
+  "cues": [
+    {
+      "start": 0.5,
+      "text": "一个想法，怎么变成故事？一起试试。",
+      "duration": 4.442667,
+      "audio": "assets/narration/voice-00.wav",
+      "voice": "zh-CN-XiaoxiaoNeural"
+    },
+    {
+      "start": 5.6,
+      "text": "打开项目，选好模型，就可以开始创作了。",
+      "duration": 4.250667,
+      "audio": "assets/narration/voice-01.wav",
+      "voice": "zh-CN-XiaoxiaoNeural"
+    },
+    {
+      "start": 13.6,
+      "text": "告诉它你想写什么。人物是谁，故事发生在哪儿，最后保存成什么文件。",
+      "duration": 7.226667,
+      "audio": "assets/narration/voice-02.wav",
+      "voice": "zh-CN-XiaoxiaoNeural"
+    },
+    {
+      "start": 23.6,
+      "text": "核对文件位置，点击允许。这份初稿，就保存到项目里了。",
+      "duration": 6.242667,
+      "audio": "assets/narration/voice-03.wav",
+      "voice": "zh-CN-XiaoxiaoNeural"
+    },
+    {
+      "start": 31.6,
+      "text": "生成之后，点开文件，读一遍正文。看看人物、情节和语气，是不是你想要的。",
+      "duration": 8.258667,
+      "audio": "assets/narration/voice-04.wav",
+      "voice": "zh-CN-XiaoxiaoNeural"
+    },
+    {
+      "start": 43.6,
+      "text": "想怎么改，直接告诉它。可以改一句，也可以调整章节，或者整体重写。",
+      "duration": 7.394667,
+      "audio": "assets/narration/voice-05.wav",
+      "voice": "zh-CN-XiaoxiaoNeural"
+    },
+    {
+      "start": 53.6,
+      "text": "打开修改对比。红色是删去的，绿色是新增的。确认满意，再点击接受。",
+      "duration": 8.186667,
+      "audio": "assets/narration/voice-06.wav",
+      "voice": "zh-CN-XiaoxiaoNeural"
+    },
+    {
+      "start": 65.6,
+      "text": "这次，悬念落在了人物的动作上。他攥着钱，没有回头。",
+      "duration": 6.074667,
+      "audio": "assets/narration/voice-07.wav",
+      "voice": "zh-CN-XiaoxiaoNeural"
+    },
+    {
+      "start": 74,
+      "text": "说出想法，检查结果，再慢慢打磨。开始你的创作吧。",
+      "duration": 5.8005,
+      "audio": "assets/narration/voice-08.wav",
+      "voice": "zh-CN-XiaoxiaoNeural"
+    }
+  ]
+}
