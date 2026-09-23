@@ -96,8 +96,8 @@
 
 .tiptap-editor--manuscript {
   --tiptap-manuscript-width: min(100%, 1120px);
-  --tiptap-manuscript-line-height: 1.2;
-  --tiptap-manuscript-paragraph-spacing: 0;
+  --tiptap-manuscript-line-height: 1.75;
+  --tiptap-manuscript-paragraph-spacing: 0.45em;
   --tiptap-manuscript-ink: color-mix(in oklch, var(--foreground) 95%, transparent);
   --tiptap-manuscript-muted: color-mix(in oklch, var(--foreground) 54%, transparent);
   --tiptap-manuscript-rule: color-mix(in oklch, var(--foreground) 6%, transparent);
@@ -239,12 +239,13 @@
   padding-left: clamp(44px, 3.6vw, 52px);
 }
 
-.tiptap-editor--manuscript .tiptap-prose p {
+/* Keep manuscript rhythm above the generic editor rules below. */
+.tiptap-editor.tiptap-editor--manuscript .tiptap-prose p {
   margin: 0;
   line-height: inherit;
 }
 
-.tiptap-editor--manuscript .tiptap-prose p + p {
+.tiptap-editor.tiptap-editor--manuscript .tiptap-prose p + p {
   margin-top: var(--tiptap-manuscript-paragraph-spacing);
 }
 
@@ -300,7 +301,7 @@
   line-height: inherit;
 }
 
-.tiptap-editor--manuscript .tiptap-prose li {
+.tiptap-editor.tiptap-editor--manuscript .tiptap-prose li {
   line-height: inherit;
 }
 
