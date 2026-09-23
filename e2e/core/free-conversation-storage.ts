@@ -10,6 +10,7 @@ import { launchApp, evalOn, waitFor, type LaunchedApp } from '../perf/launch'
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), 'storyflow-free-storage-e2e-')))
 const fixture = join(base, 'config'), parent = join(base, 'chosen')
+const userDataDir = join(base, 'electron-profile')
 mkdirSync(parent)
 let app: LaunchedApp | undefined
 try {
@@ -18,7 +19,7 @@ try {
   const config = JSON.parse(readFileSync(configPath, 'utf8'))
   config.workspaces = []; delete config.activeWorkspaceId
   writeFileSync(configPath, JSON.stringify(config))
-  app = await launchApp(fixture)
+  app = await launchApp(fixture, { userDataDir })
   await waitFor(app, `window.electronAPI && document.querySelector('[data-tutorial="activity-profile"]')`)
   const session = await evalOn<{id: string; workingDirectory: string}>(app, `window.electronAPI.createSession('__storyflow_free__')`)
   const file = join(session.workingDirectory, 'storage-acceptance.md')
@@ -55,7 +56,7 @@ try {
   assert.equal(pending.pendingPath, join(parent, 'storyflow-free-conversations'))
   assert.equal(readFileSync(file, 'utf8'), '持久化成果\n')
   await app.close(); app = undefined
-  app = await launchApp(fixture)
+  app = await launchApp(fixture, { userDataDir })
   await waitFor(app, `window.electronAPI && document.querySelector('[data-tutorial="activity-profile"]')`)
   const moved = await evalOn<any>(app, `window.electronAPI.getFreeConversationStorage()`)
   assert.equal(moved.path, pending.pendingPath)
@@ -73,13 +74,13 @@ try {
   const secondParent = join(base, 'second'); mkdirSync(secondParent)
   await evalOn(app, `window.electronAPI.setFreeConversationStorage(${JSON.stringify(secondParent)})`)
   await app.close(); app = undefined
-  app = await launchApp(fixture)
+  app = await launchApp(fixture, { userDataDir })
   await waitFor(app, `window.electronAPI && document.querySelector('[data-tutorial="activity-profile"]')`)
   const second = await evalOn<any>(app, `window.electronAPI.getFreeConversationStorage()`)
   assert.equal(second.path, join(secondParent, 'storyflow-free-conversations'))
   await app.close(); app = undefined
   renameSync(parent, join(base, 'first-disk-offline'))
-  app = await launchApp(fixture)
+  app = await launchApp(fixture, { userDataDir })
   await waitFor(app, `window.electronAPI && document.querySelector('[data-tutorial="activity-profile"]')`)
   assert.equal(readFileSync(file, 'utf8'), '持久化成果\n')
   assert.equal((await evalOn<any>(app, `window.electronAPI.getFreeConversationStorage()`)).path, second.path)
