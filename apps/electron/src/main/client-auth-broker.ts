@@ -1,5 +1,5 @@
 // input: Auth broker URLs, Storyflow identity sessions, and broker JSON responses
-// output: Bounded HTTPS broker exchanges and normalized desktop identity with company capabilities
+// output: Bounded HTTPS broker exchanges, transport diagnostics, and normalized desktop identity with company capabilities
 // pos: Main-process network trust boundary beneath the client auth service
 
 import { isAccessReason } from '@craft-agent/shared/auth/managed-access'
@@ -282,9 +282,13 @@ function buildBrokerEndpointUrl(baseUrl: string, path: string): string {
 }
 
 function formatBrokerNetworkError(endpoint: string, error: unknown): string {
-  const detail = error instanceof Error && error.message ? ` (${error.message})` : ''
+  const cause = error instanceof Error ? readObjectValue(error.cause) : undefined
+  const code = readStringValue(cause?.code)
+  const detail = error instanceof Error && error.message
+    ? ` (${error.message}${code && /^[A-Z][A-Z0-9_]{1,63}$/.test(code) ? `; ${code}` : ''})`
+    : ''
   return `Auth broker is unreachable at ${endpoint}${detail}. `
-    + '若网络受限或 broker 已迁移，可在客户端用户数据目录创建 client-auth.json '
+    + '请检查网络连接及应用设置中的网络代理。仅在确认 broker 已迁移时，在客户端用户数据目录创建 client-auth.json '
     + '（内容形如 {"authBrokerUrl":"https://your-broker"}）以覆盖打包默认值；'
     + 'or set CRAFT_CLIENT_AUTH_BROKER_URL and rebuild the desktop client.'
 }
@@ -311,7 +315,7 @@ async function requestBrokerJson(
   try {
     res = await fetch(endpoint, init)
   } catch (error) {
-    throw new Error(formatBrokerNetworkError(endpoint, error))
+    throw new Error(formatBrokerNetworkError(endpoint, error), { cause: error })
   }
 
   if (options.allowNotFound && res.status === 404) return null

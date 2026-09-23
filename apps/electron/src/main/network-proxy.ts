@@ -1,5 +1,7 @@
 /**
- * Network proxy manager — configures both Node.js (undici) and Electron session proxies.
+ * input: Persisted proxy settings and shared bypass rules
+ * output: Node.js dispatchers and Electron session proxy configuration
+ * pos: Desktop network routing and direct-connection policy
  *
  * - Node side: replaces the global undici dispatcher with a ProtocolProxyDispatcher
  *   that routes HTTP/HTTPS through different ProxyAgent instances and respects NO_PROXY.
@@ -16,6 +18,10 @@ import log from './logger';
 
 // Track the current dispatcher so we can close it when reconfiguring
 let currentProxyDispatcher: Dispatcher | null = null;
+
+// Node 22 closes each address attempt after 250ms by default. Cross-region TCP
+// handshakes can exceed that even on a working route; retain dual-stack fallback.
+const DIRECT_CONNECT_OPTIONS = { autoSelectFamilyAttemptTimeout: 1_000 };
 
 /**
  * Custom undici Dispatcher that routes requests through proxy agents based on protocol,
@@ -35,7 +41,7 @@ class ProtocolProxyDispatcher extends Dispatcher {
     super();
     this.httpProxy = opts.httpProxy ? new ProxyAgent(opts.httpProxy) : null;
     this.httpsProxy = opts.httpsProxy ? new ProxyAgent(opts.httpsProxy) : null;
-    this.direct = new Agent();
+    this.direct = new Agent({ connect: DIRECT_CONNECT_OPTIONS });
     this.rules = parseNoProxyRules(opts.noProxy);
   }
 
@@ -87,7 +93,7 @@ function configureNodeProxy(settings: NetworkProxySettings | undefined): void {
 
   if (!settings?.enabled || (!settings.httpProxy && !settings.httpsProxy)) {
     // Restore a direct dispatcher and track it so next reconfigure can close it
-    const direct = new Agent();
+    const direct = new Agent({ connect: DIRECT_CONNECT_OPTIONS });
     setGlobalDispatcher(direct);
     currentProxyDispatcher = direct;
     return;

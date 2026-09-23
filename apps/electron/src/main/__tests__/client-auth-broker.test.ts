@@ -151,6 +151,26 @@ describe('DefaultClientAuthBrokerClient', () => {
     })).rejects.toThrow('Auth broker is unreachable')
   })
 
+  it('preserves the connection failure cause and points users to network settings', async () => {
+    const connectionError = Object.assign(new AggregateError([
+      Object.assign(new Error('IPv4 connection timed out'), { code: 'ETIMEDOUT' }),
+      Object.assign(new Error('IPv6 route unavailable'), { code: 'EHOSTUNREACH' }),
+    ]), { code: 'ETIMEDOUT' })
+    const fetchError = new TypeError('fetch failed', { cause: connectionError })
+    globalThis.fetch = (async () => { throw fetchError }) as unknown as typeof fetch
+
+    const error = await new DefaultClientAuthBrokerClient().refreshModelAccessToken({
+      brokerUrl: 'https://auth.storyflow.example.com',
+      appSessionToken: 'private-app-session',
+    }).catch(error => error)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error.cause).toBe(fetchError)
+    expect(error.message).toContain('ETIMEDOUT')
+    expect(error.message).toContain('应用设置中的网络代理')
+    expect(error.message).not.toContain('private-app-session')
+  })
+
   it('requests a short-lived Skills Market capability with the app session', async () => {
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       expect(input.toString()).toBe('https://auth.storyflow.example.com/api/client-auth/skills-market/token')

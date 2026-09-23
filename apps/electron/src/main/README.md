@@ -7,7 +7,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `auto-update.ts` - Electron updater integration.
 - `browser-cdp.ts` - Chrome DevTools Protocol bridge for browser panes.
 - `browser-pane-manager.ts` - Native browser-pane window manager.
-- `client-auth-broker.ts` - Bounded HTTPS auth-broker client and response validation.
+- `client-auth-broker.ts` - Bounded HTTPS auth-broker client, transport diagnostics, and response validation.
 - `client-auth.ts` - Desktop client authentication service.
 - `client-auth-token-lifecycle.ts` - Managed model-token refresh lifecycle and concurrency coordinator.
 - `client-auth-session-store.ts` - Encrypted desktop auth and Neon session persistence.
@@ -18,7 +18,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `logger.ts` - Main-process logging setup.
 - `managed-capability-broker.ts` - Loopback bridge from Storyflow login to scoped model access plus exact search and scrape operations for child processes.
 - `menu.ts` - Application menu setup.
-- `network-proxy.ts` - Electron session proxy configuration using shared proxy rules.
+- `network-proxy.ts` - Node dispatchers and Electron session proxies using shared bypass rules; direct Node connections allow 1s per address attempt for high-latency routes.
 - `notifications.ts` - Native notification and badge handling.
 - `platform.ts` - Electron implementation of shared platform services.
 - `power-manager.ts` - Power and sleep integration.
