@@ -724,7 +724,8 @@ ol {
 .release-content h3, .release-content h4 { margin: 28px 0 12px; font-size: 18px; font-weight: 500; }
 .release-content p, .release-content ul, .release-content ol { margin-bottom: 16px; }
 .release-content ul, .release-content ol { padding-left: 1.4em; }
-.release-content li + li { margin-top: 10px; }
+.release-content li { margin-bottom: 8px; }
+.release-content li:last-child { margin-bottom: 0; }
 .release-content strong { font-weight: 600; }
 .release-content code { font-size: .9em; background: var(--card); padding: 2px 4px; border-radius: 3px; }
 .release-content pre { overflow-x: auto; padding: 16px; background: var(--card); }
