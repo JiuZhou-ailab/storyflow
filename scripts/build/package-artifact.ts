@@ -170,7 +170,7 @@ function signatureStatus(appPath: string, platform: Platform): string {
     return info.stderr.includes('Signature=adhoc') ? 'adhoc' : 'valid';
   }
   if (process.platform === 'win32') {
-    const info = execFileSync('powershell', ['-NoProfile', '-Command', '& { param($p) (Get-AuthenticodeSignature -LiteralPath $p).Status.ToString() }', join(appPath, 'Storyflow.exe')], { encoding: 'utf8' });
+    const info = execFileSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', '& { param($p) $ErrorActionPreference = \"Stop\"; (Get-AuthenticodeSignature -LiteralPath $p).Status.ToString() }', join(appPath, 'Storyflow.exe')], { encoding: 'utf8' });
     return info.trim();
   }
   return 'not-checked-on-this-host';

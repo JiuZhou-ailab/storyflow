@@ -24,7 +24,7 @@ try {
   const file = join(session.workingDirectory, 'storage-acceptance.md')
   mkdirSync(session.workingDirectory, { recursive: true }); writeFileSync(file, '持久化成果\n')
   await evalOn(app, `window.electronAPI.switchWorkspace('__storyflow_free__')`)
-  await evalOn(app, `(() => { const url = new URL(location.href); url.search = '?workspaceId=__storyflow_free__&ws=__storyflow_free__&route=allSessions'; location.href = url.href })()`)
+  await evalOn(app, `(() => { localStorage.setItem('i18nextLng', 'zh-Hans'); const url = new URL(location.href); url.search = '?workspaceId=__storyflow_free__&ws=__storyflow_free__&route=allSessions'; location.href = url.href })()`)
   await waitFor(app, `document.querySelector('[contenteditable="true"]')`)
   await evalOn(app, `Array.from(document.querySelectorAll('[role="dialog"] button')).find(b=>/继续使用|Continue/.test(b.textContent))?.click()`)
   await evalOn(app, `window.dispatchEvent(new CustomEvent('craft-agent-navigate', {detail:{route:'settings/app'}}))`)

@@ -138,3 +138,24 @@ The missing-document-assets finding was addressed in the shared asset contract: 
 8 existing document tools require their Python script and both native launchers. Removal
 of a DOCX script or PPTX launcher now fails. Real ARM64 artifacts passed the expanded
 contract. The native platform/manual acceptance gaps above remain open.
+
+## Native release measurements (2026-09-23)
+
+Release run [35839000648](https://github.com/JiuZhou-ailab/storyflow/actions/runs/35839000648),
+source `6006a9603ba7233d6349b7064d3c4a9f8f370938`, supplied complete native packages.
+Both targets passed archive-to-application content verification, packaged core E2E
+and compiled Pi Extension checks. Intel passed signing and notarization; Windows
+passed installed startup and upgrade from v0.23.0. The run remained unpublished
+because the previously unmeasured targets still had null byte limits.
+
+| Target | Application bytes | DMG / EXE bytes | ZIP bytes |
+| --- | ---: | ---: | ---: |
+| macOS Intel | 482332849 | 181871412 | 191194420 |
+| Windows x64 | 657676925 | 169912804 | n/a |
+
+The static ceilings now use the same reviewed 3% headroom, rounded up to MiB,
+as ARM64: Intel 474 / 179 / 188 MiB; Windows 647 / 167 MiB. The component
+inventory contains the expected Electron, Bun, uv and Pi runtime payloads;
+these limits do not bypass content or functional checks. The historical
+null-budget gap above is closed; the broader Spec #44 comparisons and manual
+UI acceptance remain distinct from these release measurements.

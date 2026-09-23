@@ -369,6 +369,9 @@ jobs:
             --version="$version" \
             --curated-notes="apps/electron/resources/release-notes/$version.md"
 
+      - name: Verify storage migration and interrupted recovery
+        run: bun test packages/shared/src/workspaces/free-conversation-storage.test.ts
+
       - name: Build Windows artifacts
         run: bun run electron:dist:win
         env:
@@ -389,6 +392,11 @@ jobs:
         run: bun test packages/pi-agent-server/src/compiled-subagent.test.ts
         env:
           CRAFT_E2E_PI_SERVER_BIN: ${{ github.workspace }}\apps\electron\release\win-unpacked\resources\app\dist\resources\pi-agent-server\pi-agent-server.exe
+
+      - name: Verify packaged storage relocation
+        run: bun e2e/core/free-conversation-storage.ts
+        env:
+          CRAFT_E2E_ELECTRON_BIN: ${{ github.workspace }}\apps\electron\release\win-unpacked\Storyflow.exe
 
       - name: Verify Windows installer startup and upgrade
         shell: pwsh
