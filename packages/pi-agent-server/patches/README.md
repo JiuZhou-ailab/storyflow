@@ -1,48 +1,41 @@
-# Pi Dependency Patches
+# Pi dependency patches
 
-Version-pinned Bun patches for Pi 0.84.4. Upstream source:
-[earendil-works/pi](https://github.com/earendil-works/pi). Tracking contract:
-[Storyflow #41](https://github.com/JiuZhou-ailab/storyflow/issues/41).
+Pinned target: [Pi 0.87.1](https://github.com/earendil-works/pi/releases/tag/v0.87.1).
+Contracts: [#41](https://github.com/JiuZhou-ailab/storyflow/issues/41),
+[#43](https://github.com/JiuZhou-ailab/storyflow/issues/43),
+[#48](https://github.com/JiuZhou-ailab/storyflow/issues/48).
 
-On 2026-09-16 the published 0.85.1 `agent-session.js`/`utils/retry.js` still lacked
-`Retry-After`, `x-should-retry` and `upstream_auth_failed` session handling. Keep
-0.84.4 pinned; no application hook edits error messages to induce retries.
+## Hunk decisions (2026-09-23)
 
-- `@earendil-works%2Fpi-ai@0.84.4.patch`: emit provider response hooks on rejected
-  HTTP calls; refresh correlation headers for provider-internal transport retries;
-  classify permanent gateway semantics before generic 5xx matching in both provider
-  and session retries; honor bounded JSON retry metadata when SDK headers are lost.
-- `@earendil-works%2Fpi-coding-agent@0.84.4.patch`: preserve HTTP rejection semantics
-  and honor Retry-After in the native abortable session backoff; forward refreshed
-  retry headers; newer concurrent `setModel` calls win after auth awaits; preserve
-  cancellation through awaited model selection, prompt preflight and retry events.
+| Area | Decision and observable contract | Regression / removal gate |
+| --- | --- | --- |
+| pi-ai provider onResponse | Retain for rejected HTTP, all four APIs; expose permanent denial before outer retries | managed-access-contract.test.ts, permanent 401/403 and x-should-retry=false |
+| pi-ai retry classifier / provider-retry | Retain permanent denial precedence, bounded JSON metadata for Google lost headers, server delay and timer overflow handling | managed-access-contract.test.ts, managed-fallback.test.ts |
+| pi-ai beforeRetry / refreshHeaders forwarding | Retain actual transport-attempt correlation with stable logical call id | managed-fallback.test.ts, transport attempts and parallel sessions |
+| pi-ai simple-options thinking | Retain explicit maxTokens as combined output cap; unset requests retain native model capacity | managed-access-contract.test.ts, four protocols and thinking budgets |
+| coding-agent model-runtime | Retain refreshed headers through ModelRuntime | same correlation checks |
+| coding-agent session response / backoff | Retain permanent rejection guard and server delay lower bound; native budget/settlement remain intact | same denial, Retry-After and overflow checks |
+| coding-agent abort / dispose revision | Retain cancellation through awaited prompt preflight and synchronous retry events; preserve native run cleanup | managed-access-contract.test.ts, cancellation races and adjacent prompt |
+| coding-agent model selection revision | Retain newer explicit selection winning an older auth await | managed-fallback.test.ts, manual choice during automatic selection |
+| coding-agent retry history slicing | Delete; 0.87.1 native recovery omission uses append-only context edits | native failed-continuation checks and primary-session.test.ts |
+| coding-agent compaction + settings maxSummaryTokens | Retire 8192 default; retain only explicit caller cap through stream options, never model metadata | runtime-budgets.test.ts, actual native compaction and explicit1024 request cap |
 
-Google's SDK drops error response headers. Gateway failures also carry bounded
-`retry_after_ms` metadata, consumed by both native provider and session backoff. Session
-backoff parses full JSON numbers, including exponent notation, and rejects delays
-beyond the timer range rather than overflowing into an immediate retry. Success SSE
-remains untouched. No Host-owned sleep, request loop or payload rewriting exists.
+Reproduction materials for upstream submission are the two real-session suites
+below. They use loopback HTTP, no paid provider, and observable requests/results;
+no upstream issue/PR has yet been submitted for these remaining gaps. In the
+isolated unpatched 0.87.1 run they reproduce denials retried, early retry,
+cancellation and correlation regressions; migrated patches pass the same 72 tests.
+Remove each hunk when its named checks pass on a supported **unpatched** release.
+Do not infer outer AgentSession correctness from provider SDK retries alone.
 
-Delete the patches when a supported Pi release passes
-`bun test packages/pi-agent-server/src/managed-fallback.test.ts packages/pi-agent-server/src/managed-access-contract.test.ts` **without** them.
-That suite uses real Pi sessions against loopback HTTP across all four APIs;
-removing the patches reproduces deterministic-denial amplification, early retry,
-and repeated attempt=0. Do not remove a patch based only on SDK provider-level
-retry support: the outer AgentSession has its own classifier and budget.
+```sh
+bun test packages/pi-agent-server/src/managed-access-contract.test.ts packages/pi-agent-server/src/managed-fallback.test.ts
+bun test packages/pi-agent-server/src/runtime-budgets.test.ts packages/pi-agent-server/src/primary-session.test.ts
+```
 
-Bun applies patches from root `package.json` on install. Avoid stale package-local
-`node_modules/@earendil-works` copies shadowing the root installation; verify module
-resolution when testing a dependency upgrade.
-
-## Long-task budgets (#43)
-
-The coding-agent patch adds optional public `compaction.maxSummaryTokens` to
-SettingsManager and native compaction preparation. Storyflow applies 8192 without
-writing user settings. Reserve space no longer implicitly enlarges summary calls.
-The ai patch makes explicit `maxTokens` cap the combined response in budget-based
-thinking adapters; reasoning fits inside the cap instead of adding to it. Unset
-native requests still use model capacity. Registered model declarations stay intact.
-
-Remove these hunks when upstream exposes the same contracts and the real Provider
-checks in `runtime-budgets.test.ts` and `managed-access-contract.test.ts` pass
-without the patches, including Anthropic thinking and all four supported protocols.
+Bun applies the two patches through root package.json. They retain the existing optional maxSummaryTokens setting and its types;
+no default is supplied. Verify resolved package paths and versions
+before testing; stale package-local node_modules must not shadow the root version.
+The extension layer never edits error text, request bodies, raw history or SSE to
+control retries. Native retry context edits and cancel/settlement behavior remain
+owned by Pi.

@@ -111,30 +111,7 @@ export class PiAgent extends PiAgentToolHost {
         }
       }
 
-      // Ensure subprocess is spawned and ready
-      try {
-        await this.ensureSubprocess();
-      } catch (subprocessError) {
-        const errorMsg = subprocessError instanceof Error ? subprocessError.message : String(subprocessError);
-        this.debug(`Failed to spawn Pi subprocess: ${errorMsg}`);
-
-        // If resume failed, clear and try fresh
-        if (this.piSessionId && !options?.isRetry) {
-          this.piSessionId = null;
-          this.killSubprocess();
-          this.clearSessionForRecovery();
-
-          const recoveryContext = this.buildRecoveryContext();
-          if (recoveryContext) {
-            message = recoveryContext + message;
-            this.debug('Injected recovery context into message');
-          }
-
-          await this.ensureSubprocess();
-        } else {
-          throw subprocessError;
-        }
-      }
+      await this.ensureSubprocess();
 
       const trimmedMessage = message.trim();
       const compactMatch = trimmedMessage.match(/^\/compact(?:\s+([\s\S]+))?$/i);

@@ -15,7 +15,6 @@ import {
   type InlineExtension,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { setOutputBudget } from './runtime-budgets.ts';
 import { createProviderHooks } from "./provider-hooks.ts";
 import type { ModelDefinition } from '../../shared/src/config/models.ts';
 import { buildCustomEndpointModelDef } from './custom-endpoint-models.ts';
@@ -208,7 +207,6 @@ export async function fixture(
       ],
       sessionManager: SessionManager.inMemory(root),
     }));
-    setOutputBudget(session);
     await session.bindExtensions({});
     const events: string[] = [];
     session.subscribe((e) => events.push(e.type));

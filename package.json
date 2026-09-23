@@ -123,8 +123,8 @@
     "vite": "^6.2.4"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.84.4",
-    "@earendil-works/pi-coding-agent": "0.84.4",
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.1.12",
@@ -186,8 +186,8 @@
   },
   "patchedDependencies": {
     "app-builder-lib@26.4.0": "patches/app-builder-lib@26.4.0.patch",
-    "@earendil-works/pi-ai@0.84.4": "packages/pi-agent-server/patches/@earendil-works%2Fpi-ai@0.84.4.patch",
-    "@earendil-works/pi-coding-agent@0.84.4": "packages/pi-agent-server/patches/@earendil-works%2Fpi-coding-agent@0.84.4.patch",
+    "@earendil-works/pi-ai@0.87.1": "packages/pi-agent-server/patches/@earendil-works%2Fpi-ai@0.87.1.patch",
+    "@earendil-works/pi-coding-agent@0.87.1": "packages/pi-agent-server/patches/@earendil-works%2Fpi-coding-agent@0.87.1.patch",
     "pdf-parse-tt-message-gone@1.1.2": "patches/pdf-parse-tt-message-gone@1.1.2.patch"
   }
 }

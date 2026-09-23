@@ -2,8 +2,6 @@
 // output: A custom tool and Pi lifecycle Extension that runs an isolated in-memory AgentSession and returns its result
 // pos: Built-in transient execution boundary between the parent Agent and host-governed subagents
 
-import { setOutputBudget } from './runtime-budgets.ts';
-
 import { Type } from '@sinclair/typebox';
 import {
   createAgentSession,
@@ -23,7 +21,6 @@ import {
   type PiSubagentTaskResult,
   type PiSubagentUsage,
 } from '../../shared/src/agent/backend/pi/subagent-contract.ts';
-import { createOpenAIEncryptedReasoningCompat } from './openai-encrypted-reasoning-compat.ts';
 
 const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls', 'web_search', 'web_fetch'] as const;
 const WORKSPACE_WRITE_TOOLS = [...READ_ONLY_TOOLS, 'edit', 'write', 'bash'] as const;
@@ -153,7 +150,6 @@ export function createSubagentExtension(
   const createSession = options.createSession ?? (async sessionOptions => {
     const { session } = await createAgentSession(sessionOptions);
     await session.bindExtensions({});
-    setOutputBudget(session);
     return session;
   });
   const withConcurrencySlot = createConcurrencyGate(MAX_CONCURRENT_TASKS);
@@ -220,7 +216,6 @@ export function createSubagentExtension(
             settingsManager,
             extensionFactories: [
               ...(options.createProviderHooks ? [options.createProviderHooks(() => session)] : []),
-              createOpenAIEncryptedReasoningCompat(),
               options.createSessionHooks(hookContext),
             ],
             noExtensions: true,

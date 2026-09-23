@@ -1,0 +1,190 @@
+diff --git a/dist/models.js b/dist/models.js
+--- a/dist/models.js
++++ b/dist/models.js
+@@ -375,7 +375,7 @@
+         const env = resolution.env || options?.env ? { ...(resolution.env ?? {}), ...(options?.env ?? {}) } : undefined;
+         const requestModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model;
+         const { transformHeaders: _transformHeaders, ...providerOptions } = options ?? {};
+-        const requestOptions = { ...providerOptions, apiKey, headers, env };
++        const requestOptions = { ...providerOptions, apiKey, headers, env, refreshHeaders: options?.transformHeaders ? () => options.transformHeaders(headers ?? {}) : undefined };
+         return { requestModel, requestOptions };
+     }
+     stream(model, context, options) {
+diff --git a/dist/utils/provider-retry.js b/dist/utils/provider-retry.js
+--- a/dist/utils/provider-retry.js
++++ b/dist/utils/provider-retry.js
+@@ -1,4 +1,23 @@
+ const DEFAULT_MAX_RETRY_DELAY_MS = 60_000;
++// Some SDKs (notably Google) discard HTTP headers but preserve a JSON error body.
++// Read only bounded, typed retry metadata; ordinary provider text stays opaque.
++function readRetryMetadata(error) {
++    let body = error.error;
++    if (!body || typeof body !== "object") {
++        const message = error.message;
++        // Allow the gateway's bounded 16 KiB body plus its added metadata/envelope.
++        if (typeof message !== "string" || message.length > 32_768) return {};
++        try { body = JSON.parse(message.slice(message.indexOf("{"), message.lastIndexOf("}") + 1)); }
++        catch { return {}; }
++    }
++    if (!body || typeof body !== "object" || Array.isArray(body)) return {};
++    const metadata = body.error && typeof body.error === "object" ? body.error : body;
++    return {
++        retryable: typeof metadata.retryable === "boolean" ? metadata.retryable : undefined,
++        delay: typeof metadata.retry_after_ms === "number" && Number.isFinite(metadata.retry_after_ms)
++            && metadata.retry_after_ms >= 0 ? metadata.retry_after_ms : undefined,
++    };
++}
+ function isProviderError(error) {
+     if (!(error instanceof Error) || !("status" in error) || !("headers" in error))
+         return false;
+@@ -8,10 +27,10 @@
+ /** Mirrors the pinned OpenAI/Anthropic SDK retry policy; review when either SDK is upgraded. */
+ function isRetryableProviderError(error) {
+     const shouldRetry = error.headers?.get("x-should-retry");
++    if (error.status === 401 || error.status === 403 || shouldRetry === "false" || readRetryMetadata(error).retryable === false)
++        return false;
+     if (shouldRetry === "true")
+         return true;
+-    if (shouldRetry === "false")
+-        return false;
+     if (error.status === undefined)
+         return true;
+     return (error.status === 408 ||
+@@ -21,7 +40,7 @@
+ }
+ function validateServerRetryDelayMs(delayMs, maxRetryDelayMs, providerErrorMessage) {
+     const maxDelayMs = maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
+-    if (maxDelayMs > 0 && delayMs > maxDelayMs) {
++    if (delayMs > 2_147_483_647 || (maxDelayMs > 0 && delayMs > maxDelayMs)) {
+         throw new Error(`Server requested ${Math.ceil(delayMs / 1000)}s retry delay (max: ${Math.ceil(maxDelayMs / 1000)}s). ${providerErrorMessage}`);
+     }
+     return delayMs;
+@@ -39,6 +58,8 @@
+         const delayMs = Number.isNaN(seconds) ? Date.parse(retryAfter) - Date.now() : seconds * 1000;
+         return validateServerRetryDelayMs(delayMs, maxRetryDelayMs, error.message);
+     }
++    const bodyDelay = readRetryMetadata(error).delay;
++    if (bodyDelay !== undefined) return validateServerRetryDelayMs(bodyDelay, maxRetryDelayMs, error.message);
+     const exponentialDelay = Math.min(0.5 * 2 ** retryIndex, 8) * 1000;
+     return exponentialDelay * (1 - Math.random() * 0.25);
+ }
+@@ -78,9 +99,11 @@
+     for (;;) {
+         try {
+             // Each retry is a fresh SDK request, so X-Stainless-Retry-Count remains zero.
++            if (retriesRemaining < maxRetries) await options.beforeRetry?.();
+             return await request();
+         }
+         catch (error) {
++            await options.onError?.(error);
+             if (options.signal?.aborted)
+                 throw createAbortError();
+             if (retriesRemaining <= 0 || !isProviderError(error) || !isRetryableProviderError(error))
+diff --git a/dist/utils/retry.js b/dist/utils/retry.js
+--- a/dist/utils/retry.js
++++ b/dist/utils/retry.js
+@@ -2,6 +2,10 @@
+     return new RegExp(patterns.join("|"), "i");
+ }
+ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
++    // Deterministic gateway denials take precedence over an outer 502 wrapper.
++    "upstream_auth_failed",
++    "model_not_allowed",
++    '"retryable"\\s*:\\s*false',
+     // OpenCode Go/free-tier limits returned as 429 JSON error types by OpenCode's
+     // Zen API. These are subscription/account limits, not transient throttles.
+     "GoUsageLimitError",
+diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
+--- a/dist/api/google-shared.js
++++ b/dist/api/google-shared.js
+@@ -443,6 +443,7 @@
+             throw error;
+         }
+     }, {
++        beforeRetry: options?.beforeRetry,
+         maxRetries: options?.maxRetries,
+         maxRetryDelayMs: options?.maxRetryDelayMs,
+         signal: options?.signal,
+diff --git a/dist/api/anthropic-messages.js b/dist/api/anthropic-messages.js
+--- a/dist/api/anthropic-messages.js
++++ b/dist/api/anthropic-messages.js
+@@ -391,6 +391,11 @@
+                 maxRetries: 0,
+             };
+             const response = await retryProviderRequest(() => client.beta.messages.create(params, requestOptions).asResponse(), {
++                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
++                onError: async (error) => {
++                    if (typeof error?.status === "number" && error.headers instanceof Headers)
++                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
++                },
+                 maxRetries: options?.maxRetries,
+                 maxRetryDelayMs: options?.maxRetryDelayMs,
+                 signal: options?.signal,
+diff --git a/dist/api/simple-options.js b/dist/api/simple-options.js
+--- a/dist/api/simple-options.js
++++ b/dist/api/simple-options.js
+@@ -23,6 +23,7 @@
+         cacheRetention: options?.cacheRetention,
+         sessionId: options?.sessionId,
+         headers: options?.headers,
++        refreshHeaders: options?.refreshHeaders,
+         onPayload: options?.onPayload,
+         onResponse: options?.onResponse,
+         timeoutMs: options?.timeoutMs,
+@@ -57,7 +58,7 @@
+ // Undefined means no explicit caller cap. Use the model cap and fit thinking inside it.
+ baseMaxTokens, modelMaxTokens, reasoningLevel, customBudgets) {
+     let thinkingBudget = thinkingBudgetForLevel(reasoningLevel, customBudgets);
+-    const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
++    const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens, modelMaxTokens);
+     if (maxTokens <= thinkingBudget) {
+         thinkingBudget = clampThinkingBudgetToAnswerRoom(thinkingBudget, maxTokens);
+     }
+diff --git a/dist/api/openai-responses.js b/dist/api/openai-responses.js
+--- a/dist/api/openai-responses.js
++++ b/dist/api/openai-responses.js
+@@ -120,6 +120,11 @@
+                 maxRetries: 0,
+             };
+             const { data: openaiStream, response } = await retryProviderRequest(() => client.responses.create(params, requestOptions).withResponse(), {
++                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
++                onError: async (error) => {
++                    if (typeof error?.status === "number" && error.headers instanceof Headers)
++                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
++                },
+                 maxRetries: options?.maxRetries,
+                 maxRetryDelayMs: options?.maxRetryDelayMs,
+                 signal: options?.signal,
+diff --git a/dist/api/google-generative-ai.js b/dist/api/google-generative-ai.js
+--- a/dist/api/google-generative-ai.js
++++ b/dist/api/google-generative-ai.js
+@@ -46,7 +46,13 @@
+             if (nextParams !== undefined) {
+                 params = nextParams;
+             }
+-            const googleStream = await retryGoogleRequest(() => client.models.generateContentStream(params), options);
++            const googleStream = await retryGoogleRequest(() => client.models.generateContentStream(params), {
++                ...options,
++                beforeRetry: async () => {
++                    const headers = await options?.refreshHeaders?.();
++                    if (headers) params.config = { ...params.config, httpOptions: { ...params.config?.httpOptions, headers: providerHeadersToRecord(headers) } };
++                },
++            });
+             stream.push({ type: "start", partial: output });
+             let currentBlock = null;
+             const blocks = output.content;
+diff --git a/dist/api/openai-completions.js b/dist/api/openai-completions.js
+--- a/dist/api/openai-completions.js
++++ b/dist/api/openai-completions.js
+@@ -195,6 +195,11 @@
+                 maxRetries: 0,
+             };
+             const { data: openaiStream, response } = await retryProviderRequest(() => client.chat.completions.create(params, requestOptions).withResponse(), {
++                beforeRetry: async () => { requestOptions.headers = await options?.refreshHeaders?.(); },
++                onError: async (error) => {
++                    if (typeof error?.status === "number" && error.headers instanceof Headers)
++                        await options?.onResponse?.({ status: error.status, headers: headersToRecord(error.headers) }, model);
++                },
+                 maxRetries: options?.maxRetries,
+                 maxRetryDelayMs: options?.maxRetryDelayMs,
+                 signal: options?.signal,

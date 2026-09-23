@@ -1,8 +1,7 @@
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159ce3e151b9 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -102,6 +102,9 @@ export class AgentSession {
+@@ -103,6 +103,9 @@
      // Retry state
      _retryAbortController = undefined;
      _retryAttempt = 0;
@@ -12,8 +11,8 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
      // Bash execution state
      _bashAbortControllers = new Set();
      _pendingBashMessages = [];
-@@ -137,6 +140,16 @@ export class AgentSession {
-     _systemPromptOverride;
+@@ -147,6 +150,16 @@
+     _runSystemPromptOptions;
      constructor(config) {
          this.agent = config.agent;
 +        const onPayload = this.agent.onPayload;
@@ -29,47 +28,38 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
          this.sessionManager = config.sessionManager;
          this.settingsManager = config.settingsManager;
          this._scopedModels = config.scopedModels ?? [];
-@@ -582,6 +595,7 @@ export class AgentSession {
+@@ -820,6 +833,8 @@
       * Call this when completely done with the session.
       */
      dispose() {
 +        this._abortRevision++;
++        this._agentRunAbortRequested = true;
          try {
              this.abortRetry();
              this.abortCompaction();
-@@ -769,15 +783,21 @@ export class AgentSession {
+@@ -1075,10 +1090,11 @@
      // =========================================================================
      // Prompting
      // =========================================================================
 -    async _runAgentPrompt(messages) {
+-        this._agentRunAbortRequested = false;
 +    async _runAgentPrompt(messages, abortRevision = this._abortRevision) {
++        this._agentRunAbortRequested = abortRevision !== this._abortRevision;
          this._isAgentRunActive = true;
          try {
-+            if (abortRevision !== this._abortRevision) return;
++            if (this._agentRunAbortRequested) return;
              await this.agent.prompt(messages);
--            while (await this._handlePostAgentRun()) {
-+            while (abortRevision === this._abortRevision && await this._handlePostAgentRun()) {
-+                if (abortRevision !== this._abortRevision) break;
-                 await this.agent.continue();
-             }
-         }
-         finally {
-+            if (abortRevision !== this._abortRevision && this._retryAttempt > 0) {
-+                this._emit({ type: "auto_retry_end", success: false, attempt: this._retryAttempt, finalError: "Retry cancelled" });
-+                this._retryAttempt = 0;
-+            }
-             this._systemPromptOverride = undefined;
-             this._flushPendingBashMessages();
-             this._flushPendingCustomMessages();
-@@ -819,6 +839,7 @@ export class AgentSession {
+             while (!this._agentRunAbortRequested) {
+                 if (await this._handlePostAgentRun()) {
+@@ -1205,6 +1221,7 @@
       * @throws Error if no model selected or no API key available (when not streaming)
       */
      async prompt(text, options) {
 +        const abortRevision = this._abortRevision;
-         const expandPromptTemplates = options?.expandPromptTemplates ?? true;
-         const preflightResult = options?.preflightResult;
-         let messages;
-@@ -946,7 +967,7 @@ export class AgentSession {
+         if (this._isEmittingAgentSettled) {
+             this._deferredSettledActions.push(async () => await this.prompt(text, options));
+             return;
+@@ -1328,7 +1345,7 @@
              return;
          }
          preflightResult?.(true);
@@ -78,15 +68,15 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
      }
      /**
       * Try to execute an extension command. Returns true if command was found and executed.
-@@ -1220,6 +1241,7 @@ export class AgentSession {
+@@ -1606,6 +1623,7 @@
       * Abort current operation and wait for agent to become idle.
       */
      async abort() {
 +        this._abortRevision++;
-         this.abortRetry();
-         this.agent.abort();
-         await this.waitForIdle();
-@@ -1250,9 +1272,11 @@ export class AgentSession {
+         if (this._isAgentRunActive) {
+             this._agentRunAbortRequested = true;
+         }
+@@ -1643,9 +1661,11 @@
       * @throws Error if no auth is configured for the model
       */
      async setModel(model, options = {}) {
@@ -98,48 +88,45 @@ index fd82b71cf332715f185d07459429f04ed7491ce9..18b89a316fc0a94078359423f792159c
          const previousModel = this.model;
          const thinkingLevel = this._getThinkingLevelForModelSwitch(model);
          this.agent.state.model = model;
-@@ -2239,6 +2263,10 @@ export class AgentSession {
+@@ -2632,6 +2652,9 @@
       * Context overflow errors are NOT retryable (handled by compaction instead).
       */
      _isRetryableError(message) {
-+        // Preserve provider rejection semantics before the generic 5xx classifier.
 +        const response = this._providerResponse;
 +        if (response?.status === 401 || response?.status === 403 ||
 +            response?.headers?.["x-should-retry"] === "false") return false;
          // Context overflow is handled by compaction, not retry.
          if (isContextOverflow(message, this.model?.contextWindow ?? 0))
              return false;
-@@ -2287,7 +2315,14 @@ export class AgentSession {
+@@ -2692,7 +2715,13 @@
              this._retryAttempt--;
              return false;
          }
--        const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
+-        const delayMs = retryDelayMs(settings, this._retryAttempt);
 +        const retryAfter = this._providerResponse?.headers?.["retry-after"];
 +        const seconds = retryAfter && /^\d+(?:\.\d+)?$/.test(retryAfter) ? Number(retryAfter) : NaN;
 +        const providerDelay = Number.isFinite(seconds) ? seconds * 1000 : Math.max(0, Date.parse(retryAfter ?? "") - Date.now());
 +        const gatewayDelay = Number(/"retry_after_ms"\s*:\s*(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/.exec(message.errorMessage ?? "")?.[1] ?? 0);
-+        const delayMs = Math.max(settings.baseDelayMs * 2 ** (this._retryAttempt - 1), Number.isFinite(providerDelay) ? providerDelay : 0, gatewayDelay);
-+        // setTimeout overflows above int32; fail closed rather than retrying early.
++        const delayMs = Math.max(retryDelayMs(settings, this._retryAttempt), Number.isFinite(providerDelay) ? providerDelay : 0, gatewayDelay);
 +        if (delayMs > 2147483647) return false;
 +        this._retryAbortController = new AbortController();
          this._emit({
              type: "auto_retry_start",
              attempt: this._retryAttempt,
-@@ -2300,8 +2335,7 @@ export class AgentSession {
-         if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
-             this.agent.state.messages = messages.slice(0, -1);
-         }
+@@ -2702,8 +2731,7 @@
+         });
+         // Keep the failed attempt in raw history while durably omitting it from model projection.
+         this._omitRecoveryAttempt(message);
 -        // Wait with exponential backoff (abortable)
 -        this._retryAbortController = new AbortController();
-+        // Wait with exponential backoff (abortable, including synchronous event callbacks)
++        // The controller also covers cancellation inside auto_retry_start callbacks.
          try {
              await sleep(delayMs, this._retryAbortController.signal);
          }
 diff --git a/dist/core/compaction/compaction.d.ts b/dist/core/compaction/compaction.d.ts
-index 6f867f98bac5a371ca2bfbe0a9db6344e1a42b3f..94e87cb231c259ea0840fa101b6be55b8a6ed988 100644
 --- a/dist/core/compaction/compaction.d.ts
 +++ b/dist/core/compaction/compaction.d.ts
-@@ -26,6 +26,7 @@ export interface CompactionResult<T = unknown> {
+@@ -26,6 +26,7 @@
      details?: T;
  }
  export interface CompactionSettings {
@@ -148,25 +135,35 @@ index 6f867f98bac5a371ca2bfbe0a9db6344e1a42b3f..94e87cb231c259ea0840fa101b6be55b
      reserveTokens: number;
      keepRecentTokens: number;
 diff --git a/dist/core/compaction/compaction.js b/dist/core/compaction/compaction.js
-index e936db7dc2617b5c0ff43ea11942c5a79b672dc6..e5ef9bd4eee47ae863eb8423c57b58a90b28ea07 100644
 --- a/dist/core/compaction/compaction.js
 +++ b/dist/core/compaction/compaction.js
-@@ -608,6 +608,10 @@ Be concise. Focus on what's needed to understand the kept suffix.`;
+@@ -5,7 +5,7 @@
+  * and after compaction the session is reloaded.
+  */
+ import { contentText, getCurrentSystemMessage, normalizeContext, retryAssistantCall, uuidv7, } from "@earendil-works/pi-ai";
+-import { completeSimple } from "@earendil-works/pi-ai/compat";
++import { completeSimple, streamSimple } from "@earendil-works/pi-ai/compat";
+ import { convertToLlm } from "../messages.js";
+ import { buildSessionProjection, sessionEntryToContextMessages, } from "../session-manager.js";
+ import { computeFileLists, createFileOps, extractFileOpsFromMessage, formatFileOperations, SUMMARIZATION_SYSTEM_PROMPT, serializeConversation, } from "./utils.js";
+@@ -705,6 +705,13 @@
   */
  export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel, streamFn, env, retry, callbacks, sessionId) {
      const { firstKeptEntryId, messagesToSummarize, turnPrefixMessages, isSplitTurn, tokensBefore, previousSummary, fileOps, settings, } = preparation;
-+    // Product reserve space must not implicitly enlarge summary output.
++    // Preserve explicit caller limits without changing model capability or native defaults.
 +    if (Number.isFinite(settings.maxSummaryTokens) && settings.maxSummaryTokens > 0) {
-+        model = { ...model, maxTokens: Math.min(model.maxTokens > 0 ? model.maxTokens : Infinity, settings.maxSummaryTokens) };
++        const stream = streamFn ?? streamSimple;
++        streamFn = (model, context, options) => stream(model, context, {
++            ...options, maxTokens: Math.min(options?.maxTokens ?? Infinity, settings.maxSummaryTokens),
++        });
 +    }
      // Generate summaries and merge into one
      let summary;
      let summaryUsage;
 diff --git a/dist/core/model-runtime.js b/dist/core/model-runtime.js
-index 7d93ba62bdb5d47e129751e8075cbb34620322ad..d089d3fb0819c7992f3a3680718527f5f1fd25e5 100644
 --- a/dist/core/model-runtime.js
 +++ b/dist/core/model-runtime.js
-@@ -435,6 +435,7 @@ export class ModelRuntime {
+@@ -435,6 +435,7 @@
          let headers = mergeHeaders(resolution.auth.headers, providerOptions.headers);
          if (transformHeaders)
              headers = await transformHeaders(headers ?? {});
@@ -175,35 +172,33 @@ index 7d93ba62bdb5d47e129751e8075cbb34620322ad..d089d3fb0819c7992f3a3680718527f5
              ? { ...(resolution.env ?? {}), ...(providerOptions.env ?? {}) }
              : undefined;
 diff --git a/dist/core/settings-manager.d.ts b/dist/core/settings-manager.d.ts
-index f93ac1aa9f8f45977863021c4ea3a486ecb489ab..4136cc6da637803ffaa49a6c49ac36dd2adbe254 100644
 --- a/dist/core/settings-manager.d.ts
 +++ b/dist/core/settings-manager.d.ts
-@@ -2,6 +2,8 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
- import type { Transport } from "@earendil-works/pi-ai";
- import type { TuiMode as RendererTuiMode, ScrollViewScrollbar, TerminalCapabilities } from "@earendil-works/pi-tui";
+@@ -6,6 +6,8 @@
+     keepRecentTokens?: number;
+ }
  export interface CompactionSettings {
-+    /** Independent summary output budget, capped by model capability. */
++    /** Explicit summary output cap; absent uses native defaults. */
 +    maxSummaryTokens?: number;
      enabled?: boolean;
      reserveTokens?: number;
      keepRecentTokens?: number;
-@@ -221,6 +223,7 @@ export declare class SettingsManager {
-     getCompactionReserveTokens(): number;
-     getCompactionKeepRecentTokens(): number;
-     getCompactionSettings(): {
+@@ -233,6 +235,7 @@
+     getCompactionKeepRecentTokens(model?: Pick<Model<string>, "provider" | "id">): number;
+     /** Resolve each token setting through model override, ordinary setting, then built-in default. */
+     getCompactionSettings(model?: Pick<Model<string>, "provider" | "id">): {
 +        maxSummaryTokens?: number;
          enabled: boolean;
          reserveTokens: number;
          keepRecentTokens: number;
 diff --git a/dist/core/settings-manager.js b/dist/core/settings-manager.js
-index f0f936eb01afe5d158f1834c5e40421e36af0d24..4c423c80537c77c77b4a632dc3a39f715481120d 100644
 --- a/dist/core/settings-manager.js
 +++ b/dist/core/settings-manager.js
-@@ -564,6 +564,7 @@ export class SettingsManager {
-     }
-     getCompactionSettings() {
+@@ -589,6 +589,7 @@
+     /** Resolve each token setting through model override, ordinary setting, then built-in default. */
+     getCompactionSettings(model) {
          return {
 +            maxSummaryTokens: this.settings.compaction?.maxSummaryTokens,
              enabled: this.getCompactionEnabled(),
-             reserveTokens: this.getCompactionReserveTokens(),
-             keepRecentTokens: this.getCompactionKeepRecentTokens(),
+             reserveTokens: this.getCompactionReserveTokens(model),
+             keepRecentTokens: this.getCompactionKeepRecentTokens(model),

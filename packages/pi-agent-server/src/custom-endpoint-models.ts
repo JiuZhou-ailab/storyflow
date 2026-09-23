@@ -123,7 +123,7 @@ export function buildCustomEndpointModelDef(
     input,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: overrides?.contextWindow ?? 131_072,
-    // Request budgets are applied separately through Pi's public stream function.
+    // Pi uses trusted model capacity by default; unknown custom models stay conservative.
     maxTokens: overrides?.fallbackCapabilities?.maxOutputTokens ?? 8_192,
   }
 }

@@ -392,6 +392,18 @@ describe("createProjectResourceLoader", () => {
     ).toEqual(["custom-npm"]);
   });
 
+  it("keeps native compaction defaults across resource reload without writing product budgets", async () => {
+    const { SettingsManager } = await import('@earendil-works/pi-coding-agent');
+    const { settingsManager, resourceLoader } = await createProjectResourceLoader({
+      cwd: createRoot(), globalRoot: createRoot(), agentDir: join(createRoot(), 'agent'),
+    });
+    const native = SettingsManager.inMemory().getCompactionSettings();
+    expect(settingsManager.getCompactionSettings()).toEqual(native);
+    await resourceLoader.reload();
+    expect(settingsManager.getCompactionSettings()).toEqual(native);
+    expect(settingsManager.getGlobalSettings().compaction).toBeUndefined();
+  });
+
   it("leaves retry policy to Pi settings", async () => {
     const { settingsManager } = await createProjectResourceLoader({
       cwd: createRoot(),
@@ -399,7 +411,7 @@ describe("createProjectResourceLoader", () => {
       agentDir: join(createRoot(), "agent"),
     });
 
-    expect(settingsManager.getRetrySettings()).toEqual({
+    expect(settingsManager.getRetrySettings()).toMatchObject({
       enabled: true,
       maxRetries: 3,
       baseDelayMs: 2_000,

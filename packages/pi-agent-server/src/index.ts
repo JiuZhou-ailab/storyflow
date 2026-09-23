@@ -74,10 +74,6 @@ import { createPrimaryPiSession } from './primary-session.ts';
 import { createPiToolRuntime } from './pi-tool-runtime.ts';
 import { installNetworkProxy } from './network-proxy.ts';
 import {
-  sanitizeAssistantMessageForResume,
-  type PiSessionSanitizeResult,
-} from './pi-session-sanitizer.ts';
-import {
   createPromptAttemptState,
   routePromptAttemptEvent,
   type PromptAttemptState,
@@ -131,14 +127,6 @@ function send(msg: PiOutboundMessage): void {
 function debugLog(message: string): void {
   // Write debug messages to stderr so they don't interfere with JSONL protocol
   process.stderr.write(`[pi-server] ${message}\n`);
-}
-
-function logSanitizeResult(scope: string, result: PiSessionSanitizeResult): void {
-  if (!result.changed) return;
-  debugLog(
-    `${scope}: removed ${result.removedToolCalls} incomplete tool call(s), ` +
-    `normalized ${result.normalizedToolCalls} tool call(s)`,
-  );
 }
 
 // ============================================================
@@ -286,10 +274,6 @@ function forwardSessionEvent(event: AgentSessionEvent): void {
         `cache_hit_rate=${cacheHitRate.toFixed(4)}`,
       );
 
-      logSanitizeResult(
-        'Sanitized assistant message before Pi persistence',
-        sanitizeAssistantMessageForResume(event.message),
-      );
 
       const sdkTurnAnchor = piSession.sessionManager.getLeafId();
       const contextWindow = piSession.agent.state.model?.contextWindow;

@@ -17,17 +17,17 @@ const protocols = [
 ] as const;
 
 for (const [api, models] of protocols) {
-  test(`${api} product catalog actually qualifies A,A,B without raising the output budget`, async () => {
+  test(`${api} product catalog qualifies A,A,B with each model's native output capacity`, async () => {
     await fixture(async ({ session, requests }) => {
       await session.prompt('test');
       await session.waitForIdle();
       expect(requests.map(request => request.model)).toEqual([models[0], models[0], models[1]]);
       expect(session.getLastAssistantText()).toBe('OK');
       expect(session.model?.maxTokens).toBe(cloneManagedModelCatalog(api).find(model => model.id === session.model?.id)!.fallbackCapabilities!.maxOutputTokens);
-      for (const { body } of requests) {
+      for (const { body, model } of requests) {
         const budget = body.max_tokens ?? body.max_completion_tokens ?? body.max_output_tokens
           ?? (body.generationConfig as { maxOutputTokens?: number } | undefined)?.maxOutputTokens;
-        expect(budget).toBe(8192);
+        expect(budget).toBe(cloneManagedModelCatalog(api).find(entry => entry.id === model)!.fallbackCapabilities!.maxOutputTokens);
       }
     }, (model, index) => index < 3 ? Response.json({ error: { message: '503 unavailable' } }, { status: 503 })
       : protocolCompletion(api, model), undefined,

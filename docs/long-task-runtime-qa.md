@@ -6,6 +6,10 @@ These initial budgets are not a measured optimum for creative quality.
 
 ## Runtime choices
 
+Parent and subagent sessions use Pi's native output limits: model capacity,
+remaining context and explicit caller settings. There is no Storyflow-wide
+8192-token cap. The following budgets apply only to the dedicated `call_llm` tool.
+
 | Call | Output tokens | Thinking | Deadline |
 | --- | --- | --- | --- |
 | Ordinary call_llm | 8,192 | medium | 120 seconds |
@@ -14,10 +18,10 @@ These initial budgets are not a measured optimum for creative quality.
 
 Registered model capacity is separate from request budget. Unknown custom output
 capacity remains 8,192. Existing explicit user thinking choices remain unchanged.
-Main-session compaction targets 80% of runtime contextWindow and keeps 32,000 recent
-tokens, capped at half the target for small windows. Native explicit settings win,
-including disabled compaction. `compaction.maxSummaryTokens` independently limits
-native summary generation (product default 8,192, capped by model capacity).
+Main-session compaction uses Pi 0.87.1 native defaults, including summary capacity.
+Explicit user settings (including disabled compaction) survive model changes and
+reload. Spec #48 retires the initial 80% / 32k / 8192 compaction policy, not the
+explicit summary/call_llm budgets or output-integrity contract.
 
 `call_llm.outputPath` names a new file in an existing directory. The Host checks
 write permissions and conflicts before inference. Safe mode rejects file output.
@@ -59,11 +63,13 @@ Use a development build with a loopback Provider; do not run a production novel.
 
 1. Load a long conversation, observe compacting status, then the native completion
    and updated context estimate. Switch window sizes and reload resources; verify
-   computed reserve changes and explicit disabled settings survive. Compare the
+   native defaults and explicit disabled settings survive. Compare the
    original Source Document and Pi history files before and after compaction.
 2. Return a normal response, partial text with `length`, and thinking-only `length`.
    Confirm partial content is retained with an incomplete error, and a native
-   recovered response does not produce an early incomplete error. Inspect actual
+   recovered response does not produce an early incomplete error. With a model
+   whose output capacity exceeds 8192, verify parent and child requests use that
+   capacity when context permits. Inspect actual
    model/stopReason in Boundary Protocol diagnostics.
 3. Generate a new output file with `call_llm`. Open its reference and compare exact
    bytes. Repeat with an existing target, safe mode and denied permission; verify

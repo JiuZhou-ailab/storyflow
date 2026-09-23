@@ -1,5 +1,5 @@
 // input: Canonical compiled server, clean cwd, conflicting global Extension and loopback Provider
-// output: Proof that embedded subagents execute tools without a Pi CLI or adjacent theme assets
+// output: Proof that parent/child requests use model capacity and embedded subagents execute tools without a Pi CLI
 // pos: Release smoke for the Storyflow subprocess boundary
 import { expect, test } from 'bun:test';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -10,6 +10,7 @@ import { getPiAgentServerCompileArgs } from '../../../scripts/build/pi-agent-ser
 test.each(['stop', 'length'])('compiled server executes its own subagent with global name collision and no CLI (%s)', async childStopReason => {
   const root = await mkdtemp(join(tmpdir(), 'storyflow-binary-'));
   const requests: any[] = [];
+  const maxOutputTokens = 32768;
   let child: ReturnType<typeof Bun.spawn> | undefined;
   let stderr = '';
   const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
@@ -24,7 +25,8 @@ test.each(['stop', 'length'])('compiled server executes its own subagent with gl
       function: { name: call.name, arguments: JSON.stringify(call.arguments) } }] };
     const chunks = [{ choices: [{ index: 0, delta: { role: 'assistant', ...delta }, finish_reason: null }] },
       { choices: [{ index: 0, delta: {}, finish_reason: hasResult ? (delegated ? childStopReason : 'stop') : 'tool_calls' }],
-        usage: { prompt_tokens: 10, completion_tokens: childStopReason === 'length' && delegated ? 8192 : 1, total_tokens: 8202 } }];
+        usage: { prompt_tokens: 10, completion_tokens: childStopReason === 'length' && delegated ? maxOutputTokens : 1,
+          total_tokens: 10 + (childStopReason === 'length' && delegated ? maxOutputTokens : 1) } }];
     return new Response(chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
   } });
   try {
@@ -73,7 +75,9 @@ test.each(['stop', 'length'])('compiled server executes its own subagent with gl
       thinkingLevel: 'medium', workspaceRootPath: root, workingDirectory: root, agentDir,
       sessionId: 'smoke', sessionPath: '', plansFolderPath: join(root, 'plans'),
       baseUrl: `http://127.0.0.1:${server.port}/v1`, customEndpoint: { api: 'openai-completions' },
-      customModels: [{ id: 'fixture', contextWindow: 131072 }], piAuth: { provider: 'openai', credential: { type: 'api_key', key: 'loopback-only' } } });
+      customModels: [{ id: 'fixture', contextWindow: 131072,
+        fallbackCapabilities: { maxOutputTokens, tools: true, structuredOutput: 'prompt' } }],
+      piAuth: { provider: 'openai', credential: { type: 'api_key', key: 'loopback-only' } } });
     let timer: ReturnType<typeof setTimeout>;
     try { await Promise.race([read, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Binary smoke timed out')), 30000); })]); }
     finally { clearTimeout(timer!); }
@@ -81,6 +85,7 @@ test.each(['stop', 'length'])('compiled server executes its own subagent with gl
     expect(tools.find((tool: any) => tool.name === 'subagent').parameters.properties.capability).toBeDefined();
     expect(tools.some((tool: any) => tool.name === 'non_conflicting')).toBe(true);
     expect(requests).toHaveLength(4);
+    for (const request of requests) expect(request.max_tokens ?? request.max_completion_tokens).toBe(maxOutputTokens);
     expect(JSON.stringify(requests)).toContain('EXACT SOURCE BYTES');
     expect(events.some(event => event.type === 'event' && event.event.type === 'tool_execution_end' && event.event.toolName === 'subagent' && event.event.isError === (childStopReason === 'length'))).toBe(true);
     child.kill(); await child.exited; await stderrRead;

@@ -37,6 +37,25 @@ function captureSuccessfulCredentialUpdate(agent: PiAgent, sent: unknown[]): voi
 }
 
 describe('PiAgent subprocess error handling', () => {
+  it('preserves the session identity and history when subprocess startup fails', async () => {
+    let cleared = 0
+    let recoveryReads = 0
+    const config = createConfig({
+      onSdkSessionIdCleared: () => { cleared++ },
+      getRecoveryMessages: () => { recoveryReads++; return [] },
+    })
+    config.session!.sdkSessionId = 'durable-pi-session'
+    const agent = new PiAgent(config)
+    try {
+      const events = []
+      for await (const event of agent.chat('continue')) events.push(event)
+      expect(events.some(event => event.type === 'error' || event.type === 'typed_error')).toBe(true)
+      expect(agent.getSessionId()).toBe('durable-pi-session')
+      expect(cleared).toBe(0)
+      expect(recoveryReads).toBe(0)
+    } finally { agent.destroy() }
+  })
+
   it('stays busy after host abort until Pi reports native settlement', async () => {
     const agent = new PiAgent(createConfig())
     ;(agent as any).ensureSubprocess = async () => {}

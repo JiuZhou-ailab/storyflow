@@ -2,7 +2,7 @@
 
 状态：Accepted
 日期：2026-08-04
-修订：2026-08-16、2026-08-31
+修订：2026-08-16、2026-08-31、2026-09-23
 
 ## 背景
 
@@ -120,16 +120,30 @@ Session 回归测试见 `packages/pi-agent-server/patches/README.md`。
 
 ## 长任务预算与结果契约（#43）
 
-Storyflow 通过公开 SettingsManager 临时覆盖缺省压缩预算：当前窗口 80% 阈值、
-32,000 近期 tokens（小窗口不超过目标一半），用户原生显式选择优先。模型切换和
-资源刷新后重新解析，不把计算结果写入全局偏好。摘要输出上限独立为 8,192，
-由版本固定 SDK 补丁的公开设置表达，退出条件见 patches/README.md。
+Pi 0.87.1 的原生压缩阈值、近期窗口和摘要预算作为缺省；用户显式 settings
+继续优先。#48 退役 #43 的 80% / 32,000 / 8,192 压缩默认值；maxSummaryTokens
+仅保留用户已显式设置的上限，不提供产品缺省。主会话和 Subagent Run 使用真实模型能力与 Pi 原生输出策略；call_llm
+保留普通 8,192、longOutput 16,384 及显式最高 32,768 的公开业务预算。
+显式 maxTokens 必须包含 thinking，不能被底层适配器额外放大。
 
-模型能力声明保留真实上限；单次输出预算使用公开 Agent.streamFunction 的 options，
-普通缺省 8,192，显式长查询 16,384，可显式选 32,768。临时查询自行拥有 deadline，
+临时查询自行拥有 deadline，
 Host 不设第二套倒计时。完成状态投影为 completed/incomplete/failed/cancelled，
 长度终态和无正文结果不作为成功；主会话仅在 agent_settled 后投影最终完整性。
 
 call_llm 文件交付仍由 Product Host 拥有权限与 create-only 发布；推理前检查权限、
 路径和目标存在性，生成完整后原子发布。原文及生成正文的工具输出不得被有损摘要替代，
 超限时返回完整文件引用和明确 preview；日志仍可摘要并保留原件。
+
+
+## 原生历史与升级边界（#48）
+
+常规启动和事件转发不再清理 JSONL 或修改 assistant 错误文本。已有产品会话
+显式打开原文件，让 Pi 校验、恢复和投影；无法识别的非空文件明确失败，不能
+通过跳过损坏文件新建会话。Pi 对尾部记录的原生读取行为仍属于上游契约。
+普通子进程启动失败保留指针和原始历史；只有上述旧 runtime 的显式迁移可播种
+产品消息，不能将其描述为无损恢复。context_edit 是追加的上下文投影，不删除原文。
+
+本次使用稳定 AgentSession，不启用 experimental harness。cache warming 通过
+官方 cache_warming_decision 返回 stop，主会话、临时查询和子任务均适用，不修改
+用户 Pi CLI 全局设置。托管拒绝、等待、取消、关联与显式预算的必要临时补丁及
+退出条件记录于 patches/README.md；桌面发布和备份回滚步骤见 pi-native-upgrade-qa.md。

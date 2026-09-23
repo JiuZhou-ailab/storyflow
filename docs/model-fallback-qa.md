@@ -28,8 +28,9 @@ A route that changes model identity/limits must update its declaration or be
 excluded. `structuredOutput: prompt` records Storyflow's existing prompt-based
 schema path; it does not enable native strict-schema mode.
 
-The runtime's 8192-token default request budget remains separate from the
-capability ceiling. Adding metadata must not increase token budgets or spend.
+Parent and subagent requests follow Pi's native model output capacity and
+remaining-context limits, including after fallback. Storyflow adds no global
+8192-token cap. Explicit per-call budgets (such as `call_llm`) remain separate.
 
 ## Automated checks
 

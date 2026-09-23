@@ -12,7 +12,6 @@ import {
   type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
 
-import { applyCompactionDefaults } from './runtime-budgets.ts';
 import { resolveResourceRoots } from "../../shared/src/resources/resolver.ts";
 
 export const DEFAULT_PI_PACKAGE_SOURCES = [] as const;
@@ -24,7 +23,6 @@ const DISABLED_PI_PACKAGE_SOURCES = new Set(["npm:@ayulab/pi-rewind"]);
 export interface ProjectResourceLoaderOptions {
   cwd: string;
   contextRoot?: string;
-  getContextWindow?: () => number | undefined;
   globalRoot?: string;
   agentDir: string;
   extensionFactories?: InlineExtension[];
@@ -172,7 +170,6 @@ export async function createProjectResourceLoader(
     async reload(reloadOptions?): Promise<void> {
       await skillLoader.reload();
       await inner.reload(reloadOptions);
-      applyCompactionDefaults(settingsManager, options.getContextWindow?.());
       settingsManager.applyOverrides({
         enableSkillCommands: true,
       });

@@ -483,25 +483,9 @@ export abstract class PiAgentHost {
   // Session Recovery (unified across backends)
   // ============================================================
 
-  /**
-   * Build recovery context from previous messages when session resume fails.
-   * Called when we detect an empty response or thread not found during resume.
-   * Injects previous conversation context so the agent can continue naturally.
-   *
-   * @returns Formatted string to prepend to the user message, or null if no context available.
-   */
+  /** Seed only an explicitly requested legacy runtime migration. */
   protected buildRecoveryContext(): string | null {
     return this.promptBuilder.buildRecoveryContext(this.config.getRecoveryMessages?.());
-  }
-
-  /**
-   * Build one-time branch seed context for sessions branched from an earlier message.
-   * Ensures the first turn in the new branch only sees transcript up to the selected branch point.
-   */
-  /** Clear session ID and notify callbacks when resume must start fresh. */
-  protected clearSessionForRecovery(): void {
-    this.config.onSdkSessionIdCleared?.();
-    this.debug('Session cleared for recovery');
   }
 
   // ============================================================

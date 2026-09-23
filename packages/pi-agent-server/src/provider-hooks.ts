@@ -1,5 +1,5 @@
 // input: Pi-native provider lifecycle events and Storyflow provider settings.
-// output: Anthropic headers, stable logical-call correlation, stream diagnostics and managed selection.
+// output: Provider headers, correlation, diagnostics, managed selection and disabled cache warming.
 // pos: Narrow provider extension below session orchestration and above Pi transports.
 
 import type { InlineExtension } from '@earendil-works/pi-coding-agent';
@@ -25,6 +25,7 @@ export function createProviderHooks(options: { enable1MContext: boolean; fallbac
   return {
     name: 'storyflow-provider-hooks',
     factory(pi) {
+      pi.on('cache_warming_decision', () => ({ action: 'stop' }));
       let activeModelCall: { id: string; attempt: number; requestedModel?: string; startedAt: number; firstContent: boolean } | undefined;
 
       let requestedModel: string | undefined;

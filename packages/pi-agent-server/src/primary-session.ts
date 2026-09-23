@@ -2,8 +2,6 @@
 // output: One fully bound primary Pi AgentSession plus its system-prompt projection
 // pos: Pi SDK session construction boundary, separate from JSONL command dispatch
 
-import { createBudgetHooks, applyCompactionDefaults, setOutputBudget } from './runtime-budgets.ts';
-
 import { join } from "node:path";
 import { mkdirSync, readdirSync, statSync, existsSync } from "node:fs";
 import {
@@ -32,16 +30,11 @@ import { createProjectResourceLoader } from "./project-resource-loader.ts";
 import { createExtensionUIContext } from "./extension-ui.ts";
 import { createSystemPromptOverride } from "./system-prompt-override.ts";
 import { createProviderHooks } from "./provider-hooks.ts";
-import { createOpenAIEncryptedReasoningCompat } from "./openai-encrypted-reasoning-compat.ts";
 import { findProductRewindBoundary } from "./product-rewind.ts";
 import {
   createSubagentExtension,
   type SubagentHookContext,
 } from "./subagent-tool.ts";
-import {
-  sanitizeSessionFileForResume,
-  type PiSessionSanitizeResult,
-} from "./pi-session-sanitizer.ts";
 import { resolvePiModel } from "./model-resolution.ts";
 import type { createToolHooks } from "./tool-hooks.ts";
 
@@ -86,17 +79,6 @@ function findMostRecentSessionFile(sessionDir: string): string | null {
     if (!best || mtime > best.mtime) best = { path: fullPath, mtime };
   }
   return best?.path ?? null;
-}
-
-function logSanitizeResult(
-  debug: (message: string) => void,
-  scope: string,
-  result: PiSessionSanitizeResult,
-): void {
-  if (!result.changed) return;
-  debug(
-    `${scope}: removed ${result.removedToolCalls} incomplete tool call(s), normalized ${result.normalizedToolCalls} tool call(s)`,
-  );
 }
 
 export async function createPrimaryPiSession(
@@ -210,14 +192,11 @@ export async function createPrimaryPiSession(
     {
       cwd,
       contextRoot: config.projectRoot,
-      getContextWindow: () => activeSession?.model?.contextWindow,
       agentDir,
       systemPromptOverride: systemPromptOverride.overrideResourcePrompt,
       extensionFactories: [
         systemPromptOverride.extension,
         providerHooks,
-        createBudgetHooks(() => activeSession),
-        createOpenAIEncryptedReasoningCompat(),
         toolHooks,
         subagentExtension,
       ],
@@ -253,8 +232,8 @@ export async function createPrimaryPiSession(
   if (config.sessionPath) {
     // Session resume: use a per-Craft-session directory so the Pi SDK can
     // persist and resume its own session across subprocess restarts.
-    // continueRecent() loads the existing session if one exists, otherwise
-    // creates a new one — so this handles both first-run and resume.
+    // Open the existing file explicitly: continueRecent skips damaged headers
+    // and could silently replace a product conversation with an empty session.
     const sessionDir = join(config.sessionPath, ".pi-sessions");
     mkdirSync(sessionDir, { recursive: true });
 
@@ -273,11 +252,6 @@ export async function createPrimaryPiSession(
       }
 
       debugLog(`Forking Pi session from parent: ${parentPiSessionFile}`);
-      logSanitizeResult(
-        debugLog,
-        `Sanitized parent Pi session before fork (${parentPiSessionFile})`,
-        sanitizeSessionFileForResume(parentPiSessionFile),
-      );
       const forkedSessionManager = PiSessionManager.forkFrom(
         parentPiSessionFile,
         cwd,
@@ -300,18 +274,13 @@ export async function createPrimaryPiSession(
 
       sessionOptions.sessionManager = forkedSessionManager;
     } else {
-      const recentPiSessionFile = findMostRecentSessionFile(sessionDir);
-      if (recentPiSessionFile) {
-        logSanitizeResult(
-          debugLog,
-          `Sanitized Pi session before resume (${recentPiSessionFile})`,
-          sanitizeSessionFileForResume(recentPiSessionFile),
-        );
+      const existingFile = findMostRecentSessionFile(sessionDir);
+      if (existingFile && statSync(existingFile).size === 0) {
+        throw new Error(`Pi resume failed: empty history file: ${existingFile}`);
       }
-      sessionOptions.sessionManager = PiSessionManager.continueRecent(
-        cwd,
-        sessionDir,
-      );
+      sessionOptions.sessionManager = existingFile
+        ? PiSessionManager.open(existingFile, sessionDir, cwd)
+        : PiSessionManager.create(cwd, sessionDir);
     }
   }
 
@@ -349,8 +318,6 @@ export async function createPrimaryPiSession(
   // Create the session with Pi-native tools plus explicit Product Host capabilities.
   const { session } = await createAgentSession(sessionOptions);
   activeSession = session;
-  applyCompactionDefaults(settingsManager, session.model?.contextWindow);
-  setOutputBudget(session);
 
   const notifyExtension = (
     message: string,

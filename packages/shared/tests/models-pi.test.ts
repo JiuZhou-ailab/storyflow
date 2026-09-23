@@ -3,6 +3,7 @@
 // pos: Verifies the server-side Pi model discovery contract
 
 import { describe, it, expect } from 'bun:test';
+import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
 import { getPiApiKeyProviders, getPiModelsForAuthProvider } from '../src/config/models-pi.ts';
 
 describe('models-pi filtering', () => {
@@ -26,8 +27,9 @@ describe('models-pi filtering', () => {
   it('returns current DeepSeek models from the Pi SDK catalog', () => {
     const models = getPiModelsForAuthProvider('deepseek');
     const ids = models.map(m => m.id);
-    expect(ids).toContain('pi/deepseek-v4-flash');
-    expect(ids).toContain('pi/deepseek-v4-pro');
+    const nativeModels = getBuiltinModels('deepseek');
+    expect(nativeModels.length).toBeGreaterThan(0);
+    expect(ids).toEqual(nativeModels.map(model => `pi/${model.id}`));
   });
 
   it('exposes the GPT-5.6 family for OpenAI-compatible Pi providers', () => {

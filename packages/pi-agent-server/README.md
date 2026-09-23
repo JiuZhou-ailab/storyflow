@@ -7,7 +7,6 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 - `patches/` — Version-pinned Bun patches for upstream Pi protocol defects.
 - `src/index.ts` — JSONL process boundary and persistent parent AgentSession lifecycle.
 - `src/ephemeral-llm-query.ts` — Disposable Pi queries with explicit budgets, deadlines, schema validation and output integrity.
-- `src/runtime-budgets.ts` — Non-persistent compaction defaults and output budgets over Pi public APIs.
 - `src/primary-session.ts` — Primary Pi AgentSession construction, resources, Extensions, tools, and resume/branch setup.
 - `src/pi-model-runtime.ts` — Pi provider credentials, custom endpoint registration, and model resolution.
 - `src/pi-tool-runtime.ts` — Pi Extension permission hooks, Host capability proxying, large-result handling, and product rewind handshake.
@@ -20,7 +19,6 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 - `src/tool-hooks.ts` — Pi-native permission and result hooks.
 - `src/provider-hooks.ts` — Stable Model Call / transport-attempt correlation and native stream diagnostics; retry remains Pi-owned.
 - `src/managed-fallback.ts` — Session-scoped managed model selection within native retry budgets; cooldown survives resource reload and resets with connection/credential generation.
-- `src/openai-encrypted-reasoning-compat.ts` — Session-local recovery for stale OpenAI Responses encrypted reasoning without rewriting persisted history.
 - `src/gemini-thought-signature-compat.test.ts` — Pins Pi's Gemini 3 cross-provider tool-history compatibility contract.
 - `src/network-proxy.ts` — Transport-only proxy routing for the Bun subprocess.
 - `src/tools/` — built-in web and search tool definitions.
@@ -28,10 +26,16 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 Managed fallback defaults on for trusted managed connections only, but requires
 explicit `fallbackCapabilities` on both source and candidate. The approved chat
 families have documented declarations; gateway discovery alone never qualifies a
-candidate. Capability ceilings do not increase the existing 8192-token request budget.
+candidate. Parent and subagent output budgets follow Pi's native model capacity,
+remaining context and explicit caller limits; Storyflow adds no global output cap.
 See [QA](../../docs/model-fallback-qa.md) and [pinned Pi patches](patches/README.md).
 
-Long-task defaults and the compiled-binary release gate are documented in
+Pi 0.87.1 owns compaction defaults and history projection. Startup errors preserve
+the existing session; no JSONL sanitizer or error-text retry hook runs. Cache warming
+is stopped through the native decision event without changing Pi CLI preferences.
+Upgrade evidence and rollback boundaries are in [Pi upgrade QA](../../docs/pi-native-upgrade-qa.md).
+
+Long-task contracts and the compiled-binary release gate are documented in
 [long-task QA](../../docs/long-task-runtime-qa.md). Built-in `subagent` uses Pi
 customTools precedence; its Extension owns lifecycle and result hooks. Global resources
 and non-conflicting Extension tools remain Pi-owned.
