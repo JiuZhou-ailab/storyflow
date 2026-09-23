@@ -3,7 +3,7 @@
 // pos: Offline end-to-end verification for Free Conversation storage relocation
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { launchApp, evalOn, waitFor, type LaunchedApp } from '../perf/launch'
@@ -70,7 +70,21 @@ try {
   await evalOn(app, `Array.from(document.querySelectorAll('[role="dialog"] button')).find(b=>/继续使用|Continue/.test(b.textContent))?.click()`)
   await evalOn(app, `window.dispatchEvent(new CustomEvent('craft-agent-navigate', {detail:{route:'settings/app'}}))`)
   await waitFor(app, `document.body.textContent.includes('原存储备份')`)
-  console.log('PASS: settings button, RPC, deferred restart, copied content, retained backup and restored session')
+  const secondParent = join(base, 'second'); mkdirSync(secondParent)
+  await evalOn(app, `window.electronAPI.setFreeConversationStorage(${JSON.stringify(secondParent)})`)
+  await app.close(); app = undefined
+  app = await launchApp(fixture)
+  await waitFor(app, `window.electronAPI && document.querySelector('[data-tutorial="activity-profile"]')`)
+  const second = await evalOn<any>(app, `window.electronAPI.getFreeConversationStorage()`)
+  assert.equal(second.path, join(secondParent, 'storyflow-free-conversations'))
+  await app.close(); app = undefined
+  renameSync(parent, join(base, 'first-disk-offline'))
+  app = await launchApp(fixture)
+  await waitFor(app, `window.electronAPI && document.querySelector('[data-tutorial="activity-profile"]')`)
+  assert.equal(readFileSync(file, 'utf8'), '持久化成果\n')
+  assert.equal((await evalOn<any>(app, `window.electronAPI.getFreeConversationStorage()`)).path, second.path)
+  assert.ok((await evalOn<any[]>(app, `window.electronAPI.getSessions()`)).some(s => s.id === session.id))
+  console.log('PASS: settings, RPC, two moves, previous disk offline, retained content and restored session')
 } catch (error) {
   if (app) console.error(await evalOn(app, `document.body.innerText.slice(0,4000)`))
   throw error
