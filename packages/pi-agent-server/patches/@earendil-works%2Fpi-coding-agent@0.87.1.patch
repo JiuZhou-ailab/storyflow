@@ -146,7 +146,17 @@ diff --git a/dist/core/compaction/compaction.js b/dist/core/compaction/compactio
  import { convertToLlm } from "../messages.js";
  import { buildSessionProjection, sessionEntryToContextMessages, } from "../session-manager.js";
  import { computeFileLists, createFileOps, extractFileOpsFromMessage, formatFileOperations, SUMMARIZATION_SYSTEM_PROMPT, serializeConversation, } from "./utils.js";
-@@ -705,6 +705,13 @@
+@@ -478,6 +478,9 @@
+     }
+     if (response.stopReason === "length") {
+         return `${label} failed: generation hit the token cap and the summary is incomplete`;
+     }
++    if (!contentText(response.content).trim()) {
++        return `${label} failed: summary is empty`;
++    }
+     return undefined;
+ }
+@@ -705,6 +708,13 @@
   */
  export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel, streamFn, env, retry, callbacks, sessionId) {
      const { firstKeptEntryId, messagesToSummarize, turnPrefixMessages, isSplitTurn, tokensBefore, previousSummary, fileOps, settings, } = preparation;

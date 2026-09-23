@@ -20,6 +20,7 @@ Contracts: [#41](https://github.com/JiuZhou-ailab/storyflow/issues/41),
 | coding-agent model selection revision | Retain newer explicit selection winning an older auth await | managed-fallback.test.ts, manual choice during automatic selection |
 | coding-agent retry history slicing | Delete; 0.87.1 native recovery omission uses append-only context edits | native failed-continuation checks and primary-session.test.ts |
 | coding-agent compaction + settings maxSummaryTokens | Retire 8192 default; retain only explicit caller cap through stream options, never model metadata | runtime-budgets.test.ts, actual native compaction and explicit1024 request cap |
+| coding-agent summary validation | Reject empty or whitespace-only provider text before compaction, split-turn or branch summaries can become checkpoints | runtime-budgets.test.ts, empty/blank compaction preserves context and branch summary rejects blank output; remove when unpatched Pi passes |
 
 Reproduction materials for upstream submission are the two real-session suites
 below. They use loopback HTTP, no paid provider, and observable requests/results;

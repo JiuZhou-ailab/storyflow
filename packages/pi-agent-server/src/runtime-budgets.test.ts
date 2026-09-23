@@ -48,7 +48,7 @@ for (const above of [false, true]) {
   });
 }
 
-for (const outcome of ['cancel', 'failure'] as const) {
+for (const outcome of ['cancel', 'failure', 'empty', 'whitespace'] as const) {
   test(`native summary ${outcome} preserves history and allows the adjacent prompt`, async () => {
     const { fixture, completion } = await import('./managed-fallback.fixture.ts');
     let summarizing = false;
@@ -64,12 +64,22 @@ for (const outcome of ['cancel', 'failure'] as const) {
       summarizing = false;
       unsubscribe();
       expect(f.session.sessionManager.getEntries().filter(entry => entry.type === 'message')).toEqual(before);
+      expect(f.session.sessionManager.getEntries().some(entry => entry.type === 'compaction')).toBe(false);
+      expect(JSON.stringify(f.session.messages)).toContain('source word');
       f.events.length = 0;
       await f.session.prompt('Continue after the interrupted summary');
       await f.session.waitForIdle();
       expect(f.session.getLastAssistantText()).toBe('OK');
       expect(f.events.filter(type => type === 'agent_settled')).toHaveLength(1);
-    }, model => summarizing ? Response.json({ error: { message: 'summary rejected' } }, { status: 400 }) : completion(model));
+    }, async model => {
+      if (!summarizing) return completion(model);
+      if (outcome === 'empty' || outcome === 'whitespace') {
+        return new Response((await completion(model).text()).replace('"content":"OK"',
+          `"content":${JSON.stringify(outcome === 'empty' ? '' : ' \n\t ')}`),
+          { headers: { 'content-type': 'text/event-stream' } });
+      }
+      return Response.json({ error: { message: 'summary rejected' } }, { status: 400 });
+    });
   });
 }
 
@@ -85,6 +95,26 @@ test('native model selection and reload preserve explicit settings', async () =>
     expect(f.session.settingsManager.getCompactionEnabled()).toBe(false);
     expect(f.session.settingsManager.getCompactionReserveTokens()).toBe(nativeReserve);
   }, completion, undefined, { candidateContext: 262144 });
+});
+
+test('native branch summary rejects blank provider output through the shared validator', async () => {
+  const { fixture, completion } = await import('./managed-fallback.fixture.ts');
+  const { generateBranchSummary } = await import('@earendil-works/pi-coding-agent');
+  let blank = false;
+  await fixture(async f => {
+    await f.session.prompt('Keep this branch decision.');
+    const options = { model: f.session.model!, apiKey: 'loopback-only', signal: new AbortController().signal, streamFn: f.session.agent.streamFn };
+    blank = true;
+    const failed = await generateBranchSummary(f.session.sessionManager.getBranch(), options);
+    expect(failed.error).toContain('summary is empty');
+    expect(failed.summary).toBeUndefined();
+    blank = false;
+    const recovered = await generateBranchSummary(f.session.sessionManager.getBranch(), options);
+    expect(recovered.error).toBeUndefined();
+    expect(recovered.summary).toContain('OK');
+  }, async model => new Response((await completion(model).text()).replace('"content":"OK"',
+    `"content":${JSON.stringify(blank ? ' \n ' : 'OK')}`),
+    { headers: { 'content-type': 'text/event-stream' } }));
 });
 
 test('explicit summary budget caps actual requests without changing native model capacity', async () => {
