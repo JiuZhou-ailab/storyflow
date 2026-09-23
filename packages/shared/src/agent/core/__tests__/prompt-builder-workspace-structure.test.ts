@@ -2,7 +2,7 @@
 // output: Regression coverage for bounded workspace structure injection
 // pos: Guards PromptBuilder runtime context for project sessions
 
-import { describe, expect, it, mock } from 'bun:test'
+import { describe, expect, it, mock, setSystemTime } from 'bun:test'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -34,6 +34,22 @@ function createBuilder(rootPath: string, workingDirectory = rootPath, sdkCwd?: s
 }
 
 describe('PromptBuilder project context', () => {
+  it('keeps policy stable across minutes while refreshing the current time data', () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-prompt-time-'))
+    const builder = createBuilder(rootPath)
+    try {
+      setSystemTime(new Date('2026-09-23T10:00:00Z'))
+      const first = builder.buildTurnContext({})
+      setSystemTime(new Date('2026-09-23T10:01:00Z'))
+      const second = builder.buildTurnContext({})
+      expect(second.system).toEqual(first.system)
+      expect(second.data).not.toEqual(first.data)
+      expect(second.data.join('\n')).toContain("**USER'S DATE AND TIME:")
+    } finally {
+      setSystemTime()
+    }
+  })
+
   it('treats the selected Pi cwd as effective instead of legacy sdkCwd metadata', () => {
     const rootPath = mkdtempSync(join(tmpdir(), 'craft-prompt-sdk-cwd-'))
     const workingDirectory = mkdtempSync(join(tmpdir(), 'craft-prompt-pi-cwd-'))
@@ -89,6 +105,7 @@ describe('PromptBuilder project context', () => {
       '<workspace_structure',
       '<sources>',
       '<session_paths>',
+      "**USER'S DATE AND TIME:",
     ]
     const system = context.system.join('\n\n')
     const systemMarkers = [
@@ -96,7 +113,6 @@ describe('PromptBuilder project context', () => {
       '<workspace_structure_policy>',
       '<source_policy>',
       '<session_state>',
-      "**USER'S DATE AND TIME:",
       '<language_policy_reminder>',
     ]
 
@@ -111,6 +127,7 @@ describe('PromptBuilder project context', () => {
       )
     }
     expect(system).not.toContain(rootPath)
+    expect(system).not.toContain("**USER'S DATE AND TIME:")
     expect(data).not.toContain('<language_policy_reminder>')
   })
 })

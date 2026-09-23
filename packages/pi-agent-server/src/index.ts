@@ -62,7 +62,7 @@ import {
   createSkillCatalogResourceLoader,
 } from './project-resource-loader.ts';
 import { createSystemPromptOverride } from './system-prompt-override.ts';
-import { fingerprintTools } from './prompt-cache-profile.ts';
+import { fingerprint, fingerprintTools } from './prompt-cache-profile.ts';
 import {
   PRODUCT_REWIND_BOUNDARY_TYPE,
   createProductRewindBoundary,
@@ -97,7 +97,6 @@ let initConfig: Extract<PiInboundMessage, { type: 'init' }> | null = null;
 let currentUserMessage = '';
 let currentPromptAttemptState: PromptAttemptState | null = null;
 let pendingProductRewindBoundary: Extract<PiInboundMessage, { type: 'prompt' }>['rewindBoundary'] | null = null;
-let currentToolsetHash: string | null = null;
 
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
@@ -265,16 +264,6 @@ function forwardSessionEvent(event: AgentSessionEvent): void {
     }
 
     if (msg?.role === 'assistant' && piSession) {
-      const promptTokens = msg.usage.input + msg.usage.cacheRead + msg.usage.cacheWrite;
-      const cacheHitRate = promptTokens > 0 ? msg.usage.cacheRead / promptTokens : 0;
-      debugLog(
-        `[prompt-cache] stable_prefix_hash=${systemPromptOverride?.getStablePrefixHash() ?? 'unknown'} ` +
-        `toolset_hash=${currentToolsetHash ?? 'unknown'} prompt_tokens=${promptTokens} ` +
-        `cache_read_tokens=${msg.usage.cacheRead} cache_write_tokens=${msg.usage.cacheWrite} ` +
-        `cache_hit_rate=${cacheHitRate.toFixed(4)}`,
-      );
-
-
       const sdkTurnAnchor = piSession.sessionManager.getLeafId();
       const contextWindow = piSession.agent.state.model?.contextWindow;
       forwardedEvent = {
@@ -390,13 +379,32 @@ async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>):
       `Active Pi Extension commands: ${session.extensionRunner.getRegisteredCommands().map(command => command.invocationName).join(', ') || '(none)'}`,
     );
 
-    currentToolsetHash = fingerprintTools(session.agent.state.tools);
-
     // Wire up event handler
     if (unsubscribeEvents) {
       unsubscribeEvents();
     }
+    let callIndex = 0;
+    let effectiveSystemHash = 'unknown';
+    let toolsetHash = 'unknown';
     unsubscribeEvents = session.subscribe((event) => {
+      if (event.type === 'message_start' && event.message.role === 'assistant') {
+        callIndex++;
+        // Snapshot the effective Pi prompt after all before_agent_start handlers.
+        effectiveSystemHash = fingerprint(session.systemPrompt);
+        toolsetHash = fingerprintTools(session.agent.state.tools);
+      }
+      if (event.type === 'message_end' && event.message.role === 'assistant') {
+        const message = event.message;
+        const promptTokens = message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
+        debugLog(
+          `[prompt-cache] session_id=${session.sessionId} turn_id=${msg.id} call_index=${callIndex} ` +
+          `provider=${message.provider} model=${message.model} stop_reason=${message.stopReason} ` +
+          `stable_prefix_hash=${systemPromptOverride?.getStablePrefixHash() ?? 'unknown'} ` +
+          `effective_system_hash=${effectiveSystemHash} toolset_hash=${toolsetHash} prompt_tokens=${promptTokens} ` +
+          `cache_read_tokens=${message.usage.cacheRead} cache_write_tokens=${message.usage.cacheWrite} ` +
+          `cache_hit_rate=${promptTokens > 0 ? (message.usage.cacheRead / promptTokens).toFixed(4) : 'unknown'}`,
+        );
+      }
       const forward = () => {
         if (event.type === 'agent_settled') sawAgentSettled = true;
         handleSessionEvent(event);

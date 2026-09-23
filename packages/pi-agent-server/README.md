@@ -37,6 +37,12 @@ Startup and reload leave user package lists and npm commands untouched; Pi owns
 those choices, including explicitly configured packages.
 Upgrade evidence and rollback boundaries are in [Pi upgrade QA](../../docs/pi-native-upgrade-qa.md).
 
+Current time is transient turn data, so advancing the clock does not rewrite system
+policy. Prompt-cache diagnostics include the effective Pi system hash (including
+turn policy), session/model, host turn ID and assistant-call index. Missing usage
+is `unknown`, not a cache miss. Transient data still expires after its turn; durable
+user requirements must remain in messages or project files.
+
 Long-task contracts and the compiled-binary release gate are documented in
 [long-task QA](../../docs/long-task-runtime-qa.md). Built-in `subagent` uses Pi
 customTools precedence; its Extension owns lifecycle and result hooks. Global resources

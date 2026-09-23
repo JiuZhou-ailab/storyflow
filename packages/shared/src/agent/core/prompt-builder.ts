@@ -112,8 +112,8 @@ export class PromptBuilder {
     }));
     data.push(`<session_paths>\nplansFolderPath: ${plansFolderPath}\ndataFolderPath: ${dataFolderPath}\n</session_paths>`);
 
-    // Current time changes every turn, so it must stay at the dynamic tail.
-    system.push(getDateTimeContext());
+    // Time is turn data: changing the system prompt invalidates cached history.
+    data.push(getDateTimeContext());
     // Keep a final language reminder after provider-native Skills and other
     // discovered resources so human-facing output follows the selected locale.
     system.push(formatLanguageReminderForPrompt());

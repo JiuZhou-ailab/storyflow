@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { getPiAgentServerCompileArgs } from '../../../scripts/build/pi-agent-server.ts';
 import { completion } from './managed-fallback.fixture.ts';
+import { fingerprint } from './prompt-cache-profile.ts';
 
 test('compiled server resumes original history and settles a cancelled request without retry', async () => {
   const root = await mkdtemp(join(tmpdir(), 'pi-resume-binary-'));
@@ -54,7 +55,7 @@ test('compiled server resumes original history and settles a cancelled request w
             const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
             if (!line.trim()) continue;
             const message = JSON.parse(line); events.push(message);
-            if (message.type === 'ready') send({ type: 'prompt', id: `turn-${turn}`, message: turn ? 'Cancel this request' : 'Original user text' });
+            if (message.type === 'ready') send({ type: 'prompt', id: `turn-${turn}`, message: turn ? 'Cancel this request' : 'Original user text', systemPrompt: 'Stable product policy', turnPolicy: `Policy ${turn}`, turnContext: `Transient data ${turn}` });
             if (message.type === 'error') throw new Error(message.message);
             if (message.type === 'event' && message.event.type === 'agent_settled') return;
           }
@@ -73,6 +74,11 @@ test('compiled server resumes original history and settles a cancelled request w
       if (turn) expect(events.some(message => message.type === 'event' && message.event.type === 'message_end' && message.event.message.stopReason === 'aborted')).toBe(true);
       send({ type: 'shutdown' });
       expect(await proc.exited, await stderr).toBe(0);
+      const cacheLog = (await stderr).split('\n').find(line => line.includes('[prompt-cache]'))!;
+      expect(cacheLog).toBeDefined();
+      expect(cacheLog).toContain(`turn_id=turn-${turn} call_index=1`);
+      expect(cacheLog).toContain('model=fixture');
+      expect(cacheLog).toContain(`effective_system_hash=${fingerprint(requests[turn].messages[0].content)}`);
       child = undefined;
       const files = (await readdir(join(sessionPath, '.pi-sessions'))).filter(name => name.endsWith('.jsonl'));
       expect(files).toHaveLength(1);
