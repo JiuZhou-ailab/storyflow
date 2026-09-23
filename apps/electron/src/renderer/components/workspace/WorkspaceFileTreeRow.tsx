@@ -1,4 +1,4 @@
-// input: React Arborist node state and explicit file-tree action capabilities
+// input: React Arborist node state, active document path, and explicit file-tree action capabilities
 // output: Finder-style virtual row with inline rename, review marker, and context menu
 // pos: Presentation layer for one visible workspace file-tree entry
 
@@ -42,6 +42,7 @@ export interface WorkspaceFileTreeLabels {
 }
 
 export interface WorkspaceFileTreeRowContextValue {
+  selectedPath?: string | null
   labels: WorkspaceFileTreeLabels
   getMenuActions?: (entry: WorkspaceFileTreeNode) => readonly WorkspaceFileTreeMenuAction[]
   onDelete?: (entry: WorkspaceFileTreeNode) => void
@@ -155,16 +156,18 @@ export function WorkspaceFileTreeRow({
 
   const entry = node.data
   const reviewChanged = entry.type === 'file' && context.hasReviewDot?.(entry.path)
+  const active = entry.type === 'file' && entry.path === context.selectedPath
   const row = (
     <div
       ref={dragHandle}
       style={style}
       data-tutorial={entry.type === 'root' ? 'writing-catalog' : undefined}
+      data-active={active || undefined}
       className={cn(
         'group flex h-full min-w-0 items-center gap-1.5 rounded-[6px] px-2 text-[10px] outline-none',
-        'text-foreground/90 hover:bg-foreground/[0.06]',
-        entry.type === 'root' && 'bg-foreground/[0.07] font-medium text-foreground',
-        node.isSelected && 'bg-foreground/[0.10] font-medium text-foreground',
+        'text-foreground/90',
+        entry.type === 'root' && 'font-medium text-muted-foreground',
+        active ? 'bg-accent/10 font-medium text-accent hover:bg-accent/15' : 'hover:bg-foreground/[0.04]',
         node.isFocused && entry.type !== 'root' && 'ring-1 ring-inset ring-ring/60',
         node.willReceiveDrop && 'bg-accent/10 ring-1 ring-inset ring-accent/40',
         node.isDragging && 'opacity-40',

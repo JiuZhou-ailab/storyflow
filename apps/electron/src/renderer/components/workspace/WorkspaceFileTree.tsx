@@ -269,13 +269,14 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     }, [directoryIdSet, expandedIds])
 
     const rowContext = React.useMemo(() => ({
+      selectedPath,
       labels,
       getMenuActions,
       onDelete: onDeleteEntry,
       canRename: !!onRenameEntry,
       hasReviewDot,
       onDismissReviewDot,
-    }), [getMenuActions, hasReviewDot, labels, onDeleteEntry, onRenameEntry, onDismissReviewDot])
+    }), [selectedPath, getMenuActions, hasReviewDot, labels, onDeleteEntry, onRenameEntry, onDismissReviewDot])
 
     React.useImperativeHandle(forwardedRef, () => ({
       focusSelected() {
