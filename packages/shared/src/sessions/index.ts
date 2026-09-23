@@ -42,7 +42,6 @@ export {
   generateSessionId,
   // Session CRUD
   createSession,
-  getOrCreateSessionById,
   saveSession,
   loadSession,
   listSessions,

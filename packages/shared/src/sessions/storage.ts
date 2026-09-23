@@ -311,63 +311,6 @@ export async function createSession(
 }
 
 /**
- * Get or create a session with a specific ID
- * Used for --session <id> flag to allow user-defined session IDs
- */
-export async function getOrCreateSessionById(
-  workspaceRootPath: string,
-  sessionId: string
-): Promise<SessionConfig> {
-  const existing = loadSession(workspaceRootPath, sessionId);
-  if (existing) {
-    return {
-      id: existing.id,
-      sdkSessionId: existing.sdkSessionId,
-      workspaceRootPath: existing.workspaceRootPath,
-      name: existing.name,
-      createdAt: existing.createdAt,
-      lastUsedAt: existing.lastUsedAt,
-      sdkCwd: existing.sdkCwd,
-      workingDirectory: existing.workingDirectory,
-    };
-  }
-
-  // Create new session with the specified ID
-  ensureSessionsDir(workspaceRootPath);
-
-  // Create session directory with all subdirectories (plans, attachments)
-  ensureSessionDir(workspaceRootPath, sessionId);
-
-  const now = Date.now();
-  // Set sdkCwd to session path - this never changes (ensures SDK can find session transcripts)
-  const sdkCwd = getSessionPath(workspaceRootPath, sessionId);
-
-  const session: SessionConfig = {
-    id: sessionId,
-    schemaVersion: SESSION_SCHEMA_VERSION,
-    workspaceRootPath,
-    sdkCwd,
-    createdAt: now,
-    lastUsedAt: now,
-  };
-
-  const storedSession: StoredSession = {
-    ...session,
-    messages: [],
-    tokenUsage: {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      contextTokens: 0,
-      costUsd: 0,
-    },
-  };
-  await saveSession(storedSession);
-
-  return session;
-}
-
-/**
  * Save session immediately using the persistence queue.
  * Enqueues the session and flushes to ensure immediate write.
  *

@@ -41,9 +41,6 @@ export {
   isAnnotationFollowUpSent,
   extractAnnotationSelectedText,
   normalizeFollowUpText,
-  // Inline execution for EditPopover
-  InlineExecution,
-  mapToolEventToActivity,
   SIZE_CONFIG,
   ActivityStatusIcon,
   type SessionViewerProps,
@@ -61,9 +58,6 @@ export {
   type ActivityItem,
   type ActivityStatus,
   type ResponseContent,
-  type InlineExecutionProps,
-  type InlineExecutionStatus,
-  type InlineActivityItem,
 } from './components/chat'
 
 // Markdown
@@ -107,7 +101,6 @@ export {
   StyledDropdownMenuSeparator,
   StyledDropdownMenuSubTrigger,
   StyledDropdownMenuSubContent,
-  BrowserShader,
   BrowserControls,
   BrowserEmptyStateCard,
   FilterableSelectPopover,
@@ -121,7 +114,6 @@ export {
   type PreviewHeaderProps,
   type PreviewHeaderBadgeProps,
   type PreviewBadgeVariant,
-  type BrowserShaderProps,
   type BrowserControlsProps,
   type BrowserEmptyStateCardProps,
   type BrowserEmptyPromptSample,

@@ -8,7 +8,6 @@
  * Slim barrel file that re-exports from decomposed modules:
  * - types.ts: All type definitions
  * - validation.ts: Config validation functions
- * - agent-event-env.ts: Agent event environment variable building
  * - utils.ts: Shared utilities (toSnakeCase, expandEnvVars, etc.)
  * - automation-system.ts: AutomationSystem facade (main entry point)
  * - event-bus.ts: WorkspaceEventBus
@@ -59,12 +58,6 @@ export {
   validateAutomationsContent,
   validateAutomations,
 } from './validation.ts';
-
-// ============================================================================
-// Agent Event Environment
-// ============================================================================
-
-export { buildEnvFromAgentInput } from './agent-event-env.ts';
 
 // ============================================================================
 // Utilities
