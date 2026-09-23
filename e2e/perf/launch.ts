@@ -54,8 +54,8 @@ export interface LaunchAppOptions {
  * stdout — do NOT pass `--debug`, which Electron/Node intercept as deprecated `node --debug`.
  */
 export async function launchApp(fixtureDir: string, options: LaunchAppOptions = {}): Promise<LaunchedApp> {
-  const executablePath = options.executablePath ?? ELECTRON_BIN
-  const packaged = options.packaged === true
+  const executablePath = options.executablePath ?? process.env.CRAFT_E2E_ELECTRON_BIN ?? ELECTRON_BIN
+  const packaged = options.packaged ?? (!options.executablePath && Boolean(process.env.CRAFT_E2E_ELECTRON_BIN))
   if (!existsSync(executablePath)) throw new Error(`Electron binary not found at ${executablePath}. Run \`bun install\` or build the requested package.`)
   if (!packaged && !existsSync(BUILT_MAIN)) throw new Error(`Built main not found at ${BUILT_MAIN}. Run \`cd apps/electron && bun run build\`.`)
   if (!existsSync(join(fixtureDir, 'config.json'))) throw new Error(`Fixture config.json missing under ${fixtureDir}. Run scripts/perf/generate-fixture.ts first.`)
