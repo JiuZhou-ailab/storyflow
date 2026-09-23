@@ -33,6 +33,8 @@ See [QA](../../docs/model-fallback-qa.md) and [pinned Pi patches](patches/README
 Pi 0.87.1 owns compaction defaults and history projection. Startup errors preserve
 the existing session; no JSONL sanitizer or error-text retry hook runs. Cache warming
 is stopped through the native decision event without changing Pi CLI preferences.
+Startup and reload leave user package lists and npm commands untouched; Pi owns
+those choices, including explicitly configured packages.
 Upgrade evidence and rollback boundaries are in [Pi upgrade QA](../../docs/pi-native-upgrade-qa.md).
 
 Long-task contracts and the compiled-binary release gate are documented in

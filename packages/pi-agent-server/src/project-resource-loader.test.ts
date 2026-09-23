@@ -23,7 +23,6 @@ import {
 
 import {
   createProjectResourceLoader,
-  DEFAULT_PI_PACKAGE_SOURCES,
 } from "./project-resource-loader.ts";
 import { saveSystemInstructionsMarkdown } from "../../shared/src/config/system-instructions.ts";
 import { createSystemPromptOverride } from "./system-prompt-override.ts";
@@ -347,49 +346,43 @@ describe("createProjectResourceLoader", () => {
     );
   });
 
-  it("removes disabled default Pi packages without replacing user packages", async () => {
+  it("preserves user package settings byte-for-byte across startup and reload", async () => {
     const cwd = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), "agent");
     mkdirSync(agentDir, { recursive: true });
-    writeFileSync(
-      join(agentDir, "settings.json"),
-      JSON.stringify({
-        packages: ["npm:existing-package", "npm:@ayulab/pi-rewind"],
-      }),
-    );
+    const settingsPath = join(agentDir, "settings.json");
+    const packages = ["npm:existing-package", "npm:@ayulab/pi-rewind"];
+    const original = JSON.stringify({ packages }, null, 2) + "\n";
+    writeFileSync(settingsPath, original);
 
-    await createProjectResourceLoader({ cwd, globalRoot, agentDir });
-    await createProjectResourceLoader({ cwd, globalRoot, agentDir });
-
-    expect(DEFAULT_PI_PACKAGE_SOURCES).toEqual([]);
-    expect(
-      JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"))
-        .packages,
-    ).toEqual(["npm:existing-package"]);
+    const { settingsManager, resourceLoader } = await createProjectResourceLoader({ cwd, globalRoot, agentDir });
+    expect(settingsManager.getPackages()).toEqual(packages);
+    await resourceLoader.reload();
+    await settingsManager.flush();
+    expect(settingsManager.getPackages()).toEqual(packages);
+    expect(readFileSync(settingsPath, "utf8")).toBe(original);
   });
 
-  it("uses packaged Bun for Pi packages without replacing a user command", async () => {
+  it("leaves npm selection to Pi without creating or replacing user settings", async () => {
     process.env.CRAFT_BUN = "/packaged/runtime/bun";
     const cwd = createRoot();
     const globalRoot = createRoot();
     const agentDir = join(createRoot(), "agent");
+    const settingsPath = join(agentDir, "settings.json");
+    const first = await createProjectResourceLoader({ cwd, globalRoot, agentDir });
+    await first.resourceLoader.reload();
+    await first.settingsManager.flush();
+    expect(first.settingsManager.getNpmCommand()).toBeUndefined();
+    expect(existsSync(settingsPath)).toBe(false);
 
-    await createProjectResourceLoader({ cwd, globalRoot, agentDir });
-    expect(
-      JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"))
-        .npmCommand,
-    ).toEqual(["bun"]);
-
-    writeFileSync(
-      join(agentDir, "settings.json"),
-      JSON.stringify({ npmCommand: ["custom-npm"] }),
-    );
-    await createProjectResourceLoader({ cwd, globalRoot, agentDir });
-    expect(
-      JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"))
-        .npmCommand,
-    ).toEqual(["custom-npm"]);
+    mkdirSync(agentDir, { recursive: true });
+    const original = JSON.stringify({ npmCommand: ["custom-npm"] }, null, 2) + "\n";
+    writeFileSync(settingsPath, original);
+    await first.resourceLoader.reload();
+    await first.settingsManager.flush();
+    expect(first.settingsManager.getNpmCommand()).toEqual(["custom-npm"]);
+    expect(readFileSync(settingsPath, "utf8")).toBe(original);
   });
 
   it("keeps native compaction defaults across resource reload without writing product budgets", async () => {

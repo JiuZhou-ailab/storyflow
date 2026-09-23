@@ -1,5 +1,5 @@
 // input: Pi cwd, project boundary, agent directory, and legacy Skills
-// output: Pi ResourceLoader with Storyflow-specific context boundary and skill compatibility
+// output: Pi resource discovery and product context isolation without changing user settings
 // pos: Minimal product adapter over Pi's public ResourceLoader options
 
 import { existsSync, realpathSync } from "node:fs";
@@ -13,12 +13,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import { resolveResourceRoots } from "../../shared/src/resources/resolver.ts";
-
-export const DEFAULT_PI_PACKAGE_SOURCES = [] as const;
-
-// ponytail: one-time migration shipped in 0.18.x; delete after two client releases
-// (>= 0.20.0) once installed clients no longer carry this package in settings.
-const DISABLED_PI_PACKAGE_SOURCES = new Set(["npm:@ayulab/pi-rewind"]);
 
 export interface ProjectResourceLoaderOptions {
   cwd: string;
@@ -90,24 +84,6 @@ export function createBoundedAgentsFilesOverride(options: {
   });
 }
 
-async function seedDefaultPiPackages(
-  settingsManager: SettingsManager,
-): Promise<void> {
-  if (process.env.CRAFT_BUN && !settingsManager.getNpmCommand()?.length) {
-    settingsManager.setNpmCommand(["bun"]);
-  }
-
-  const packages = settingsManager.getPackages();
-  const kept = packages.filter((entry) => {
-    const source = typeof entry === "string" ? entry : entry.source;
-    return !DISABLED_PI_PACKAGE_SOURCES.has(source);
-  });
-  if (kept.length !== packages.length) {
-    settingsManager.setPackages(kept);
-    await settingsManager.flush();
-  }
-}
-
 /**
  * Build the Pi resource boundary owned by Storyflow.
  *
@@ -131,7 +107,6 @@ export async function createProjectResourceLoader(
     options.agentDir,
     { projectTrusted: false },
   );
-  await seedDefaultPiPackages(settingsManager);
 
   // Skills come from a project-trusted loader so project-scoped Skill packages
   // (non-executable resources) are discoverable without granting project trust

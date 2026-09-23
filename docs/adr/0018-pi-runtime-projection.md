@@ -82,9 +82,10 @@ Agent runtime。产品必须投影 Pi 的公共契约，而不是镜像 Pi 的�
 - 用户级 Pi Extensions 默认加载。项目级可执行 Extensions 必须经过明确的 Host 授权
   投影后才可信；在该交互闭环完成前保持不信任。项目 Skills 仍由第二个只读的 Pi
   `DefaultResourceLoader` 加载，避免 Pi 的统一 project trust 开关误伤非执行资源。
-- Storyflow 暂停默认加载 `npm:@ayulab/pi-rewind`，并从先前由产品写入的 Pi 用户 package
-  配置中移除该源，但保留已安装文件和其余用户 package。待 Git capability preflight、
-  写作工作区恢复状态收敛和跨 Host UI 达到产品要求后再重新启用。
+- Storyflow 启动和 resource reload 不修改 Pi 用户 package 列表或 npmCommand。
+  0.18.x 的 pi-rewind 移除迁移已退出；用户当前配置的 package 由 Pi 原生加载，
+  产品不自动补回历史已移除项。npm 执行命令遵循用户配置或 Pi 原生缺省；打包环境
+  不通过写全局设置强制选择 Bun。用户显式修改资源配置仍可走 Pi settings 契约。
 - 工具为空、无持久状态的内部 mini-completion 与受限 Subagent Run 可以显式关闭
   Extensions/Skills，避免重复执行副作用；它们不是用户主会话的生态入口。
 
