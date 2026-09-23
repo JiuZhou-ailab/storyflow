@@ -81,8 +81,8 @@ if (existsSync(appleTouchIconPath)) {
 if (existsSync(redirectsPath)) {
   copyFileSync(redirectsPath, join(distDir, "_redirects"));
 }
-if (existsSync(referenceAssetsDir)) {
-  cpSync(referenceAssetsDir, join(distDir, "reference-assets"), { recursive: true });
+for (const directory of ["current", "tutorial"]) {
+  cpSync(join(referenceAssetsDir, directory), join(distDir, "reference-assets", directory), { recursive: true });
 }
 cpSync(join(appDir, "public", "demo"), join(distDir, "demo"), { recursive: true });
 

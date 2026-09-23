@@ -1,5 +1,7 @@
 # Interactive product demo — Issue #39
 
+> 状态：历史实施记录。现行产品说明见 [Marketing README](../../apps/marketing/README.md)，验收入口见 [QA runbook](../../apps/marketing/qa-runbook.md)。本文素材与脚本路径均相对于 `apps/marketing/`；旧设计目标不构成当前验收要求。
+
 ## Current scope (2026-09-17)
 
 Issue #39 now follows [Memoh](https://memoh.ai/): the first screen embeds a working

@@ -68,3 +68,5 @@ V2 保留原始录屏片段、入点、时长与镜头运动。旁白改用 `zh-
 `make_audio.py` 合成原创的轻柔键音与和弦背景，未使用第三方音乐录音。音乐目标响度 -35 LUFS，旁白约 -16 LUFS；说话时音乐自动压低，首尾淡入淡出。音轨单独保存在 `assets/narration/`，可独立调整。上一版成片另存为 `renders/storyflow-live-80s-v1.mp4`。
 
 逐句字幕采用 0.18 秒轻淡入，动画映射的 18 条 paced-fast 提示已人工接受，避免入场动画占用阅读时间。
+
+`music-original.wav`、`music-quiet.wav` 和 `narration-full.wav` 是 `make_audio.py` 生成的中间音轨，保留本地并由 Git 忽略；最终背景音乐和逐段旁白继续纳入版本控制。

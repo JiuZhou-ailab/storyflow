@@ -44,7 +44,7 @@ storyflow/
 │   ├── shared/              # 跨宿主契约与原语（协议、配置、来源、校验）
 │   └── ui/                  # 共享 React UI、Markdown、diff、chat 组件
 ├── docs/
-│   └── plans/               # 设计和实现规划文档
+│   └── plans/               # 计划、实施验收与历史评估的统一索引
 ├── e2e/
 │   ├── core/                # 桌面核心闭环：Agent 编辑、版本恢复、重启恢复
 │   └── perf/                # 大型合成工作区的 Electron 性能基线

@@ -5,3 +5,8 @@ renders/
 node_modules/
 assets/storyflow-live-raw.mov
 assets/live-seekable.mp4
+
+# Rebuilt by make_audio.py; retain final music and narration sources.
+assets/narration/music-original.wav
+assets/narration/music-quiet.wav
+assets/narration/narration-full.wav

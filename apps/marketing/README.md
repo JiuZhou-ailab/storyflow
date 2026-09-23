@@ -14,14 +14,14 @@ and copies its generated `public/demo/` assets into `dist/demo/`. Changes to the
 shared renderer also trigger the existing marketing deployment workflow.
 Supporting sections keep the existing clean Electron screenshot tours, downloads,
 tutorial and release history. Historical Cursor fidelity notes are retained in
-`implementation-notes.md`; they are not the current Issue #39 acceptance target.
+[implementation history](../../docs/plans/2026-09-17-marketing-implementation.md); they are not the current Issue #39 acceptance target.
 
 `/changelog/` contains the full version history with permanent `#vX.Y.Z` anchors. Both the Bun build and Vite development load every numeric versioned Markdown file from `apps/electron/resources/release-notes/`; `next.md` and prerelease drafts are excluded. Markdown renders safely at build time and is embedded in the site HTML, so reading history never depends on GitHub or a live API. Existing version files remain the archive; add new versions without replacing older files. Header and footer link to the page; the old `/#changelog` anchor remains at the footer entry.
 `/docs/` is a short tutorial index. The five practice steps have separate `/docs/install/`, `/docs/create-project/`, `/docs/first-task/`, `/docs/review-changes/` and `/docs/save-return/` routes; self-check, troubleshooting and three reference groups also have independent pages. Only the selected chapter mounts. The left sidebar selects chapters, the right outline lists current-page headings, and previous/next links follow the chapter order. Legacy `/docs/#anchor` bookmarks resolve to the matching chapter without adding a history entry. The practice teaches: install/sign in and confirm a reply, add a local project folder, write requirements and a short opening, review one targeted edit, then save a version and reopen the file. Each step includes a completion signal. Four copyable prompts preserve multiline text and offer a manual-copy fallback. Symptom-based help links lead to recovery instructions and contact details; advanced references follow the practice. Repeated screenshots are consolidated at their relevant steps. Tutorial copy must
 match current desktop labels and file behavior; screenshots illustrate an existing
 project rather than a default folder template. The left navigation uses single-column chapter lists with aligned group labels and a current-page marker. On phones, a keyboard-accessible tutorial-menu button expands the chapter list; choosing a chapter closes it as the new page mounts. The reference navigation starts expanded; on wide screens, a separate right sidebar derives the page outline from the actual h2/h3 headings and tracks the current reading position.
 
-The tutorial index includes the approved 80-second live writing video with Chinese narration, burned-in captions and quiet original music. The native player loads only its poster until playback, supports fullscreen and offers a download link. Its 1440p web encode and poster live in `reference-assets/tutorial/`; the build copies them with the existing static assets. The deployment workflow uploads the playback copy to the existing R2 downloads bucket under `tutorials/` and verifies HTTP 206 byte-range support before publishing the site; Pages serves the poster and download copy. This avoids the Pages static host’s lack of partial responses when seeking.
+The tutorial index includes the approved 80-second live writing video with Chinese narration, burned-in captions and quiet original music. The native player loads only its poster until playback, supports fullscreen and offers a download link. Its 1440p web encode and poster live in `reference-assets/tutorial/`; the build publishes only `reference-assets/current/` and `reference-assets/tutorial/`, excluding local QA captures. The deployment workflow uploads the playback copy to the existing R2 downloads bucket under `tutorials/` and verifies HTTP 206 byte-range support before publishing the site; Pages serves the poster and download copy. This avoids the Pages static host’s lack of partial responses when seeking.
 
 ## Downloads
 
@@ -38,11 +38,11 @@ Changes to versioned release-note Markdown on `main` also trigger this deploymen
 ## Files
 
 - `index.html` - Vite HTML shell.
-- `implementation-notes.md` - Running implementation notes for current landing-page changes.
+- [implementation history](../../docs/plans/2026-09-17-marketing-implementation.md) - Historical implementation decisions and superseded visual targets.
 - `promo-video/` - HyperFrames product promo composition and rendered assets.
 - `tutorial-video/` - Three-minute native-UI beginner practice with Chinese narration and an editable HyperFrames timeline; pre-authored sample conversations are explicitly disclosed.
 - `tutorial-live/` - Five-minute continuous recording of the normally signed-in Storyflow app using DeepSeek V4 Flash, edited with HyperFrames into an 80-second Chinese tutorial; live provenance and encountered issues are retained.
-- `reference-assets/` - Local landing screenshots and visual reference assets.
+- `reference-assets/` - Current product captures and the published tutorial video.
 - `src/App.tsx` - Landing page and same-site navigation.
 - `src/InteractiveDemo.tsx` - Product iframe, loading status and retry/tutorial recovery.
 - `public/demo/` - Generated browser demo assets; ignored by Git.

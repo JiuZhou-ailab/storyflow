@@ -72,7 +72,7 @@ Tutorial sidebar: at 1440/768px, all 11 chapter links align in one column with a
 
 The interactive hero follows Memoh; verify its real working UI and readable layout. For untouched supporting sections, the historical `design-reference/cursor-1440.png`, `cursor-390.png`, and measured geometry remain useful references. Inspect hero, each feature, cards, releases, final CTA and footer at matching viewport widths. Scrollable demonstration text must remain readable and keyboard reachable. Check screenshot framing rather than only HTTP status.
 
-The browser smoke test does not award a visual-fidelity score. Document differences in `implementation-notes.md`. Full-page pixel matching and historical external-material gaps are outside the interactive demo scope.
+The browser smoke test does not award a visual-fidelity score. Document differences in [implementation history](../../docs/plans/2026-09-17-marketing-implementation.md). Full-page pixel matching and historical external-material gaps are outside the interactive demo scope.
 
 ## Boundaries
 
