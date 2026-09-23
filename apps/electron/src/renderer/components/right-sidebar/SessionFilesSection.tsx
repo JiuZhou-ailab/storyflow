@@ -330,13 +330,11 @@ function FileTreeItem({
           {buttonElement}
         </ContextMenuTrigger>
         <StyledContextMenuContent>
-          {/* Open — files only (folders just show "Show in file manager") */}
-          {file.type !== 'directory' && (
-            <StyledContextMenuItem onSelect={() => onFileClick(file)}>
-              <ExternalLink className="h-3.5 w-3.5" />
-              {t("chat.openFile")}
-            </StyledContextMenuItem>
-          )}
+          {/* Open file or folder */}
+          <StyledContextMenuItem onSelect={() => onFileClick(file)}>
+            <ExternalLink className="h-3.5 w-3.5" />
+            {file.type === 'directory' ? t("workspace.openFolder") : t("chat.openFile")}
+          </StyledContextMenuItem>
           {/* Show in file manager */}
           <StyledContextMenuItem
             onSelect={() => onRevealInFileManager(file.path)}
