@@ -134,7 +134,7 @@ describe('macOS release configuration', () => {
 
     expect(workflow).toContain('bun run check-version');
     expect(workflow).toContain("RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}");
-    expect(packageManifest.scripts['validate:ci']).toMatch(/^bun run validate:dev && bun run test &&/);
+    expect(packageManifest.scripts['validate:ci']).toMatch(/^bun run validate:dev && bun run lint && bun run test &&/);
     expect(workflow).toMatch(/full\|""\)\n\s+bun run validate:ci\n\s+;;/);
     expect(validateWorkflow).toContain('run: bun run validate:ci');
     expect(workflow).toContain('run: bun run electron:dist:win');

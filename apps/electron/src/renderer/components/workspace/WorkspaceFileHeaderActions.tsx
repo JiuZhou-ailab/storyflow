@@ -19,6 +19,7 @@ export function WorkspaceFileHeaderActions({ path, onRefresh, readOnly, busy, be
   const open = async () => {
     if (beforeOpen && !await beforeOpen()) return
     try {
+      // eslint-disable-next-line craft-links/no-direct-file-open -- this action leaves the in-app preview for the system app
       await window.electronAPI.openFile(path)
     } catch (error) {
       toast.error(t('toast.failedToOpenFile'), { description: String(error) })
