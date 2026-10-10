@@ -1707,6 +1707,7 @@
   "toast.authenticationFailed": "Uwierzytelnienie nie powiodło się — kliknij, aby ponownie połączyć",
   "toast.cannotRemoveActiveWorkspace": "Nie można usunąć aktywnego Workspace",
   "toast.cannotSendRightNow": "Nie można teraz wysłać",
+  "toast.contentLinkActionBlocked": "Ten link może tylko otwierać strony lub instalować Skills. Wykonaj tę akcję w aplikacji.",
   "toast.copied": "Skopiowano do schowka",
   "toast.copyFailed": "Nie udało się skopiować",
   "toast.couldNotCreateBranch": "Nie udało się utworzyć gałęzi",

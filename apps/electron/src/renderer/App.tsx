@@ -52,6 +52,7 @@ import { resolvePostSetupAppState, selectStartupWorkspaceId } from './lib/startu
 import { isProjectShellReady } from './lib/app-readiness'
 import { appendUniqueRequestForSession, removeFirstRequestForSession, removeRequestForSession } from './lib/request-queue'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
+import { CONTENT_LINK_ACTION_REFUSED } from '@craft-agent/shared/utils/url-safety'
 import {
   isManagedLlmConnectionSlug,
   resolveEffectiveConnectionSlug,
@@ -1828,7 +1829,9 @@ function AppContent() {
         const message = error instanceof Error ? error.message : 'Unknown error'
         console.error('Failed to open URL:', error)
         toast.error(t('toast.failedToOpenLink'), {
-          description: message,
+          description: message.includes(CONTENT_LINK_ACTION_REFUSED)
+            ? t('toast.contentLinkActionBlocked')
+            : message,
         })
       }
     },

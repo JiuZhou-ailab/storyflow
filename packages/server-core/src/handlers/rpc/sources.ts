@@ -258,9 +258,15 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
         }
 
         const { permissionsConfigCache } = await import('@craft-agent/shared/agent')
+        // Mirror the runtime permission context so the list matches Explore-mode decisions.
         const mergedConfig = permissionsConfigCache.getMergedConfig({
           workspaceRootPath: mutationRoot,
-          activeSourceSlugs: [sourceSlug],
+          activeSources: [{
+            slug: sourceSlug,
+            ownerRootPath: source.workspaceRootPath,
+            grantAuthority: source.origin === 'workspace' ? 'project' : 'host',
+          }],
+          allowProjectGrants: isFreeConversationWorkspaceId(workspace.id),
         })
 
         const { CraftMcpClient } = await import('../../mcp')
@@ -295,7 +301,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
             tools: tools.map(tool => ({
               name: tool.name,
               description: tool.description,
-              allowed: mergedConfig.readOnlyMcpPatterns.some((pattern: RegExp) => pattern.test(tool.name)),
+              allowed: mergedConfig.readOnlyMcpPatterns.some(matcher => matcher.test(`mcp__${sourceSlug}__${tool.name}`)),
             })),
           }
         } finally {

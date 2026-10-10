@@ -235,6 +235,15 @@ export interface PermissionPaths {
 }
 
 /**
+ * Classifies an MCP tool as read-only from its full `mcp__<server>__<tool>` name.
+ * A RegExp satisfies this for full-name rules; bundled-default and Source rules
+ * compile to matchers that only inspect the bare tool name.
+ */
+export interface ReadOnlyMcpMatcher {
+  test(fullToolName: string): boolean;
+}
+
+/**
  * Safe mode configuration - defines behavior for read-only mode
  */
 export interface ModeConfig {
@@ -244,8 +253,8 @@ export interface ModeConfig {
   readOnlyBashPatterns: CompiledBashPattern[];
   /** Command-specific hints shown when blocked Bash commands are rejected */
   blockedCommandHints?: CompiledBlockedCommandHint[];
-  /** Read-only MCP patterns (tools matching these are allowed) */
-  readOnlyMcpPatterns: RegExp[];
+  /** Read-only MCP matchers, tested against the full `mcp__<server>__<tool>` name */
+  readOnlyMcpPatterns: ReadOnlyMcpMatcher[];
   /** Fine-grained API endpoint rules (method + path pattern) */
   allowedApiEndpoints: CompiledApiEndpointRule[];
   /** File paths allowed for writes in Explore mode (glob patterns) */

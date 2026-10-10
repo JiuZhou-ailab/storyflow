@@ -1705,6 +1705,7 @@
   "toast.authenticationFailed": "Autenticación fallida — haz clic para reconectar",
   "toast.cannotRemoveActiveWorkspace": "No se puede eliminar el workspace activo",
   "toast.cannotSendRightNow": "No se puede enviar en este momento",
+  "toast.contentLinkActionBlocked": "Este enlace solo puede abrir páginas o instalar Skills. Realiza esta acción dentro de la app.",
   "toast.copied": "Copiado al portapapeles",
   "toast.copyFailed": "No se pudo copiar",
   "toast.couldNotCreateBranch": "No se pudo crear la rama",

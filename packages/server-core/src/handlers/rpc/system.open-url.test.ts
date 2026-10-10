@@ -79,31 +79,59 @@ describe('registerSystemCoreHandlers OPEN_URL', () => {
     })
   })
 
-  it('routes local new-session links internally via deeplink:navigate', async () => {
+  it('refuses content links that would create an allow-all session and auto-send', async () => {
     const { openUrl, ctx, invokeClientCalls, pushCalls } = createTestHarness()
 
-    await openUrl(ctx, 'craftagents://action/new-session?input=hello&send=true&mode=allow-all')
+    await expect(
+      openUrl(ctx, 'craftagents://action/new-session?input=hello&send=true&mode=allow-all'),
+    ).rejects.toThrow('Refused craftagents action from content link: new-session')
 
+    expect(pushCalls).toHaveLength(0)
     expect(invokeClientCalls).toHaveLength(0)
-    expect(pushCalls).toHaveLength(1)
-    expect(pushCalls[0].args[0]).toEqual({
-      action: 'new-session',
-      actionParams: { input: 'hello', send: 'true', mode: 'allow-all' },
-    })
   })
 
   it('routes workspace-targeted action links to the requested workspace', async () => {
     const { openUrl, ctx, invokeClientCalls, pushCalls } = createTestHarness({ workspaceId: 'ws-1' })
 
-    await openUrl(ctx, 'craftagents://workspace/ws-2/action/new-session?input=hello')
+    const sha256 = 'b'.repeat(64)
+    await openUrl(ctx, `craftagents://workspace/ws-2/action/install-skill?slug=s&version=1.0.0&sha256=${sha256}`)
 
     expect(invokeClientCalls).toHaveLength(0)
     expect(pushCalls).toHaveLength(1)
     expect(pushCalls[0].target).toEqual({ to: 'workspace', workspaceId: 'ws-2' })
     expect(pushCalls[0].args[0]).toEqual({
-      action: 'new-session',
-      actionParams: { input: 'hello' },
+      action: 'install-skill',
+      actionParams: { slug: 's', version: '1.0.0', sha256 },
     })
+  })
+
+  it.each([
+    'craftagents://action/set-mode/session-1?mode=allow-all',
+    'craftagents://action/delete-session/session-1',
+    'craftagents://action/delete-source/linear',
+    'craftagents://action/oauth/linear',
+    'craftagents://action/copy?text=payload',
+    'craftagents://action/rename-session/session-1?name=x',
+    'craftagents://action/flag-session/session-1',
+    'craftagents://action/new-session?input=hello',
+    'craftagents://workspace/ws-2/action/new-session?input=hello&send=true',
+    'craftagents://workspace/ws-2/action/set-mode/session-1?mode=allow-all',
+  ])('refuses state-changing content link %s', async (url) => {
+    const { openUrl, ctx, invokeClientCalls, pushCalls } = createTestHarness()
+
+    await expect(openUrl(ctx, url)).rejects.toThrow('Refused craftagents action from content link')
+
+    expect(pushCalls).toHaveLength(0)
+    expect(invokeClientCalls).toHaveLength(0)
+  })
+
+  it('keeps routing view links from content', async () => {
+    const { openUrl, ctx, pushCalls } = createTestHarness()
+
+    await openUrl(ctx, 'craftagents://allSessions/session/abc')
+
+    expect(pushCalls).toHaveLength(1)
+    expect(pushCalls[0].args[0]).toEqual({ view: 'allSessions/session/abc' })
   })
 
   it('falls back to client openExternal for craftagents window-mode links', async () => {

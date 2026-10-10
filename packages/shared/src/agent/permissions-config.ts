@@ -38,6 +38,7 @@ import {
   type CompiledBlockedCommandHint,
   type BlockedCommandHintRule,
   type PermissionPaths,
+  type ReadOnlyMcpMatcher,
 } from './mode-types.ts';
 
 // ============================================================
@@ -131,8 +132,19 @@ export function ensureDefaultPermissions(): void {
 }
 
 /**
+ * Bundled MCP verbs that are no longer read-only by default. Migration is
+ * otherwise additive, so retired verbs must be dropped explicitly from
+ * installed copies. "query" (2026-10-10): query tools often accept arbitrary
+ * statements that can write; Sources that need it declare it themselves.
+ */
+const RETIRED_DEFAULT_MCP_PATTERNS = new Set(['query']);
+/** Installed copies older than this still carry the retired bundled entries. */
+const RETIRED_DEFAULT_MCP_PATTERNS_SINCE = '2026-10-10';
+
+/**
  * Merge new patterns from bundled config into existing installed config.
- * Preserves user customizations, adds new patterns, updates version.
+ * Preserves user customizations, adds new patterns, drops retired defaults,
+ * updates version.
  */
 function migratePermissions(
   installed: PermissionsConfigFile,
@@ -166,6 +178,10 @@ function migratePermissions(
     h => !installedHintKeys.has(`${h.command}::${h.whenNotMatching || ''}::${h.reason}`)
   );
 
+  // Only strip entries the old bundle shipped; a user re-adding a retired verb
+  // after this upgrade keeps it on later migrations.
+  const dropRetired = (installed.version || '2000-01-01') < RETIRED_DEFAULT_MCP_PATTERNS_SINCE;
+
   debug('[Permissions] Adding', newBashPatterns.length, 'new bash patterns');
   debug('[Permissions] Adding', newMcpPatterns.length, 'new MCP patterns');
   debug('[Permissions] Adding', newBlockedCommandHints.length, 'new blocked command hints');
@@ -178,7 +194,9 @@ function migratePermissions(
       ...newBashPatterns,
     ],
     allowedMcpPatterns: [
-      ...(installed.allowedMcpPatterns || []),
+      ...(installed.allowedMcpPatterns || []).filter(
+        p => !dropRetired || !RETIRED_DEFAULT_MCP_PATTERNS.has(getPatternString(p))
+      ),
       ...newMcpPatterns,
     ],
     blockedCommandHints: [
@@ -263,7 +281,7 @@ export interface MergedPermissionsConfig {
   readOnlyBashPatterns: CompiledBashPattern[];
   /** Command-specific hints for blocked Bash command explanations */
   blockedCommandHints: CompiledBlockedCommandHint[];
-  readOnlyMcpPatterns: RegExp[];
+  readOnlyMcpPatterns: ReadOnlyMcpMatcher[];
   /** Fine-grained API endpoint rules */
   allowedApiEndpoints: CompiledApiEndpointRule[];
   /** File paths allowed for writes in Explore mode (glob patterns) */
@@ -373,6 +391,66 @@ function validateRegex(pattern: string): RegExp | null {
   } catch {
     return null;
   }
+}
+
+// MCP read-only rules from bundled defaults and Sources are authored as bare
+// verbs ("list", "get"). Testing them as unanchored regexes against the full
+// `mcp__<server>__<tool>` name let substrings grant read-only status
+// (`delete_target` contains "get", `blacklist_user` contains "list"), so they
+// compile to matchers over the bare tool name instead. Global and Project
+// rules stay full-name regexes: their authors anchor them explicitly.
+const MCP_VERB_TOKEN = /^[A-Za-z]+$/;
+
+function splitMcpToolName(fullToolName: string): { server: string; tool: string } | null {
+  if (!fullToolName.startsWith('mcp__')) return null;
+  const rest = fullToolName.slice('mcp__'.length);
+  const separator = rest.indexOf('__');
+  if (separator <= 0) return null;
+  return { server: rest.slice(0, separator), tool: rest.slice(separator + 2) };
+}
+
+const isUpper = (char: string): boolean => char >= 'A' && char <= 'Z';
+const isLower = (char: string): boolean => char >= 'a' && char <= 'z';
+
+/**
+ * True when the tool name starts with `verb` followed by `_`, `-`, `.`, the end,
+ * or a camelCase boundary (lowercase → uppercase, so `COUNTER` is not `COUNT`).
+ */
+function startsWithVerbToken(tool: string, verb: string): boolean {
+  if (tool.slice(0, verb.length).toLowerCase() !== verb.toLowerCase()) return false;
+  const next = tool.charAt(verb.length);
+  if (next === '' || next === '_' || next === '-' || next === '.') return true;
+  return isUpper(next) && isLower(tool.charAt(verb.length - 1));
+}
+
+/** Compile a bare-tool-name rule: pure letters are a verb token, anything else a regex. */
+function compileBareToolRule(pattern: string): ((tool: string) => boolean) | null {
+  if (MCP_VERB_TOKEN.test(pattern)) return tool => startsWithVerbToken(tool, pattern);
+  const regex = validateRegex(pattern);
+  return regex ? tool => regex.test(tool) : null;
+}
+
+/** Bundled default rule: verb tokens apply to the bare tool name of any server. */
+function compileDefaultMcpMatcher(pattern: string): ReadOnlyMcpMatcher | null {
+  if (!MCP_VERB_TOKEN.test(pattern)) return validateRegex(pattern);
+  return {
+    test: fullToolName => {
+      const parts = splitMcpToolName(fullToolName);
+      return parts !== null && startsWithVerbToken(parts.tool, pattern);
+    },
+  };
+}
+
+/** Source rule: applies only to that Source's tools, matched against the bare tool name. */
+function compileSourceMcpMatcher(pattern: string, sourceSlug: string): ReadOnlyMcpMatcher | null {
+  const matchesTool = compileBareToolRule(pattern);
+  if (!matchesTool) return null;
+  return {
+    test: fullToolName => {
+      const parts = splitMcpToolName(fullToolName);
+      return parts !== null && parts.server === sourceSlug && matchesTool(parts.tool);
+    },
+  };
 }
 
 function compileBlockedCommandHint(hint: BlockedCommandHintRule): CompiledBlockedCommandHint | null {
@@ -823,9 +901,9 @@ class PermissionsConfigCache {
 
     // Add allowed MCP patterns
     for (const pattern of config.allowedMcpPatterns) {
-      const regex = validateRegex(pattern);
-      if (regex) {
-        merged.readOnlyMcpPatterns.push(regex);
+      const matcher = compileDefaultMcpMatcher(pattern);
+      if (matcher) {
+        merged.readOnlyMcpPatterns.push(matcher);
       } else {
         debug(`[Permissions] Invalid default MCP pattern, skipping: ${pattern}`);
       }
@@ -914,10 +992,10 @@ class PermissionsConfigCache {
   }
 
   /**
-   * Apply source-specific config with auto-scoped MCP patterns.
-   * MCP patterns in a source's permissions.json are automatically prefixed with
-   * mcp__<sourceSlug>__ so they only apply to that source's tools.
-   * This prevents cross-source leakage when using simple patterns like "list".
+   * Apply source-specific config with Source-scoped MCP patterns.
+   * MCP patterns in a source's permissions.json only apply to mcp__<sourceSlug>__
+   * tools and are matched against the bare tool name: pure-letter patterns
+   * ("list") are verb tokens, anything else is a regex ("^short2api_health$").
    */
   private applySourceConfig(
     merged: MergedPermissionsConfig,
@@ -929,17 +1007,12 @@ class PermissionsConfigCache {
       merged.allowedWritePaths.push(pattern);
     }
 
-    // MCP patterns - AUTO-SCOPE to this source
-    // User writes: "list" → becomes: "mcp__<sourceSlug>__.*list"
-    // This ensures patterns only match tools from THIS source
     for (const pattern of custom.allowedMcpPatterns) {
-      const scopedPattern = `mcp__${sourceSlug}__.*${pattern}`;
-      const regex = validateRegex(scopedPattern);
-      if (regex) {
-        merged.readOnlyMcpPatterns.push(regex);
-        debug(`[Permissions] Scoped MCP pattern for ${sourceSlug}: ${pattern} → ${scopedPattern}`);
+      const matcher = compileSourceMcpMatcher(pattern, sourceSlug);
+      if (matcher) {
+        merged.readOnlyMcpPatterns.push(matcher);
       } else {
-        debug(`[Permissions] Invalid MCP pattern after scoping, skipping: ${scopedPattern}`);
+        debug(`[Permissions] Invalid MCP pattern for ${sourceSlug}, skipping: ${pattern}`);
       }
     }
 

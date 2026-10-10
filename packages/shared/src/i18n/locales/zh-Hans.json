@@ -1705,6 +1705,7 @@
   "toast.authenticationFailed": "认证失败——点击重新连接",
   "toast.cannotRemoveActiveWorkspace": "无法移除活跃的项目",
   "toast.cannotSendRightNow": "现在无法发送",
+  "toast.contentLinkActionBlocked": "内容中的链接只能打开页面或安装技能，请在应用内执行此操作。",
   "toast.copied": "已复制到剪贴板",
   "toast.copyFailed": "复制失败",
   "toast.couldNotCreateBranch": "无法创建分支",

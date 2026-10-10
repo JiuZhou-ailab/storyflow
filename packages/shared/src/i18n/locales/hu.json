@@ -1705,6 +1705,7 @@
   "toast.authenticationFailed": "Hitelesítés sikertelen — kattints az újracsatlakozáshoz",
   "toast.cannotRemoveActiveWorkspace": "Az aktív munkaterület nem távolítható el",
   "toast.cannotSendRightNow": "Jelenleg nem lehet küldeni",
+  "toast.contentLinkActionBlocked": "Ez a hivatkozás csak oldalakat nyithat meg vagy Skilleket telepíthet. Hajtsd végre a műveletet az alkalmazásban.",
   "toast.copied": "Vágólapra másolva",
   "toast.copyFailed": "A másolás nem sikerült",
   "toast.couldNotCreateBranch": "Nem sikerült létrehozni az ágat",

@@ -1,5 +1,5 @@
 {
-  "version": "2026-03-07",
+  "version": "2026-10-10",
   "allowedBashPatterns": [
     {
       "pattern": "^ls\\b",
@@ -918,10 +918,6 @@
     {
       "pattern": "find",
       "comment": "Find/locate resources"
-    },
-    {
-      "pattern": "query",
-      "comment": "Query operations"
     },
     {
       "pattern": "count",

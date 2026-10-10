@@ -23,17 +23,17 @@ permissions only after the Host has granted trust to that Project.
 
 ## Auto-Scoping for Source Permissions
 
-**Important:** MCP patterns in a source's `permissions.json` are automatically scoped to that source.
+**Important:** MCP patterns in a source's `permissions.json` only apply to that source's tools, and they match the **bare tool name** (without the `mcp__<sourceSlug>__` prefix).
 
-When you write:
-```json
-{ "pattern": "list", "comment": "Allow list operations" }
-```
+- A pattern made only of letters is a **verb token**. `list` allows tools whose name *starts with* `list` followed by `_`, `-`, `.`, a camelCase boundary, or the end: `list_issues`, `listIssues`, `list`. It does not allow `blacklist_user` or `listall`.
+- Any other pattern is a regex tested against the bare tool name. Anchor it to declare exact tools, e.g. `^short2api_health$`.
 
-The system converts it to `mcp__<sourceSlug>__.*list` internally. This means:
+This means:
 - Simple patterns like `list` only affect tools from that source
-- No risk of accidentally allowing `list` tools from other sources
-- Workspace-level patterns still apply globally (for intentional cross-source rules)
+- Neither the source slug nor a verb buried inside a tool name grants read-only status
+- Workspace-level patterns still match the full `mcp__<server>__<tool>` name (for intentional cross-source rules)
+
+The bundled default verbs (`list`, `get`, `search`, `read`, ...) use the same verb-token rule across all sources. `query` is not a default verb, because query tools often accept arbitrary statements that can write; declare it in a source's `permissions.json` when that source's query tools are read-only.
 
 ## permissions.json Schema
 
@@ -82,15 +82,16 @@ The system converts it to `mcp__<sourceSlug>__.*list` internally. This means:
 
 ### allowedMcpPatterns
 
-Regex patterns for MCP tool names to allow in Explore mode.
+Patterns for MCP tool names to allow in Explore mode.
 
-For **source-level** permissions.json, use simple patterns (auto-scoped):
+For **source-level** permissions.json, use verb tokens or anchored regexes against the bare tool name (auto-scoped):
 ```json
 {
   "allowedMcpPatterns": [
     { "pattern": "list", "comment": "All list operations for this source" },
     { "pattern": "get", "comment": "All get operations for this source" },
-    { "pattern": "search", "comment": "All search operations for this source" }
+    { "pattern": "search", "comment": "All search operations for this source" },
+    { "pattern": "^health_check$", "comment": "One exact read-only tool" }
   ]
 }
 ```

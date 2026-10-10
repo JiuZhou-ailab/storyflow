@@ -1705,6 +1705,7 @@
   "toast.authenticationFailed": "認証に失敗しました — クリックして再接続",
   "toast.cannotRemoveActiveWorkspace": "アクティブなWorkspaceは削除できません",
   "toast.cannotSendRightNow": "現在送信できません",
+  "toast.contentLinkActionBlocked": "このリンクではページを開くか Skill をインストールすることしかできません。この操作はアプリ内で行ってください。",
   "toast.copied": "クリップボードにコピーしました",
   "toast.copyFailed": "コピーに失敗しました",
   "toast.couldNotCreateBranch": "ブランチを作成できませんでした",

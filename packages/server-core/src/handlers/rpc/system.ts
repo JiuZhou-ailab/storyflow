@@ -13,7 +13,7 @@ import {
 import { getWorkspaceByNameOrId, getGitBashPath, setGitBashPath, clearGitBashPath } from '@craft-agent/shared/config'
 import { canonicalizeProjectRoot } from '@craft-agent/shared/workspaces'
 import { normalizePathForComparison } from '@craft-agent/shared/utils'
-import { isDeepLinkWithinLimits, isSafeExternalUrl } from '@craft-agent/shared/utils/url-safety'
+import { CONTENT_LINK_ACTION_REFUSED, isAllowedExternalDeepLinkAction, isDeepLinkWithinLimits, isSafeExternalUrl } from '@craft-agent/shared/utils/url-safety'
 import {
   compareWorkspaceVersions,
   readWorkspaceFileAtCommit,
@@ -377,6 +377,14 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
         if (deepLink?.handledNoop) {
           deps.platform.logger.info('[OPEN_URL] Ignoring auth-callback deep link in OPEN_URL handler')
           return
+        }
+
+        // OPEN_URL links come from rendered content, which Agents can author.
+        // They share the external deep-link trust level: actions that grant
+        // authority or mutate state must originate from in-app navigation.
+        const action = deepLink?.navigation?.action
+        if (action && !isAllowedExternalDeepLinkAction(action)) {
+          throw new Error(`${CONTENT_LINK_ACTION_REFUSED}: ${action}`)
         }
 
         if (deepLink?.navigation?.view || deepLink?.navigation?.action) {

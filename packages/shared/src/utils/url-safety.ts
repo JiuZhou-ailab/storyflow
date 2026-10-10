@@ -46,6 +46,9 @@ export function isDeepLinkWithinLimits(parsed: URL): boolean {
   return true
 }
 
+/** Error marker for content links refused by OPEN_URL; the renderer maps it to a localized hint. */
+export const CONTENT_LINK_ACTION_REFUSED = 'Refused craftagents action from content link'
+
 /** External deep links may only request actions that still require user confirmation. */
 export function isAllowedExternalDeepLinkAction(action: string | undefined): action is 'install-skill' {
   return action === 'install-skill'

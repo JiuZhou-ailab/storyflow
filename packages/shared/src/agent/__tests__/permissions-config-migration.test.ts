@@ -84,4 +84,52 @@ describe('ensureDefaultPermissions migration', () => {
     rmSync(tempRoot, { recursive: true, force: true });
     rmSync(tempConfig, { recursive: true, force: true });
   });
+
+  async function migrateMcpPatterns(
+    installed: { version: string; mcp: string[] },
+    bundled: { version: string; mcp: string[] },
+  ) {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'permissions-bundle-'));
+    const tempConfig = mkdtempSync(join(tmpdir(), 'permissions-config-'));
+    try {
+      const bundledDir = join(tempRoot, 'resources', 'permissions');
+      const installedDir = join(tempConfig, 'permissions');
+      mkdirSync(bundledDir, { recursive: true });
+      mkdirSync(installedDir, { recursive: true });
+      writeFileSync(join(bundledDir, 'default.json'), JSON.stringify({
+        version: bundled.version, allowedBashPatterns: [], allowedMcpPatterns: bundled.mcp,
+      }));
+      writeFileSync(join(installedDir, 'default.json'), JSON.stringify({
+        version: installed.version, allowedBashPatterns: [], allowedMcpPatterns: installed.mcp,
+      }));
+
+      // afterEach restores cwd and CRAFT_CONFIG_DIR.
+      process.env.CRAFT_CONFIG_DIR = tempConfig;
+      process.chdir(tempRoot);
+      const mod = await import(`../permissions-config.ts?case=retired-${installed.version}-${bundled.version}`);
+      mod.ensureDefaultPermissions();
+      return JSON.parse(readFileSync(join(installedDir, 'default.json'), 'utf-8'));
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(tempRoot, { recursive: true, force: true });
+      rmSync(tempConfig, { recursive: true, force: true });
+    }
+  }
+
+  it('drops retired bundled MCP verbs from installed defaults on upgrade', async () => {
+    const merged = await migrateMcpPatterns(
+      { version: '2026-03-07', mcp: ['search', 'list', 'query', 'custom_verb'] },
+      { version: '2026-10-10', mcp: ['search', 'list'] },
+    );
+    expect(merged.version).toBe('2026-10-10');
+    expect(merged.allowedMcpPatterns).toEqual(['search', 'list', 'custom_verb']);
+  });
+
+  it('keeps a retired verb the user re-added after the retirement', async () => {
+    const merged = await migrateMcpPatterns(
+      { version: '2026-10-10', mcp: ['search', 'query'] },
+      { version: '2026-12-01', mcp: ['search'] },
+    );
+    expect(merged.allowedMcpPatterns).toEqual(['search', 'query']);
+  });
 });
