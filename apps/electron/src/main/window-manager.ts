@@ -5,14 +5,18 @@
 import { BrowserWindow, shell, nativeTheme, Menu, app, screen, dialog } from 'electron'
 import { windowLog } from './logger'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { existsSync } from 'fs'
 import { release } from 'os'
 import { RPC_CHANNELS, type WindowCloseRequestSource } from '../shared/types'
 import { i18n } from '@craft-agent/shared/i18n'
 import type { SavedWindow } from './window-state'
+import { classifyMainWindowNavigation } from './main-window-navigation'
 
 // Vite dev server URL for hot reload
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+const RENDERER_ENTRY_PATH = join(__dirname, 'renderer/index.html')
+const rendererEntryUrl = VITE_DEV_SERVER_URL ?? pathToFileURL(RENDERER_ENTRY_PATH).href
 const WINDOW_SCREEN_MARGIN = 64
 const DEFAULT_MAIN_WINDOW_SIZE = { width: 1400, height: 900 }
 const MIN_WINDOW_SIZE = { width: 800, height: 600 }
@@ -235,14 +239,11 @@ export class WindowManager {
 
     // Handle external navigation attempts from renderer WebContents
     window.webContents.on('will-navigate', (event, url) => {
-      // Allow navigation within the app (file:// in prod, localhost dev server)
-      const isInternalUrl = url.startsWith('file://') ||
-        (VITE_DEV_SERVER_URL && url.startsWith(VITE_DEV_SERVER_URL))
-
-      if (!isInternalUrl) {
-        event.preventDefault()
-        shell.openExternal(url)
-      }
+      const navigation = classifyMainWindowNavigation(url, rendererEntryUrl)
+      if (navigation === 'allow') return
+      event.preventDefault()
+      if (navigation === 'external') shell.openExternal(url)
+      else windowLog.warn(`Blocked main window navigation to ${url}`)
     })
 
     // Enable right-click context menu in development
@@ -282,7 +283,7 @@ export class WindowManager {
       if (failed || window.isDestroyed() || this.isAppQuitting) return
       const loading = VITE_DEV_SERVER_URL
         ? window.loadURL(`${VITE_DEV_SERVER_URL}?${new URLSearchParams(query)}`)
-        : window.loadFile(join(__dirname, 'renderer/index.html'), { query })
+        : window.loadFile(RENDERER_ENTRY_PATH, { query })
       // did-fail-load owns retry decisions; always consume the load rejection.
       void loading.catch((error: { code?: string; errno?: number }) => {
         if (error.code === 'ERR_ABORTED' || error.errno === -3) return

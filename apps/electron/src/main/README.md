@@ -26,6 +26,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `runtime-paths.ts` - Packaged/dev runtime resource path resolver.
 - `shell-env.ts` - User shell environment loader.
 - `skills-market-client.ts` - Authenticated catalog reads and Skill publication without renderer token exposure; catalog requests are coalesced and reused for 30 seconds, invalidated on auth changes and publication.
+- `main-window-navigation.ts` - Main window navigation policy: only the renderer entry stays in-app; other local pages are blocked.
 - `mcp-market-client.ts` - Read-only, parsed MCP subregistry discovery without contacting listed endpoints.
 - `startup-diagnostics.ts` - Bounded redacted startup receipts available before Host loading.
 - `startup-recovery.ts` - Native recovery choices independent of renderer and RPC.
