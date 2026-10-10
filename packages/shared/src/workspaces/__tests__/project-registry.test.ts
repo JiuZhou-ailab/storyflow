@@ -2,7 +2,8 @@
 // output: Regression coverage for Host-only registration, stable identity, conflict rejection, and locator rebasing
 // pos: Guards the Product Host boundary between canonical Project IDs and mutable filesystem roots
 
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, spyOn } from 'bun:test'
+import * as fs from 'node:fs'
 import {
   chmodSync,
   existsSync,
@@ -23,6 +24,7 @@ import { loadLabelConfig } from '../../labels/storage.ts'
 import { downloadStatusIcon, loadStatusConfig } from '../../statuses/storage.ts'
 import { rebasePathWithinProjectRoot } from '../paths.ts'
 import { getLegacyConflictRelativePath, loadWorkspaceConfig } from '../storage.ts'
+import { isWorkspaceRootAvailable } from '../project-registry.ts'
 
 const REGISTRY_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'project-registry.ts')).href
 const CONFIG_STORAGE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', '..', 'config', 'storage.ts')).href
@@ -1178,6 +1180,70 @@ describe('Project registry identity and locator', () => {
         .toBe(join(parent, 'missing'))
     } finally {
       rmSync(parent, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('Project availability under transient file-sharing errors', () => {
+  it('keeps an intact Project available when the first config reads fail with EBUSY', () => {
+    const root = mkdtempSync(join(tmpdir(), 'storyflow-project-transient-read-'))
+    writeProjectConfig(root, { id: 'directory-a', name: 'Busy Project' })
+    const configPath = join(root, '.craft-agent', 'config.json')
+    const originalRead = fs.readFileSync
+    let busyReads = 0
+    const read = spyOn(fs, 'readFileSync').mockImplementation(((...args: Parameters<typeof fs.readFileSync>) => {
+      if (args[0] === configPath && busyReads < 2) {
+        busyReads += 1
+        throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' })
+      }
+      return originalRead(...args)
+    }) as typeof fs.readFileSync)
+
+    try {
+      expect(isWorkspaceRootAvailable({
+        id: 'project-a',
+        name: 'Busy Project',
+        slug: 'busy-project',
+        rootPath: root,
+        directoryConfigId: 'directory-a',
+        createdAt: 1,
+      })).toBe(true)
+      expect(busyReads).toBe(2)
+    } finally {
+      read.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reports a non-transient config read failure with its code instead of hiding it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'storyflow-project-denied-read-'))
+    writeProjectConfig(root, { id: 'directory-a', name: 'Denied Project' })
+    const configPath = join(root, '.craft-agent', 'config.json')
+    const originalRead = fs.readFileSync
+    const read = spyOn(fs, 'readFileSync').mockImplementation(((...args: Parameters<typeof fs.readFileSync>) => {
+      if (args[0] === configPath) {
+        throw Object.assign(new Error('EIO: i/o error'), { code: 'EIO' })
+      }
+      return originalRead(...args)
+    }) as typeof fs.readFileSync)
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      expect(isWorkspaceRootAvailable({
+        id: 'project-a',
+        name: 'Denied Project',
+        slug: 'denied-project',
+        rootPath: root,
+        directoryConfigId: 'directory-a',
+        createdAt: 1,
+      })).toBe(false)
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toContain('EIO')
+      expect(String(warn.mock.calls[0]?.[0])).toContain(configPath)
+    } finally {
+      read.mockRestore()
+      warn.mockRestore()
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

@@ -1,5 +1,5 @@
 // input: Local file paths and shared attachment DTOs
-// output: File classification, safe loading, and provider-neutral attachment context helpers
+// output: File classification, safe loading (with bounded transient-lock retry), atomic writes, and provider-neutral attachment context helpers
 // pos: Shared file boundary used before persistence and model-provider adaptation
 
 import { existsSync, readFileSync, statSync, writeFileSync, unlinkSync, renameSync } from 'fs';
@@ -32,19 +32,50 @@ export function safeJsonParse(text: string): unknown {
  * Replaces the common JSON.parse(readFileSync(path, 'utf-8')) pattern.
  */
 export function readJsonFileSync<T = unknown>(filePath: string): T {
-  return JSON.parse(stripBom(readFileSync(filePath, 'utf-8'))) as T;
+  const text = retryTransientFsErrorSync(() => readFileSync(filePath, 'utf-8'));
+  return JSON.parse(stripBom(text)) as T;
+}
+
+const TRANSIENT_FS_RETRY_DELAYS_MS = [10, 20, 40, 80, 160];
+
+/**
+ * Sharing violations are transient: Windows antivirus/indexers briefly hold
+ * files open, and a concurrent atomic rename can leave the target
+ * delete-pending (surfacing as EPERM/EACCES). On POSIX EPERM/EACCES are real
+ * permission errors and must fail immediately.
+ */
+export function isTransientFsError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  if (code === 'EBUSY') return true;
+  return process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES');
+}
+
+const retrySleepCell = new Int32Array(new SharedArrayBuffer(4));
+
+/** Run a sync fs operation, retrying transient sharing violations with bounded backoff (~310ms worst case). */
+export function retryTransientFsErrorSync<T>(operation: () => T): T {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return operation();
+    } catch (error) {
+      const delayMs = TRANSIENT_FS_RETRY_DELAYS_MS[attempt];
+      if (delayMs === undefined || !isTransientFsError(error)) throw error;
+      Atomics.wait(retrySleepCell, 0, 0, delayMs);
+    }
+  }
 }
 
 /**
  * Atomically write a file by writing to a temp file then renaming.
  * This prevents partial writes from corrupting the file on crash/interrupt.
  * Uses write-to-temp-then-rename pattern which is atomic on POSIX systems.
+ * The rename retries transient Windows sharing violations (AV scan / reader holding the target).
  */
 export function atomicWriteFileSync(filePath: string, data: string): void {
   const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   try {
     writeFileSync(tmpPath, data, { flag: 'wx' });
-    renameSync(tmpPath, filePath);
+    retryTransientFsErrorSync(() => renameSync(tmpPath, filePath));
   } catch (error) {
     // Clean up temp file if rename failed
     try { unlinkSync(tmpPath); } catch {}

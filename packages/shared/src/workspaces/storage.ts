@@ -23,7 +23,7 @@ import { dirname, isAbsolute, join, relative } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
-import { atomicWriteFileSync, readJsonFileSync } from '../utils/files.ts';
+import { atomicWriteFileSync, readJsonFileSync, retryTransientFsErrorSync } from '../utils/files.ts';
 import { getDefaultStatusConfig, saveStatusConfig, ensureDefaultIconFiles } from '../statuses/storage.ts';
 import { getDefaultLabelConfig, saveLabelConfig } from '../labels/storage.ts';
 import { loadConfigDefaults } from '../config/storage.ts';
@@ -58,6 +58,7 @@ import {
   ensureProjectOwnedDirectory,
   resolveProjectOwnedFilePath,
   resolveProjectOwnedPath,
+  UnsafeProjectPathError,
 } from './paths.ts';
 
 export {
@@ -453,14 +454,31 @@ export function inspectWorkspaceConfig(rootPath: string): WorkspaceConfig | null
 export function inspectWorkspaceStateConfig(rootPath: string): WorkspaceConfig | null {
   const legacyConfigPath = getLegacyWorkspaceConfigPath(rootPath);
   const canonicalConfigPath = getWorkspaceConfigPath(rootPath);
-  if (!existsSync(canonicalConfigPath)) return null;
-  if (canonicalConfigPath === legacyConfigPath) return readWorkspaceConfig(rootPath);
+  if (canonicalConfigPath === legacyConfigPath) {
+    return existsSync(canonicalConfigPath) ? readWorkspaceConfig(rootPath) : null;
+  }
 
+  // No existsSync pre-check: it reports false for *any* stat error (e.g. EPERM on a
+  // Windows delete-pending file). A truly missing file surfaces below as
+  // UnsafeProjectPathError("does not exist") and stays a silent null.
   try {
-    resolveProjectOwnedPath(rootPath, canonicalConfigPath);
+    retryTransientFsErrorSync(() => resolveProjectOwnedPath(rootPath, canonicalConfigPath));
     const config = readJsonFileSync<WorkspaceConfig>(canonicalConfigPath);
     return isWorkspaceConfigLike(config) ? config : null;
-  } catch {
+  } catch (error) {
+    // Definitive absence/invalidity stays silent. Anything else already survived
+    // readJsonFileSync's transient-lock retry and still returns null ("no readable
+    // state"): availability is recomputed on the next workspaces fetch (the renderer
+    // refetches on focus while a Project is unavailable), so it self-heals. Log the
+    // code + path only so a sticky "unavailable" Project is diagnosable.
+    const code = (error as NodeJS.ErrnoException).code;
+    const definitive = error instanceof SyntaxError
+      || error instanceof UnsafeProjectPathError
+      || code === 'ENOENT'
+      || code === 'ENOTDIR';
+    if (!definitive) {
+      console.warn(`[workspace-storage] Project state config unreadable (${code ?? (error as Error)?.name}): ${canonicalConfigPath}`);
+    }
     return null;
   }
 }

@@ -2018,6 +2018,35 @@ function AppContent() {
     window.electronAPI.getWorkspaces().then(setWorkspaces)
   }, [setWorkspaces])
 
+  // Project availability (`rootAvailable`) is a per-fetch snapshot; a transient
+  // filesystem lock (e.g. Windows AV) must not stick for the session. While any
+  // Project is unavailable, recheck on window focus and patch only changed
+  // availability into the latest state, so unrelated writes are never overwritten
+  // and an unchanged result does not re-render (or rescan every Project's sessions).
+  const hasUnavailableProject = workspaces.some(workspace => workspace.rootAvailable === false)
+  const focusRefetchSeqRef = useRef(0)
+  useEffect(() => {
+    if (!hasUnavailableProject) return
+    return window.electronAPI.onWindowFocusChange((isFocused) => {
+      if (!isFocused) return
+      const seq = ++focusRefetchSeqRef.current
+      window.electronAPI.getWorkspaces()
+        .then((refreshed) => {
+          if (seq !== focusRefetchSeqRef.current) return
+          const availability = new Map(refreshed.map(workspace => [workspace.id, workspace.rootAvailable]))
+          setWorkspaces(prev => {
+            if (prev.every(workspace => !availability.has(workspace.id) || availability.get(workspace.id) === workspace.rootAvailable)) return prev
+            return prev.map(workspace => availability.has(workspace.id) && availability.get(workspace.id) !== workspace.rootAvailable
+              ? { ...workspace, rootAvailable: availability.get(workspace.id) }
+              : workspace)
+          })
+        })
+        .catch((error) => {
+          console.warn('[App] Failed to refresh workspaces on focus:', error)
+        })
+    })
+  }, [hasUnavailableProject, setWorkspaces])
+
   const handleRelinkProjectFromHub = useCallback(async (workspaceId: string) => {
     try {
       const rootPath = await window.electronAPI.openFolderDialog()
