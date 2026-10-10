@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, readFileSync, writeFileSync } from 'fs'
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
@@ -188,5 +188,20 @@ describe('session draft storage', () => {
     runEval(configDir, "deleteSessionDraft('s1')")
     const output = runEval(configDir, "console.log(JSON.stringify(getSessionDraft('s1')))")
     expect(output).toBe('null')
+  })
+
+  it('keeps an unreadable drafts file instead of overwriting it with one draft', () => {
+    const configDir = makeConfigDir()
+    const corrupted = '{"drafts":{"s1":{"text":"long unsaved paragraph"}'
+    writeFileSync(join(configDir, 'drafts.json'), corrupted)
+
+    runEval(configDir, "setSessionDraft('s2', { text: 'new draft' })")
+
+    const preserved = readdirSync(configDir)
+      .filter(name => name.startsWith('drafts.json.corrupt-'))
+      .map(name => readFileSync(join(configDir, name), 'utf-8'))
+    expect(preserved).toEqual([corrupted])
+    const output = runEval(configDir, "console.log(JSON.stringify(getSessionDraft('s2')))")
+    expect(JSON.parse(output)).toEqual({ text: 'new draft' })
   })
 })

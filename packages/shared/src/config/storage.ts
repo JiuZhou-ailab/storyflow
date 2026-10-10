@@ -1,7 +1,7 @@
 // input: Config files, bundled defaults, workspace metadata, and encrypted credentials
 // output: Persistent app config, explicit workspace references, default session records, and managed connection metadata
 // pos: Shared configuration persistence layer used by Electron, server, and tests
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, readdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, readdirSync, renameSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { join, dirname, basename } from 'path';
 import { isDeepStrictEqual } from 'node:util';
@@ -1163,36 +1163,58 @@ function isEmptyDraft(draft: SessionDraft): boolean {
 /**
  * Load all drafts from disk. Entries that don't parse as SessionDraft
  * (e.g. pre-upgrade string drafts) are discarded silently.
+ *
+ * `corrupt` marks a file that exists but is not valid JSON. Readers treat it as
+ * empty; writers must preserve it first so one new draft never replaces every
+ * session's unsaved text. Other read errors (EBUSY, EACCES) may be transient,
+ * so they propagate instead of being mistaken for an empty store.
  */
-function loadDraftsData(): DraftsData {
+function loadDraftsData(): DraftsData & { corrupt?: true } {
+  if (!existsSync(DRAFTS_FILE)) {
+    return { drafts: {}, updatedAt: 0 };
+  }
+  let raw: { drafts?: Record<string, unknown>; updatedAt?: number };
   try {
-    if (!existsSync(DRAFTS_FILE)) {
-      return { drafts: {}, updatedAt: 0 };
+    raw = readJsonFileSync(DRAFTS_FILE);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    debug('[drafts] drafts.json is not valid JSON:', error.message);
+    return { drafts: {}, updatedAt: 0, corrupt: true };
+  }
+  const drafts: Record<string, SessionDraft> = {};
+  for (const [sessionId, value] of Object.entries(raw?.drafts ?? {})) {
+    if (isSessionDraft(value)) {
+      drafts[sessionId] = value;
     }
-    const raw = readJsonFileSync<{ drafts?: Record<string, unknown>; updatedAt?: number }>(DRAFTS_FILE);
-    const drafts: Record<string, SessionDraft> = {};
-    for (const [sessionId, value] of Object.entries(raw.drafts ?? {})) {
-      if (isSessionDraft(value)) {
-        drafts[sessionId] = value;
-      }
-    }
-    return { drafts, updatedAt: raw.updatedAt ?? 0 };
-  } catch {
+  }
+  return { drafts, updatedAt: raw?.updatedAt ?? 0 };
+}
+
+/** Reads must not fail the UI; an unreadable store shows no drafts. */
+function readDraftsData(): DraftsData {
+  try {
+    return loadDraftsData();
+  } catch (error) {
+    debug('[drafts] Failed to read drafts.json:', error);
     return { drafts: {}, updatedAt: 0 };
   }
 }
 
-function saveDraftsData(data: DraftsData): void {
+function saveDraftsData(data: DraftsData & { corrupt?: true }): void {
   ensureConfigDir();
-  data.updatedAt = Date.now();
-  writeFileSync(DRAFTS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  if (data.corrupt) {
+    const preservedPath = `${DRAFTS_FILE}.corrupt-${Date.now()}`;
+    renameSync(DRAFTS_FILE, preservedPath);
+    debug('[drafts] Preserved unreadable drafts.json at', preservedPath);
+  }
+  atomicWriteFileSync(DRAFTS_FILE, JSON.stringify({ drafts: data.drafts, updatedAt: Date.now() }, null, 2));
 }
 
 /**
  * Get the persisted draft for a session (text + attachment refs).
  */
 export function getSessionDraft(sessionId: string): SessionDraft | null {
-  const data = loadDraftsData();
+  const data = readDraftsData();
   return data.drafts[sessionId] ?? null;
 }
 
@@ -1241,7 +1263,7 @@ export function deleteSessionDraft(sessionId: string): void {
  * Get all drafts as a record keyed by sessionId.
  */
 export function getAllSessionDrafts(): Record<string, SessionDraft> {
-  const data = loadDraftsData();
+  const data = readDraftsData();
   return data.drafts;
 }
 
