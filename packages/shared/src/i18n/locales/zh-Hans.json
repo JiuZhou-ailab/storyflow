@@ -1734,6 +1734,7 @@
   "toast.deletedSkill": "已删除技能: {{slug}}",
   "toast.deletedSource": "已删除数据源",
   "toast.disconnected": "已断开——点击重新连接",
+  "toast.draftsRecovered": "无法读取已保存的草稿，原文件已保留在 {{path}}",
   "toast.failedToCheckUpdates": "无法检查更新",
   "toast.failedToCopyPattern": "无法复制模式",
   "toast.failedToCreateBrowser": "无法创建浏览器窗口",

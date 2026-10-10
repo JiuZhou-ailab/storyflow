@@ -63,7 +63,7 @@ export function createDemoAdapter(notice: (message: string) => void) {
     getAutomationLastExecuted: async () => ({}),
     getUpdateInfo: async () => ({ available: false, currentVersion: '0.21.3', latestVersion: null, downloadState: 'idle', downloadProgress: 0 }),
     getSessionPermissionModeState: async () => ({ permissionMode: 'allow-all', modeVersion: 1, changedAt: new Date(0).toISOString(), changedBy: 'restore' }),
-    getAllDrafts: async () => copy(drafts), setDraft: async (id, draft) => { drafts[id] = copy(draft) },
+    getAllDrafts: async () => copy(drafts), takeDraftsRecovery: async () => null, setDraft: async (id, draft) => { drafts[id] = copy(draft) },
     readFile: async (path) => read(path),
     writeFile: async (path, content) => { read(path); files.set(path, content) },
     listWorkspaceFiles: async (root) => listFiles(root),

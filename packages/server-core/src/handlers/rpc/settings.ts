@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'path'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { getPreferencesPath, getSystemInstructionsPath, getUserProfilePath, saveSystemInstructionsMarkdown, saveUserProfileMarkdown, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, getDefaultLlmConnection, getDefaultThinkingLevel, getLlmConnections, normalizeLlmConnectionSlug, setDefaultLlmSelection, setDefaultThinkingLevel, updateWorkspaceName } from '@craft-agent/shared/config'
+import { getPreferencesPath, getSystemInstructionsPath, getUserProfilePath, saveSystemInstructionsMarkdown, saveUserProfileMarkdown, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, takeDraftsRecovery, getWorkspaceByNameOrId, getDefaultLlmConnection, getDefaultThinkingLevel, getLlmConnections, normalizeLlmConnectionSlug, setDefaultLlmSelection, setDefaultThinkingLevel, updateWorkspaceName } from '@craft-agent/shared/config'
 import { isValidThinkingLevel, normalizeThinkingLevel, THINKING_LEVEL_IDS } from '@craft-agent/shared/agent/thinking-levels'
 
 const VALID_THINKING_LEVELS_LIST = THINKING_LEVEL_IDS.map(id => `'${id}'`).join(', ')
@@ -33,6 +33,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.drafts.SET,
   RPC_CHANNELS.drafts.DELETE,
   RPC_CHANNELS.drafts.GET_ALL,
+  RPC_CHANNELS.drafts.TAKE_RECOVERY,
   RPC_CHANNELS.input.GET_AUTO_CAPITALISATION,
   RPC_CHANNELS.input.SET_AUTO_CAPITALISATION,
   RPC_CHANNELS.input.GET_SEND_MESSAGE_KEY,
@@ -294,6 +295,11 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Get all drafts (for loading on app start)
   server.handle(RPC_CHANNELS.drafts.GET_ALL, async () => {
     return getAllSessionDrafts()
+  })
+
+  // Report (once) where an unreadable drafts store was preserved
+  server.handle(RPC_CHANNELS.drafts.TAKE_RECOVERY, async () => {
+    return takeDraftsRecovery()
   })
 
   // ============================================================

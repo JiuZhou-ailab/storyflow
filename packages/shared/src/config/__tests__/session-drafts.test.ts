@@ -14,7 +14,7 @@ function runEval(configDir: string, code: string): string {
   const run = Bun.spawnSync([
     process.execPath,
     '--eval',
-    `import { getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts } from '${STORAGE_MODULE_PATH}'; ${code}`,
+    `import { getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, takeDraftsRecovery } from '${STORAGE_MODULE_PATH}'; ${code}`,
   ], {
     env: { ...process.env, CRAFT_CONFIG_DIR: configDir },
     stdout: 'pipe',
@@ -206,5 +206,30 @@ describe('session draft storage', () => {
     expect(preserved).toEqual([corrupted])
     const output = runEval(configDir, "console.log(JSON.stringify(getSessionDraft('s2')))")
     expect(JSON.parse(output)).toEqual({ text: 'new draft' })
+  })
+
+  it('preserves an unreadable store on first read and reports its location once', () => {
+    const configDir = makeConfigDir()
+    const corrupted = '{"drafts":{"s1":{"text":"long unsaved paragraph"}'
+    writeFileSync(join(configDir, 'drafts.json'), corrupted)
+
+    const output = runEval(configDir, `
+      const drafts = getAllSessionDrafts();
+      console.log(JSON.stringify({ drafts, first: takeDraftsRecovery(), second: takeDraftsRecovery() }));
+    `)
+    const { drafts, first, second } = JSON.parse(output)
+
+    expect(drafts).toEqual({})
+    expect(second).toBeNull()
+    expect(first.preservedPath.startsWith(join(configDir, 'drafts.json.corrupt-'))).toBe(true)
+    expect(readFileSync(first.preservedPath, 'utf-8')).toBe(corrupted)
+    expect(readdirSync(configDir)).not.toContain('drafts.json')
+  })
+
+  it('reports no recovery for a healthy store', () => {
+    const configDir = makeConfigDir()
+    runEval(configDir, "setSessionDraft('s1', { text: 'hello' })")
+    const output = runEval(configDir, 'getAllSessionDrafts(); console.log(JSON.stringify(takeDraftsRecovery()))')
+    expect(JSON.parse(output)).toBeNull()
   })
 })

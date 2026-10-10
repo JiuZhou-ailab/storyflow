@@ -1736,6 +1736,7 @@
   "toast.deletedSkill": "Usunięto umiejętność: {{slug}}",
   "toast.deletedSource": "Usunięto źródło",
   "toast.disconnected": "Rozłączono — kliknij, aby ponownie połączyć",
+  "toast.draftsRecovered": "Nie udało się odczytać zapisanych wersji roboczych. Oryginalny plik zachowano w {{path}}",
   "toast.failedToCheckUpdates": "Nie udało się sprawdzić aktualizacji",
   "toast.failedToCopyPattern": "Nie udało się skopiować wzorca",
   "toast.failedToCreateBrowser": "Nie udało się utworzyć okna przeglądarki",

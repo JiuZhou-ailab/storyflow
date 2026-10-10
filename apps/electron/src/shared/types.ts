@@ -613,6 +613,7 @@ export interface ElectronAPI {
   setDraft(sessionId: string, draft: import('@craft-agent/shared/config').SessionDraft): Promise<void>
   deleteDraft(sessionId: string): Promise<void>
   getAllDrafts(): Promise<Record<string, import('@craft-agent/shared/config').SessionDraft>>
+  takeDraftsRecovery(): Promise<import('@craft-agent/shared/config').DraftsRecovery | null>
 
   // Session Info Panel
   getSessionFiles(sessionId: string): Promise<SessionFile[]>

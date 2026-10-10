@@ -1734,6 +1734,7 @@
   "toast.deletedSkill": "Deleted skill: {{slug}}",
   "toast.deletedSource": "Deleted source",
   "toast.disconnected": "Disconnected — click to reconnect",
+  "toast.draftsRecovered": "Saved drafts couldn't be read. The original file was kept at {{path}}",
   "toast.failedToCheckUpdates": "Failed to check for updates",
   "toast.failedToCopyPattern": "Failed to copy pattern",
   "toast.failedToCreateBrowser": "Failed to create browser window",

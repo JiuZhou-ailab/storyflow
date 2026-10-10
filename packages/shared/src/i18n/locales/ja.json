@@ -1734,6 +1734,7 @@
   "toast.deletedSkill": "スキルを削除しました: {{slug}}",
   "toast.deletedSource": "ソースを削除しました",
   "toast.disconnected": "切断されました — クリックして再接続",
+  "toast.draftsRecovered": "保存された下書きを読み込めませんでした。元のファイルは {{path}} に保存されています",
   "toast.failedToCheckUpdates": "アップデートの確認に失敗しました",
   "toast.failedToCopyPattern": "パターンのコピーに失敗しました",
   "toast.failedToCreateBrowser": "ブラウザウィンドウの作成に失敗しました",

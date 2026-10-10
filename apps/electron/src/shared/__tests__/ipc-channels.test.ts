@@ -83,6 +83,7 @@ const EXPECTED_CHANNELS: string[] = [
   'drafts:get',
   'drafts:getAll',
   'drafts:set',
+  'drafts:takeRecovery',
   'file:createDirectory',
   'file:delete',
   'file:deleteEntry',

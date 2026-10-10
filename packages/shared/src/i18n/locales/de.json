@@ -1734,6 +1734,7 @@
   "toast.deletedSkill": "Skill gelöscht: {{slug}}",
   "toast.deletedSource": "Quelle gelöscht",
   "toast.disconnected": "Verbindung getrennt — zum Wiederverbinden klicken",
+  "toast.draftsRecovered": "Gespeicherte Entwürfe konnten nicht gelesen werden. Die Originaldatei wurde unter {{path}} aufbewahrt",
   "toast.failedToCheckUpdates": "Suche nach Updates fehlgeschlagen",
   "toast.failedToCopyPattern": "Muster konnte nicht kopiert werden",
   "toast.failedToCreateBrowser": "Browserfenster konnte nicht erstellt werden",

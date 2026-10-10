@@ -1164,16 +1164,34 @@ function isEmptyDraft(draft: SessionDraft): boolean {
   return !draft.text && (!draft.attachments || draft.attachments.length === 0);
 }
 
+/** Where an unreadable drafts.json was moved, until a client reports it to the user. */
+export interface DraftsRecovery {
+  preservedPath: string;
+}
+
+let pendingDraftsRecovery: DraftsRecovery | null = null;
+
+/**
+ * Move an unreadable drafts.json aside before anything can overwrite it, so the
+ * user's text stays recoverable and the next write starts a fresh store.
+ */
+function preserveUnreadableDrafts(reason: string): DraftsData {
+  const preservedPath = `${DRAFTS_FILE}.corrupt-${Date.now()}`;
+  renameSync(DRAFTS_FILE, preservedPath);
+  pendingDraftsRecovery = { preservedPath };
+  debug(`[drafts] Preserved unreadable drafts.json (${reason}) at`, preservedPath);
+  return { drafts: {}, updatedAt: 0 };
+}
+
 /**
  * Load all drafts from disk. Entries that don't parse as SessionDraft
  * (e.g. pre-upgrade string drafts) are discarded silently.
  *
- * `corrupt` marks a file that exists but is not valid JSON or not a drafts object. Readers treat it as
- * empty; writers must preserve it first so one new draft never replaces every
- * session's unsaved text. Other read errors (EBUSY, EACCES) may be transient,
- * so they propagate instead of being mistaken for an empty store.
+ * A file that is not valid JSON or not a drafts object is preserved aside on
+ * first read (see takeDraftsRecovery). Other read errors (EBUSY, EACCES) may be
+ * transient, so they propagate instead of being mistaken for an empty store.
  */
-function loadDraftsData(): DraftsData & { corrupt?: true } {
+function loadDraftsData(): DraftsData {
   if (!existsSync(DRAFTS_FILE)) {
     return { drafts: {}, updatedAt: 0 };
   }
@@ -1182,12 +1200,10 @@ function loadDraftsData(): DraftsData & { corrupt?: true } {
     raw = readJsonFileSync(DRAFTS_FILE);
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
-    debug('[drafts] drafts.json is not valid JSON:', error.message);
-    return { drafts: {}, updatedAt: 0, corrupt: true };
+    return preserveUnreadableDrafts(`invalid JSON: ${error.message}`);
   }
   if (!isPlainObject(raw) || (raw.drafts !== undefined && !isPlainObject(raw.drafts))) {
-    debug('[drafts] drafts.json has an unknown shape');
-    return { drafts: {}, updatedAt: 0, corrupt: true };
+    return preserveUnreadableDrafts('unknown shape');
   }
   const drafts: Record<string, SessionDraft> = {};
   for (const [sessionId, value] of Object.entries(raw.drafts ?? {})) {
@@ -1208,14 +1224,16 @@ function readDraftsData(): DraftsData {
   }
 }
 
-function saveDraftsData(data: DraftsData & { corrupt?: true }): void {
+function saveDraftsData(data: DraftsData): void {
   ensureConfigDir();
-  if (data.corrupt) {
-    const preservedPath = `${DRAFTS_FILE}.corrupt-${Date.now()}`;
-    renameSync(DRAFTS_FILE, preservedPath);
-    debug('[drafts] Preserved unreadable drafts.json at', preservedPath);
-  }
   atomicWriteFileSync(DRAFTS_FILE, JSON.stringify({ drafts: data.drafts, updatedAt: Date.now() }, null, 2));
+}
+
+/** Returns a pending drafts recovery once, so exactly one client tells the user. */
+export function takeDraftsRecovery(): DraftsRecovery | null {
+  const recovery = pendingDraftsRecovery;
+  pendingDraftsRecovery = null;
+  return recovery;
 }
 
 /**

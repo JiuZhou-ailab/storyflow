@@ -264,6 +264,7 @@ export const RPC_CHANNELS = {
     SET: 'drafts:set',
     DELETE: 'drafts:delete',
     GET_ALL: 'drafts:getAll',
+    TAKE_RECOVERY: 'drafts:takeRecovery',
   },
   sources: {
     GET: 'sources:get',

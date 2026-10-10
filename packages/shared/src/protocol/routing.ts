@@ -316,6 +316,7 @@ export const CHANNEL_ROUTING = {
   'drafts:set': 'REMOTE_ELIGIBLE',
   'drafts:delete': 'REMOTE_ELIGIBLE',
   'drafts:getAll': 'REMOTE_ELIGIBLE',
+  'drafts:takeRecovery': 'REMOTE_ELIGIBLE',
 
   'sources:get': 'REMOTE_ELIGIBLE',
   'sources:create': 'REMOTE_ELIGIBLE',

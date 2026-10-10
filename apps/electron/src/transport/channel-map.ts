@@ -231,6 +231,7 @@ export const CHANNEL_MAP = {
   setDraft: invoke(RPC_CHANNELS.drafts.SET),
   deleteDraft: invoke(RPC_CHANNELS.drafts.DELETE),
   getAllDrafts: invoke(RPC_CHANNELS.drafts.GET_ALL),
+  takeDraftsRecovery: invoke(RPC_CHANNELS.drafts.TAKE_RECOVERY),
 
   // Session Info Panel
   getSessionFiles: invoke(RPC_CHANNELS.sessions.GET_FILES),

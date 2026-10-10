@@ -1734,6 +1734,7 @@
   "toast.deletedSkill": "Törölt készség: {{slug}}",
   "toast.deletedSource": "Forrás törölve",
   "toast.disconnected": "Kapcsolat bontva — kattints az újracsatlakozáshoz",
+  "toast.draftsRecovered": "A mentett piszkozatok nem olvashatók. Az eredeti fájl itt maradt meg: {{path}}",
   "toast.failedToCheckUpdates": "Nem sikerült ellenőrizni a frissítéseket",
   "toast.failedToCopyPattern": "Nem sikerült másolni a mintát",
   "toast.failedToCreateBrowser": "Nem sikerült létrehozni a böngészőablakot",

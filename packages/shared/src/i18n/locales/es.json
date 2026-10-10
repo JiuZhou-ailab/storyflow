@@ -1734,6 +1734,7 @@
   "toast.deletedSkill": "Skill eliminado: {{slug}}",
   "toast.deletedSource": "Fuente eliminada",
   "toast.disconnected": "Desconectado — haz clic para reconectar",
+  "toast.draftsRecovered": "No se pudieron leer los borradores guardados. El archivo original se conservó en {{path}}",
   "toast.failedToCheckUpdates": "No se pudo buscar actualizaciones",
   "toast.failedToCopyPattern": "No se pudo copiar el patrón",
   "toast.failedToCreateBrowser": "No se pudo crear la ventana del navegador",

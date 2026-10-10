@@ -885,6 +885,13 @@ function AppContent() {
         if (Object.keys(drafts).length > 0) {
           sessionDraftsRef.current = new Map(Object.entries(drafts))
         }
+        // Loading drafts is what detects an unreadable store; tell the user where it went.
+        return window.electronAPI.takeDraftsRecovery()
+      })
+      .then((recovery) => {
+        if (recovery) {
+          toast.warning(t('toast.draftsRecovered', { path: recovery.preservedPath }), { duration: Infinity })
+        }
       })
       .catch((error) => {
         console.error('[App] Failed to load drafts:', error)
