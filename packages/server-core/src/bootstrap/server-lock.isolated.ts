@@ -5,13 +5,14 @@
 import { afterAll, afterEach, expect, test, setDefaultTimeout } from 'bun:test'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 setDefaultTimeout(30_000)
 
-const configDir = mkdtempSync(join(tmpdir(), 'storyflow-server-lock-'))
+// Unix socket paths are limited to ~104 bytes; macOS tmpdir() alone uses half of that.
+const configDir = realpathSync(mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'sf-lock-')))
 const lockPath = join(configDir, '.server.lock')
 const leasePath = join(configDir, '.server.lease')
 process.env.CRAFT_CONFIG_DIR = configDir
@@ -79,16 +80,45 @@ test('two real processes exclude a live expired owner and recover after actual p
   }
 })
 
-test('an unavailable own birth probe permits fresh ownership but never stealing a live unknown owner', async () => {
+test('an owner whose OS identity cannot be queried is still proved active, then recovered after exit', async () => {
   const first = contender(true)
   try {
     expect(await first.command('acquire')).toMatchObject({ ok: true })
     expect(JSON.parse(readFileSync(lockPath, 'utf8')).processIdentity).toBeUndefined()
-    await expect(acquireServerLock(logger)).rejects.toMatchObject({ code: 'OWNER_UNKNOWN' })
+    await expect(acquireServerLock(logger)).rejects.toMatchObject({ code: 'OWNER_ACTIVE' })
     await first.close()
     await acquireServerLock(logger)
     expect(existsSync(leasePath)).toBe(true)
   } finally { await first.close() }
+})
+
+test('a dead owner is recovered even when its PID now belongs to another live process', async () => {
+  const first = contender(true)
+  try {
+    expect(await first.command('acquire')).toMatchObject({ ok: true })
+    await first.close()
+    // Model PID reuse: the recorded PID is alive but is not the exited Host.
+    const marker = join(leasePath, readdirSync(leasePath)[0]!)
+    for (const path of [marker, lockPath]) {
+      writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), pid: process.ppid }))
+    }
+    await acquireServerLock(logger)
+    expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(process.pid)
+  } finally { await first.close() }
+})
+
+test('an explicit override recovers an unverifiable legacy owner but never a provably live one', async () => {
+  writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, startedAt: 1, leaseVersion: 1 }))
+  await expect(acquireServerLock(logger)).rejects.toMatchObject({ code: 'OWNER_UNKNOWN' })
+  await acquireServerLock(logger, { overrideUnverifiedOwner: true })
+  expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(process.pid)
+  releaseServerLock()
+
+  const live = contender(true)
+  try {
+    expect(await live.command('acquire')).toMatchObject({ ok: true })
+    await expect(acquireServerLock(logger, { overrideUnverifiedOwner: true })).rejects.toMatchObject({ code: 'OWNER_ACTIVE' })
+  } finally { await live.close() }
 })
 
 test('an obsolete release cannot remove a replacement generation', async () => {
@@ -186,4 +216,24 @@ test('legacy wall-clock changes never establish that a live owner exited', async
   mkdirSync(leasePath)
   await expect(acquireServerLock(logger)).rejects.toMatchObject({ code: 'OWNER_UNKNOWN' })
   expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(process.ppid)
+})
+
+test('a torn lease marker blocks by default and is set aside, never deleted, on override', async () => {
+  mkdirSync(leasePath)
+  writeFileSync(join(leasePath, `owner-${crypto.randomUUID()}.json`), '')
+  await expect(acquireServerLock(logger)).rejects.toMatchObject({ code: 'OWNER_UNKNOWN' })
+  await acquireServerLock(logger, { overrideUnverifiedOwner: true })
+  expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(process.pid)
+  const aside = readdirSync(configDir).filter(name => name.startsWith('.server.lease.unrecognized-'))
+  expect(aside).toHaveLength(1)
+  expect(readdirSync(join(configDir, aside[0]!))).toHaveLength(1)
+  rmSync(join(configDir, aside[0]!), { recursive: true })
+})
+
+test('a lease observed mid-release is retried instead of reported as unknown', async () => {
+  // A releasing owner has removed compatibility and its marker but not yet rmdir'ed.
+  mkdirSync(leasePath)
+  setTimeout(() => rmSync(leasePath, { recursive: true, force: true }), 100)
+  await acquireServerLock(logger)
+  expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(process.pid)
 })

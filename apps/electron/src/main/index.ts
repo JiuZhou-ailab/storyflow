@@ -74,7 +74,7 @@ import { recordStartupFailure, showStartupRecovery } from './startup-recovery'
 import { createQuitCoordinator } from './quit-coordinator'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
-import { getStartupRelaunchArgs, shouldCreateWindowsAfterStartup } from './startup-state'
+import { getStartupRelaunchArgs, OVERRIDE_UNVERIFIED_HOST_OWNER_ARG, shouldCreateWindowsAfterStartup } from './startup-state'
 import {
   createClientAuthConfigFromRuntimeEnv,
   createClientAuthService,
@@ -338,7 +338,7 @@ async function recoverStartup(error: unknown, stage: string): Promise<void> {
     if (!mainStartupIsHeadless) {
       const choice = await showStartupRecovery(error, stage)
       if (choice.restart) {
-        app.relaunch({ args: getStartupRelaunchArgs(process.argv, choice.backup) })
+        app.relaunch({ args: getStartupRelaunchArgs(process.argv, choice) })
         fatalStartup = false
       }
     } else recordStartupFailure(error, stage)
@@ -354,7 +354,7 @@ app.whenReady().then(async () => {
   configureRuntimePaths()
   {
     mkdirSync(CONFIG_DIR, { recursive: true })
-    await acquireServerLock(mainLog)
+    await acquireServerLock(mainLog, { overrideUnverifiedOwner: process.argv.includes(OVERRIDE_UNVERIFIED_HOST_OWNER_ARG) })
     const backup = process.argv.find(arg => arg.startsWith('--restore-config-backup='))?.split('=').slice(1).join('=')
     if (backup) restoreStoredConfigBackup(backup)
     loadStoredConfig()

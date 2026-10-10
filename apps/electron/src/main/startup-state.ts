@@ -1,5 +1,5 @@
 // input: Electron startup status plus host platform and architecture
-// output: Startup window policy, one-shot recovery arguments, and stable download URL
+// output: Startup window policy, one-shot recovery arguments (backup, Host owner override), and stable download URL
 // pos: Keeps startup failure and recovery behavior testable outside Electron runtime
 
 import { releaseAssetFiles } from '@craft-agent/shared/release-assets'
@@ -16,9 +16,19 @@ export function shouldCreateWindowsAfterStartup(input: StartupWindowPolicyInput)
   return input.initSucceeded && !input.isHeadless
 }
 
-export function getStartupRelaunchArgs(argv: string[], backup?: string): string[] {
-  const args = argv.slice(1).filter(arg => !arg.startsWith('--restore-config-backup='))
-  if (backup) args.push(`--restore-config-backup=${backup}`)
+export const OVERRIDE_UNVERIFIED_HOST_OWNER_ARG = '--override-unverified-host-owner'
+
+export interface StartupRecoveryChoice {
+  backup?: string
+  /** The user confirmed no other Storyflow is running; never applied to a provably live owner. */
+  overrideUnverifiedHostOwner?: boolean
+}
+
+/** Recovery choices are one-shot: each relaunch drops the previous selection. */
+export function getStartupRelaunchArgs(argv: string[], choice: StartupRecoveryChoice = {}): string[] {
+  const args = argv.slice(1).filter(arg => !arg.startsWith('--restore-config-backup=') && arg !== OVERRIDE_UNVERIFIED_HOST_OWNER_ARG)
+  if (choice.backup) args.push(`--restore-config-backup=${choice.backup}`)
+  if (choice.overrideUnverifiedHostOwner) args.push(OVERRIDE_UNVERIFIED_HOST_OWNER_ARG)
   return args
 }
 

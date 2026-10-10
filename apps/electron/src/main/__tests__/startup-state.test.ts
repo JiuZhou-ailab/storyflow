@@ -9,7 +9,14 @@ import { parseWindowState } from '../window-state'
 it('relaunch consumes an old backup selection and preserves the remaining arguments', () => {
   const argv = ['/Electron', '/app', '--user-data-dir=/profile', '--restore-config-backup=old.json']
   expect(getStartupRelaunchArgs(argv)).toEqual(['/app', '--user-data-dir=/profile'])
-  expect(getStartupRelaunchArgs(argv, 'new.json')).toEqual(['/app', '--user-data-dir=/profile', '--restore-config-backup=new.json'])
+  expect(getStartupRelaunchArgs(argv, { backup: 'new.json' })).toEqual(['/app', '--user-data-dir=/profile', '--restore-config-backup=new.json'])
+})
+
+it('a confirmed Host owner override applies to exactly one relaunch', () => {
+  const argv = ['/Electron', '/app', '--user-data-dir=/profile']
+  const overridden = getStartupRelaunchArgs(argv, { overrideUnverifiedHostOwner: true })
+  expect(overridden).toEqual(['/app', '--user-data-dir=/profile', '--override-unverified-host-owner'])
+  expect(getStartupRelaunchArgs(['/Electron', ...overridden])).toEqual(['/app', '--user-data-dir=/profile'])
 })
 
 describe('getStartupRecoveryDownloadUrl', () => {

@@ -4,15 +4,15 @@
 import { clipboard, dialog, shell } from 'electron'
 import { i18n } from '@craft-agent/shared/i18n'
 import { listStoredConfigBackups } from '@craft-agent/shared/config'
-import { getStartupRecoveryDownloadUrl } from './startup-state'
+import { getStartupRecoveryDownloadUrl, type StartupRecoveryChoice } from './startup-state'
 import { STARTUP_CATEGORIES, recordStartupFailure } from './startup-diagnostics'
 export { recordStartupFailure } from './startup-diagnostics'
 
-export async function showStartupRecovery(error: unknown, stage: string): Promise<{ restart: boolean; backup?: string }> {
+export async function showStartupRecovery(error: unknown, stage: string): Promise<{ restart: boolean } & StartupRecoveryChoice> {
   const category = STARTUP_CATEGORIES[(error as { code?: string })?.code ?? ''] ?? 'initialization'
   const receipt = recordStartupFailure(error, stage)
   const backups = category === 'configInvalid' ? listStoredConfigBackups() : []
-  const actions = ['retry', 'copy', ...(backups.length ? ['restore'] : []), ...(category === 'renderer' ? ['download'] : []), 'close']
+  const actions = ['retry', 'copy', ...(backups.length ? ['restore'] : []), ...(category === 'renderer' ? ['download'] : []), ...(category === 'ownerUnknown' ? ['override'] : []), 'close']
   for (;;) {
     const result = await dialog.showMessageBox({ type: 'error', title: i18n.t('startup.title'),
       message: i18n.t(`startup.reason.${category}`), detail: `${i18n.t('startup.dataPreserved')}\n\n${receipt}`,
@@ -24,6 +24,14 @@ export async function showStartupRecovery(error: unknown, stage: string): Promis
     if (action === 'download') {
       try { await shell.openExternal(getStartupRecoveryDownloadUrl(process.platform, process.arch)) }
       catch (cause) { recordStartupFailure(cause, 'recovery-download') }
+      continue
+    }
+    if (action === 'override') {
+      // Proof-of-life still wins: the Host refuses any owner it can verify as running.
+      const choice = await dialog.showMessageBox({ type: 'warning', title: i18n.t('startup.action.override'),
+        message: i18n.t('startup.overrideConfirmation'), buttons: [i18n.t('startup.action.override'), i18n.t('common.cancel')],
+        cancelId: 1, defaultId: 1, noLink: true })
+      if (choice.response === 0) return { restart: true, overrideUnverifiedHostOwner: true }
       continue
     }
     if (action === 'restore') {

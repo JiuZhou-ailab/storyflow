@@ -8,7 +8,7 @@
 | 检查 | 命令 | 观察边界 |
 | --- | --- | --- |
 | 配置、回滚、停止、TLS | `bun test ./packages/server-core/src/bootstrap/startup-recovery.isolated.ts` | 真实文件、socket 与共享 bootstrap/stop |
-| 活 owner、崩溃恢复、旧代 release | `bun test ./packages/server-core/src/bootstrap/server-lock.isolated.ts` | 两个真实进程和历史格式 |
+| 活 owner、崩溃恢复、PID 复用、身份查询不可用、确认后接管、损坏标记移出保留、释放中重试、旧代 release | `bun test ./packages/server-core/src/bootstrap/server-lock.isolated.ts` | 真实进程、OS 存活端点和历史格式 |
 | 页面/preload/renderer/模块加载失败、恢复参数只使用一次 | `bun e2e/core/native-startup.ts` | 真实 Electron，受控缺失资源与原生 relaunch；不是发行安装包证明 |
 | 原生入口配置/权限/owner/TLS 失败 | `bun e2e/core/startup-faults.ts` | 构建后的完整应用入口；用 headless 错误退出避免人工关闭对话框 |
 | 相同 profile 连续重启 | `bun e2e/core/startup-recovery.ts` | 真实首屏、会话与文件面板 |
