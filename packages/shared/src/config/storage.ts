@@ -1145,6 +1145,10 @@ function isDraftAttachmentRef(value: unknown): value is DraftAttachmentRef {
   return true;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function isSessionDraft(value: unknown): value is SessionDraft {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as SessionDraft;
@@ -1164,7 +1168,7 @@ function isEmptyDraft(draft: SessionDraft): boolean {
  * Load all drafts from disk. Entries that don't parse as SessionDraft
  * (e.g. pre-upgrade string drafts) are discarded silently.
  *
- * `corrupt` marks a file that exists but is not valid JSON. Readers treat it as
+ * `corrupt` marks a file that exists but is not valid JSON or not a drafts object. Readers treat it as
  * empty; writers must preserve it first so one new draft never replaces every
  * session's unsaved text. Other read errors (EBUSY, EACCES) may be transient,
  * so they propagate instead of being mistaken for an empty store.
@@ -1181,13 +1185,17 @@ function loadDraftsData(): DraftsData & { corrupt?: true } {
     debug('[drafts] drafts.json is not valid JSON:', error.message);
     return { drafts: {}, updatedAt: 0, corrupt: true };
   }
+  if (!isPlainObject(raw) || (raw.drafts !== undefined && !isPlainObject(raw.drafts))) {
+    debug('[drafts] drafts.json has an unknown shape');
+    return { drafts: {}, updatedAt: 0, corrupt: true };
+  }
   const drafts: Record<string, SessionDraft> = {};
-  for (const [sessionId, value] of Object.entries(raw?.drafts ?? {})) {
+  for (const [sessionId, value] of Object.entries(raw.drafts ?? {})) {
     if (isSessionDraft(value)) {
       drafts[sessionId] = value;
     }
   }
-  return { drafts, updatedAt: raw?.updatedAt ?? 0 };
+  return { drafts, updatedAt: raw.updatedAt ?? 0 };
 }
 
 /** Reads must not fail the UI; an unreadable store shows no drafts. */

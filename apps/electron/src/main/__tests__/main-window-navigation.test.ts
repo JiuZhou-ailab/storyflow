@@ -31,4 +31,15 @@ describe('classifyMainWindowNavigation', () => {
     expect(classifyMainWindowNavigation('https://example.com/docs', PROD_ENTRY)).toBe('external')
     expect(classifyMainWindowNavigation('not a url', PROD_ENTRY)).toBe('block')
   })
+
+  it('never hands script or data schemes to the OS', () => {
+    for (const url of ['javascript:alert(1)', 'data:text/html,<script>1</script>', 'vbscript:msgbox', 'blob:https://x/1']) {
+      expect(classifyMainWindowNavigation(url, PROD_ENTRY)).toBe('block')
+    }
+  })
+
+  it('fails closed when the entry URL is malformed', () => {
+    expect(classifyMainWindowNavigation('file:///tmp/evil.html', 'localhost:5173')).toBe('block')
+    expect(classifyMainWindowNavigation('https://example.com', 'not a url')).toBe('block')
+  })
 })

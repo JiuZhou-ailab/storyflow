@@ -39,6 +39,13 @@ process.stdin.on('data', chunk => {
 setInterval(() => {}, 1000);
 `);
 
+// Never reports ready; exits shortly after SIGTERM so a replaced generation dies mid-wait.
+const neverReadyServer = join(fixtureDir, 'never-ready-server.js');
+writeFileSync(neverReadyServer, `
+process.on('SIGTERM', () => setTimeout(() => process.exit(0), 100));
+setInterval(() => {}, 1000);
+`);
+
 afterAll(() => rmSync(fixtureDir, { recursive: true, force: true }));
 
 function createConfig(piServer: string): BackendConfig {
@@ -75,6 +82,22 @@ describe('Pi subprocess lifecycle', () => {
     agent.destroy();
     expect(outcome).not.toBe('timeout');
     expect(outcome).not.toBe('resolved');
+  });
+
+  it('fails the waiter of a generation replaced before it became ready', async () => {
+    const agent = new PiAgent(createConfig(neverReadyServer));
+    try {
+      const pending = agent.queryLlm({ prompt: 'hi' }).then(() => 'resolved', (error: Error) => error.message);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await agent.reconnect();
+      // Start the next generation before the replaced child exits (~100ms).
+      void agent.queryLlm({ prompt: 'next' }).catch(() => {});
+      const outcome = await within(pending, 5_000);
+      expect(outcome).not.toBe('timeout');
+      expect(outcome).toMatch(/exited/i);
+    } finally {
+      agent.destroy();
+    }
   });
 
   it('ignores a late exit from a replaced subprocess generation', async () => {

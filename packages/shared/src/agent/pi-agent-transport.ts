@@ -100,6 +100,8 @@ export abstract class PiAgentTransport extends PiAgentHost {
   protected stopReadingStdout: (() => void) | null = null;
   protected subprocessReady: Promise<void> | null = null;
   protected subprocessReadyResolve: (() => void) | null = null;
+  /** In-flight spawn shared by concurrent ensureSubprocess callers; cleared on kill. */
+  protected subprocessSpawning: Promise<void> | null = null;
   /**
    * Bumped on every spawn. Child callbacks compare against it so a late exit
    * from a replaced subprocess cannot tear down the current generation.
@@ -262,12 +264,20 @@ export abstract class PiAgentTransport extends PiAgentHost {
    * Lazy initialization -- spawns on first use.
    */
   protected async ensureSubprocess(): Promise<void> {
+    if (this.subprocessSpawning) return this.subprocessSpawning;
     if (this.subprocess && this.subprocessReady) {
       await this.subprocessReady;
       return;
     }
 
-    await this.spawnSubprocess();
+    // Single-flight: concurrent callers share one spawn instead of orphaning a child.
+    const spawning = this.spawnSubprocess();
+    this.subprocessSpawning = spawning;
+    try {
+      await spawning;
+    } finally {
+      if (this.subprocessSpawning === spawning) this.subprocessSpawning = null;
+    }
   }
 
   /**
@@ -294,12 +304,13 @@ export abstract class PiAgentTransport extends PiAgentHost {
     // leaving it waiting for the turn watchdog.
     const generation = ++this.subprocessGeneration;
     let rejectReady!: (error: Error) => void;
-    this.subprocessReady = new Promise<void>((resolve, reject) => {
+    const ready = new Promise<void>((resolve, reject) => {
       this.subprocessReadyResolve = resolve;
       rejectReady = reject;
     });
+    this.subprocessReady = ready;
     // Rejections surface through the awaits below; this only marks the promise handled.
-    this.subprocessReady.catch(() => {});
+    ready.catch(() => {});
 
     // Build session ID and session dir path upfront (used for spawn env + init command)
     const sessionId = this.config.session?.id || `agent-${Date.now()}`;
@@ -369,24 +380,28 @@ export abstract class PiAgentTransport extends PiAgentHost {
 
     // Handle subprocess exit
     child.on('exit', (code, signal) => {
+      // Settle this generation's own waiter even when replaced; a no-op once ready.
+      rejectReady(new Error(`Pi subprocess exited before ready (${signal ? `signal ${signal}` : `code ${code}`})`));
       if (generation !== this.subprocessGeneration) {
         this.debug(`Ignoring exit from replaced Pi subprocess: code=${code}, signal=${signal}`);
         return;
       }
-      rejectReady(new Error(`Pi subprocess exited before ready (${signal ? `signal ${signal}` : `code ${code}`})`));
       this.handleSubprocessExit(code, signal);
     });
 
     child.on('error', (error) => {
       this.debug(`Subprocess error: ${error.message}`);
-      if (generation !== this.subprocessGeneration) return;
       rejectReady(new Error(`Pi subprocess failed to start: ${error.message}`));
+      if (generation !== this.subprocessGeneration) return;
+      // A spawn failure never emits a reliable `exit`; clear this generation so
+      // the next call respawns. The rejected ready promise carries the real cause.
+      if (child.pid === undefined) {
+        this.handleSubprocessExit(null, null);
+        return;
+      }
       this.resetSubprocessErrorDedup();
       this.eventQueue.enqueue({ type: 'error', message: `Pi subprocess error: ${error.message}` });
       this.eventQueue.complete();
-      // A spawn failure never emits a reliable `exit`; clear this generation so
-      // the next call respawns instead of awaiting a dead child.
-      if (child.pid === undefined) this.handleSubprocessExit(null, null);
     });
 
     const sessionPath = this.config.session
@@ -424,8 +439,8 @@ export abstract class PiAgentTransport extends PiAgentHost {
       branchFromSdkTurnId: this.config.session?.branchFromSdkTurnId,
     });
 
-    // Wait for subprocess to report ready
-    await this.subprocessReady;
+    // Wait for this generation's child; the field may already belong to a replacement.
+    await ready;
     endSubprocessReady();
     this.debug('Pi subprocess is ready');
     // Register session-scoped tools with the subprocess. Host-owned tools run

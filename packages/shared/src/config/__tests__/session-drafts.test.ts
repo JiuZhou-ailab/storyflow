@@ -190,9 +190,12 @@ describe('session draft storage', () => {
     expect(output).toBe('null')
   })
 
-  it('keeps an unreadable drafts file instead of overwriting it with one draft', () => {
+  it.each([
+    ['invalid JSON', '{"drafts":{"s1":{"text":"long unsaved paragraph"}'],
+    ['drafts that are not an object', '{"drafts":[{"text":"long unsaved paragraph"}]}'],
+    ['a non-object document', '"long unsaved paragraph"'],
+  ])('keeps an unreadable drafts file (%s) instead of overwriting it with one draft', (_label, corrupted) => {
     const configDir = makeConfigDir()
-    const corrupted = '{"drafts":{"s1":{"text":"long unsaved paragraph"}'
     writeFileSync(join(configDir, 'drafts.json'), corrupted)
 
     runEval(configDir, "setSessionDraft('s2', { text: 'new draft' })")

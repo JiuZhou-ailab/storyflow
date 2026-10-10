@@ -233,7 +233,8 @@ export class WindowManager {
 
     // Open external links in default browser
     window.webContents.setWindowOpenHandler((details) => {
-      shell.openExternal(details.url)
+      if (classifyMainWindowNavigation(details.url, rendererEntryUrl) === 'external') shell.openExternal(details.url)
+      else windowLog.warn(`Blocked main window open of ${details.url}`)
       return { action: 'deny' }
     })
 

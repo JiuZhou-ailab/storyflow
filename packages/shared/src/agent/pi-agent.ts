@@ -577,6 +577,7 @@ export class PiAgent extends PiAgentToolHost {
       this.subprocess = null;
     }
 
+    this.subprocessSpawning = null;
     this.subprocessReady = null;
     this.subprocessReadyResolve = null;
   }
