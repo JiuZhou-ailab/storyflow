@@ -100,6 +100,11 @@ export abstract class PiAgentTransport extends PiAgentHost {
   protected stopReadingStdout: (() => void) | null = null;
   protected subprocessReady: Promise<void> | null = null;
   protected subprocessReadyResolve: (() => void) | null = null;
+  /**
+   * Bumped on every spawn. Child callbacks compare against it so a late exit
+   * from a replaced subprocess cannot tear down the current generation.
+   */
+  private subprocessGeneration = 0;
 
   // Pi session ID (managed by subprocess, reported back)
   protected piSessionId: string | null = null;
@@ -284,10 +289,17 @@ export abstract class PiAgentTransport extends PiAgentHost {
     );
     this.resetSubprocessErrorDedup();
 
-    // Set up ready promise before spawning
-    this.subprocessReady = new Promise<void>((resolve) => {
+    // Set up ready promise before spawning. The child's exit/error settles it
+    // too, so a subprocess that dies before `ready` fails the caller instead of
+    // leaving it waiting for the turn watchdog.
+    const generation = ++this.subprocessGeneration;
+    let rejectReady!: (error: Error) => void;
+    this.subprocessReady = new Promise<void>((resolve, reject) => {
       this.subprocessReadyResolve = resolve;
+      rejectReady = reject;
     });
+    // Rejections surface through the awaits below; this only marks the promise handled.
+    this.subprocessReady.catch(() => {});
 
     // Build session ID and session dir path upfront (used for spawn env + init command)
     const sessionId = this.config.session?.id || `agent-${Date.now()}`;
@@ -357,14 +369,24 @@ export abstract class PiAgentTransport extends PiAgentHost {
 
     // Handle subprocess exit
     child.on('exit', (code, signal) => {
+      if (generation !== this.subprocessGeneration) {
+        this.debug(`Ignoring exit from replaced Pi subprocess: code=${code}, signal=${signal}`);
+        return;
+      }
+      rejectReady(new Error(`Pi subprocess exited before ready (${signal ? `signal ${signal}` : `code ${code}`})`));
       this.handleSubprocessExit(code, signal);
     });
 
     child.on('error', (error) => {
       this.debug(`Subprocess error: ${error.message}`);
+      if (generation !== this.subprocessGeneration) return;
+      rejectReady(new Error(`Pi subprocess failed to start: ${error.message}`));
       this.resetSubprocessErrorDedup();
       this.eventQueue.enqueue({ type: 'error', message: `Pi subprocess error: ${error.message}` });
       this.eventQueue.complete();
+      // A spawn failure never emits a reliable `exit`; clear this generation so
+      // the next call respawns instead of awaiting a dead child.
+      if (child.pid === undefined) this.handleSubprocessExit(null, null);
     });
 
     const sessionPath = this.config.session
