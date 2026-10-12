@@ -155,6 +155,7 @@ mock.module('@craft-agent/shared/workspaces', () => ({
   resolveRuntimeWorkspaceById: (id: string) => (id === workspace.id ? workspace : null),
   isWorkspaceRootAvailable: () => true,
   isPathWithinProjectRoot: () => true,
+  resolveProjectOwnedPath: (_projectRoot: string, targetPath: string) => targetPath,
   resolveVerifiedWorkspaceWorkingDirectory: (_workspace: unknown, path: string) => path,
   resolveWorkspaceWorkingDirectory: (_workspace: unknown, path: string) => path,
   grantWorkspaceWorkingDirectory: (_workspaceId: string, path: string) => ({ workspace, workingDirectory: path }),
