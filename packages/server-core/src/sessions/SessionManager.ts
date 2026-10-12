@@ -1,5 +1,5 @@
 // input: Workspace sessions, Pi product projections, persistence stores, and Host services
-// output: Atomic send admission, projected Pi events, user commands, automation dispatch, and drained Host teardown
+// output: Atomic sends with stable interruption policy and transient facts, projected Pi events, commands, and drained Host teardown
 // pos: Storyflow Product Host session boundary; Pi owns Agent turn execution
 
 import type { EventSink } from '@craft-agent/server-core/transport'
@@ -4003,13 +4003,14 @@ export class SessionManager implements ISessionManager {
         getSessionLog().info('Attachments:', attachments.length)
       }
 
-      const transientPolicies: string[] = []
-      if (managed.wasInterrupted) {
-        transientPolicies.push('The previous assistant response was interrupted by the user and may be incomplete. Do not repeat or continue the interrupted response unless asked. Focus on the new request.')
-        managed.wasInterrupted = false
-      }
+      // Keep the rule stable; only the current turn's interruption fact expires.
+      const turnPolicies = ['When current turn data reports previous_response_interrupted as true, the previous assistant response was interrupted by the user and may be incomplete. Do not repeat or continue the interrupted response unless asked. Focus on the new request.']
+      const interruptionContext = managed.wasInterrupted
+        ? '<previous_response_interrupted>true</previous_response_interrupted>'
+        : undefined
+      managed.wasInterrupted = false
       if (options?.workspaceFreshnessContext?.trim()) {
-        transientPolicies.push('Files listed in <workspace-brief> changed outside this conversation. Before editing any listed file, read its latest content first.')
+        turnPolicies.push('Files listed in <workspace-brief> changed outside this conversation. Before editing any listed file, read its latest content first.')
       }
 
       const messageBackendContext = resolveBackendContext({
@@ -4052,11 +4053,11 @@ export class SessionManager implements ISessionManager {
         ...(userMessage ? { draftText: message } : {}),
       }
       const chatIterator = agent.chat(message, modelInputAttachments.attachments, {
-        oneTimeContext: [options?.oneTimeContext, options?.workspaceFreshnessContext]
+        oneTimeContext: [interruptionContext, options?.oneTimeContext, options?.workspaceFreshnessContext]
           .map(context => context?.trim())
           .filter(Boolean)
           .join('\n\n') || undefined,
-        turnPolicy: transientPolicies.join('\n\n') || undefined,
+        turnPolicy: turnPolicies.join('\n\n'),
         userIteration,
         rewindBoundary,
       })
