@@ -4,11 +4,11 @@
 
 import { afterEach, describe, expect, it } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { writeSessionJsonl } from '../jsonl.ts';
-import { getSessionFilePath, loadSession, recoverSessionFile, saveSession } from '../storage.ts';
+import { getSessionFilePath, loadSession, recoverSessionFile, saveSession, setSessionFileReplacementActive } from '../storage.ts';
 import type { StoredSession } from '../types.ts';
 
 const roots: string[] = [];
@@ -41,6 +41,21 @@ afterEach(() => {
 });
 
 describe('Session JSONL Project boundary', () => {
+  it('keeps a Session readable while the queued writer has moved it to the backup', () => {
+    const projectRoot = tempRoot('session-replacement-gap-');
+    const stored = session(projectRoot, `session_${randomUUID()}`);
+    const sessionFile = getSessionFilePath(projectRoot, stored.id);
+    mkdirSync(dirname(sessionFile), { recursive: true });
+    writeSessionJsonl(sessionFile, stored, projectRoot);
+    renameSync(sessionFile, sessionFile + '.bak');
+    setSessionFileReplacementActive(sessionFile, true);
+    try {
+      expect(loadSession(projectRoot, stored.id)?.id).toBe(stored.id);
+    } finally {
+      setSessionFileReplacementActive(sessionFile, false);
+    }
+  });
+
   it('still treats an entirely missing Session path as absent', () => {
     expect(loadSession(tempRoot('session-missing-project-'), 'missing')).toBeNull();
   });

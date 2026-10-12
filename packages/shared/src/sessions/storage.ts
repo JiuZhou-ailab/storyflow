@@ -146,8 +146,11 @@ export function recoverSessionFile(sessionFile: string, workspaceRootPath: strin
   const tmpFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile + '.tmp');
   const backupFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile + '.bak');
 
+  // The writer owns promotion; between its two renames only the complete
+  // backup exists, so read it in place rather than reporting the Session gone.
   if (activeSessionFileReplacements.has(sessionFile)) {
-    return sessionPathExists(sessionFile) ? sessionFile : null;
+    if (sessionPathExists(sessionFile)) return sessionFile;
+    return sessionPathExists(backupFile) ? backupFile : null;
   }
 
   if (!sessionPathExists(tmpFile) && !sessionPathExists(backupFile)) {
