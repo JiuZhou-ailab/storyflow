@@ -32,6 +32,7 @@ import {
   projectButtonsReadyExpression,
   writingChapterLabel,
   writingChapterMountedExpression,
+  writingDocumentReadyExpression,
 } from './navigation.ts'
 
 // ---- Config (env-driven, no framework) ----------------------------------
@@ -61,7 +62,6 @@ const SWITCH_COMPLETE = /Session switch complete:\s*([\d.]+)\s*ms/i
 const HEAVY_SEARCH_QUERY = '灯芯'
 /** Chapter count of the standard writing fixture (scripts/perf/generate-fixture.ts). */
 const WRITING_FIXTURE_CHAPTERS = 400
-const DOCUMENT_PAINT_COMPLETE = /writing\.document\.paintAfterRead:\s*([\d.]+)\s*ms/i
 
 interface Metric {
   scenario: string
@@ -332,20 +332,13 @@ async function runHeavyWriting(): Promise<Metric[]> {
       'chapter 200 row mounted'
     )
 
-    const beforeDocumentPaint = countPerf(live, DOCUMENT_PAINT_COMPLETE)
     const t0 = Date.now()
     const opened = await evalOn<'clicked' | 'already-selected' | null>(live, openWritingChapterExpression(200))
     if (opened !== 'clicked') throw new Error(`Could not scroll to and click 第200章 (${opened ?? 'not found'})`)
-    await requirePerfLine(
-      live,
-      DOCUMENT_PAINT_COMPLETE,
-      beforeDocumentPaint,
-      30_000,
-      'chapter 200 document paint',
-    )
+    await waitForWritingDocument(live, 200)
     const ms = Date.now() - t0
     return [metric('heavy-writing', 'open mid catalog chapter (第200章)', ms, 'ms', TARGET.heavyMs, {
-      note: 'CONTEXT heavy tier ≤1s; wall-clock includes scrollIntoView + treeitem click→document paint',
+      note: 'CONTEXT heavy tier ≤1s; current TextSource content + two animation frames; legacy Tiptap paint metric is not comparable',
     })]
   } finally {
     await live.close()
@@ -789,28 +782,12 @@ export async function openWritingChapter(live: LaunchedApp, chapter: number): Pr
     `${label} mounted`
   )
 
-  const beforeDocumentPaint = countPerf(live, DOCUMENT_PAINT_COMPLETE)
   const opened = await evalOn<'clicked' | 'already-selected' | null>(
     live,
     openWritingChapterExpression(chapter),
   )
   if (!opened) throw new Error(`Could not scroll to or click ${label}`)
-  if (opened === 'clicked') {
-    await requirePerfLine(
-      live,
-      DOCUMENT_PAINT_COMPLETE,
-      beforeDocumentPaint,
-      15_000,
-      `${label} document paint`,
-    )
-  }
-
-  await waitFor(
-    live,
-    `!!document.querySelector('.tiptap-editor--manuscript .ProseMirror')`,
-    15_000,
-    `${label} editor ready`
-  )
+  await waitForWritingDocument(live, chapter)
 }
 
 async function ensureWritingChapterDirectory(live: LaunchedApp): Promise<void> {
@@ -975,16 +952,9 @@ async function waitForSwitchLine(live: LaunchedApp, before: number, timeoutMs: n
   return waitForPerfLine(live, SWITCH_COMPLETE, before, timeoutMs)
 }
 
-async function requirePerfLine(
-  live: LaunchedApp,
-  pattern: RegExp,
-  before: number,
-  timeoutMs: number,
-  label: string,
-): Promise<number> {
-  const duration = await waitForPerfLine(live, pattern, before, timeoutMs)
-  if (duration == null) throw new Error(`Timed out waiting for ${label}`)
-  return duration
+async function waitForWritingDocument(live: LaunchedApp, chapter: number): Promise<void> {
+  await waitFor(live, writingDocumentReadyExpression(chapter), 15_000, `${writingChapterLabel(chapter)} source ready`)
+  await evalOn(live, 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
 }
 
 async function waitForPerfLine(
