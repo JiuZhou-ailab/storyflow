@@ -61,14 +61,16 @@ test('connection timeout releases a subprocess that never initializes', async ()
     process.stdin.on('end', () => process.exit(0));
     setInterval(() => {}, 1000);
   `)
-  const pool = new McpClientPool()
+  const pool = new McpClientPool({ connectTimeoutMs: 300 })
   let pid: number | undefined
   try {
+    const start = performance.now()
     const connecting = pool.sync({ hanging: { type: 'stdio', command: process.execPath, args: [file], capabilityRef: 'hanging' } })
     for (let n = 0; n < 100 && !await Bun.file(pidPath).exists(); n++) await Bun.sleep(10)
     pid = Number(await Bun.file(pidPath).text())
     expect(pid).toBeGreaterThan(0)
     expect(await connecting).toEqual(['hanging'])
+    expect(performance.now() - start).toBeLessThan(1_000)
     expect(pool.isConnected('hanging')).toBe(false)
     expect(() => process.kill(pid!, 0)).toThrow()
   } finally {
@@ -76,7 +78,7 @@ test('connection timeout releases a subprocess that never initializes', async ()
     await pool.disconnectAll()
     rmSync(root, { recursive: true, force: true })
   }
-}, 20_000)
+}, 2_000)
 
 test('a failed close cannot release sync ownership while another source is connecting', async () => {
   const root = mkdtempSync(join(tmpdir(), 'storyflow-mcp-drain-'))

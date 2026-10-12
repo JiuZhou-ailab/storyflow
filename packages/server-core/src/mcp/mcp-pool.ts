@@ -38,9 +38,9 @@ import {
 } from '@craft-agent/shared/utils/binary-detection';
 import { canonicalizeApiPath, materializeApiOperationRequest } from '@craft-agent/shared/sources';
 
+// Allow first-time npx downloads; backoff controls the frequency of subsequent failures.
+const CONNECT_TIMEOUT_MS = 60_000;
 // Avoid retrying unavailable sources on every turn while still probing recovery.
-// Bound the entire handshake and discovery, not each SDK request separately.
-const CONNECT_TIMEOUT_MS = 15_000;
 const RETRY_INITIAL_MS = 30_000;
 const RETRY_MAX_MS = 10 * 60_000;
 
@@ -82,6 +82,9 @@ export class McpClientPool {
   /** Optional debug logger */
   private debugFn: ((msg: string) => void) | undefined;
 
+  /** Overall connection deadline; constructor override is for tests only. */
+  private readonly connectTimeoutMs: number;
+
   /** Session storage path for saving large responses */
   private sessionPath?: string;
 
@@ -91,8 +94,9 @@ export class McpClientPool {
   /** Called after sync() connects/disconnects sources, so clients can be notified */
   onToolsChanged?: () => void;
 
-  constructor(options?: { debug?: (msg: string) => void; sessionPath?: string }) {
+  constructor(options?: { debug?: (msg: string) => void; connectTimeoutMs?: number; sessionPath?: string }) {
     this.debugFn = options?.debug;
+    this.connectTimeoutMs = options?.connectTimeoutMs ?? CONNECT_TIMEOUT_MS;
     this.sessionPath = options?.sessionPath;
   }
 
@@ -124,7 +128,7 @@ export class McpClientPool {
       tools = await Promise.race([
         client.listTools(),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`MCP connection timed out after ${CONNECT_TIMEOUT_MS}ms`)), CONNECT_TIMEOUT_MS);
+          timer = setTimeout(() => reject(new Error(`MCP connection timed out after ${this.connectTimeoutMs}ms`)), this.connectTimeoutMs);
         }),
       ]);
     } catch (error) {

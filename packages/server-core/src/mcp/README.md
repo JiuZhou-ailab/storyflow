@@ -12,8 +12,10 @@ are preserved here.
 - `api-source-pool-client.ts`: in-process API server transport and cleanup.
 - `index.ts`: runtime exports; `__tests__/`: local transport and permission coverage.
 
-Each pool connection has a 15-second deadline covering initialization and tool
-listing. Failure/timeout closes its transport; stdio shutdown additionally permits
+Each pool connection has a 60-second deadline covering initialization and tool
+listing, allowing first-time npx downloads; backoff limits subsequent retries.
+The constructor accepts `connectTimeoutMs` only for test injection. Failure/timeout
+closes its transport; stdio shutdown additionally permits
 SDK escalation (2 seconds before SIGTERM, 2 before SIGKILL) and a 1-second exit
 confirmation. Failed cleanup retains client ownership for a later disconnect/retry.
 Healthy sources publish tools as soon as ready, without waiting for slow sources.

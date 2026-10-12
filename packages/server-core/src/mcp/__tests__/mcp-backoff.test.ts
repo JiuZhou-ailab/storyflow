@@ -66,18 +66,18 @@ test('one deadline covers initialization plus tool discovery and aborts the HTTP
       if (message.id === undefined) return new Response(null, { status: 202 });
       request.signal.addEventListener('abort', () => { aborted = true; });
       if (message.method === 'tools/list') listing = true;
-      await Bun.sleep(8_000);
+      await Bun.sleep(180);
       return Response.json({ jsonrpc: '2.0', id: message.id, result: message.method === 'initialize'
         ? { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'slow', version: '1' } }
         : { tools: [] } });
     },
   });
-  const pool = new McpClientPool();
+  const pool = new McpClientPool({ connectTimeoutMs: 300 });
   try {
     const start = performance.now();
     expect(await pool.sync({ slow: { type: 'http', url: server.url.href, capabilityRef: 'slow' } })).toEqual(['slow']);
     expect(listing).toBe(true);
-    expect(performance.now() - start).toBeLessThan(17_000);
+    expect(performance.now() - start).toBeLessThan(1_000);
     await Bun.sleep(50);
     expect(aborted).toBe(true);
     expect(pool.isConnected('slow')).toBe(false);
@@ -85,7 +85,7 @@ test('one deadline covers initialization plus tool discovery and aborts the HTTP
     await pool.disconnectAll();
     server.stop(true);
   }
-}, 30_000);
+}, 2_000);
 
 test('explicit retries and changed credentials bypass only the affected source backoff', async () => {
   const endpoint = failingServer(1);
