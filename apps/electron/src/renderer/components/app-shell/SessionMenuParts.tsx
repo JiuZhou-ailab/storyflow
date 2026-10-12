@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useTranslation } from "react-i18next"
-import { Check, Globe, Copy, RefreshCw, Link2Off } from 'lucide-react'
+import { Check, Globe, Copy, Link2Off } from 'lucide-react'
 import { toast } from 'sonner'
 import type { MenuComponents } from '@/components/ui/menu-context'
 import { getStatusIconStyle, type SessionStatusId, type SessionStatus } from '@/config/session-status-config'
@@ -26,16 +26,6 @@ export function ShareMenuItems({ sessionId, sharedUrl, menu }: ShareMenuItemsPro
     toast.success(t("toast.linkCopied"))
   }
 
-  const handleUpdateShare = async () => {
-    const result = await window.electronAPI.sessionCommand(sessionId, { type: 'updateShare' })
-    if (result && 'success' in result && result.success) {
-      toast.success(t("chat.shareUpdated"))
-    } else {
-      const errorMsg = result && 'error' in result ? result.error : undefined
-      toast.error(t("chat.failedToUpdateShare"), { description: errorMsg })
-    }
-  }
-
   const handleRevokeShare = async () => {
     const result = await window.electronAPI.sessionCommand(sessionId, { type: 'revokeShare' })
     if (result && 'success' in result && result.success) {
@@ -55,10 +45,6 @@ export function ShareMenuItems({ sessionId, sharedUrl, menu }: ShareMenuItemsPro
       <MenuItem onClick={handleCopyLink}>
         <Copy className="h-3.5 w-3.5" />
         <span className="flex-1">{t("sessionMenu.copyLink")}</span>
-      </MenuItem>
-      <MenuItem onClick={handleUpdateShare}>
-        <RefreshCw className="h-3.5 w-3.5" />
-        <span className="flex-1">{t("sessionMenu.updateShare")}</span>
       </MenuItem>
       <Separator />
       <MenuItem onClick={handleRevokeShare} variant="destructive">

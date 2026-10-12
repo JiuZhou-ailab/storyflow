@@ -427,10 +427,6 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
         const sessionPath = sessionManager.getSessionPath(sessionId)
         return sessionPath ? { success: true, path: sessionPath } : { success: false }
       }
-      case 'shareToViewer':
-        return sessionManager.shareToViewer(sessionId)
-      case 'updateShare':
-        return sessionManager.updateShare(sessionId)
       case 'revokeShare':
         return sessionManager.revokeShare(sessionId)
       case 'refreshTitle':

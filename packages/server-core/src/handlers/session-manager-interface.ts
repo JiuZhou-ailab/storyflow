@@ -164,8 +164,6 @@ export interface ISessionManager {
   // Sharing
   // ---------------------------------------------------------------------------
 
-  shareToViewer(sessionId: string): Promise<ShareResult>
-  updateShare(sessionId: string): Promise<ShareResult>
   revokeShare(sessionId: string): Promise<ShareResult>
 
   // ---------------------------------------------------------------------------

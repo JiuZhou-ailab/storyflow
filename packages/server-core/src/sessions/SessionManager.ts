@@ -130,7 +130,7 @@ import {
   getLastFinalOutputMessageId,
 } from './session-runtime'
 import { SessionBroadcaster } from './session-broadcaster'
-import { shareToViewer, updateShare, revokeShare } from './share-service'
+import { revokeShare } from './share-service'
 import { MessageEdits } from './message-edits'
 import {
   setPendingPlanExecution,
@@ -3081,24 +3081,6 @@ export class SessionManager implements ISessionManager {
   // Session Sharing
   // ============================================
 
-  /** Share session to the web viewer. */
-  async shareToViewer(sessionId: string): Promise<import('@craft-agent/shared/protocol').ShareResult> {
-    return this.withSessionOperation(
-      sessionId,
-      { success: false, error: 'Session not found' },
-      managed => shareToViewer(managed, this.broadcaster),
-    )
-  }
-
-  /** Update an existing shared session. */
-  async updateShare(sessionId: string): Promise<import('@craft-agent/shared/protocol').ShareResult> {
-    return this.withSessionOperation(
-      sessionId,
-      { success: false, error: 'Session not found' },
-      managed => updateShare(managed, this.broadcaster),
-    )
-  }
-
   /** Revoke a shared session. */
   async revokeShare(sessionId: string): Promise<import('@craft-agent/shared/protocol').ShareResult> {
     return this.withSessionOperation(
@@ -3454,9 +3436,9 @@ export class SessionManager implements ISessionManager {
     // best-effort and must not make a failed filesystem mutation look successful.
     if (claimedSession.sharedId) {
       try {
-        const { VIEWER_URL } = await import('@craft-agent/shared/branding')
+        const { LEGACY_SHARE_CLEANUP_URL } = await import('@craft-agent/shared/branding')
         const response = await fetch(
-          `${VIEWER_URL}/s/api/${claimedSession.sharedId}`,
+          `${LEGACY_SHARE_CLEANUP_URL}/s/api/${claimedSession.sharedId}`,
           { method: 'DELETE', signal: AbortSignal.timeout(5000) }
         )
         if (!response.ok) {

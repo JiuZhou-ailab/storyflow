@@ -1,5 +1,5 @@
 // input: Session metadata and rename/archive/delete callbacks
-// output: Shared minimal dropdown/context-menu items for conversation management
+// output: Conversation actions and existing share link access/revocation in dropdown/context menus
 // pos: Single source of truth for essential conversation actions across shell surfaces
 
 /**
@@ -13,7 +13,7 @@
  * primitives, allowing the same component to work in both scenarios.
  *
  * Provides only essential session actions:
- * - Share / Shared submenu
+ * - Existing share links and revocation
  * - Rename
  * - Archive / Unarchive
  * - Delete
@@ -27,7 +27,6 @@ import {
   Pencil,
   CloudUpload,
 } from 'lucide-react'
-import { toast } from 'sonner'
 import { useMenuComponents } from '@/components/ui/menu-context'
 import { ShareMenuItems } from './SessionMenuParts'
 import type { SessionMeta } from '@/atoms/sessions'
@@ -58,45 +57,24 @@ export function SessionMenu({
   const isArchived = item.isArchived ?? false
   const sharedUrl = item.sharedUrl
 
-  const handleShare = async () => {
-    const result = await window.electronAPI.sessionCommand(sessionId, { type: 'shareToViewer' }) as { success: boolean; url?: string; error?: string } | undefined
-    if (result?.success && result.url) {
-      await navigator.clipboard.writeText(result.url)
-      toast.success(t('toast.linkCopied'), {
-        description: result.url,
-        action: {
-          label: 'Open',
-          onClick: () => window.electronAPI.openUrl(result.url!),
-        },
-      })
-    } else {
-      toast.error(t('toast.failedToShare'), { description: result?.error || t('toast.unknownError') })
-    }
-  }
-
   const { MenuItem, Separator, Sub, SubTrigger, SubContent } = useMenuComponents()
 
   return (
     <>
-      {/* Share/Shared based on shared state */}
-      {!sharedUrl ? (
-        <MenuItem onClick={handleShare}>
-          <CloudUpload className="h-3.5 w-3.5" />
-          <span className="flex-1">{t("sessionMenu.share")}</span>
-        </MenuItem>
-      ) : (
-        <Sub>
-          <SubTrigger>
-            <CloudUpload className="h-3.5 w-3.5" />
-            <span className="flex-1">{t("sessionMenu.shared")}</span>
-          </SubTrigger>
-          <SubContent>
-            <ShareMenuItems sessionId={sessionId} sharedUrl={sharedUrl} menu={{ MenuItem, Separator }} />
-          </SubContent>
-        </Sub>
+      {sharedUrl && (
+        <>
+          <Sub>
+            <SubTrigger>
+              <CloudUpload className="h-3.5 w-3.5" />
+              <span className="flex-1">{t("sessionMenu.shared")}</span>
+            </SubTrigger>
+            <SubContent>
+              <ShareMenuItems sessionId={sessionId} sharedUrl={sharedUrl} menu={{ MenuItem, Separator }} />
+            </SubContent>
+          </Sub>
+          <Separator />
+        </>
       )}
-
-      <Separator />
       <MenuItem onClick={onRename}>
         <Pencil className="h-3.5 w-3.5" />
         <span className="flex-1">{t("common.rename")}</span>

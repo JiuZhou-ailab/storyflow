@@ -532,7 +532,12 @@ describe('sendMessage durability', () => {
     let finishShareRevoke!: () => void
     const shareRevokeStarted = new Promise<void>(resolve => { markShareRevokeStarted = resolve })
     const shareRevokeGate = new Promise<void>(resolve => { finishShareRevoke = resolve })
-    globalThis.fetch = (async () => {
+    const revokeRequests: Array<{ url: string; method?: string }> = []
+    globalThis.fetch = (async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      revokeRequests.push({ url: String(input), method: init?.method })
       markShareRevokeStarted()
       await shareRevokeGate
       return new Response(null, { status: 204 })
@@ -541,6 +546,10 @@ describe('sendMessage durability', () => {
     try {
       const deletion = sm.deleteSession(sessionId)
       await shareRevokeStarted
+      expect(revokeRequests).toEqual([{
+        url: 'https://agents.craft.do/s/api/shared-delete-window',
+        method: 'DELETE',
+      }])
       expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
 
       await sm.setSessionStatus(sessionId, 'done')
@@ -558,6 +567,8 @@ describe('sendMessage durability', () => {
   it('waits for an accepted direct metadata writer before durable deletion', async () => {
     const sessionId = 'delete-share-lease'
     const managed = buildSession(sessionId)
+    managed.sharedId = 'shared-id'
+    managed.sharedUrl = 'https://viewer.example/shared-id'
     ;(sm as unknown as { persistSession(session: typeof managed): void }).persistSession(managed)
     await sm.flushSession(sessionId)
 
@@ -570,16 +581,16 @@ describe('sendMessage durability', () => {
       _input: Parameters<typeof fetch>[0],
       init?: Parameters<typeof fetch>[1],
     ) => {
-      if (init?.method === 'POST') {
+      if (init?.method === 'DELETE') {
         markShareStarted()
         await shareGate
-        return Response.json({ id: 'shared-id', url: 'https://viewer.example/shared-id' })
+        return new Response(null, { status: 204 })
       }
       return new Response(null, { status: 204 })
     }) as unknown as typeof fetch
 
     try {
-      const sharing = sm.shareToViewer(sessionId)
+      const sharing = sm.revokeShare(sessionId)
       await shareStarted
       let deletionFinished = false
       const deletion = sm.deleteSession(sessionId).then(() => { deletionFinished = true })
@@ -590,7 +601,7 @@ describe('sendMessage durability', () => {
       expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(true)
 
       finishShare()
-      await expect(sharing).resolves.toEqual({ success: true, url: 'https://viewer.example/shared-id' })
+      await expect(sharing).resolves.toEqual({ success: true })
       await deletion
 
       expect(existsSync(getSessionFilePath(tmpRoot, sessionId))).toBe(false)
