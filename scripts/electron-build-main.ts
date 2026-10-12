@@ -43,6 +43,7 @@ function getBuildDefines(): string[] {
   const definedVars = [
     "SLACK_OAUTH_CLIENT_ID",
     "SLACK_OAUTH_CLIENT_SECRET",
+    "SLACK_OAUTH_RELAY_URL",
     "MICROSOFT_OAUTH_CLIENT_ID",
     "MICROSOFT_OAUTH_CLIENT_SECRET",
     "CRAFT_DEV_RUNTIME",
