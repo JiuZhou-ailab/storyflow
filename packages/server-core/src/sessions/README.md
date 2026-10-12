@@ -14,6 +14,7 @@ Modules by reason-of-change (all flat in this directory):
 | `auth-flow.ts` | reinitializeAuth, completeAuthRequest, credential input handling |
 | `export-import.ts` | Session export/import incl. remote transfer payloads |
 | `persistence.ts` | Boot/init gate, disk load, debounced persist queue, lazy message load, idle release |
+| `session-init.bench.ts` | Local fresh-process restoration benchmark and FS/JSON/build/yield diagnostics for the 6000-Session fixture |
 | `agent-runtime-lease.ts` | Per-session send-admission gates, runtime mutex, and shared-subprocess lease counting |
 | `isolated-test-runner.ts` | Shared Bun subprocess + marked JSON parsing for lifecycle tests |
 | `agent-runtime.ts` | Pi subprocess lifecycle: getOrCreateAgentLocked, runtime refresh, three eligible idle runtimes, credential rotation, confirmed disposal; AGENT_FLAGS |
@@ -46,3 +47,60 @@ Idle runtime residency is independent of the transcript cache. Operation drain a
 Question snapshots and request/resolved events carry a Host epoch and monotonic sequence. Renderers reject older snapshots within the same epoch; a restarted Host supplies a new epoch.
 
 Host shutdown uses `SessionManager.shutdown(requestsDrained)` to close runtime and Project admission, await existing Pi disposal and runtime leases, stop automations/watchers, join accepted requests, and then snapshot deferred writes and flush durable state. Only writes deferred in the shutdown's own runtime epoch are snapshotted; untouched history stays cold. Existing delete/Project transitions keep their own final-write policy, and changed cold snapshots hydrate passively without starting queued work. Snapshot failures do not prevent healthy Sessions from flushing. Late requests cannot create another runtime or restart watchers. The shared bootstrap retains ownership when that work fails or exceeds the stop deadline. This composes the existing Pi real-exit contract; it does not replay messages or implement another Agent runtime.
+
+## Local restoration benchmark
+
+Run from the repository root against an isolated copy of the standard 20-Project,
+6000-Session fixture (rebase its persisted root paths to the copy):
+
+```sh
+CRAFT_CONFIG_DIR=/tmp/perf/sessinit-fixture /tmp/perf/bench-lock.sh \
+  bun packages/server-core/src/sessions/session-init.bench.ts
+```
+
+Each of the default 10 samples uses a fresh Bun process and times
+`SessionPersistence.loadSessionsFromDisk`, excluding imports and boot-service
+setup. Every sample asserts 6000 restored Sessions, cold transcripts, and the
+active Project's readiness before background Projects. OS file caches are not
+purged. `SESSINIT_RUNS` changes the sample count; `SESSINIT_PROFILE=1` enables
+separate diagnostic FS, JSON, construction and yield timings. Async FS durations
+include scheduling waits and overlap across the existing 32-wide batches; their
+sums are not additive wall time. Diagnostic instrumentation is absent from the
+production path and must not be enabled for acceptance timings.
+
+For historical comparison, export the baseline `packages/shared/src/sessions/storage.ts`
+with `git show` and pass its absolute path as `SESSINIT_BASELINE_STORAGE`. The
+probe verifies that this source was loaded, without changing the checkout.
+Alternate baseline/current `--worker` invocations under one benchmark lock.
+
+2026-10-13, Bun 1.4.2, baseline `f369803b9`, same fixture, 10 interleaved pairs;
+percentiles use linear interpolation:
+
+| Boundary (ms) | Before P50 / P95 | After P50 / P95 |
+| --- | --- | --- |
+| All Session metadata restored | 4361.70 / 4776.91 | 3815.96 / 3985.46 |
+| Active Project ready | 229.58 / 279.19 | 201.84 / 211.18 |
+
+All 10 pairs improved at both boundaries. The healthy-file recovery path avoids
+ancestor traversal for absent `.tmp`/`.bak` candidates: per 6000 Sessions,
+`realpathSync` calls fall from 330258 to 282258 and `lstatSync` from 480395 to
+420395. Existing candidates, including dangling symlinks, retain the full path
+guard; candidate selection and the writer's backup/rename ownership are unchanged.
+This measures disk restoration, not complete Electron startup or runtime readiness.
+
+Baseline diagnostic medians (3 separate instrumented runs, cumulative call times):
+
+| Component | Calls per run | Median ms |
+| --- | ---: | ---: |
+| `realpathSync` / `lstatSync` / `statSync` | 330258 / 480395 / 24020 | 2895.53 / 532.37 / 43.76 |
+| Async directory listing / sync file reads | 20 / 24064 | 3.78 / 352.29 |
+| Header open / read / close (overlapping awaits) | 6000 each | 15952.87 / 2126.80 / 45793.04 |
+| JSON parsing, including config reads | 30063 | 245.62 |
+| ManagedSession construction / explicit yields | 6000 / 81 | 11.61 / 3.51 |
+
+Construction costs about 1.93 microseconds per Session. Async header latencies
+include other callbacks running before their promises resume; do not sum them
+or interpret them as kernel I/O service time. Host-load variation also affects
+instrumented timings; the interleaved, uninstrumented pairs above are the
+acceptance evidence. Raw local reports: `/tmp/perf/sessinit-paired.json` and
+`/tmp/perf/sessinit-profile-{before,after}.json`.

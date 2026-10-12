@@ -18,6 +18,7 @@
 
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -143,8 +144,18 @@ function getValidSessionFileCandidate(path: string, priority: number): ValidSess
  */
 export function recoverSessionFile(sessionFile: string, workspaceRootPath: string): string | null {
   sessionFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile);
-  const tmpFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile + '.tmp');
-  const backupFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile + '.bak');
+  const tmpFile = sessionFile + '.tmp';
+  const backupFile = sessionFile + '.bak';
+  for (const candidate of [tmpFile, backupFile]) {
+    try {
+      // lstat preserves rejection of dangling symlinks; absent candidates need no repeated ancestor walk.
+      lstatSync(candidate);
+    } catch (error) {
+      if (classifyFsError(error).kind === 'missing') continue;
+      throw error;
+    }
+    resolveProjectOwnedFilePath(workspaceRootPath, candidate);
+  }
 
   // The writer owns promotion; between its two renames only the complete
   // backup exists, so read it in place rather than reporting the Session gone.
