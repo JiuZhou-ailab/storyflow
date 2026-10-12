@@ -1,3 +1,7 @@
+// input: SessionToolContext and a session-scoped callback registry
+// output: Live tool bindings for session management, Source activation and retry
+// pos: Shared adapter; resolves Host callbacks at execution time
+
 /**
  * Session Self-Management Bindings
  *
@@ -80,6 +84,14 @@ export function attachSessionSelfManagementBindings(
   Object.defineProperty(context, 'sendAgentMessage', {
     get() {
       return getSessionScopedToolCallbacks(sessionId)?.sendAgentMessageFn;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
+  Object.defineProperty(context, 'clearSourceBackoff', {
+    get() {
+      return getSessionScopedToolCallbacks(sessionId)?.clearSourceBackoffFn;
     },
     configurable: true,
     enumerable: true,

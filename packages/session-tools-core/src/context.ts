@@ -1,6 +1,6 @@
 /**
  * input: Host runtime services, workspace/session identity, and optional tool capabilities
- * output: Portable SessionToolContext contract implemented by the Storyflow host
+ * output: Portable SessionToolContext contract including Host-owned Source retry invalidation
  * pos: Dependency-inversion boundary for session-scoped tool handlers
  *
  * Keeps product capabilities outside Pi while letting Pi-native tools invoke them.
@@ -255,6 +255,9 @@ export interface SessionToolContext {
   // ============================================================
   // MCP Connection Validation (for source_test)
   // ============================================================
+
+  /** Clear this source's automatic retry backoff before an explicit connection test. */
+  clearSourceBackoff?(sourceSlug: string): void;
 
   /**
    * Validate a stdio MCP connection by spawning the command.

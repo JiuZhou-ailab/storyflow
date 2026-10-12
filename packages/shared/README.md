@@ -4,7 +4,7 @@
 
 ## 目录职责
 
-- `src/agent/` — Pi agent 运行时、传输边界、产品策略与 backend 契约
+- `src/agent/` — Pi agent 运行时、传输边界、产品策略与 backend 契约；会话工具通过实时回调请求 Host 清除指定来源的连接退避
 - `src/automations/` — 自动化系统：事件总线、匹配器、调度、handlers
 - `src/auth/` — OAuth、令牌管理与 Broker/Gateway/桌面共用的托管访问错误合同
 - `src/config/` — 配置/偏好/模型目录/存储

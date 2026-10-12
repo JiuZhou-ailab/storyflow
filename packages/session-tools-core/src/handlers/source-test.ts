@@ -2,7 +2,7 @@
  * Source Test Handler
  *
  * input: Source slug, session tool context, and optional auto-enable preference
- * output: Source validation/test report plus persisted connection metadata when available
+ * output: Source validation/test report, explicit retry invalidation, and persisted connection metadata
  * pos: Session tool handler for validating source configuration before activation
  *
  * Validates and tests a source configuration comprehensively.
@@ -108,6 +108,7 @@ export async function handleSourceTest(
 
   // 6. Connection test
   lines.push('\n## Connection Test');
+  if (source.type === 'mcp') ctx.clearSourceBackoff?.(sourceSlug);
   const connectionResult = await testConnection(ctx, source, sourceSlug);
   lines.push(...connectionResult.lines);
   if (connectionResult.hasError) {
