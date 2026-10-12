@@ -1,5 +1,5 @@
 // input: Pi cwd, project boundary, agent directory, and legacy Skills
-// output: Pi resource discovery and product context isolation without changing user settings
+// output: Pi resource discovery, debug-gated reload timings, and context isolation without settings writes
 // pos: Minimal product adapter over Pi's public ResourceLoader options
 
 import { existsSync, realpathSync } from "node:fs";
@@ -11,6 +11,8 @@ import {
   type InlineExtension,
   type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
+
+import { perf } from "../../shared/src/utils/perf.ts";
 
 import { resolveResourceRoots } from "../../shared/src/resources/resolver.ts";
 
@@ -143,8 +145,8 @@ export async function createProjectResourceLoader(
 
   const resourceLoader: ResourceLoader = {
     async reload(reloadOptions?): Promise<void> {
-      await skillLoader.reload();
-      await inner.reload(reloadOptions);
+      await perf.measure("pi.resources.skills", () => skillLoader.reload());
+      await perf.measure("pi.resources.extensions", () => inner.reload(reloadOptions));
       settingsManager.applyOverrides({
         enableSkillCommands: true,
       });

@@ -1,5 +1,5 @@
 // input: Standard fixture, built Electron, deterministic local model SSE
-// output: First-text latency, source-locator QA, and 20/50-session process-tree diagnostics
+// output: First-text and cold/warm request latency, source-locator QA, and 20/50-session process-tree diagnostics
 // pos: Specs #29/#30 user-visible and runtime performance evidence; no external provider calls
 
 import assert from 'node:assert/strict'
@@ -23,13 +23,14 @@ const fixture = realpathSync(mkdtempSync(join(tmpdir(), 'storyflow-interaction-'
 let app: LaunchedApp | undefined
 let responseText = '中文首片暂停测试'
 let requests = 0
+let lastRequestAt = 0
 let lastAgentMessages: Array<{ role: string; content: unknown }> = []
 let streamLong = false
 const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
   if (!new URL(request.url).pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
   const body = await request.json() as any
   const isAgent = body.tools?.length > 0
-  if (isAgent) { requests++; lastAgentMessages = body.messages }
+  if (isAgent) { lastRequestAt = performance.now(); requests++; lastAgentMessages = body.messages }
   const text = isAgent ? responseText : 'Offline test'
   const sse = (content: string, finish_reason: string | null = null) => `data: ${JSON.stringify({ id: 'offline', model: connection, choices: [{ index: 0, delta: { content }, finish_reason }] })}\n\n`
   return new Response(new ReadableStream({ async start(controller) {
@@ -49,7 +50,7 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) 
 const results: Record<string, unknown> = {
   at: new Date().toISOString(), baseline, scenarios: selected, bun: Bun.version,
   sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-  buildSha256: Object.fromEntries(['apps/electron/dist/main.cjs', 'apps/electron/dist/renderer/index.html'].map(path => [path, createHash('sha256').update(readFileSync(join(root, path))).digest('hex')])),
+  buildSha256: Object.fromEntries(['apps/electron/dist/main.cjs', 'apps/electron/dist/renderer/index.html', 'packages/pi-agent-server/dist/pi-agent-server'].map(path => [path, createHash('sha256').update(readFileSync(join(root, path))).digest('hex')])),
   dirty: !!execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim(),
 }
 function stats(samples: number[]) {
@@ -96,10 +97,10 @@ try {
     await waitFor(live, '!!document.querySelector(".input-container")', 20000, 'conversation input')
   }
   const send = async (id: string) => {
-    await callOn(live, `async function(id) { await window.electronAPI.sendMessage(id, 'Reply with the offline fixture') }`, [id])
+    const startedAt = await callOn<number>(live, `async function(id) { const start = performance.timeOrigin + performance.now(); await window.electronAPI.sendMessage(id, 'Reply with the offline fixture'); return start }`, [id])
     for (let i = 0; i < 600; i++) {
       const done = await callOn(live, `async function(id) { const s = await window.electronAPI.getSessionMessages(id); return !s.isProcessing && s.messages.some(m => m.role === 'assistant') }`, [id])
-      if (done) { await sleep(100); return }
+      if (done) { await sleep(100); return startedAt }
       await sleep(50)
     }
     throw new Error('Offline reply timeout: '+live.processLines.slice(-12).join('\n'))
@@ -163,18 +164,41 @@ try {
     assert.ok(Number.isInteger(resumes) && resumes >= 0 && resumes <= 40, 'Invalid PERF_RUNTIME_RESUMES')
     const coldResumes: number[] = []
     const cleanRestarts: number[] = []
+    const actualSends: Array<{ kind: 'cold' | 'warm'; requestMs: number; deltaMs: number }> = []
+    const coldReadyToRequest: number[] = []
+    const coldRequests: number[] = []
+    const warmRequests: number[] = []
+    const warmDeltas: number[] = []
     for (let i = 1; i <= resumes; i++) {
       const id = ids[i]!
-      const measure = async () => {
-        await callOn(live, `function(id) { window.__resumeDelta=null; window.__resumeOff=window.electronAPI.onSessionEvent(e=>{if(e.sessionId===id && e.type==='text_delta' && window.__resumeDelta===null) window.__resumeDelta=performance.now()-window.__resumeStart});window.__resumeStart=performance.now() }`, [id])
-        await send(id)
+      const measure = async (requestSamples?: number[]) => {
+        await callOn(live, `function(id) { window.__resumeDelta=null; window.__resumeOff=window.electronAPI.onSessionEvent(e=>{if(e.sessionId===id && e.type==='text_delta' && window.__resumeDelta===null) {window.__resumeDelta=performance.now()-window.__resumeStart;window.__resumeDeltaAt=performance.timeOrigin+performance.now()}});window.__resumeStart=performance.now() }`, [id])
+        const requestStart = performance.now()
+        const spanStart = live.perfLines.length
+        const previousRequests = requests
+        const sendStartedAt = await send(id)
+        assert.equal(requests, previousRequests + 1, "One model request per measured send")
+        requestSamples?.push(lastRequestAt - requestStart)
+        if (requestSamples === coldRequests && !baseline) {
+          const ready = live.perfLines.slice(spanStart).find(line => line.text.includes('[PERF] pi.subprocess.ready:') && line.text.includes(JSON.stringify(id)))
+          assert.ok(ready, 'Cold send must include a subprocess-ready span')
+          const elapsed = performance.timeOrigin + lastRequestAt - ready.at
+          assert.ok(elapsed >= 0, 'Ready must precede the local model request')
+          coldReadyToRequest.push(elapsed)
+        }
+        if (requestSamples) {
+          const requestMs = performance.timeOrigin + lastRequestAt - sendStartedAt
+          const deltaMs = await evalOn<number>(live, 'window.__resumeDeltaAt') - sendStartedAt
+          assert.ok(requestMs >= 0 && deltaMs >= requestMs, 'Actual send must precede request and first delta')
+          actualSends.push({ kind: requestSamples === coldRequests ? 'cold' : 'warm', requestMs, deltaMs })
+        }
         const ms = await evalOn<number>(live, 'window.__resumeDelta')
         await evalOn(live, 'window.__resumeOff()')
         assert.ok(typeof ms === 'number', 'Missing resume first delta')
         return ms
       }
       const previous = processTree(live.proc.pid!)
-      coldResumes.push(await measure())
+      coldResumes.push(await measure(coldRequests))
       assert.ok(lastAgentMessages.some(message => message.role === 'assistant'
         && JSON.stringify(message.content).includes('Offline lifecycle reply')), 'Restored Pi must send prior native conversation context')
       const current = processTree(live.proc.pid!)
@@ -190,11 +214,17 @@ try {
         assert.ok(!processTree(live.proc.pid!).processes.some(p => p.pid === pid), 'Old Pi must exit before clean restart')
         cleanRestarts.push(await measure())
       }
+      warmDeltas.push(await measure(warmRequests))
     }
-    assert.equal(requests, cycles * 52 + resumes * (baseline ? 1 : 2), 'Each user send must cause exactly one model request, including resumes')
+    results.runtimeActualSend = Object.fromEntries(['cold', 'warm'].map(kind => {
+      const samples = actualSends.filter(sample => sample.kind === kind)
+      return [kind, { request: stats(samples.map(sample => sample.requestMs)), delta: stats(samples.map(sample => sample.deltaMs)), samples }]
+    }))
+    results.runtimeLocalLatency = { coldReadyToRequest: stats(coldReadyToRequest), coldRequest: stats(coldRequests), warmRequest: stats(warmRequests), warmDelta: stats(warmDeltas), coldReadyToRequestSamples: coldReadyToRequest, coldRequests, warmRequests, warmDeltas }
+    assert.equal(requests, cycles * 52 + resumes * (baseline ? 2 : 3), 'Each user send must cause exactly one model request, including resumes')
     results.runtimeResume = { nativeHistoryVerified: resumes > 0, samples: coldResumes, cleanRestartSamples: cleanRestarts,
       kind: baseline ? 'warm' : 'cold', resume: coldResumes.length ? stats(coldResumes) : null, cleanRestart: cleanRestarts.length ? stats(cleanRestarts) : null,
-      preparationSpans: live.perfLines.filter(line => /pi.subprocess.ready|agent.facade.ready/.test(line.text)).map(line => line.text) }
+      preparationSpans: live.perfLines.filter(line => /pi\.(subprocess.ready|modules.loaded|resources\.|session.create)|agent.facade.ready/.test(line.text)).map(line => line.text) }
     console.log('runtime resume', JSON.stringify({ samples: coldResumes.length, resume: stats(coldResumes), cleanRestart: stats(cleanRestarts) }))
     if (!baseline && resumes) {
       const coldP95 = stats(coldResumes).p95!
@@ -412,6 +442,7 @@ try {
   if (app) { results.logs = app.processLines.slice(-30); results.ui = await evalOn(app, '({url:location.href,text:document.body.innerText.slice(-1500)})').catch(() => null) }
   throw error
 } finally {
+  results.modelRequests = requests
   mkdirSync(join(root, 'e2e/perf/results'), { recursive: true })
   const output = join(root, 'e2e/perf/results', `interaction-${Date.now()}-${baseline ? 'before' : 'after'}.json`)
   writeFileSync(output, JSON.stringify(results, null, 2))
