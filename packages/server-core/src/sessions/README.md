@@ -17,7 +17,7 @@ Modules by reason-of-change (all flat in this directory):
 | `agent-runtime-lease.ts` | Per-session send-admission gates, runtime mutex, and shared-subprocess lease counting |
 | `isolated-test-runner.ts` | Shared Bun subprocess + marked JSON parsing for lifecycle tests |
 | `agent-runtime.ts` | Pi subprocess lifecycle: getOrCreateAgentLocked, runtime refresh, three eligible idle runtimes, credential rotation, confirmed disposal; AGENT_FLAGS |
-| `wire-agent-callbacks.ts` | Post-construction product callback wiring onto a live agent |
+| `wire-agent-callbacks.ts` | Post-construction product callback wiring onto a live agent; explicit Source tests/activation clear that session pool's per-source backoff |
 | `browser-pane-bridge.ts` | browser_* tool delegation to BrowserPaneManager |
 | `source-bridge.ts` | buildServersFromSources shared by source reload paths (bridge updates call `agent.applyBridgeUpdates(...)` directly) |
 

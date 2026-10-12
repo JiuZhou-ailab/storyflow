@@ -1,5 +1,5 @@
 // input: A freshly constructed AgentInstance, its ManagedSession, and the Facade callback bundle
-// output: wireAgentCallbacks — post-construction agent event wiring (permission/auth/plan/spawn/self-management/source activation)
+// output: wireAgentCallbacks — post-construction agent event wiring (permission/auth/plan/spawn/self-management/source activation/retry)
 // pos: Agent runtime wiring; the only place product callbacks are attached to a live Pi agent
 
 import type { IBrowserPaneManager } from '@craft-agent/server-core/handlers'
@@ -443,7 +443,9 @@ export function wireAgentCallbacks(
 
       await deps.sendMessage(sessionId, message, fileAttachments)
     },
+    clearSourceBackoffFn: (sourceSlug: string) => managed.mcpPool?.clearBackoff(sourceSlug),
     activateSourceInSessionFn: async (sourceSlug: string) => {
+      managed.mcpPool?.clearBackoff(sourceSlug)
       const cb = managed.agent?.onSourceActivationRequest
       if (!cb) {
         return { ok: false, reason: 'Agent has no activation callback wired' }

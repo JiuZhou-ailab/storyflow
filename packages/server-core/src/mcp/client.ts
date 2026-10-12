@@ -1,5 +1,5 @@
 // input: HTTP/stdio MCP connection configs from shared/mcp types
-// output: CraftMcpClient — an SDK-backed MCP client with connect health check and confirmed stdio exit
+// output: CraftMcpClient — an SDK-backed MCP client with connect health check and cleanup even during an incomplete handshake
 // pos: Main-process MCP transport client; pure types remain in @craft-agent/shared/mcp
 
 /**
@@ -83,7 +83,7 @@ export class CraftMcpClient {
   async connect(): Promise<void> {
     if (this.connected) return;
 
-    await this.client.connect(this.transport);
+    const connecting = this.client.connect(this.transport);
     if (this.transport instanceof StdioClientTransport) {
       const onclose = this.transport.onclose;
       this.stdioExit = new Promise<void>(resolve => {
@@ -91,11 +91,13 @@ export class CraftMcpClient {
       });
     }
 
+    await connecting;
+
     // Verify connection works by listing tools
     try {
       await this.client.listTools();
     } catch (error) {
-      await this.client.close();
+      await this.close();
       throw new Error(
         `MCP connection failed health check: ${error instanceof Error ? error.message : String(error)}`
       );
@@ -133,18 +135,17 @@ export class CraftMcpClient {
   }
 
   async close(): Promise<void> {
-    if (this.connected) {
-      await this.client.close();
-      if (this.stdioExit) {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        try {
-          await Promise.race([
-            this.stdioExit,
-            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('MCP subprocess exit was not confirmed')), 1000); }),
-          ]);
-        } finally { clearTimeout(timer); }
-      }
-      this.connected = false;
+    // A timed-out handshake still owns a transport and possibly a subprocess.
+    await this.client.close();
+    if (this.stdioExit) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          this.stdioExit,
+          new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('MCP subprocess exit was not confirmed')), 1000); }),
+        ]);
+      } finally { clearTimeout(timer); }
     }
+    this.connected = false;
   }
 }

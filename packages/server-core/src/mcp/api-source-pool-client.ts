@@ -1,5 +1,5 @@
 // input: An in-process McpServer instance built by shared API-source tooling
-// output: ApiSourcePoolClient — an in-memory-transport PoolClient for API sources
+// output: ApiSourcePoolClient — an in-memory-transport PoolClient with cleanup during discovery failure
 // pos: Main-process bridge that exposes API sources through the same pool interface as remote MCP
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -40,9 +40,8 @@ export class ApiSourcePoolClient implements PoolClient {
   }
 
   async close(): Promise<void> {
-    if (this.connected) {
-      await this.client.close();
-      this.connected = false;
-    }
+    await this.client.close();
+    await this.mcpServer.close();
+    this.connected = false;
   }
 }

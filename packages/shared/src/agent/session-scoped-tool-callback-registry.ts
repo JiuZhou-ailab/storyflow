@@ -1,3 +1,7 @@
+// input: Host callbacks registered by session identity
+// output: Live per-session tool callbacks, including explicit Source retry invalidation
+// pos: Shared callback registry; connection lifecycle remains Host-owned
+
 /**
  * Session-Scoped Tool Callback Registry
  *
@@ -68,6 +72,8 @@ export interface SessionScopedToolCallbacks {
   resolveStatusFn?: (status: string) => import('@craft-agent/session-tools-core').ResolvedStatusResult;
   /** Send a message to another session (inter-session messaging). */
   sendAgentMessageFn?: (sessionId: string, message: string, attachments?: Array<{ path: string; name?: string }>) => Promise<void>;
+  /** Clear only the explicitly retried source's connection backoff. */
+  clearSourceBackoffFn?: (sourceSlug: string) => void;
   /**
    * Activate a source in the running session (source_test auto-enable flow).
    * Wired by SessionManager to the per-session onSourceActivationRequest callback
