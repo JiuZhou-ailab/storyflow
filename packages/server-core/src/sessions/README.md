@@ -26,7 +26,7 @@ Pre-existing support modules: `managed-session.ts` (ManagedSession state assembl
 
 Module wiring rule: stateful modules receive a narrow deps object of arrow functions resolving through the Facade (`this`) at call time, so per-instance test stubs on SessionManager keep working; stateless helpers are plain functions taking `ManagedSession` directly. Adjacent `*.test.ts` files verify these boundaries and durable session behavior.
 
-`cache-prefix.isolated.ts` captures real SessionManager → Pi → loopback provider requests, including MCP tool loops and cancellation. Interruption handling keeps its rule in stable system policy and its current-turn fact in non-persistent context. Run with `PERF_CACHE_EVIDENCE_DIR` to save raw bodies and byte-prefix comparisons; optional `PERF_CACHE_SKILLS` copies a Skill directory into the isolated HOME. These byte comparisons do not measure provider cache hits or latency.
+`cache-prefix.isolated.ts` captures real SessionManager → Pi → loopback provider requests, including MCP tool loops, cancellation, native steer, external file changes, mode transitions, and reloads. Interruption and workspace-freshness rules stay in stable system policy; their facts belong to the current non-persistent context snapshot. Run with `PERF_CACHE_EVIDENCE_DIR` to save raw bodies and byte-prefix comparisons; optional `PERF_CACHE_SKILLS` copies a Skill directory into the isolated HOME. These byte comparisons do not measure provider cache hits or latency.
 
 The published `queryOnce` RPC remains success-or-error: failed, cancelled and incomplete Pi results reject before any legacy consumer can use partial text as a rewrite. Successful results pass through unchanged, including older runtime responses without a status field.
 

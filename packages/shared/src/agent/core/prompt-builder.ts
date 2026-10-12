@@ -1,5 +1,5 @@
 // input: Workspace/session metadata, source state, preferences, and current filesystem shape
-// output: Per-turn system policy and data context blocks for Storyflow agent sessions
+// output: Stable runtime policy and per-turn mode, capability, and workspace data for Storyflow agent sessions
 // pos: Shared prompt-context builder used by Claude and Pi-backed sessions
 
 import { isLocalMcpEnabled } from '../../workspaces/storage.ts';
@@ -75,7 +75,8 @@ export class PromptBuilder {
       data.push(`<workspace_root>${this.workspaceRootPath}</workspace_root>`);
     }
 
-    system.push(this.formatWorkspaceCapabilities());
+    system.push('<runtime_context_policy>Use the latest user message runtime snapshot as current state; earlier snapshots describe earlier turns. One-time signals absent from the latest snapshot are inactive. Workspace capabilities are current turn data. Use filesystem tools for writes; only report success after the tool confirms it.</runtime_context_policy>');
+    data.push(this.formatWorkspaceCapabilities());
 
     const workingDirContext = this.getWorkingDirectoryContext();
     if (workingDirContext) {
@@ -107,7 +108,8 @@ export class PromptBuilder {
       getSessionPlansPath(this.workspaceRootPath, sessionId);
     const dataFolderPath = options.dataFolderPath ??
       getSessionDataPath(this.workspaceRootPath, sessionId);
-    system.push(formatSessionState(sessionId, {
+    system.push('<session_state_policy>Follow the permissionMode in the current session_state. When modeChangeUserSignal is present, apply the user-selected mode immediately. Host permission checks remain authoritative.</session_state_policy>');
+    data.push(formatSessionState(sessionId, {
       consumeModeChangeUserSignal: true,
     }));
     data.push(`<session_paths>\nplansFolderPath: ${plansFolderPath}\ndataFolderPath: ${dataFolderPath}\n</session_paths>`);

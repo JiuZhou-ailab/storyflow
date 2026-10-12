@@ -93,7 +93,7 @@ installNetworkProxy();
 let piSession: AgentSession | null = null;
 let piModelsRuntime: ModelRuntime | null = null;
 let unsubscribeEvents: (() => void) | null = null;
-let systemPromptOverride: ReturnType<typeof createSystemPromptOverride> | null = null;
+const systemPromptOverride = createSystemPromptOverride();
 
 // Init config (set on 'init' message)
 let initConfig: Extract<PiInboundMessage, { type: 'init' }> | null = null;
@@ -155,6 +155,7 @@ async function ensureSession(): Promise<AgentSession> {
   const endSession = perf.start('pi.session.create');
   const created = await createPrimaryPiSession({
     config: initConfig,
+    systemPromptOverride,
     getConfig: () => initConfig!,
     cwd,
     agentDir,
@@ -172,7 +173,6 @@ async function ensureSession(): Promise<AgentSession> {
   });
   endSession();
   piSession = created.session;
-  systemPromptOverride = created.systemPromptOverride;
   toolsChanged = false;
   return piSession;
 }

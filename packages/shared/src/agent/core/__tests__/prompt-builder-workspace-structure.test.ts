@@ -6,16 +6,18 @@ import { describe, expect, it, mock, setSystemTime } from 'bun:test'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { cleanupModeState, initializeModeState, setPermissionMode } from '../../mode-manager'
 import { PromptBuilder } from '../prompt-builder'
 
 mock.module('../../../config/preferences.ts', () => ({
   formatPreferencesForPrompt: () => '',
 }))
 
-function createBuilder(rootPath: string, workingDirectory = rootPath, sdkCwd?: string): PromptBuilder {
+function createBuilder(rootPath: string, workingDirectory = rootPath, sdkCwd?: string, localMcpEnabled = false): PromptBuilder {
   return new PromptBuilder({
     workspace: {
       id: 'workspace',
+      localMcpEnabled,
       name: 'Workspace',
       rootPath,
       createdAt: Date.now(),
@@ -48,6 +50,32 @@ describe('PromptBuilder project context', () => {
     } finally {
       setSystemTime()
     }
+  })
+
+  it('keeps mode transitions and their one-time user signal in turn data', () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-mode-policy-'))
+    const builder = createBuilder(rootPath)
+    initializeModeState('session', 'ask')
+    try {
+      const before = builder.buildTurnContext({})
+      setPermissionMode('session', 'safe', { changedBy: 'user' })
+      const changed = builder.buildTurnContext({})
+      const following = builder.buildTurnContext({})
+      expect(changed.system).toEqual(before.system)
+      expect(following.system).toEqual(before.system)
+      expect(changed.data.join('\n')).toContain('permissionMode: explore')
+      expect(changed.data.join('\n')).toContain('modeChangeUserSignal:')
+      expect(following.data.join('\n')).not.toContain('modeChangeUserSignal:')
+    } finally { cleanupModeState('session') }
+  })
+
+  it('updates workspace capability facts without rewriting policy', () => {
+    const rootPath = mkdtempSync(join(tmpdir(), 'craft-capability-policy-'))
+    const disabled = createBuilder(rootPath).buildTurnContext({})
+    const enabled = createBuilder(rootPath, rootPath, undefined, true).buildTurnContext({})
+    expect(enabled.system).toEqual(disabled.system)
+    expect(disabled.data.join('\n')).toContain('project-local-mcp: disabled')
+    expect(enabled.data.join('\n')).toContain('project-local-mcp: enabled')
   })
 
   it('treats the selected Pi cwd as effective instead of legacy sdkCwd metadata', () => {
@@ -100,19 +128,21 @@ describe('PromptBuilder project context', () => {
     const data = context.data.join('\n\n')
     const dataMarkers = [
       '<workspace_root>',
+      '<workspace_capabilities>',
       '<working_directory>',
       '<project_context_files',
       '<workspace_structure',
       '<sources>',
+      '<session_state>',
       '<session_paths>',
       "**USER'S DATE AND TIME:",
     ]
     const system = context.system.join('\n\n')
     const systemMarkers = [
-      '<workspace_capabilities>',
+      '<runtime_context_policy>',
       '<workspace_structure_policy>',
       '<source_policy>',
-      '<session_state>',
+      '<session_state_policy>',
       '<language_policy_reminder>',
     ]
 
