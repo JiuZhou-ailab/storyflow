@@ -1,5 +1,5 @@
 // input: Electron updater events, release manifests, and app quit preparation
-// output: Update discovery, download state, and native installer handoff
+// output: Update discovery, retryable install cancellation, download state, and native installer handoff
 // pos: Main-process update boundary between Storyflow and electron-updater
 
 /**
@@ -70,6 +70,8 @@ let eventSink: EventSink | null = null
 
 type UpdateInstallPreparation = () => Promise<void>
 let prepareForUpdateInstall: UpdateInstallPreparation = async () => {}
+
+export class UpdateInstallCancelledError extends Error {}
 
 // Flag to indicate update is in progress — used to prevent force exit during quitAndInstall
 let __isUpdating = false
@@ -517,7 +519,10 @@ export async function installUpdate(): Promise<void> {
   } catch (error) {
     __isUpdating = false
     mainLog.error('[auto-update] quitAndInstall failed:', error)
-    updateInfo = { ...updateInfo, downloadState: 'error' }
+    updateInfo = {
+      ...updateInfo,
+      downloadState: error instanceof UpdateInstallCancelledError ? 'ready' : 'error',
+    }
     broadcastUpdateInfo()
     throw error
   }
