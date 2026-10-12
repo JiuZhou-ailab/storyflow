@@ -396,11 +396,12 @@ export function ActivityRail({
         next.delete(workspaceId)
       } else {
         next.add(workspaceId)
-        void refreshProjectSessionMetas(workspaceId)
+        // Expansion can reuse the initial request; mutation-driven refreshes stay independent.
+        if (!loadingProjectIds.has(workspaceId)) void refreshProjectSessionMetas(workspaceId)
       }
       return next
     })
-  }, [refreshProjectSessionMetas, setExpandedProjectIds])
+  }, [loadingProjectIds, refreshProjectSessionMetas, setExpandedProjectIds])
 
   const refreshUnreadSummary = React.useCallback(async () => {
     try {
@@ -496,10 +497,24 @@ export function ActivityRail({
       }),
     [workspaces],
   )
+  const projectSessionTargets = React.useRef(new Map<string, string>())
   React.useEffect(() => {
+    const nextTargets = new Map<string, string>()
     for (const workspace of projectWorkspaces) {
-      if (workspace.rootAvailable !== false) void refreshProjectSessionMetas(workspace.id)
+      if (workspace.rootAvailable === false) continue
+      // Catalog labels and recency change independently of session ownership/routing.
+      const target = JSON.stringify([
+        workspace.rootPath,
+        workspace.remoteServer?.url,
+        workspace.remoteServer?.credentialRef,
+        workspace.remoteServer?.remoteWorkspaceId,
+      ])
+      nextTargets.set(workspace.id, target)
+      if (projectSessionTargets.current.get(workspace.id) !== target) {
+        void refreshProjectSessionMetas(workspace.id)
+      }
     }
+    projectSessionTargets.current = nextTargets
   }, [projectWorkspaces, refreshProjectSessionMetas])
 
   // One complete ordered collection drives both projections and drag ownership.
