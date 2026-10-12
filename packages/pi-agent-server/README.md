@@ -12,7 +12,7 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 - `src/pi-tool-runtime.ts` — Pi Extension permission hooks, Host capability proxying, large-result handling, and product rewind handshake.
 - `src/subagent-tool.ts` — built-in ephemeral Subagent Run with Host-enforced capability profiles.
 - `src/project-resource-loader.ts` — Pi-native resource/package discovery plus Storyflow compatibility paths.
-- `src/system-prompt-override.ts` — Stable product prompt policy plus non-persistent per-turn context projection through Pi's native hooks.
+- `src/system-prompt-override.ts` — Stable product prompt policy plus process-local replay of per-user context snapshots through Pi's native hooks.
 - `src/print-system-prompt.ts` — Safe runtime prompt snapshot without executing user Extensions.
 - `src/extension-ui.ts` — Pi Extension dialogs projected onto Storyflow's existing structured-question flow.
 - `src/product-rewind.ts` — Durable Pi user-entry to Storyflow transcript-cut mapping.
@@ -40,8 +40,11 @@ Upgrade evidence and rollback boundaries are in [Pi upgrade QA](../../docs/pi-na
 Current time is transient turn data, so advancing the clock does not rewrite system
 policy. Prompt-cache diagnostics include the effective Pi system hash (including
 turn policy), session/model, host turn ID and assistant-call index. Missing usage
-is `unknown`, not a cache miss. Transient data still expires after its turn; durable
-user requirements must remain in messages or project files.
+is `unknown`, not a cache miss. The primary subprocess remembers each native user
+entry's first context snapshot, including steer, across resource/session reloads.
+Historical snapshots remain byte-stable but only the latest snapshot describes
+current state. They never enter Pi or Product JSONL; restarting forgets them and
+causes one prefix miss. Durable user requirements belong in messages or project files.
 
 Long-task contracts and the compiled-binary release gate are documented in
 [long-task QA](../../docs/long-task-runtime-qa.md). Built-in `subagent` uses Pi

@@ -2,7 +2,7 @@
  * SourceManager - Centralized Source State Management
  *
  * input: Loaded Source definitions, active/intended slug state, and tool errors
- * output: Source state projection, activation detection, and auth-tool routing
+ * output: Source state data, stable conditional guide policy, activation detection, and auth-tool routing
  * pos: Agent-facing Source state coordinator above storage and credential boundaries
  *
  * Provides a unified interface for managing external data source state that both
@@ -216,12 +216,6 @@ export class SourceManager {
       parts.push(`Inactive: ${inactiveList.join(', ')}`);
     }
 
-    // Host policy stays separate from Source-authored names, taglines, paths, and errors.
-    const activeSourcesWithGuides = activeSources.filter(
-      (s) => s.guide?.raw && !GUIDE_EXEMPT_SLUGS.has(s.config.slug)
-    );
-    let hasGuides = activeSourcesWithGuides.length > 0;
-
     // Source descriptions (shown once per session when first introduced)
     if (unseenSources.length > 0) {
       parts.push('');
@@ -235,7 +229,6 @@ export class SourceManager {
         // Add guide path for sources that have guides (excluding internal sources)
         if (s.guide?.raw && !GUIDE_EXEMPT_SLUGS.has(s.config.slug)) {
           parts.push(`  Guide: ${join(s.folderPath, 'guide.md')}`);
-          hasGuides = true;
         }
       }
     }
@@ -267,9 +260,7 @@ export class SourceManager {
     }
 
     return {
-      ...(hasGuides ? {
-        policy: '<source_policy>Before using any Source tool, read that Source\'s guide path listed in the turn data. Tool calls are blocked until the guide has been read for the current context.</source_policy>',
-      } : {}),
+      policy: '<source_policy>Before using any Source tool, if that Source has a guide, read its guide path listed in the turn data. Tool calls are blocked until the guide has been read for the current context.</source_policy>',
       data: output,
     };
   }

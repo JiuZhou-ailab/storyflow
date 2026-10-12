@@ -1,6 +1,7 @@
 // input: Isolated Host SessionManager, native Pi resources, and loopback provider/MCP servers
 // output: Byte-level cross-turn evidence with reasoning, tool loops, reload and cancellation
 // pos: Diagnostic integration at the real Host-to-provider boundary; no paid calls
+import type { Readable } from 'node:stream';
 import { afterAll, expect, test } from 'bun:test';
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -74,6 +75,9 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
   const logs: string[] = [];
   let phase = 'seed';
   let call = 0;
+  let releaseSteer!: () => void;
+  let steerCaptured!: () => void;
+  const steerRequest = new Promise<void>(resolve => { steerCaptured = resolve; });
   let abortCaptured!: () => void;
   const heldRequest = new Promise<void>(resolve => { abortCaptured = resolve; });
   const server = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
@@ -87,6 +91,10 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
         controller.enqueue(new TextEncoder().encode(chunk({ role: 'assistant', content: 'Partial answer' })));
         abortCaptured();
       } }), { headers: { 'content-type': 'text/event-stream' } });
+    }
+    if (phase === 'steer' && call === 2) {
+      steerCaptured();
+      await new Promise<void>(resolve => { releaseSteer = resolve; });
     }
     const tool = phase !== 'seed' && !phase.startsWith('policy-') && call === 1;
     return new Response(chunk({ role: 'assistant', reasoning_content: `REASONING_${phase}_${call}` }) +
@@ -111,10 +119,10 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
     events.push(event);
     if (event.type === 'permission_request') manager.respondToPermission(sessionId, event.request.requestId, true, false);
   });
-  const run = async (name: string) => {
+  const run = async (name: string, workspaceFreshnessContext?: string) => {
     phase = name; call = 0;
     const start = captures.length;
-    await manager.sendMessage(sessionId, name === 'seed' ? 'hi' : `USER_${name}`);
+    await manager.sendMessage(sessionId, name === 'seed' ? 'hi' : `USER_${name}`, undefined, undefined, { workspaceFreshnessContext });
     expect(captures.length, JSON.stringify(events) + logs.join('\n')).toBeGreaterThan(start);
     return { name, start, end: captures.length - 1 };
   };
@@ -140,54 +148,94 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
     const aborted = await abortedRun;
     const resumed = await run('resumed');
     const following = await run('following');
+    const steeredRun = run('steer');
+    await Promise.race([steerRequest, steeredRun.then(() => { throw new Error('Steer fixture finished before hold'); })]);
+    // SessionManager queues UI follow-ups; exercise its live PiAgent's native steer API.
+    const agent = (manager as unknown as { sessions: Map<string, { agent: {
+      redirect(message: string): boolean; subprocess: { stdout: Readable };
+    } }> }).sessions.get(sessionId)!.agent;
+    const queued = new Promise<void>((resolve, reject) => {
+      let pending = '';
+      const stream = agent.subprocess.stdout;
+      const timeout = setTimeout(() => { stream.off('data', observe); reject(new Error('Missing native steer queue event')); }, 10_000);
+      function observe(chunk: Buffer) {
+        pending += chunk.toString();
+        const lines = pending.split('\n');
+        pending = lines.pop()!;
+        for (const line of lines) {
+          const message = JSON.parse(line);
+          if (message.type === 'event' && message.event.type === 'queue_update' && line.includes('STEER_NEW_USER')) {
+            clearTimeout(timeout); stream.off('data', observe); resolve();
+          }
+        }
+      }
+      stream.on('data', observe);
+    });
+    expect(agent.redirect('STEER_NEW_USER')).toBe(true);
+    await queued;
+    releaseSteer();
+    const steered = await steeredRun;
+    const afterSteer = await run('after-steer');
+    await writeFile(join(project, 'chapter.md'), 'Externally revised chapter.');
+    const external = await run('external', '<workspace-brief>chapter.md changed outside this conversation.</workspace-brief>');
+    const afterExternal = await run('after-external');
+    await manager.setSessionPermissionMode(sessionId, 'safe');
+    const permission = await run('policy-permission');
+    const afterPermission = await run('policy-after-permission');
+    await writeFile(join(sourceFolder, 'guide.md'), '# Fixture\nRead the manuscript metadata.');
+    const sourcePolicy = await run('policy-source');
     const bodies = captures.map(raw => JSON.parse(raw));
-    const transitions = [[first.end, second.start], [second.end, aborted.start], [aborted.end, resumed.start], [resumed.end, following.start]].map(([from, to]) => ({
-      from, to, raw: difference(captures[from!]!, captures[to!]!),
-      system: difference(JSON.stringify(bodies[from!].messages[0]), JSON.stringify(bodies[to!].messages[0])),
-      tools: difference(JSON.stringify(bodies[from!].tools), JSON.stringify(bodies[to!].tools)),
-    }));
+    const transitions = [
+      ['normal', first.end, second.start], ['abort', aborted.end, resumed.start],
+      ['after-abort', resumed.end, following.start], ['steer', steered.start + 1, steered.end],
+      ['after-steer', steered.end, afterSteer.start], ['external', afterSteer.end, external.start],
+      ['after-external', external.end, afterExternal.start], ['mode', afterExternal.end, permission.start],
+      ['after-mode', permission.end, afterPermission.start], ['source', afterPermission.end, sourcePolicy.start],
+    ].map(([name, from, to]) => {
+      const f = from as number, t = to as number;
+      return { name, from: f, to: t, raw: difference(captures[f]!, captures[t]!),
+        system: difference(JSON.stringify(bodies[f].messages[0]), JSON.stringify(bodies[t].messages[0])),
+        tools: difference(JSON.stringify(bodies[f].tools), JSON.stringify(bodies[t].tools)) };
+    });
     const output = process.env.PERF_CACHE_EVIDENCE_DIR;
     if (output) {
       await mkdir(output, { recursive: true });
       for (let index = 0; index < captures.length; index++) await writeFile(join(output, `request-${index}.json`), captures[index]!);
-      await writeFile(join(output, 'analysis.json'), JSON.stringify({ seed, first, second, aborted, resumed, following, transitions, events }, null, 2));
+      await writeFile(join(output, 'analysis.json'), JSON.stringify({ seed, first, second, aborted, resumed, following, steered, external, permission, transitions, events }, null, 2));
       await writeFile(join(output, 'runtime.log'), logs.join('\n'));
     }
     expect(events.filter((event: any) => ['error', 'typed_error'].includes(event.type))).toEqual([]);
     expect(bodies[0].messages[0].content).toContain('Preserve manuscript text exactly.');
     expect(bodies[0].messages[0].content).toContain('Global system resource: keep evidence precise.');
     expect(bodies[0].messages[0].content).toContain('<available_skills>');
-    expect(bodies[0].messages[0].content).toContain('permissionMode: ask');
+    const latestUser = (body: any) => JSON.stringify(body.messages.findLast((message: any) => message.role === 'user'));
+    expect(latestUser(bodies[0])).toContain('permissionMode: ask');
     for (const body of bodies) {
       expect(body.thinking).toEqual({ type: 'enabled' });
       expect(body.messages[0]).toEqual(bodies[0].messages[0]);
       expect(body.tools).toEqual(bodies[0].tools);
     }
-    expect(captures[resumed.start]).toContain('<previous_response_interrupted>true</previous_response_interrupted>');
-    expect(captures[following.start]).not.toContain('<previous_response_interrupted>true</previous_response_interrupted>');
+    expect(latestUser(bodies[resumed.start])).toContain('<previous_response_interrupted>true</previous_response_interrupted>');
+    expect(latestUser(bodies[following.start])).not.toContain('<previous_response_interrupted>');
+    expect(latestUser(bodies[external.start])).toContain('<workspace-brief>');
+    expect(latestUser(bodies[afterExternal.start])).not.toContain('<workspace-brief>');
+    expect(latestUser(bodies[permission.start])).toContain('permissionMode: explore');
+    expect(latestUser(bodies[permission.start])).toContain('modeChangeUserSignal:');
+    expect(latestUser(bodies[afterPermission.start])).not.toContain('modeChangeUserSignal:');
+    expect(latestUser(bodies[steered.end])).toContain('STEER_NEW_USER');
     for (const { from, to } of transitions) {
-      const historical = (body: any) => body.messages.map((message: any) => message.role === 'user' && Array.isArray(message.content)
-        ? { ...message, content: message.content.filter((block: any) => !block.text?.startsWith('<storyflow_turn_context>')) }
-        : message);
-      const previous = JSON.stringify(historical(bodies[from!]));
-      expect(JSON.stringify(historical(bodies[to!])).startsWith(previous.slice(0, -1))).toBe(true);
+      const previous = JSON.stringify(bodies[from].messages);
+      expect(JSON.stringify(bodies[to].messages).startsWith(previous.slice(0, -1))).toBe(true);
     }
     expect(captures[first.end]).toContain('REASONING_first_1');
     expect(captures[second.start]).toContain('REASONING_first_1');
     expect(captures[second.start]).toContain('SOURCE_RESULT');
-    for (const turn of [first, second, aborted, resumed]) expect(turn.end - turn.start).toBe(1);
-    await manager.setSessionPermissionMode(sessionId, 'safe');
-    const permission = await run('policy-permission');
-    expect(JSON.parse(captures[permission.start]!).messages[0].content).toContain('permissionMode: explore');
-    await writeFile(join(sourceFolder, 'guide.md'), '# Fixture\nRead the manuscript metadata.');
-    const sourcePolicy = await run('policy-source');
-    expect(JSON.parse(captures[sourcePolicy.start]!).messages[0].content).toContain('<source_policy>');
+    for (const turn of [first, second, aborted, resumed, external]) expect(turn.end - turn.start).toBe(1);
+    expect(steered.end - steered.start).toBe(2);
+    expect(bodies[sourcePolicy.start].messages[0].content).toContain('<source_policy>');
     await setupI18n().changeLanguage('zh-Hans');
     const language = await run('policy-language');
     expect(JSON.parse(captures[language.start]!).messages[0].content).toContain('默认使用简体中文回答');
-    if (output) for (const turn of [permission, sourcePolicy, language]) {
-      await writeFile(join(output, `${turn.name}.json`), captures[turn.start]!);
-    }
     const sessionDir = join(getSessionPath(project, sessionId), '.pi-sessions');
     expect(await readFile(join(getSessionPath(project, sessionId), 'session.jsonl'), 'utf8'))
       .not.toContain('<previous_response_interrupted>');

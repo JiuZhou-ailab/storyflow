@@ -20,7 +20,7 @@ function commonBytes(left: string, right: string) {
 }
 
 for (const api of apis) for (const cacheRetention of ['short', 'long'] as const) {
-  test(`${api} (${cacheRetention}): captures stable policy and transient data over three turns and a process restart`, async () => {
+  test(`${api} (${cacheRetention}): captures stable policy and transient data across three turns and two turns after process restart`, async () => {
     const root = await mkdtemp(join(tmpdir(), 'storyflow-prefix-'));
     const captures: string[] = [];
     const projections: ReturnType<PromptBuilder['buildTurnContext']>[] = [];
@@ -40,7 +40,7 @@ for (const api of apis) for (const cacheRetention of ['short', 'long'] as const)
         workspace: { id: 'fixture', slug: 'fixture', name: 'Fixture', rootPath: project, createdAt: 1 },
         session: { id: 'prefix', workspaceRootPath: project, workingDirectory: project, createdAt: 1, lastUsedAt: 1 },
       });
-      for (const turns of [[0, 1, 2], [3]]) {
+      for (const turns of [[0, 1, 2], [3, 4]]) {
         child = Bun.spawn([process.execPath, join(repo, 'packages/pi-agent-server/src/index.ts')], {
           cwd: project,
           env: { ...process.env, HOME: root, CRAFT_CONFIG_DIR: join(root, 'config'), PI_CODING_AGENT_DIR: agentDir, PI_CACHE_RETENTION: cacheRetention },
@@ -92,16 +92,21 @@ for (const api of apis) for (const cacheRetention of ['short', 'long'] as const)
         } finally { clearTimeout(timer); }
         child = undefined;
       }
-      expect(captures).toHaveLength(4);
+      expect(captures).toHaveLength(5);
       const bodies = captures.map(raw => JSON.parse(raw));
       const system = (body: any) => JSON.stringify(body.system ?? body.instructions ?? (body.messages ?? body.input).filter((m: any) => ['system', 'developer'].includes(m.role)));
-      for (let turn = 0; turn < 4; turn++) {
+      for (let turn = 0; turn < 5; turn++) {
         expect(system(bodies[turn])).toBe(system(bodies[0]));
         expect(JSON.stringify(bodies[turn].tools)).toBe(JSON.stringify(bodies[0].tools));
         expect(bodies[turn].prompt_cache_key).toBe(bodies[0].prompt_cache_key);
-        expect(captures[turn]!.match(/<storyflow_turn_context>/g)).toHaveLength(1);
+        expect(captures[turn]!.match(/<storyflow_turn_context>/g)).toHaveLength(turn >= 3 ? turn - 2 : turn + 1);
         for (let previous = 0; previous <= turn; previous++) expect(captures[turn]).toContain(`User turn ${previous}`);
       }
+      // Pi moves Anthropic cache_control; the full user text and snapshots must remain stable.
+      const users = (body: any) => (body.messages ?? body.input)
+        .filter((message: any) => message.role === 'user')
+        .map((message: any) => message.content.map((block: any) => block.text));
+      expect(users(bodies[4]).slice(0, 4)).toEqual(users(bodies[3]));
       const files = await readdir(join(sessionPath, '.pi-sessions'));
       expect(files.filter(file => file.endsWith('.jsonl'))).toHaveLength(1);
       const history = await readFile(join(sessionPath, '.pi-sessions', files.find(file => file.endsWith('.jsonl'))!), 'utf8');

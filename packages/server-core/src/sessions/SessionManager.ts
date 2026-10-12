@@ -1,5 +1,5 @@
 // input: Workspace sessions, Pi product projections, persistence stores, and Host services
-// output: Atomic sends with stable interruption policy and transient facts, projected Pi events, commands, and drained Host teardown
+// output: Atomic sends with stable interruption/freshness policies and transient facts, projected Pi events, commands, and drained Host teardown
 // pos: Storyflow Product Host session boundary; Pi owns Agent turn execution
 
 import type { EventSink } from '@craft-agent/server-core/transport'
@@ -4009,9 +4009,7 @@ export class SessionManager implements ISessionManager {
         ? '<previous_response_interrupted>true</previous_response_interrupted>'
         : undefined
       managed.wasInterrupted = false
-      if (options?.workspaceFreshnessContext?.trim()) {
-        turnPolicies.push('Files listed in <workspace-brief> changed outside this conversation. Before editing any listed file, read its latest content first.')
-      }
+      turnPolicies.push('When current turn data contains <workspace-brief>, the listed files changed outside this conversation. Before editing any listed file, read its latest content first.')
 
       const messageBackendContext = resolveBackendContext({
         sessionConnectionSlug: managed.llmConnection,

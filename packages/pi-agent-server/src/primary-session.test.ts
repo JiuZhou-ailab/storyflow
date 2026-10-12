@@ -5,6 +5,7 @@ import { expect, test } from 'bun:test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, completion, protocolCompletion } from './managed-fallback.fixture.ts';
+import { createSystemPromptOverride } from './system-prompt-override.ts';
 import { createPrimaryPiSession } from './primary-session.ts';
 import { resolveModelForConnection } from '../../shared/src/agent/backend/connection-runtime.ts';
 import { createToolHooks } from './tool-hooks.ts';
@@ -28,7 +29,9 @@ test('resuming an interrupted Pi turn preserves its raw history and never execut
     mkdirSync(agentDir, { recursive: true });
     const settings = JSON.stringify({ cacheWarming: 'idle' });
     writeFileSync(join(agentDir, 'settings.json'), settings);
+    const systemPromptOverride = createSystemPromptOverride();
     const open = () => createPrimaryPiSession({
+      systemPromptOverride,
       config, getConfig: () => config, cwd: f.root, agentDir: join(f.root, 'agent'),
       modelRuntime: f.session.modelRuntime, activeSubagentSessions: new Set(), buildProxyTools: () => [],
       createSessionToolHooks: () => createToolHooks({ beforeToolCall: async event => { toolExecutions++; return event.input; }, afterToolCall: async () => {} }),
@@ -114,6 +117,7 @@ test('an upgraded managed Gemini conversation requests only its authorized repla
     });
     const config = { ...f.config, sessionPath, workspaceRootPath: f.root, sessionId: 'legacy-managed', model, piAuth: { provider: 'fixture' } };
     const { session } = await createPrimaryPiSession({
+      systemPromptOverride: createSystemPromptOverride(),
       config, getConfig: () => config, cwd: f.root, agentDir: join(f.root, 'agent'), modelRuntime: f.session.modelRuntime,
       activeSubagentSessions: new Set(), buildProxyTools: () => [], createSessionToolHooks: () => createToolHooks({ beforeToolCall: async event => event.input, afterToolCall: async () => {} }),
       getCurrentUserMessage: () => 'continue', requestHostTool: async () => { throw new Error('Unexpected tool'); },

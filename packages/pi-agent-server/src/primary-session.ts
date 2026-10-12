@@ -1,4 +1,4 @@
-// input: Validated Pi init config, authenticated registry, Host tool bridges, and session paths
+// input: Validated Pi init config, authenticated registry, Host tool bridges, process-owned turn projection, and session paths
 // output: One fully bound primary Pi AgentSession plus its system-prompt projection
 // pos: Pi SDK session construction boundary, separate from JSONL command dispatch
 
@@ -28,7 +28,7 @@ import { createWebScrapeTool } from "./tools/web-scrape.ts";
 import { createCreateOnlyWriteToolDefinition } from "./write-tool.ts";
 import { createProjectResourceLoader } from "./project-resource-loader.ts";
 import { createExtensionUIContext } from "./extension-ui.ts";
-import { createSystemPromptOverride } from "./system-prompt-override.ts";
+import type { createSystemPromptOverride } from "./system-prompt-override.ts";
 import { createProviderHooks } from "./provider-hooks.ts";
 import { findProductRewindBoundary } from "./product-rewind.ts";
 import {
@@ -40,6 +40,7 @@ import type { createToolHooks } from "./tool-hooks.ts";
 
 interface PrimaryPiSessionContext {
   config: PiInitMessage;
+  systemPromptOverride: ReturnType<typeof createSystemPromptOverride>;
   getConfig(): PiInitMessage;
   cwd: string;
   agentDir: string;
@@ -142,7 +143,7 @@ export async function createPrimaryPiSession(
     ...webTools.map((tool) => tool.name),
     ...proxyTools.map((tool) => tool.name),
   ];
-  const systemPromptOverride = createSystemPromptOverride();
+  const systemPromptOverride = context.systemPromptOverride;
   const toolHooks = createSessionToolHooks({
     getSession: () => activeSession,
     getUserRequest: getCurrentUserMessage,

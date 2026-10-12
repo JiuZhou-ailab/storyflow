@@ -218,6 +218,18 @@ describe('SourceManager', () => {
       expect(formatted.data).toContain('github (no tools)');
     });
 
+    it('keeps guide policy stable when a guide appears or sources are removed', () => {
+      const initial = sourceManager.formatSourceState().policy
+      const source = createMockSource('guided')
+      source.guide = { raw: '# Guide' } as never
+      sourceManager.setAllSources([source])
+      sourceManager.updateActiveState(['guided'], [], ['guided'])
+      expect(sourceManager.formatSourceState().policy).toBe(initial)
+      sourceManager.setAllSources([])
+      expect(sourceManager.formatSourceState().policy).toBe(initial)
+      expect(initial).toContain('Before using any Source tool')
+    });
+
     it('keeps guide enforcement out of Source-authored data', () => {
       const source = createMockSource('guided')
       source.guide = { raw: '# Guide' } as never
