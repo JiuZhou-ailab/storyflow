@@ -1,5 +1,5 @@
 // input: Current ActivityRail project-button accessibility contract and deterministic perf fixture names
-// output: Browser expressions that wait for and open writing or session-bearing fixture projects
+// output: Browser expressions for fixture navigation and requested source-document readiness
 // pos: Testable navigation contract shared by every Electron performance scenario
 
 export const PROJECT_BUTTON_SELECTOR = [
@@ -80,5 +80,14 @@ export function openWritingChapterExpression(chapter: number): string {
     if (target.getAttribute('aria-selected') === 'true') return 'already-selected'
     target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
     return 'clicked'
+  })()`
+}
+
+/** The standard fixture has nonempty chapters; never accept a previous file's editor. */
+export function writingDocumentReadyExpression(chapter: number): string {
+  return `(() => {
+    const editor = document.querySelector('textarea[data-testid="text-source"]')
+    return !!editor && (editor.getAttribute('aria-label') || '').includes(${JSON.stringify(writingChapterLabel(chapter))})
+      && editor.value.length > 0
   })()`
 }

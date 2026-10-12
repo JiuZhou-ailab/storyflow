@@ -64,7 +64,7 @@ An explicit `PERF_SCENARIOS` value is diagnostic mode (selected baselines only).
 ## Navigation contracts
 
 - **Startup**: ActivityRail → 400-chapter writing fixture → metadata-only catalog, with zero file tabs and zero content reads
-- **Heavy-writing / memory-leak-docs**: metadata-only writing catalog → explicitly selected chapter → Tiptap
+- **Heavy-writing / memory-leak-docs**: metadata-only writing catalog → explicitly selected chapter → loaded TextSource + two animation frames
 - **Switch / memory / continuous-typing**: ActivityRail → non-writing fixture → sessions + chat input
 - **Heavy-search**: writing fixture → activity-search → results
 
@@ -92,3 +92,10 @@ PERF_RUNTIME=1 PERF_RUNTIME_CYCLES=3 PERF_RUNTIME_RESUMES=0 bun run e2e/perf/sea
 `PERF_CATALOG_TRACE=1` additionally records cold-path WebSocket RPC channel/ID, timestamps, UTF-8 byte counts and image paths (no general RPC payloads). `PERF_CATALOG_PROFILE=1` captures a CPU profile. These instrumented runs diagnose waits and request fan-out; use runs with both disabled for acceptance timings. The cold trace stops before fixture verification and warm sampling.
 
 Runtime samples record complete owned process trees. `PERF_RUNTIME_CYCLES` accepts 1–3 and repeats 50 newly-created Sessions in the same Electron host; `PERF_RUNTIME_RESUMES` accepts 0–40 (default 20). A cold resume must create exactly one Pi, retain prior native assistant context, and make exactly one model request. Its paired clean restart terminates that newly-created, harness-owned Pi and uses the same Session. Warm measurements are explicitly distinguished from cold resumes. [Results and remaining acceptance gaps](../../docs/plans/2026-09-08-runtime-catalog-performance.md).
+
+Document readiness follows the current source editor: the requested chapter path and
+nonempty source must be present, then two animation frames complete. The retired
+Tiptap `paintAfterRead` log is not emitted by TextSource; historical chapter-open
+latencies using that endpoint are not directly comparable. Search-navigation's legacy
+Tiptap/automatic-save assertions still need a separate contract migration; a failure
+there must not be reported as complete interaction coverage.
