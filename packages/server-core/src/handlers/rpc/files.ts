@@ -299,52 +299,54 @@ async function collectWorkspaceFileList(
     while (queue.length > 0 && entries.length < maxEntries) {
       const nextQueue: string[] = []
 
-      for (const relDir of queue) {
-        if (entries.length >= maxEntries) break
-
-        const absDir = relDir ? join(rootPath, relDir) : rootPath
-        let dirEntries: import('fs').Dirent[]
-        try {
-          dirEntries = await readdir(absDir, { withFileTypes: true })
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT' && relDir) continue
-          throw error
-        }
-
-        for (const entry of dirEntries) {
+      // Bound filesystem concurrency while retaining BFS order and the result cap.
+      for (let offset = 0; offset < queue.length && entries.length < maxEntries; offset += 8) {
+        const batch = queue.slice(offset, offset + 8)
+        const listings = await Promise.allSettled(batch.map(relDir =>
+          readdir(relDir ? join(rootPath, relDir) : rootPath, { withFileTypes: true })
+        ))
+        for (const [index, listing] of listings.entries()) {
           if (entries.length >= maxEntries) break
-
-          const name = entry.name
-          if (name.startsWith('.') || FILE_SEARCH_SKIP_DIRS.has(name)) continue
-
-          const childRelativeToRoot = relDir ? `${relDir}/${name}` : name
-          const relativePath = normalizedRoot
-            ? `${normalizedRoot}/${childRelativeToRoot}`
-            : childRelativeToRoot
-          const isDir = entry.isDirectory()
-
-          if (isDir) {
-            nextQueue.push(childRelativeToRoot)
-            if (normalizedRoot === '') {
-              pushFileListEntry(entries, seenPaths, {
-                name,
-                path: join(rootPath, childRelativeToRoot),
-                type: 'directory',
-                relativePath,
-              })
-            }
-            continue
+          const relDir = batch[index]!
+          if (listing.status === 'rejected') {
+            if ((listing.reason as NodeJS.ErrnoException).code === 'ENOENT' && relDir) continue
+            throw listing.reason
           }
 
-          pushFileListEntry(entries, seenPaths, {
-            name,
-            path: join(rootPath, childRelativeToRoot),
-            type: 'file',
-            relativePath,
-          })
+          for (const entry of listing.value) {
+            if (entries.length >= maxEntries) break
+
+            const name = entry.name
+            if (name.startsWith('.') || FILE_SEARCH_SKIP_DIRS.has(name)) continue
+
+            const childRelativeToRoot = relDir ? `${relDir}/${name}` : name
+            const relativePath = normalizedRoot
+              ? `${normalizedRoot}/${childRelativeToRoot}`
+              : childRelativeToRoot
+            const isDir = entry.isDirectory()
+
+            if (isDir) {
+              nextQueue.push(childRelativeToRoot)
+              if (normalizedRoot === '') {
+                pushFileListEntry(entries, seenPaths, {
+                  name,
+                  path: join(rootPath, childRelativeToRoot),
+                  type: 'directory',
+                  relativePath,
+                })
+              }
+              continue
+            }
+
+            pushFileListEntry(entries, seenPaths, {
+              name,
+              path: join(rootPath, childRelativeToRoot),
+              type: 'file',
+              relativePath,
+            })
+          }
         }
       }
-
       queue = nextQueue
     }
   }
