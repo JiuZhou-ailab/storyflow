@@ -953,6 +953,8 @@
   "sessionMenu.unarchive": "Archiválás visszavonása",
   "sessionMenu.unflag": "Jelölés törlése",
   "sessionMenu.unflagAll": "Összes jelölés törlése",
+  "sessions.create.failed": "Nem sikerült létrehozni a beszélgetést. Próbáld újra.",
+  "sessions.create.storageBusy": "A fájlok átmenetileg foglaltak. Próbáld újra egy kicsit később.",
   "settings.about.checkForUpdates": "Frissítések keresése",
   "settings.about.checkNow": "Ellenőrzés most",
   "settings.about.downloading": "v{{version}} letöltése ({{percent}}%)",

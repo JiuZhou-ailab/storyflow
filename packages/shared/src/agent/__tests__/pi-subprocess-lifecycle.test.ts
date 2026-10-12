@@ -1,12 +1,13 @@
-// input: PiAgent with a real subprocess that dies before reporting ready
-// output: Regression coverage for subprocess ready settlement and per-generation exit handling
+// input: PiAgent with controllable subprocess fixtures and injectable ready deadlines
+// output: Regression coverage for startup timeout, failure, cancellation, and generation isolation
 // pos: Lifecycle contract between the Pi transport and its child process
 
 import { afterAll, describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PiAgent } from '../pi-agent.ts';
+import { AbortReason } from '../backend/types.ts';
 import type { BackendConfig } from '../backend/types.ts';
 
 const fixtureDir = mkdtempSync(join(tmpdir(), 'pi-subprocess-lifecycle-'));
@@ -57,11 +58,76 @@ function createConfig(piServer: string): BackendConfig {
   } as BackendConfig;
 }
 
-function within<T>(promise: Promise<T>, ms: number): Promise<T | 'timeout'> {
-  return Promise.race([promise, new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), ms))]);
+async function within<T>(promise: Promise<T>, ms: number): Promise<T | 'timeout'> {
+  let timer!: ReturnType<typeof setTimeout>;
+  try {
+    return await Promise.race([promise, new Promise<'timeout'>(resolve => {
+      timer = setTimeout(() => resolve('timeout'), ms);
+    })]);
+  } finally { clearTimeout(timer); }
 }
 
 describe('Pi subprocess lifecycle', () => {
+  it('times out a silent child and starts a fresh child on the next query', async () => {
+    const server = join(fixtureDir, 'timeout-then-ready.js');
+    writeFileSync(server, `process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);`);
+    const agent = new PiAgent(createConfig(server), { readyTimeoutMs: 200 });
+    try {
+      const outcome = await within(
+        agent.queryLlm({ prompt: 'hi' }).catch(error => error),
+        2_000,
+      );
+      expect(outcome).toMatchObject({ code: 'PI_READY_TIMEOUT', retryable: true });
+      writeFileSync(server, readFileSync(slowServer));
+      await expect(agent.queryLlm({ prompt: 'retry' })).resolves.toMatchObject({ text: 'ok' });
+    } finally { agent.destroy(); }
+  });
+
+  it('rejects immediately with the error reported before ready', async () => {
+    const server = join(fixtureDir, 'init-error.js');
+    writeFileSync(server, `
+process.stdout.write(JSON.stringify({ type: 'error', code: 'INIT_FAILED', message: 'Invalid model configuration' }) + '\\n');
+setInterval(() => {}, 1000);
+`);
+    const agent = new PiAgent(createConfig(server), { readyTimeoutMs: 5_000 });
+    try {
+      const outcome = await within(agent.queryLlm({ prompt: 'hi' }).catch(error => error), 1_000);
+      expect(outcome).toMatchObject({ message: 'Invalid model configuration', code: 'INIT_FAILED' });
+    } finally { agent.destroy(); }
+  });
+
+  it.each(['abort', 'forceAbort'] as const)('cancels the ready wait on %s', async (method) => {
+    const agent = new PiAgent(createConfig(neverReadyServer), { readyTimeoutMs: 5_000 });
+    try {
+      const pending = agent.queryLlm({ prompt: 'hi' }).catch(error => error);
+      await new Promise(resolve => setTimeout(resolve, 200));
+      if (method === 'abort') await agent.abort();
+      else agent.forceAbort(AbortReason.UserStop);
+      expect(await within(pending, 500)).toMatchObject({ name: 'AbortError' });
+    } finally { agent.destroy(); }
+  });
+
+  it('does not spawn when aborted before credential preparation finishes', async () => {
+    const config = createConfig(neverReadyServer);
+    config.validateWorkingDirectory = () => { throw new Error('Spawn must not be reached after cancellation'); };
+    const agent = new PiAgent(config);
+    try {
+      const pending = agent.queryLlm({ prompt: 'hi' }).catch(error => error);
+      await agent.abort();
+      expect(await within(pending, 500)).toMatchObject({ name: 'AbortError' });
+    } finally { agent.destroy(); }
+  });
+
+  it('settles startup on destroy even when the child ignores SIGTERM', async () => {
+    const server = join(fixtureDir, 'ignores-shutdown.js');
+    writeFileSync(server, `process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);`);
+    const agent = new PiAgent(createConfig(server), { readyTimeoutMs: 5_000 });
+    const pending = agent.queryLlm({ prompt: 'hi' }).catch(error => error);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    agent.destroy();
+    expect(await within(pending, 500)).toMatchObject({ name: 'AbortError' });
+  });
+
   it('fails fast when the subprocess exits before reporting ready', async () => {
     const agent = new PiAgent(createConfig(exitingServer));
     const outcome = await within(
@@ -94,7 +160,7 @@ describe('Pi subprocess lifecycle', () => {
       void agent.queryLlm({ prompt: 'next' }).catch(() => {});
       const outcome = await within(pending, 5_000);
       expect(outcome).not.toBe('timeout');
-      expect(outcome).toMatch(/exited/i);
+      expect(outcome).toMatch(/aborted/i);
     } finally {
       agent.destroy();
     }

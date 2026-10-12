@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 
 export const STARTUP_CATEGORIES: Record<string, string> = {
   OWNER_ACTIVE: 'ownerActive', OWNER_UNKNOWN: 'ownerUnknown', CONFIG_INVALID: 'configInvalid',
-  CONFIG_ACCESS: 'access', EACCES: 'access', EPERM: 'access', EADDRINUSE: 'port',
+  CONFIG_ACCESS: 'access', CONFIG_BUSY: 'access', EACCES: 'access', EPERM: 'access', EADDRINUSE: 'port',
   TLS_CONFIG: 'tls', RENDERER_LOAD: 'renderer', PRELOAD: 'renderer', RENDERER_CRASH: 'renderer',
 }
 

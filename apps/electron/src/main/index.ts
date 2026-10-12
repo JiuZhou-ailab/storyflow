@@ -1,5 +1,5 @@
 // input: Electron app lifecycle, user config, workspace state, and local server runtime
-// output: Desktop main-process bootstrap, token-safe IPC bridges, windows, and cleanup
+// output: Desktop bootstrap, startup-only recovery, token-safe IPC bridges, windows, and cleanup
 // pos: Coordinates the Electron shell around the shared Storyflow server core
 
 import { startShellEnvLoad, whenShellEnvReady } from './shell-env'
@@ -199,6 +199,8 @@ let mainStopping = false
 let recovering = false
 let fatalStartup = false
 let mainStartupSucceeded = false
+// Host readiness permits window creation; runtime also requires first loads and the full bootstrap.
+let mainRuntimeStarted = false
 let mainStartupIsHeadless = !!process.env.CRAFT_HEADLESS
 
 // Messaging gateway: the bootstrap handle is created once sessionManager is
@@ -316,6 +318,7 @@ async function createInitialWindows(): Promise<void> {
 
     if (restoredCount > 0) {
       mainLog.info(`Restored ${restoredCount} window(s) from saved state`)
+      await windowManager.waitForInitialLoads()
       return
     }
   }
@@ -325,9 +328,14 @@ async function createInitialWindows(): Promise<void> {
   mainLog.info(startupWorkspaceId
     ? `Created window for first workspace: ${workspaces[0].name}`
     : 'Created project hub window without a workspace')
+  await windowManager.waitForInitialLoads()
 }
 
 async function recoverStartup(error: unknown, stage: string): Promise<void> {
+  if (mainRuntimeStarted) {
+    recordStartupFailure(error, stage)
+    return
+  }
   if (recovering || mainStopping) return
   recovering = true
   mainStartupSucceeded = false
@@ -439,7 +447,7 @@ app.whenReady().then(async () => {
     }
 
     // Initialize window manager
-    windowManager = new WindowManager(error => { void recoverStartup(error, 'window') })
+    windowManager = new WindowManager(error => { void recoverStartup(error, 'window') }, () => mainRuntimeStarted)
     windowManager.setBeforeWindowDestroyed((closingWindow, remainingWindows) => {
       const windows = resolvePersistedWindowsAfterClose(remainingWindows, closingWindow)
       saveWindowState({ windows, lastFocusedWorkspaceId: windows[0]?.workspaceId })
@@ -1257,7 +1265,10 @@ app.whenReady().then(async () => {
     mainStartupSucceeded = false
     mainLog.error('Failed to initialize app:', error instanceof Error ? error.message : error, (error as any)?.stack)
     await recoverStartup(error, 'host-bootstrap')
+    return
   }
+  if (mainStopping || recovering) return
+  mainRuntimeStarted = true
 
   // macOS: Re-create window when dock icon is clicked
   app.on('activate', () => {
@@ -1392,11 +1403,11 @@ app.on('before-quit', async (event) => {
 
 process.on('uncaughtException', (error) => {
   mainLog.error('Uncaught exception:', error)
-  void recoverStartup(error, 'uncaught-exception')
+  if (!mainRuntimeStarted) void recoverStartup(error, 'uncaught-exception')
 })
 
 process.on('unhandledRejection', (reason, promise) => {
   mainLog.error('Unhandled rejection at:', promise, 'reason:', reason)
-  if (!mainStartupSucceeded) void recoverStartup(reason, 'unhandled-startup-rejection')
+  if (!mainRuntimeStarted) void recoverStartup(reason, 'unhandled-startup-rejection')
   else recordStartupFailure(reason, 'unhandled-rejection')
 })

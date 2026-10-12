@@ -953,6 +953,8 @@
   "sessionMenu.unarchive": "Desarchivar",
   "sessionMenu.unflag": "Desmarcar",
   "sessionMenu.unflagAll": "Desmarcar todos",
+  "sessions.create.failed": "No se pudo crear la conversación. Vuelve a intentarlo.",
+  "sessions.create.storageBusy": "Los archivos están ocupados temporalmente. Vuelve a intentarlo en un momento.",
   "settings.about.checkForUpdates": "Buscar actualizaciones",
   "settings.about.checkNow": "Buscar ahora",
   "settings.about.downloading": "Descargando v{{version}} ({{percent}}%)",

@@ -37,9 +37,13 @@ as `livenessEndpoint`. A connection proves the owner is running, independent of 
 identity queries. On Windows only ENOENT proves exit (busy, access-denied or timed-out pipes are live).
 On POSIX ECONNREFUSED proves exit unless the recorded creation identity still matches (a full backlog
 also refuses); ENOENT (socket file removed) falls back to identity. Heartbeat age never proves death.
-Owners without an endpoint (older versions, or a failed listen / overlong POSIX path) fall back to
-OS process creation identity; unknown or incomplete metadata fails closed as `OWNER_UNKNOWN`.
-Legacy live PIDs remain unknown: wall-clock timestamps cannot prove process reuse after clock changes.
+Listening retries three times; if it still fails the lease is published without an endpoint and
+the failure is logged. Owners without an endpoint (older versions, or a failed listen / overlong POSIX
+path) fall back to OS process creation identity; unknown or incomplete metadata fails closed as
+`OWNER_UNKNOWN`. Migration shortcut (remove once v0.24.x users have mostly upgraded): endpoint-less or
+unrecognized state whose `max(startedAt, mtime)` predates this boot by more than five minutes is
+reclaimed, since no process survives a reboot. Otherwise legacy live PIDs remain unknown: wall-clock
+timestamps cannot prove process reuse after clock changes.
 The only exit from `OWNER_UNKNOWN` is a user-confirmed one-shot override (`overrideUnverifiedOwner`,
 Electron `--override-unverified-host-owner`; headless has none yet); a provably live owner still wins
 (`OWNER_ACTIVE`). Under override, unrecognized lease/compatibility state (e.g. a torn marker) is renamed

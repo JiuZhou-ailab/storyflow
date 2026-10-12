@@ -2,7 +2,7 @@
 // output: Regression coverage for serialized, recoverable, failure-aware session persistence
 // pos: Public-seam tests for SessionPersistenceQueue and session storage recovery
 
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
 import {
   mkdirSync,
   rmSync,
@@ -12,6 +12,7 @@ import {
   utimesSync,
 } from 'fs';
 import { writeFile } from 'fs/promises';
+import * as fsPromises from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { SessionPersistenceQueue } from '../src/sessions/persistence-queue.ts';
@@ -60,6 +61,31 @@ describe('SessionPersistenceQueue', () => {
     // Clean up test directory
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it('retries transient writes and restores the previous session after exhausted promotion', async () => {
+    const session = createTestSession('busy-session', testDir, 'original');
+    let writes = 0;
+    queue = new SessionPersistenceQueue(0, async (...args) => {
+      if (++writes < 3) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+      await writeFile(...args);
+    });
+    queue.enqueue(session);
+    await queue.flush(session.id);
+    expect(loadSession(testDir, session.id)?.sdkSessionId).toBe('original');
+    const originalRename = fsPromises.rename;
+    const rename = spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
+      if (String(from).endsWith('.tmp')) throw Object.assign(new Error('busy'), { code: 'EPERM' });
+      return originalRename(from, to);
+    });
+    try {
+      queue.enqueue({ ...session, sdkSessionId: 'replacement' });
+      await expect(queue.flush(session.id)).rejects.toMatchObject({ code: 'EPERM' });
+      expect(loadSession(testDir, session.id)?.sdkSessionId).toBe('original');
+      expect(existsSync(getSessionFilePath(testDir, session.id) + '.tmp')).toBe(false);
+    } finally {
+      rename.mockRestore();
     }
   });
 

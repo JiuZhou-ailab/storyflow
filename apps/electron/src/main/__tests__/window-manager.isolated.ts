@@ -1,8 +1,8 @@
 // input: Electron BrowserWindow construction options from WindowManager
-// output: Regression coverage for packaged-window paint stability
-// pos: Isolated regression coverage for native packaged client window defaults
+// output: Regression coverage for packaged-window defaults and phase-aware failure recovery
+// pos: Exercises native window behavior at the Electron boundary
 
-import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -29,6 +29,10 @@ function createMockWebContents() {
     id: createdWindowOptions.length + 1,
     isDestroyed: mock(() => false),
     mainFrame: true,
+    reload: mock(() => {}),
+    emit: (event: string, ...args: unknown[]) => {
+      for (const listener of listeners[event] ?? []) listener(...args)
+    },
     on: mock((event: string, cb: Function) => {
       if (!listeners[event]) listeners[event] = []
       listeners[event].push(cb)
@@ -43,7 +47,7 @@ mock.module('electron', () => ({
   app: {
     isPackaged: true,
   },
-  dialog: { showErrorBox: mock(() => {}) },
+  dialog: { showErrorBox: mock(() => {}), showMessageBox: mock(async () => ({ response: 0 })) },
   screen: {
     getPrimaryDisplay: () => ({
       workAreaSize: { width: 1280, height: 720 },
@@ -105,12 +109,14 @@ mock.module('../logger', () => {
 })
 
 const { WindowManager } = await import('../window-manager')
+const { dialog } = await import('electron')
 
 describe('WindowManager', () => {
   beforeEach(() => {
     createdWindowOptions.length = 0
     createdWindows.length = 0
     loadError = undefined
+    ;(dialog.showMessageBox as any).mockClear()
   })
 
   it('sets a native window background to avoid packaged paint flashes', () => {
@@ -175,6 +181,164 @@ describe('WindowManager', () => {
     }])
     expect(createdWindows[0].destroy).toHaveBeenCalledTimes(1)
   })
+
+  it.each([
+    ['preload-error', ['/preload', new Error('broken preload')]],
+    ['did-fail-load', [-2, 'failed', 'file:///renderer/index.html', true]],
+  ] as const)('keeps a window first %s failure on startup recovery even when the Host is ready', (event, args) => {
+    const recovery = mock(() => {})
+    const win = new WindowManager(recovery, () => true).createWindow({ workspaceId: '' }) as any
+    win.webContents.emit(event, {}, ...args)
+    expect(recovery).toHaveBeenCalledTimes(1)
+    expect(win.webContents.reload).not.toHaveBeenCalled()
+  })
+
+  it('waits for every initial window to finish its first load', async () => {
+    const manager = new WindowManager()
+    const first = manager.createWindow({ workspaceId: 'first' }) as any
+    const second = manager.createWindow({ workspaceId: 'second' }) as any
+    let ready = false
+    const loading = manager.waitForInitialLoads().then(() => { ready = true })
+    first.webContents.emit('did-finish-load')
+    await Promise.resolve()
+    expect(ready).toBe(false)
+    second.webContents.emit('did-finish-load')
+    await loading
+    expect(ready).toBe(true)
+  })
+
+  it('rejects first-load readiness after a preload error even if did-finish-load follows', async () => {
+    const manager = new WindowManager(mock(() => {}))
+    const win = manager.createWindow({ workspaceId: '' }) as any
+    const loading = manager.waitForInitialLoads()
+    win.webContents.emit('preload-error', {}, '/preload', new Error('broken preload'))
+    win.webContents.emit('did-finish-load')
+    await expect(loading).rejects.toMatchObject({ code: 'PRELOAD' })
+  })
+
+  it('keeps failures in startup recovery after first paint until bootstrap completes', () => {
+    const recovery = mock(() => {})
+    const win = new WindowManager(recovery, () => false).createWindow({ workspaceId: '' }) as any
+    win.webContents.emit('did-finish-load')
+    win.webContents.emit('render-process-gone', {})
+    expect(recovery).toHaveBeenCalledTimes(1)
+    expect(win.webContents.reload).not.toHaveBeenCalled()
+  })
+
+  it('reloads only the failed window after startup without invoking recovery', async () => {
+    let started = false
+    const recovery = mock(() => {})
+    const manager = new WindowManager(recovery, () => started)
+    const failedWindow = manager.createWindow({ workspaceId: 'workspace-1' }) as any
+    const otherWindow = manager.createWindow({ workspaceId: 'workspace-2' }) as any
+    failedWindow.webContents.emit('did-finish-load')
+    otherWindow.webContents.emit('did-finish-load')
+    started = true
+
+    failedWindow.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+    await Bun.sleep(1100)
+
+    expect(failedWindow.webContents.reload).toHaveBeenCalledTimes(1)
+    expect(otherWindow.webContents.reload).not.toHaveBeenCalled()
+    expect(recovery).not.toHaveBeenCalled()
+  })
+
+  it('stops repeated runtime failures at three reloads and shows an error on that window', async () => {
+    const recovery = mock(() => {})
+    const manager = new WindowManager(recovery, () => true)
+    const win = manager.createWindow({ workspaceId: 'workspace-1' }) as any
+    win.webContents.emit('did-finish-load')
+    for (let attempt = 0; attempt < 3; attempt++) {
+      win.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+      await Bun.sleep(1100)
+      win.webContents.emit('did-finish-load')
+    }
+    win.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+    win.webContents.emit('preload-error', {}, '/preload', new Error('broken preload'))
+    await Bun.sleep(1100)
+
+    expect(win.webContents.reload).toHaveBeenCalledTimes(3)
+    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1)
+    expect((dialog.showMessageBox as any).mock.calls[0][0]).toBe(win)
+    expect(recovery).not.toHaveBeenCalled()
+    expect(win.destroy).not.toHaveBeenCalled()
+  }, 10_000)
+
+  const failures = [
+    ['render-process-gone', [{ reason: 'crashed' }], 'RENDERER_CRASH'],
+    ['preload-error', ['/preload', new Error('broken preload')], 'PRELOAD'],
+    ['did-fail-load', [-2, 'failed', 'file:///renderer/index.html', true], 'RENDERER_LOAD'],
+  ] as const
+
+  it.each(failures)('preserves startup recovery for %s', (event, args, code) => {
+    const recovery = mock((_error: Error) => {})
+    const win = new WindowManager(recovery, () => false).createWindow({ workspaceId: '' }) as any
+    win.webContents.emit(event, {}, ...args)
+    win.webContents.emit(event, {}, ...args)
+
+    expect(recovery).toHaveBeenCalledTimes(1)
+    expect(recovery.mock.calls[0]?.[0]).toMatchObject({ code })
+    expect(win.webContents.reload).not.toHaveBeenCalled()
+  })
+
+  it.each(failures)('coalesces runtime %s failures into one window reload', async (event, args) => {
+    const recovery = mock(() => {})
+    const win = new WindowManager(recovery, () => true).createWindow({ workspaceId: '' }) as any
+    win.webContents.emit('did-finish-load')
+    win.webContents.emit(event, {}, ...args)
+    win.webContents.emit(event, {}, ...args)
+    await Bun.sleep(1100)
+
+    expect(win.webContents.reload).toHaveBeenCalledTimes(1)
+    expect(recovery).not.toHaveBeenCalled()
+  })
+
+  it('ignores aborted and subframe loads at runtime', async () => {
+    const win = new WindowManager(undefined, () => true).createWindow({ workspaceId: '' }) as any
+    win.webContents.emit('did-finish-load')
+    win.webContents.emit('did-fail-load', {}, -3, 'aborted', '', true)
+    win.webContents.emit('did-fail-load', {}, -2, 'failed', '', false)
+    await Bun.sleep(1100)
+    expect(win.webContents.reload).not.toHaveBeenCalled()
+  })
+
+  it('cancels pending runtime reloads when the application starts quitting', async () => {
+    const manager = new WindowManager(undefined, () => true)
+    const win = manager.createWindow({ workspaceId: '' }) as any
+    win.webContents.emit('did-finish-load')
+    win.webContents.emit('render-process-gone', {})
+    manager.setAppQuitting(true)
+    await Bun.sleep(1100)
+    expect(win.webContents.reload).not.toHaveBeenCalled()
+  })
+
+  it('recovers a first-load rejection without a did-fail-load event', async () => {
+    loadError = new Error('load failed')
+    const recovery = mock(() => {})
+    const win = new WindowManager(recovery, () => true).createWindow({ workspaceId: '' }) as any
+    await Promise.resolve()
+    expect(win.webContents.reload).not.toHaveBeenCalled()
+    expect(recovery).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows later recovery after old failures age out of the window budget', async () => {
+    const now = spyOn(Date, 'now').mockReturnValue(0)
+    try {
+      const win = new WindowManager(undefined, () => true).createWindow({ workspaceId: '' }) as any
+      win.webContents.emit('did-finish-load')
+      for (let attempt = 0; attempt < 3; attempt++) {
+        win.webContents.emit('render-process-gone', {})
+        await Bun.sleep(1100)
+      }
+      now.mockReturnValue(60_001)
+      win.webContents.emit('render-process-gone', {})
+      await Bun.sleep(1100)
+      expect(win.webContents.reload).toHaveBeenCalledTimes(4)
+      expect(dialog.showMessageBox).not.toHaveBeenCalled()
+    } finally {
+      now.mockRestore()
+    }
+  }, 10_000)
 
   it('does not turn cancelled navigation into fatal startup recovery', async () => {
     loadError = Object.assign(new Error('Navigation was cancelled'), { code: 'ERR_ABORTED', errno: -3 })

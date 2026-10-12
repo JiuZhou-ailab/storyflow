@@ -112,8 +112,9 @@ import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
 import { useAction } from "@/actions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusActions } from "@/context/FocusContext"
+import { createConversationWithFeedback } from "./ActivityRailRows"
 import { hasSessionHistoryContent } from "@/utils/session"
-import type { LoadedSource, LoadedSkill, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
+import type { Session, LoadedSource, LoadedSkill, AutomationFilter, WorkspaceVersionEntry, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
 import {
   ensureSessionMessagesLoadedAtom,
   reconcileSessionTranscriptWorkingSetAtom,
@@ -4455,20 +4456,24 @@ function AppShellContent({
   }, [activeWorkspaceId, focusChatInputForSession, navigateToSessionInPanel, onSelectProjectSession])
 
   const handleActivityProjectSessionCreate = React.useCallback(async (workspaceId: string) => {
-    if (workspaceId === activeWorkspaceId) {
-      const session = await onCreateSession(workspaceId)
-      navigateToSessionInPanel(session.id)
-      return
-    }
+    // A navigation retry must reuse a Session whose creation already succeeded.
+    let session: Session | undefined
+    await createConversationWithFeedback(async () => {
+      if (workspaceId === activeWorkspaceId) {
+        session ??= await onCreateSession(workspaceId)
+        navigateToSessionInPanel(session.id)
+        return
+      }
 
-    await onSelectWorkspace(workspaceId)
-    const session = await onCreateSession(workspaceId)
-    if (onSelectProjectSession) {
-      await onSelectProjectSession(workspaceId, session.id)
-    } else {
-      navigateToSessionInPanel(session.id)
-    }
-  }, [activeWorkspaceId, navigateToSessionInPanel, onCreateSession, onSelectProjectSession, onSelectWorkspace])
+      await onSelectWorkspace(workspaceId)
+      session ??= await onCreateSession(workspaceId)
+      if (onSelectProjectSession) {
+        await onSelectProjectSession(workspaceId, session.id)
+      } else {
+        navigateToSessionInPanel(session.id)
+      }
+    }, t)
+  }, [activeWorkspaceId, navigateToSessionInPanel, onCreateSession, onSelectProjectSession, onSelectWorkspace, t])
 
   const handleSidebarFocus = React.useCallback((event: React.FocusEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return

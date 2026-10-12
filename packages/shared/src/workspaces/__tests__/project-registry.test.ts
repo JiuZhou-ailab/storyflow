@@ -812,7 +812,7 @@ describe('Project registry identity and locator', () => {
 
     chmodSync(fallbackRoot, 0o555)
     try {
-      expect(loadWorkspaceConfig(projectRoot)).toBeNull()
+      expect(() => loadWorkspaceConfig(projectRoot)).toThrow(expect.objectContaining({ code: 'EACCES' }))
       expect(existsSync(join(projectRoot, 'config.json'))).toBeTrue()
       expect(existsSync(join(projectRoot, '.craft-agent', 'config.json'))).toBeFalse()
       expect(readFileSync(join(projectRoot, 'sessions', 'conflict.txt'), 'utf8')).toBe('legacy')

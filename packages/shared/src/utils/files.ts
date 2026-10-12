@@ -1,5 +1,5 @@
 // input: Local file paths and shared attachment DTOs
-// output: File classification, safe loading (with bounded transient-lock retry), atomic writes, and provider-neutral attachment context helpers
+// output: Classified filesystem failures, bounded sync/async retries, sync atomic writes, and provider-neutral attachment helpers
 // pos: Shared file boundary used before persistence and model-provider adaptation
 
 import { existsSync, readFileSync, statSync, writeFileSync, unlinkSync, renameSync } from 'fs';
@@ -38,6 +38,31 @@ export function readJsonFileSync<T = unknown>(filePath: string): T {
 
 const TRANSIENT_FS_RETRY_DELAYS_MS = [10, 20, 40, 80, 160];
 
+export function classifyFsError(error: unknown): { kind: 'transient' | 'missing' | 'permanent'; code?: string; path?: string } {
+  const { code, path } = (error ?? {}) as NodeJS.ErrnoException;
+  const kind = ['EBUSY', 'EPERM', 'EACCES', 'EMFILE', 'ENOTEMPTY'].includes(code ?? '')
+    ? 'transient' : code === 'ENOENT' ? 'missing' : 'permanent';
+  return { kind, code, path };
+}
+
+/** Retry only idempotent filesystem operations; waiting never blocks the event loop. */
+export async function retryTransientFs<T>(
+  operation: () => T | Promise<T>,
+  { attempts = 6, delays = TRANSIENT_FS_RETRY_DELAYS_MS }: { attempts?: number; delays?: readonly number[] } = {},
+): Promise<T> {
+  if (!Number.isInteger(attempts) || attempts < 1 || !delays.length || delays.some(delay => !Number.isFinite(delay) || delay < 0)) {
+    throw new RangeError('Filesystem retry requires positive attempts and finite nonnegative delays');
+  }
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt >= attempts || classifyFsError(error).kind !== 'transient') throw error;
+      await new Promise(resolve => setTimeout(resolve, delays[Math.min(attempt - 1, delays.length - 1)]));
+    }
+  }
+}
+
 /**
  * Sharing violations are transient: Windows antivirus/indexers briefly hold
  * files open, and a concurrent atomic rename can leave the target
@@ -50,7 +75,9 @@ export function isTransientFsError(error: unknown): boolean {
   return process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES');
 }
 
-const retrySleepCell = new Int32Array(new SharedArrayBuffer(4));
+// Created on first retry: preloads also bundle this module, and SharedArrayBuffer
+// is undefined there without cross-origin isolation.
+let retrySleepCell: Int32Array | undefined;
 
 /** Run a sync fs operation, retrying transient sharing violations with bounded backoff (~310ms worst case). */
 export function retryTransientFsErrorSync<T>(operation: () => T): T {
@@ -60,6 +87,7 @@ export function retryTransientFsErrorSync<T>(operation: () => T): T {
     } catch (error) {
       const delayMs = TRANSIENT_FS_RETRY_DELAYS_MS[attempt];
       if (delayMs === undefined || !isTransientFsError(error)) throw error;
+      retrySleepCell ??= new Int32Array(new SharedArrayBuffer(4));
       Atomics.wait(retrySleepCell, 0, 0, delayMs);
     }
   }

@@ -12,6 +12,7 @@ import {
   saveConfig,
 } from '../config/storage.ts'
 import { listSessions, listSessionsAsync } from '../sessions/storage.ts'
+import { classifyFsError } from '../utils/files.ts'
 import { normalizePathForComparison, pathStartsWith } from '../utils/paths.ts'
 import { extractWorkspaceSlugFromPath } from '../utils/workspace-slug.ts'
 import { getWorkspaceConfigPath, rebasePathWithinProjectRoot } from './paths.ts'
@@ -90,8 +91,16 @@ function assertProjectContentIsUnclaimed(
 
 export function isWorkspaceRootAvailable(workspace: Workspace): boolean {
   if (workspace.remoteServer) return true
-  const config = inspectWorkspaceStateConfig(workspace.rootPath)
-  return Boolean(config && workspace.directoryConfigId === config.id)
+  try {
+    const config = inspectWorkspaceStateConfig(workspace.rootPath)
+    return Boolean(config && workspace.directoryConfigId === config.id)
+  } catch (error) {
+    // A busy file is not evidence that the registered directory was lost.
+    if (classifyFsError(error).kind === 'transient') return true
+    const failure = classifyFsError(error)
+    console.warn(`[workspace-storage] Project state config unreadable (${failure.code}): ${getWorkspaceConfigPath(workspace.rootPath)}`)
+    return false
+  }
 }
 
 /** Resolve a Pi cwd only from the Project root or a canonical Host grant. */

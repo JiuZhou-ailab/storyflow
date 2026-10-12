@@ -953,6 +953,8 @@
   "sessionMenu.unarchive": "Unarchive",
   "sessionMenu.unflag": "Unflag",
   "sessionMenu.unflagAll": "Unflag All",
+  "sessions.create.failed": "Could not create the conversation. Please retry.",
+  "sessions.create.storageBusy": "Files are temporarily busy. Please try again shortly.",
   "settings.about.checkForUpdates": "Check for updates",
   "settings.about.checkNow": "Check Now",
   "settings.about.downloading": "Downloading v{{version}} ({{percent}}%)",

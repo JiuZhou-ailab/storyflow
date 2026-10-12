@@ -1,5 +1,6 @@
 import { Menu, app, shell, BrowserWindow, dialog } from 'electron'
 import { i18n } from '@craft-agent/shared/i18n'
+import { STORYFLOW_SITE_URL } from '@craft-agent/shared/branding'
 import { RPC_CHANNELS, type BroadcastEventMap, type UpdateInfo } from '../shared/types'
 import { EDIT_MENU, VIEW_MENU, WINDOW_MENU } from '../shared/menu-schema'
 import type { MenuItem } from '../shared/menu-schema'
@@ -251,7 +252,7 @@ export async function rebuildMenu(): Promise<void> {
       submenu: [
         {
           label: i18n.t("menu.helpAndDocs"),
-          click: () => shell.openExternal('https://agents.craft.do/docs')
+          click: () => shell.openExternal(`${STORYFLOW_SITE_URL}/docs/`)
         },
         {
           label: i18n.t("menu.keyboardShortcuts"),

@@ -1,5 +1,5 @@
-// input: Electron app lifecycle, workspace IDs, saved window URLs, and renderer resources
-// output: Managed BrowserWindow instances with workspace-aware routing and native window behavior
+// input: Electron app/startup lifecycle, workspace IDs, saved window URLs, and renderer resources
+// output: Managed windows, awaited first-load readiness, and bounded per-window runtime recovery
 // pos: Owns desktop app window creation, restoration, and per-window lifecycle wiring
 
 import { BrowserWindow, shell, nativeTheme, Menu, app, screen, dialog } from 'electron'
@@ -18,6 +18,8 @@ const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const RENDERER_ENTRY_PATH = join(__dirname, 'renderer/index.html')
 const rendererEntryUrl = VITE_DEV_SERVER_URL ?? pathToFileURL(RENDERER_ENTRY_PATH).href
 const WINDOW_SCREEN_MARGIN = 64
+const RUNTIME_RELOAD_WINDOW_MS = 60_000
+const MAX_RUNTIME_RELOADS = 3
 const DEFAULT_MAIN_WINDOW_SIZE = { width: 1400, height: 900 }
 const MIN_WINDOW_SIZE = { width: 800, height: 600 }
 // Keep the 14px close button on the rail icons' rendered center line.
@@ -84,9 +86,10 @@ export interface CreateWindowOptions {
 export class WindowManager {
   constructor(private readonly onLoadFailure: (error: Error) => void = () => {
     dialog.showErrorBox(i18n.t('startup.title'), i18n.t('startup.reason.renderer'))
-  }) {}
+  }, private readonly hasRuntimeStarted: () => boolean = () => false) {}
 
   private windows: Map<number, ManagedWindow> = new Map()  // webContents.id → ManagedWindow
+  private firstLoads = new WeakMap<BrowserWindow, Promise<void>>()
   private pendingCloseTimeouts: Map<number, NodeJS.Timeout> = new Map()  // Fallback timeouts for window close
   private eventSink: ((channel: string, target: import('@craft-agent/shared/protocol').PushTarget, ...args: any[]) => void) | null = null
   private clientResolver: ((wcId: number) => string | undefined) | null = null
@@ -94,6 +97,10 @@ export class WindowManager {
   private keyboardCloseIntentTimeouts: Map<number, NodeJS.Timeout> = new Map()  // Auto-clear stale keyboard-close intents
   private isAppQuitting = false  // Skip layered close interception during app quit
   private beforeWindowDestroyed: ((closingWindow: SavedWindow, remainingWindows: SavedWindow[]) => void) | null = null
+
+  async waitForInitialLoads(): Promise<void> {
+    await Promise.all([...this.windows.values()].map(({ window }) => this.firstLoads.get(window)))
+  }
 
   setBeforeWindowDestroyed(
     handler: (closingWindow: SavedWindow, remainingWindows: SavedWindow[]) => void,
@@ -265,9 +272,20 @@ export class WindowManager {
     const webContentsId = window.webContents.id
     this.windows.set(webContentsId, { window, workspaceId })
 
+    let resolveFirstLoad!: () => void
+    let rejectFirstLoad!: (error: Error) => void
+    const firstLoad = new Promise<void>((resolve, reject) => {
+      resolveFirstLoad = resolve
+      rejectFirstLoad = reject
+    })
+    this.firstLoads.set(window, firstLoad)
+    // onLoadFailure owns recovery even when no startup caller is awaiting this window.
+    void firstLoad.catch(() => {})
     let failed = false
+    let firstLoadSucceeded = false
     let retry: ReturnType<typeof setTimeout> | undefined
     let attempts = 0
+    let runtimeFailures: number[] = []
     const query: Record<string, string> = { workspaceId }
     if (restoreUrl) {
       try { new URL(restoreUrl).searchParams.forEach((value, key) => { query[key] = value }) }
@@ -275,10 +293,33 @@ export class WindowManager {
     }
     const fail = (code: string): void => {
       if (failed || window.isDestroyed() || this.isAppQuitting) return
+      if (firstLoadSucceeded && this.hasRuntimeStarted()) {
+        if (retry) return
+        windowLog.error(`Window ${webContentsId} renderer failure: ${code}`)
+        const now = Date.now()
+        runtimeFailures = runtimeFailures.filter(time => now - time < RUNTIME_RELOAD_WINDOW_MS)
+        if (runtimeFailures.length >= MAX_RUNTIME_RELOADS) {
+          failed = true
+          window.show()
+          void dialog.showMessageBox(window, {
+            type: 'error', message: i18n.t('startup.reason.renderer'),
+            buttons: [i18n.t('common.ok')], noLink: true,
+          }).catch(error => windowLog.error('Failed to show renderer error', error))
+          return
+        }
+        runtimeFailures.push(now)
+        retry = setTimeout(() => {
+          retry = undefined
+          if (!window.isDestroyed() && !this.isAppQuitting) window.webContents.reload()
+        }, 1000)
+        return
+      }
       failed = true
       if (retry) clearTimeout(retry)
       window.show()
-      this.onLoadFailure(Object.assign(new Error('Application renderer unavailable'), { code }))
+      const error = Object.assign(new Error('Application renderer unavailable'), { code })
+      rejectFirstLoad(error)
+      this.onLoadFailure(error)
     }
     const load = (): void => {
       if (failed || window.isDestroyed() || this.isAppQuitting) return
@@ -293,14 +334,22 @@ export class WindowManager {
     }
     window.webContents.on('did-fail-load', (_event, code, _description, _url, isMainFrame) => {
       if (!isMainFrame || code === -3 || failed || window.isDestroyed() || this.isAppQuitting) return
-      if (VITE_DEV_SERVER_URL && attempts++ < 5) {
+      if ((!firstLoadSucceeded || !this.hasRuntimeStarted()) && VITE_DEV_SERVER_URL && attempts++ < 5) {
         if (retry) clearTimeout(retry)
         retry = setTimeout(() => { retry = undefined; load() }, 1000)
       } else fail('RENDERER_LOAD')
     })
     window.webContents.on('preload-error', () => fail('PRELOAD'))
     window.webContents.on('render-process-gone', () => fail('RENDERER_CRASH'))
-    window.once('closed', () => { if (retry) clearTimeout(retry) })
+    window.webContents.on('did-finish-load', () => {
+      if (failed) return
+      firstLoadSucceeded = true
+      resolveFirstLoad()
+    })
+    window.once('closed', () => {
+      if (retry) clearTimeout(retry)
+      rejectFirstLoad(Object.assign(new Error('Window closed before its first load'), { code: 'RENDERER_LOAD' }))
+    })
     load()
 
     // If an initial deep link was provided, navigate to it after the window is ready

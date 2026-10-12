@@ -2,7 +2,7 @@
 // output: Canonical Storyflow paths plus project-owned path, rebasing, and symlink boundary guards
 // pos: Shared path contract separating app metadata from safe Pi-native project resources
 
-import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync } from 'fs';
+import { lstatSync, mkdirSync, readdirSync, realpathSync } from 'fs';
 import { isAbsolute, join, relative, resolve, sep } from 'path';
 
 export const WORKSPACE_STATE_DIR = '.craft-agent';
@@ -17,7 +17,7 @@ export function getWorkspaceStateRelativePath(relativePath: string): string {
 }
 
 export function getFirstExistingPath(paths: string[]): string {
-  return paths.find((path) => existsSync(path)) ?? paths[0]!;
+  return paths.find((path) => lstatIfPresent(path)) ?? paths[0]!;
 }
 
 export function getWorkspaceConfigPath(rootPath: string): string {
@@ -350,7 +350,11 @@ export function ensureProjectOwnedDirectory(projectRoot: string, targetPath: str
   for (const segment of segments) {
     currentPath = join(currentPath, segment);
     const existing = lstatIfPresent(currentPath);
-    if (!existing) mkdirSync(currentPath);
+    if (!existing) {
+      try { mkdirSync(currentPath); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+    }
 
     const stat = lstatSync(currentPath);
     if (stat.isSymbolicLink()) {

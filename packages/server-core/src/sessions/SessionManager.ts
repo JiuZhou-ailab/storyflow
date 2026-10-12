@@ -6,7 +6,7 @@ import type { EventSink } from '@craft-agent/server-core/transport'
 import type { ISessionManager, IBrowserPaneManager, ExecutePromptAutomationInput } from '@craft-agent/server-core/handlers'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import { join } from 'path'
-import { readFile, mkdir } from 'fs/promises'
+import { readFile, mkdir, rm } from 'fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { type AgentEvent, setPermissionMode, hydratePreviousPermissionMode, type PermissionMode, unregisterSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult } from '@craft-agent/shared/agent'
 import type { UserQuestionRequest, UserQuestionResponse } from '@craft-agent/session-tools-core'
@@ -38,6 +38,7 @@ import {
 import { toWorkspaceInfo, type ActiveSessionInfo, type RemoteServerConnectionInput, type SessionProcessingStatus } from '@craft-agent/core/types'
 import {
   canonicalizeProjectRoot,
+  resolveProjectOwnedPath,
   isFreeConversationWorkspaceId,
   commitWorkspaceRootRelink,
   discoverLegacyWorkingDirectoryRoots,
@@ -78,7 +79,7 @@ import { createSourceGrantRefs, loadWorkspaceSources, loadAllSources, getSources
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { getLastApiError } from '@craft-agent/shared/provider-diagnostics'
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
-import { isLowSignal } from '@craft-agent/shared/utils'
+import { classifyFsError, retryTransientFs, isLowSignal } from '@craft-agent/shared/utils'
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, generateMessageId } from '@craft-agent/shared/protocol'
 import { type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics, type TurnUsage } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
@@ -2279,10 +2280,23 @@ export class SessionManager implements ISessionManager {
   }
 
   async createSession(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
-    return this.withProjectLifecycleLock(
-      workspaceId,
-      () => this.createSessionLocked(workspaceId, options),
-    )
+    try {
+      return await this.withProjectLifecycleLock(
+        workspaceId,
+        () => this.createSessionLocked(workspaceId, options),
+      )
+    } catch (cause) {
+      const source = cause instanceof AggregateError ? cause.errors[0] : cause
+      const failure = classifyFsError(source instanceof Error && source.cause ? source.cause : source)
+      if (!failure.code) throw cause
+      throw Object.assign(new Error(
+        failure.kind === 'transient' ? 'Session storage is temporarily busy. Please retry.' : 'Session storage could not be accessed.',
+        { cause },
+      ), {
+        code: failure.kind === 'transient' ? 'SESSION_STORAGE_BUSY' : 'SESSION_STORAGE_FAILED',
+        fsError: failure,
+      })
+    }
   }
 
   private async createSessionLocked(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
@@ -2298,7 +2312,7 @@ export class SessionManager implements ISessionManager {
     // Get new session defaults from workspace config (with global fallback)
     // Options.permissionMode overrides the workspace default (used by EditPopover for auto-execute)
     const workspaceRootPath = workspace.rootPath
-    const wsConfig = loadWorkspaceConfig(workspaceRootPath)
+    const wsConfig = await retryTransientFs(() => loadWorkspaceConfig(workspaceRootPath))
     const globalDefaults = loadConfigDefaults()
 
     // Executable defaults are Host-owned; Project files cannot self-grant them.
@@ -2369,7 +2383,8 @@ export class SessionManager implements ISessionManager {
       resolvedWorkingDir = options.workingDirectory
     }
     if (!isFreeConversationWorkspaceId(workspace.id) && resolvedWorkingDir) {
-      resolvedWorkingDir = resolveWorkspaceWorkingDirectory(workspace, resolvedWorkingDir)
+      const requestedDirectory = resolvedWorkingDir
+      resolvedWorkingDir = await retryTransientFs(() => resolveWorkspaceWorkingDirectory(workspace, requestedDirectory))
     }
     // Validate branch request up-front so branch metadata is only set for valid branches.
     // This prevents creating sessions that claim to be branched but don't have copied history.
@@ -2527,58 +2542,72 @@ export class SessionManager implements ISessionManager {
       isPinned: options?.isPinned,
     })
 
-    if (isFreeConversationWorkspaceId(workspace.id)) {
-      const privateWorkingDirectory = join(
-        getSessionStoragePath(workspaceRootPath, storedSession.id),
-        'work',
-      )
-      await mkdir(privateWorkingDirectory, { recursive: true })
-      await updateSessionMetadata(workspaceRootPath, storedSession.id, {
-        workingDirectory: privateWorkingDirectory,
-        sdkCwd: privateWorkingDirectory,
-      })
-      storedSession.workingDirectory = privateWorkingDirectory
-      storedSession.sdkCwd = privateWorkingDirectory
-      resolvedWorkingDir = privateWorkingDirectory
-    } else if (options?.workingDirectory === 'none') {
-      const sessionWorkingDirectory = getSessionStoragePath(workspaceRootPath, storedSession.id)
-      await updateSessionMetadata(workspaceRootPath, storedSession.id, {
-        workingDirectory: sessionWorkingDirectory,
-      })
-      storedSession.workingDirectory = sessionWorkingDirectory
-      resolvedWorkingDir = sessionWorkingDirectory
-    }
-
-    // Branch: copy messages from source session up to and including the branch point
-    if (validatedBranch) {
-      const branchedStored = loadStoredSession(workspaceRootPath, storedSession.id)
-      if (!branchedStored) {
-        throw new Error(`Failed to load newly created session ${storedSession.id} for branch copy`)
-      }
-
-      const sourceMessages = validatedBranch.sourceSession.messages.slice(0, validatedBranch.branchIdx + 1)
-
-      // Re-map embedded paths: source messages were loaded with expandSessionPath(sourceDir),
-      // so they contain absolute paths to the *source* session directory. When saved to the
-      // branch session, makeSessionPathPortable uses the *branch* dir — which won't match.
-      // Fix: replace source dir paths with branch dir paths so tokenization works on save.
-      const sourceDir = normalizePath(getSessionStoragePath(workspaceRootPath, validatedBranch.sourceSessionId))
-      const branchDir = normalizePath(getSessionStoragePath(workspaceRootPath, storedSession.id))
-      if (sourceDir !== branchDir) {
-        branchedStored.messages = sourceMessages.map(m => {
-          const json = JSON.stringify(m)
-          if (!json.includes(sourceDir)) return m
-          return JSON.parse(json.replaceAll(sourceDir, branchDir)) as StoredMessage
+    try {
+      if (isFreeConversationWorkspaceId(workspace.id)) {
+        const privateWorkingDirectory = join(
+          getSessionStoragePath(workspaceRootPath, storedSession.id),
+          'work',
+        )
+        await retryTransientFs(() => mkdir(privateWorkingDirectory, { recursive: true }))
+        await updateSessionMetadata(workspaceRootPath, storedSession.id, {
+          workingDirectory: privateWorkingDirectory,
+          sdkCwd: privateWorkingDirectory,
         })
-      } else {
-        branchedStored.messages = sourceMessages
+        storedSession.workingDirectory = privateWorkingDirectory
+        storedSession.sdkCwd = privateWorkingDirectory
+        resolvedWorkingDir = privateWorkingDirectory
+      } else if (options?.workingDirectory === 'none') {
+        const sessionWorkingDirectory = getSessionStoragePath(workspaceRootPath, storedSession.id)
+        await updateSessionMetadata(workspaceRootPath, storedSession.id, {
+          workingDirectory: sessionWorkingDirectory,
+        })
+        storedSession.workingDirectory = sessionWorkingDirectory
+        resolvedWorkingDir = sessionWorkingDirectory
       }
 
-      branchedStored.branchFromMessageId = validatedBranch.sourceMessageId
-      branchedStored.branchFromSdkSessionId = validatedBranch.branchFromSdkSessionId
-      branchedStored.branchFromSessionPath = validatedBranch.branchFromSessionPath
-      branchedStored.branchFromSdkTurnId = validatedBranch.branchFromSdkTurnId
-      await saveStoredSession(branchedStored)
+      // Branch: copy messages from source session up to and including the branch point
+      if (validatedBranch) {
+        const branchedStored = loadStoredSession(workspaceRootPath, storedSession.id)
+        if (!branchedStored) {
+          throw new Error(`Failed to load newly created session ${storedSession.id} for branch copy`)
+        }
+
+        const sourceMessages = validatedBranch.sourceSession.messages.slice(0, validatedBranch.branchIdx + 1)
+
+        // Re-map embedded paths: source messages were loaded with expandSessionPath(sourceDir),
+        // so they contain absolute paths to the *source* session directory. When saved to the
+        // branch session, makeSessionPathPortable uses the *branch* dir — which won't match.
+        // Fix: replace source dir paths with branch dir paths so tokenization works on save.
+        const sourceDir = normalizePath(getSessionStoragePath(workspaceRootPath, validatedBranch.sourceSessionId))
+        const branchDir = normalizePath(getSessionStoragePath(workspaceRootPath, storedSession.id))
+        if (sourceDir !== branchDir) {
+          branchedStored.messages = sourceMessages.map(m => {
+            const json = JSON.stringify(m)
+            if (!json.includes(sourceDir)) return m
+            return JSON.parse(json.replaceAll(sourceDir, branchDir)) as StoredMessage
+          })
+        } else {
+          branchedStored.messages = sourceMessages
+        }
+
+        branchedStored.branchFromMessageId = validatedBranch.sourceMessageId
+        branchedStored.branchFromSdkSessionId = validatedBranch.branchFromSdkSessionId
+        branchedStored.branchFromSessionPath = validatedBranch.branchFromSessionPath
+        branchedStored.branchFromSdkTurnId = validatedBranch.branchFromSdkTurnId
+        await saveStoredSession(branchedStored)
+      }
+
+    } catch (error) {
+      await sessionPersistenceQueue.retire(storedSession.id)
+      try {
+        await retryTransientFs(() => rm(
+          resolveProjectOwnedPath(workspaceRootPath, getSessionStoragePath(workspaceRootPath, storedSession.id)),
+          { recursive: true },
+        ))
+      } catch (cleanupError) {
+        getSessionLog().warn('Failed to remove unpublished Session', { sessionId: storedSession.id, cleanupError })
+      }
+      throw error
     }
 
     // Resolve connection/provider/auth/model using the provider-agnostic backend resolver.

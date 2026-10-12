@@ -1,8 +1,9 @@
 // input: Ordered session/workspace metadata, project disclosure state, runtime indicators, and row callbacks
-// output: Draggable session groups with quick pin/archive actions and compact project rows with runtime status
+// output: Session/project rows and shared conversation-creation feedback with retry
 // pos: Visual primitives for ActivityRail; owns row grouping, interaction affordances, and context actions
 
 import * as React from 'react'
+import type { TFunction } from 'i18next'
 import {
   Archive,
   ArchiveRestore,
@@ -46,6 +47,19 @@ import type { Workspace } from '../../../shared/types'
 import { partitionSessionMetas } from './activity-rail-session-order'
 
 const PROJECT_SESSION_LIMIT = 5
+
+export async function createConversationWithFeedback(create: () => Promise<void>, t: TFunction): Promise<void> {
+  try {
+    await create()
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code
+    toast.error(code === 'SESSION_STORAGE_BUSY'
+      ? t('sessions.create.storageBusy')
+      : t('sessions.create.failed'), {
+      action: { label: t('common.retry'), onClick: () => createConversationWithFeedback(create, t) },
+    })
+  }
+}
 
 export interface ActivityRailSessionActions {
   onRename: (sessionId: string, name: string, workspaceId: string) => void | Promise<void>
@@ -495,7 +509,7 @@ export function ProjectFolderRow({
             aria-label={`在 ${workspace.name} 中新建任务`}
             title="新建任务"
             className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
-            onClick={() => { void onCreateConversation() }}
+            onClick={onCreateConversation}
           >
             <SquarePen className="size-3.5" />
           </button>

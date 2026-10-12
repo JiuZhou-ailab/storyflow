@@ -955,6 +955,8 @@
   "sessionMenu.unarchive": "Przywróć z archiwum",
   "sessionMenu.unflag": "Usuń flagę",
   "sessionMenu.unflagAll": "Odznacz wszystkie",
+  "sessions.create.failed": "Nie udało się utworzyć rozmowy. Spróbuj ponownie.",
+  "sessions.create.storageBusy": "Pliki są tymczasowo zajęte. Spróbuj ponownie za chwilę.",
   "settings.about.checkForUpdates": "Sprawdź aktualizacje",
   "settings.about.checkNow": "Sprawdź teraz",
   "settings.about.downloading": "Pobieranie v{{version}} ({{percent}}%)",

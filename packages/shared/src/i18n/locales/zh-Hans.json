@@ -953,6 +953,8 @@
   "sessionMenu.unarchive": "取消归档",
   "sessionMenu.unflag": "取消标记",
   "sessionMenu.unflagAll": "取消全部标记",
+  "sessions.create.failed": "新建对话失败，请重试。",
+  "sessions.create.storageBusy": "文件被占用，请稍后重试。",
   "settings.about.checkForUpdates": "检查更新",
   "settings.about.checkNow": "立即检查",
   "settings.about.downloading": "正在下载 v{{version}} ({{percent}}%)",

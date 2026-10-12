@@ -1,5 +1,5 @@
 // input: Stored session snapshots and session JSONL metadata from disk
-// output: Debounced, serialized, atomic persistence writes for session state
+// output: Debounced, serialized persistence with bounded transient retries and backup rollback
 // pos: Shared persistence queue used by server-core session lifecycle code
 
 import { writeFile as writeFileToDisk, rename, unlink } from 'fs/promises'
@@ -7,7 +7,6 @@ import { dirname } from 'path'
 import type { StoredSession, SessionHeader } from './types.js'
 import {
   getSessionFilePath,
-  ensureSessionsDir,
   ensureSessionDir,
   recoverSessionFile,
   setSessionFileReplacementActive,
@@ -17,6 +16,7 @@ import { resolveProjectOwnedFilePath } from '../workspaces/paths.js'
 import { createSessionHeader, makeSessionPathPortable, readSessionHeader } from './jsonl.js'
 import { debug } from '../utils/debug.js'
 import { perf } from '../utils/perf.js'
+import { retryTransientFs } from '../utils/files.js'
 
 interface PendingWrite {
   data: StoredSession
@@ -161,11 +161,10 @@ class SessionPersistenceQueue {
     const sessionId = data.id
     const persistSpan = perf.span('session.persist.write', { sessionId })
     try {
-      ensureSessionsDir(data.workspaceRootPath)
-      ensureSessionDir(data.workspaceRootPath, sessionId)
+      await retryTransientFs(() => ensureSessionDir(data.workspaceRootPath, sessionId))
 
-      const filePath = getSessionFilePath(data.workspaceRootPath, sessionId)
-      const recoveredFile = recoverSessionFile(filePath, data.workspaceRootPath)
+      const filePath = await retryTransientFs(() => getSessionFilePath(data.workspaceRootPath, sessionId))
+      const recoveredFile = await retryTransientFs(() => recoverSessionFile(filePath, data.workspaceRootPath))
       if (recoveredFile && recoveredFile !== filePath) {
         throw new Error(`Could not promote recovered session file: ${recoveredFile}`)
       }
@@ -247,20 +246,20 @@ class SessionPersistenceQueue {
       this.lastWrittenHeaderSignature.set(sessionId, finalSignature)
 
       const writeEnd = perf.start('session.persist.diskWrite', { sessionId })
-      const safeFilePath = resolveProjectOwnedFilePath(data.workspaceRootPath, filePath)
-      const tmpFile = resolveProjectOwnedFilePath(data.workspaceRootPath, filePath + '.tmp')
-      const backupFile = resolveProjectOwnedFilePath(data.workspaceRootPath, filePath + '.bak')
+      const safeFilePath = await retryTransientFs(() => resolveProjectOwnedFilePath(data.workspaceRootPath, filePath))
+      const tmpFile = await retryTransientFs(() => resolveProjectOwnedFilePath(data.workspaceRootPath, filePath + '.tmp'))
+      const backupFile = await retryTransientFs(() => resolveProjectOwnedFilePath(data.workspaceRootPath, filePath + '.bak'))
       let hasBackup = false
       setSessionFileReplacementActive(filePath, true)
       try {
-        await this.writeFile(tmpFile, jsonl, 'utf-8')
+        await retryTransientFs(() => this.writeFile(tmpFile, jsonl, 'utf-8'))
         try {
-          await rename(safeFilePath, backupFile)
+          await retryTransientFs(() => rename(safeFilePath, backupFile))
           hasBackup = true
         } catch (error) {
           if (!isMissingFileError(error)) throw error
         }
-        await rename(tmpFile, safeFilePath)
+        await retryTransientFs(() => rename(tmpFile, safeFilePath))
       } catch (error) {
         if (previousWrittenSignature === undefined) {
           this.lastWrittenHeaderSignature.delete(sessionId)
@@ -270,7 +269,7 @@ class SessionPersistenceQueue {
 
         if (hasBackup) {
           try {
-            await rename(backupFile, safeFilePath)
+            await retryTransientFs(() => rename(backupFile, safeFilePath))
           } catch (restoreError) {
             throw new AggregateError(
               [error, restoreError],
@@ -280,12 +279,15 @@ class SessionPersistenceQueue {
         }
         throw error
       } finally {
+        try { await retryTransientFs(() => unlink(tmpFile)) } catch (error) {
+          if (!isMissingFileError(error)) debug(`[PersistenceQueue] Could not remove temporary file for session ${sessionId}:`, error)
+        }
         setSessionFileReplacementActive(filePath, false)
         writeEnd()
       }
 
       if (hasBackup) {
-        try { await unlink(backupFile) } catch (error) {
+        try { await retryTransientFs(() => unlink(backupFile)) } catch (error) {
           if (!isMissingFileError(error)) {
             debug(`[PersistenceQueue] Could not remove backup for session ${sessionId}:`, error)
           }

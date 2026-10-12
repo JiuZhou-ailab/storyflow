@@ -1,12 +1,12 @@
-// input: A stale server lease left by an abruptly terminated process
-// output: Regression proof that startup recovers the lease without manual deletion
+// input: Real contenders, legacy/torn lease records and OS boundary failures
+// output: Regression proof of safe recovery, live-owner protection and bounded listen retries
 // pos: Process-isolated coverage for the shared server bootstrap lock boundary
 
 import { afterAll, afterEach, expect, test, setDefaultTimeout } from 'bun:test'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, uptime } from 'node:os'
 import { join } from 'node:path'
 
 setDefaultTimeout(30_000)
@@ -36,9 +36,9 @@ afterEach(() => {
   rmSync(leasePath, { recursive: true, force: true })
 })
 
-function contender(identityUnavailable = false) {
+function contender(identityUnavailable = false, env: Record<string, string> = {}) {
   const process = spawn(Bun.which('bun')!, [join(import.meta.dir, 'server-lock.fixture.ts')], {
-    env: { ...Bun.env, CRAFT_CONFIG_DIR: configDir, ...(identityUnavailable ? { CRAFT_TEST_IDENTITY_UNAVAILABLE: '1' } : {}) },
+    env: { ...Bun.env, CRAFT_CONFIG_DIR: configDir, ...(identityUnavailable ? { CRAFT_TEST_IDENTITY_UNAVAILABLE: '1' } : {}), ...env },
     stdio: ['pipe', 'pipe', 'inherit'],
   })
   const exited = new Promise<void>(resolve => process.once('exit', () => resolve()))
@@ -47,7 +47,7 @@ function contender(identityUnavailable = false) {
   return {
     process,
     exited,
-    async command(command: string): Promise<{ ok: boolean; code?: string }> {
+    async command(command: string): Promise<{ ok: boolean; code?: string; listenAttempts: number; errors: string[] }> {
       await new Promise<void>((resolve, reject) => process.stdin.write(`${command}\n`, error => error ? reject(error) : resolve()))
       const result = await lines.next()
       if (result.done) throw new Error('Contender exited without a result')
@@ -78,6 +78,158 @@ test('two real processes exclude a live expired owner and recover after actual p
     if (first.process.exitCode === null && first.process.signalCode === null) await first.close()
     await second.close()
   }
+})
+
+test('automatically takes over a v2 lease written before this boot when identity is unavailable', async () => {
+  const first = contender(true)
+  try {
+    expect(await first.command('legacy-before-boot')).toMatchObject({ ok: true })
+    expect(await first.command('acquire')).toMatchObject({ ok: true })
+    expect(await first.command('release')).toMatchObject({ ok: true })
+  } finally { await first.close() }
+})
+
+test('keeps a v2 lease written after boot unknown when identity is unavailable', async () => {
+  const first = contender(true)
+  try {
+    expect(await first.command('legacy-after-boot')).toMatchObject({ ok: true })
+    expect(await first.command('acquire')).toMatchObject({ ok: false, code: 'OWNER_UNKNOWN' })
+  } finally { await first.close() }
+})
+
+test('sets aside torn pre-boot lease records and automatically takes ownership', async () => {
+  const first = contender(true)
+  try {
+    expect(await first.command('torn-before-boot')).toMatchObject({ ok: true })
+    expect(await first.command('acquire')).toMatchObject({ ok: true })
+    expect(await first.command('release')).toMatchObject({ ok: true })
+    const aside = readdirSync(configDir).filter(name => name.includes('.unrecognized-'))
+    expect(aside).toHaveLength(2)
+    for (const name of aside) rmSync(join(configDir, name), { recursive: true })
+  } finally { await first.close() }
+})
+
+test('retries transient liveness listen failures before publishing an endpoint', async () => {
+  const first = contender(false, { CRAFT_TEST_LISTEN_FAILURES: '2' })
+  try {
+    expect(await first.command('acquire')).toMatchObject({ ok: true, listenAttempts: 3 })
+    expect(JSON.parse(readFileSync(lockPath, 'utf8')).livenessEndpoint).toBeString()
+    expect(await first.command('release')).toMatchObject({ ok: true })
+  } finally { await first.close() }
+})
+
+test.each([false, true])('exhausted liveness retries publish a protected endpoint-free lease (identity unavailable: %s)', async (identityUnavailable) => {
+  const first = contender(identityUnavailable, { CRAFT_TEST_LISTEN_FAILURES: '99' })
+  try {
+    expect(await first.command('legacy-before-boot')).toMatchObject({ ok: true })
+    const result = await first.command('acquire')
+    expect(result).toMatchObject({ ok: true, listenAttempts: 3 })
+    expect(result.errors).toEqual(['[bootstrap] Host liveness listen failed after 3 attempts (EACCES); continuing with process identity; unverifiable owners remain protected'])
+    const previous = readFileSync(lockPath, 'utf8')
+    for (const path of [lockPath, join(leasePath, readdirSync(leasePath)[0]!)]) {
+      const owner = JSON.parse(readFileSync(path, 'utf8'))
+      expect(owner).toMatchObject({ pid: first.process.pid, leaseVersion: 3 })
+      expect(owner.livenessEndpoint).toBeUndefined()
+    }
+    await expect(acquireServerLock(logger)).rejects.toMatchObject({ code: identityUnavailable ? 'OWNER_UNKNOWN' : 'OWNER_ACTIVE' })
+    expect(readFileSync(lockPath, 'utf8')).toBe(previous)
+    expect(readdirSync(configDir).filter(name => name.startsWith('.server-acquire-'))).toHaveLength(0)
+    expect(await first.command('release')).toMatchObject({ ok: true })
+    await acquireServerLock(logger)
+  } finally { await first.close() }
+})
+
+test.each(['startedAt', 'mtime', 'clock-margin'])('keeps ambiguous legacy timestamps unknown: %s', async (timestamp) => {
+  const first = contender(true)
+  try {
+    await first.command('legacy-before-boot')
+    const marker = join(leasePath, readdirSync(leasePath)[0]!)
+    for (const path of [marker, lockPath]) {
+      const oldTime = lstatSync(path).mtime
+      if (timestamp === 'startedAt') {
+        writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), startedAt: Date.now() }))
+        utimesSync(path, oldTime, oldTime)
+      } else {
+        const time = new Date(timestamp === 'mtime' ? Date.now() : Date.now() - uptime() * 1000 - 60_000)
+        utimesSync(path, time, time)
+      }
+    }
+    expect(await first.command('acquire')).toMatchObject({ ok: false, code: 'OWNER_UNKNOWN' })
+  } finally { await first.close() }
+})
+
+test.each([false, true])('a pre-boot timestamp never overrides live proof (legacy: %s)', async (legacy) => {
+  const first = contender()
+  try {
+    await first.command('acquire')
+    const time = new Date(Date.now() - uptime() * 1000 - 600_000)
+    for (const path of [join(leasePath, readdirSync(leasePath)[0]!), lockPath]) {
+      const owner = JSON.parse(readFileSync(path, 'utf8'))
+      if (legacy) { delete owner.livenessEndpoint; owner.leaseVersion = 2 }
+      writeFileSync(path, JSON.stringify({ ...owner, startedAt: time.getTime() }))
+      utimesSync(path, time, time)
+    }
+    await expect(acquireServerLock(logger, { overrideUnverifiedOwner: true })).rejects.toMatchObject({ code: 'OWNER_ACTIVE' })
+    await first.command('release')
+  } finally { await first.close() }
+})
+
+test.each(['file', 'foreign-entry', 'empty-directory'])('recovers pre-boot unrecognized lease state: %s', async (shape) => {
+  const time = new Date(Date.now() - uptime() * 1000 - 600_000)
+  if (shape === 'file') writeFileSync(leasePath, 'unrecognized')
+  else {
+    mkdirSync(leasePath)
+    if (shape === 'foreign-entry') {
+      const path = join(leasePath, 'unrecognized')
+      writeFileSync(path, 'unrecognized')
+      utimesSync(path, time, time)
+    }
+  }
+  utimesSync(leasePath, time, time)
+  await acquireServerLock(logger)
+  expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(process.pid)
+  for (const name of readdirSync(configDir).filter(name => name.includes('.unrecognized-'))) {
+    rmSync(join(configDir, name), { recursive: true })
+  }
+})
+
+test('matching process identity stays active even when the PID permission probe fails', async () => {
+  const first = contender(), second = contender(false, { CRAFT_TEST_KILL_DENIED: '1' })
+  try {
+    await first.command('acquire')
+    const time = new Date(Date.now() - uptime() * 1000 - 600_000)
+    for (const path of [join(leasePath, readdirSync(leasePath)[0]!), lockPath]) {
+      const owner = JSON.parse(readFileSync(path, 'utf8'))
+      delete owner.livenessEndpoint
+      writeFileSync(path, JSON.stringify({ ...owner, leaseVersion: 2, startedAt: time.getTime() }))
+      utimesSync(path, time, time)
+    }
+    expect(await second.command('acquire')).toMatchObject({ ok: false, code: 'OWNER_ACTIVE' })
+  } finally { await first.close(); await second.close() }
+})
+
+test('a fresh entry keeps an unrecognized pre-boot compatibility directory unknown', async () => {
+  mkdirSync(lockPath)
+  writeFileSync(join(lockPath, 'unrecognized'), 'recent owner state')
+  const time = new Date(Date.now() - uptime() * 1000 - 600_000)
+  utimesSync(lockPath, time, time)
+  await expect(acquireServerLock(logger)).rejects.toMatchObject({ code: 'OWNER_UNKNOWN' })
+})
+
+test('extra compatibility files cannot hide a provably live legacy owner', async () => {
+  await acquireServerLock(logger)
+  const owner = JSON.parse(readFileSync(lockPath, 'utf8'))
+  releaseServerLock()
+  delete owner.livenessEndpoint
+  const time = new Date(Date.now() - uptime() * 1000 - 600_000)
+  mkdirSync(lockPath)
+  for (const entry of ['owner.json', 'unexpected']) {
+    const path = join(lockPath, entry)
+    writeFileSync(path, JSON.stringify({ ...owner, leaseVersion: 2, startedAt: time.getTime() }))
+    utimesSync(path, time, time)
+  }
+  utimesSync(lockPath, time, time)
+  await expect(acquireServerLock(logger)).rejects.toMatchObject({ code: 'OWNER_ACTIVE' })
 })
 
 test('an owner whose OS identity cannot be queried is still proved active, then recovered after exit', async () => {

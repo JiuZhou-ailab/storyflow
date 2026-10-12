@@ -1,5 +1,5 @@
-// input: Resolved runtime config, credentials, and typed Pi JSONL process messages
-// output: Subprocess lifecycle, correlated protocol results, and Pi event delivery
+// input: Resolved runtime config, credentials, typed Pi JSONL messages, and an optional ready deadline
+// output: Bounded subprocess startup, correlated protocol results, and Pi event delivery
 // pos: Policy-free Boundary Protocol beneath the Product Host projection
 
 import { i18n } from '../i18n/index.ts';
@@ -99,6 +99,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
   protected subprocess: ChildProcess | null = null;
   protected stopReadingStdout: (() => void) | null = null;
   protected subprocessReady: Promise<void> | null = null;
+  private subprocessReadyReject: ((error: Error) => void) | null = null;
   protected subprocessReadyResolve: (() => void) | null = null;
   /** In-flight spawn shared by concurrent ensureSubprocess callers; cleared on kill. */
   protected subprocessSpawning: Promise<void> | null = null;
@@ -220,7 +221,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
   // Constructor
   // ============================================================
 
-  constructor(config: BackendConfig) {
+  constructor(config: BackendConfig, private readonly transportOptions: { readyTimeoutMs?: number } = {}) {
     const resolvedModel = config.model || '';
     const modelDef = getModelById(resolvedModel);
     super(config, resolvedModel);
@@ -299,22 +300,11 @@ export abstract class PiAgentTransport extends PiAgentHost {
     );
     this.resetSubprocessErrorDedup();
 
-    // Set up ready promise before spawning. The child's exit/error settles it
-    // too, so a subprocess that dies before `ready` fails the caller instead of
-    // leaving it waiting for the turn watchdog.
     const generation = ++this.subprocessGeneration;
-    let rejectReady!: (error: Error) => void;
-    const ready = new Promise<void>((resolve, reject) => {
-      this.subprocessReadyResolve = resolve;
-      rejectReady = reject;
-    });
-    this.subprocessReady = ready;
-    // Rejections surface through the awaits below; this only marks the promise handled.
-    ready.catch(() => {});
+    const epoch = this.queryCancellationEpoch;
 
     // Build session ID and session dir path upfront (used for spawn env + init command)
     const sessionId = this.config.session?.id || `agent-${Date.now()}`;
-    const endSubprocessReady = perf.start('pi.subprocess.ready', { sessionId });
     const sessionDir = this.config.session
       ? getSessionPath(this.config.workspace.rootPath, sessionId)
       : undefined;
@@ -335,6 +325,10 @@ export abstract class PiAgentTransport extends PiAgentHost {
       this.debug('Custom endpoint mode: no provider credential configured, sending empty API key');
     }
 
+    if (epoch !== this.queryCancellationEpoch) {
+      throw new DOMException('Pi subprocess startup aborted', 'AbortError');
+    }
+
     // Derive AWS env vars from the piAuth credential (single fetch, no race).
     const awsEnv = this.buildAwsEnv(piAuth, runtime);
 
@@ -343,6 +337,24 @@ export abstract class PiAgentTransport extends PiAgentHost {
     const requestedCwd = this.resolvedCwd();
     const cwd = this.config.validateWorkingDirectory?.(requestedCwd) ?? requestedCwd;
     if (cwd !== requestedCwd) this.updateWorkingDirectory(cwd);
+
+    const endSubprocessReady = perf.start('pi.subprocess.ready', { sessionId });
+
+    // Set up ready promise before spawning. The child's exit/error settles it
+    // too, so a subprocess that dies before `ready` fails the caller instead of
+    // leaving it waiting for the turn watchdog.
+    let rejectReady!: (error: Error) => void;
+    const ready = new Promise<void>((resolve, reject) => {
+      this.subprocessReadyResolve = () => {
+        this.subprocessReadyReject = null;
+        resolve();
+      };
+      rejectReady = reject;
+      this.subprocessReadyReject = reject;
+    });
+    this.subprocessReady = ready;
+    // Rejections surface through the awaits below; this only marks the promise handled.
+    ready.catch(() => {});
 
     // Spawn the subprocess
     const child = spawn(executablePath, args, {
@@ -439,9 +451,29 @@ export abstract class PiAgentTransport extends PiAgentHost {
       branchFromSdkTurnId: this.config.session?.branchFromSdkTurnId,
     });
 
-    // Wait for this generation's child; the field may already belong to a replacement.
-    await ready;
-    endSubprocessReady();
+    // 90s accommodates Windows cold starts and antivirus scans.
+    const readyTimeoutMs = this.transportOptions.readyTimeoutMs ?? 90_000;
+    const readyTimer = setTimeout(() => rejectReady(Object.assign(
+      new Error(`Pi subprocess ready timed out after ${readyTimeoutMs}ms. Please retry.`),
+      { code: 'PI_READY_TIMEOUT', retryable: true },
+    )), readyTimeoutMs);
+    try {
+      // Wait for this generation's child; the field may already belong to a replacement.
+      await ready;
+    } catch (error) {
+      // Initialization has no useful work to drain; a stuck child may ignore SIGTERM.
+      child.kill('SIGKILL');
+      if (generation === this.subprocessGeneration) {
+        this.subprocessReadyReject = null;
+        this.handleSubprocessExit(null, 'SIGKILL');
+        ++this.subprocessGeneration;
+      }
+      throw error;
+    } finally {
+      if (generation === this.subprocessGeneration) this.subprocessReadyReject = null;
+      clearTimeout(readyTimer);
+      endSubprocessReady();
+    }
     this.debug('Pi subprocess is ready');
     // Register session-scoped tools with the subprocess. Host-owned tools run
     // in the main process; call_llm stays inside the Pi runtime. Register before
@@ -665,6 +697,10 @@ export abstract class PiAgentTransport extends PiAgentHost {
    * Send a JSONL command to the subprocess stdin.
    */
   protected send(cmd: PiInboundMessage): boolean {
+    if ((cmd.type === 'abort' || cmd.type === 'shutdown') && this.subprocessReadyReject) {
+      this.subprocessReadyReject(new DOMException('Pi subprocess startup aborted', 'AbortError'));
+      return true;
+    }
     if (!this.subprocess?.stdin?.writable) {
       this.debug('Cannot send to subprocess: stdin not writable');
       return false;
@@ -827,6 +863,10 @@ export abstract class PiAgentTransport extends PiAgentHost {
       case 'error': {
         const errorCode = typeof msg.code === 'string' ? msg.code : undefined;
         const rawMessage = String(msg.message || 'Unknown subprocess error');
+        if (this.subprocessReadyReject) {
+          this.subprocessReadyReject(Object.assign(new Error(rawMessage), { code: errorCode }));
+          break;
+        }
 
         this.debug(`Subprocess error${errorCode ? ` (${errorCode})` : ''}: ${rawMessage}`);
         // A targeted llm_query_result follows llm_query_error and rejects only

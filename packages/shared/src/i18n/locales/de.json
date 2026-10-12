@@ -953,6 +953,8 @@
   "sessionMenu.unarchive": "Archivierung aufheben",
   "sessionMenu.unflag": "Markierung entfernen",
   "sessionMenu.unflagAll": "Alle Markierungen entfernen",
+  "sessions.create.failed": "Die Unterhaltung konnte nicht erstellt werden. Bitte versuche es erneut.",
+  "sessions.create.storageBusy": "Die Dateien werden vorübergehend verwendet. Bitte versuche es gleich noch einmal.",
   "settings.about.checkForUpdates": "Nach Updates suchen",
   "settings.about.checkNow": "Jetzt prüfen",
   "settings.about.downloading": "v{{version}} wird heruntergeladen ({{percent}}%)",

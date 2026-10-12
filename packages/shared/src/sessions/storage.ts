@@ -1,5 +1,5 @@
 // input: Workspace paths, persisted session JSONL candidates, and session mutations
-// output: Workspace-scoped session CRUD with crash-safe recovery and root-locator rebasing
+// output: Workspace-scoped session CRUD with crash recovery, failed-create cleanup, and root-locator rebasing
 // pos: Shared storage boundary for durable session state and session-owned files
 
 /**
@@ -26,7 +26,8 @@ import {
   unlinkSync,
   renameSync,
 } from 'fs';
-import { readdir } from 'fs/promises';
+import { readdir, rmdir } from 'fs/promises';
+import { classifyFsError, retryTransientFs } from '../utils/files.ts';
 import { join } from 'path';
 import { randomUUID } from 'node:crypto';
 import {
@@ -75,14 +76,21 @@ export function ensureSessionsDir(workspaceRootPath: string): string {
  * SECURITY: Uses sanitizeSessionId() as defense-in-depth to prevent path traversal.
  * Callers should still validate sessionId before calling this function.
  */
+function sessionPathExists(path: string): boolean {
+  try { statSync(path); return true; } catch (error) {
+    if (classifyFsError(error).kind === 'missing') return false;
+    throw error;
+  }
+}
+
 export function getSessionPath(workspaceRootPath: string, sessionId: string): string {
   // Defense-in-depth: strip any path components from sessionId
   const safeSessionId = sanitizeSessionId(sessionId);
   const sessionPath = join(getWorkspaceSessionsPath(workspaceRootPath), safeSessionId);
-  if (existsSync(sessionPath)) return resolveProjectOwnedPath(workspaceRootPath, sessionPath);
+  if (sessionPathExists(sessionPath)) return resolveProjectOwnedPath(workspaceRootPath, sessionPath);
 
   const legacySessionPath = join(getLegacyWorkspaceSessionsPath(workspaceRootPath), safeSessionId);
-  if (existsSync(legacySessionPath)) return resolveProjectOwnedPath(workspaceRootPath, legacySessionPath);
+  if (sessionPathExists(legacySessionPath)) return resolveProjectOwnedPath(workspaceRootPath, legacySessionPath);
 
   return sessionPath;
 }
@@ -109,7 +117,7 @@ export function setSessionFileReplacementActive(sessionFile: string, active: boo
 
 function getValidSessionFileCandidate(path: string, priority: number): ValidSessionFileCandidate | null {
   try {
-    if (!existsSync(path) || !statSync(path).isFile()) return null;
+    if (!statSync(path).isFile()) return null;
 
     const lines = readFileSync(path, 'utf-8').split('\n');
     if (lines.at(-1) === '') lines.pop();
@@ -120,8 +128,9 @@ function getValidSessionFileCandidate(path: string, priority: number): ValidSess
     if (!session || typeof session.id !== 'string' || !Array.isArray(session.messages)) return null;
 
     return { path, mtimeMs: statSync(path).mtimeMs, priority };
-  } catch {
-    return null;
+  } catch (error) {
+    if (classifyFsError(error).kind === 'missing' || error instanceof SyntaxError) return null;
+    throw error;
   }
 }
 
@@ -138,11 +147,11 @@ export function recoverSessionFile(sessionFile: string, workspaceRootPath: strin
   const backupFile = resolveProjectOwnedFilePath(workspaceRootPath, sessionFile + '.bak');
 
   if (activeSessionFileReplacements.has(sessionFile)) {
-    return existsSync(sessionFile) ? sessionFile : null;
+    return sessionPathExists(sessionFile) ? sessionFile : null;
   }
 
-  if (!existsSync(tmpFile) && !existsSync(backupFile)) {
-    return existsSync(sessionFile) ? sessionFile : null;
+  if (!sessionPathExists(tmpFile) && !sessionPathExists(backupFile)) {
+    return sessionPathExists(sessionFile) ? sessionFile : null;
   }
 
   const candidates = [
@@ -157,9 +166,9 @@ export function recoverSessionFile(sessionFile: string, workspaceRootPath: strin
 
   if (newest.path !== sessionFile) {
     try {
-      if (existsSync(sessionFile)) unlinkSync(sessionFile);
       renameSync(newest.path, sessionFile);
     } catch (error) {
+      if (classifyFsError(error).kind === 'transient') throw error;
       debug('[sessions] Failed to promote recovered session candidate:', newest.path, error);
       return newest.path;
     }
@@ -260,54 +269,68 @@ export async function createSession(
     isPinned?: boolean;
   }
 ): Promise<SessionConfig> {
-  ensureSessionsDir(workspaceRootPath);
+  await retryTransientFs(() => ensureSessionsDir(workspaceRootPath));
 
   const now = Date.now();
   const sessionId = generateSessionId(workspaceRootPath);
 
   // Create session directory with all subdirectories (plans, attachments)
-  ensureSessionDir(workspaceRootPath, sessionId);
+  const sessionDir = join(getWorkspaceSessionsPath(workspaceRootPath), sessionId);
+  try {
+    await retryTransientFs(() => ensureSessionDir(workspaceRootPath, sessionId));
 
-  // Set sdkCwd to initial working directory or session path - this never changes
-  // The SDK stores session transcripts at ~/.claude/projects/{cwd-slugified}/
-  // If workingDirectory changes later, sdkCwd stays the same to preserve session resumption
-  const sdkCwd = options?.workingDirectory ?? getSessionPath(workspaceRootPath, sessionId);
+    // Set sdkCwd to initial working directory or session path - this never changes
+    // The SDK stores session transcripts at ~/.claude/projects/{cwd-slugified}/
+    // If workingDirectory changes later, sdkCwd stays the same to preserve session resumption
+    const sdkCwd = options?.workingDirectory ?? getSessionPath(workspaceRootPath, sessionId);
 
-  const session: SessionConfig = {
-    id: sessionId,
-    schemaVersion: SESSION_SCHEMA_VERSION,
-    workspaceRootPath,
-    name: options?.name,
-    createdAt: now,
-    lastUsedAt: now,
-    workingDirectory: options?.workingDirectory,
-    sdkCwd,
-    permissionMode: options?.permissionMode,
-    enabledSourceSlugs: options?.enabledSourceSlugs,
-    model: options?.model,
-    llmConnection: options?.llmConnection,
-    hidden: options?.hidden,
-    sessionStatus: options?.sessionStatus,
-    labels: options?.labels,
-    isFlagged: options?.isFlagged,
-    isPinned: options?.isPinned,
-  };
+    const session: SessionConfig = {
+      id: sessionId,
+      schemaVersion: SESSION_SCHEMA_VERSION,
+      workspaceRootPath,
+      name: options?.name,
+      createdAt: now,
+      lastUsedAt: now,
+      workingDirectory: options?.workingDirectory,
+      sdkCwd,
+      permissionMode: options?.permissionMode,
+      enabledSourceSlugs: options?.enabledSourceSlugs,
+      model: options?.model,
+      llmConnection: options?.llmConnection,
+      hidden: options?.hidden,
+      sessionStatus: options?.sessionStatus,
+      labels: options?.labels,
+      isFlagged: options?.isFlagged,
+      isPinned: options?.isPinned,
+    };
 
-  // Save empty session
-  const storedSession: StoredSession = {
-    ...session,
-    messages: [],
-    tokenUsage: {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      contextTokens: 0,
-      costUsd: 0,
-    },
-  };
-  await saveSession(storedSession);
+    // Save empty session
+    const storedSession: StoredSession = {
+      ...session,
+      messages: [],
+      tokenUsage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        contextTokens: 0,
+        costUsd: 0,
+      },
+    };
+    await saveSession(storedSession);
 
-  return session;
+    return session;
+  } catch (error) {
+    await sessionPersistenceQueue.retire(sessionId);
+    // Only remove empty directories; a recoverable file or concurrent content must survive.
+    for (const path of ['plans', 'attachments', 'long_responses', 'data', 'downloads', '']) {
+      try {
+        await retryTransientFs(() => rmdir(resolveProjectOwnedFilePath(workspaceRootPath, join(sessionDir, path))));
+      } catch (cleanupError) {
+        if (classifyFsError(cleanupError).kind !== 'missing') debug('[sessions] Could not clean failed session directory:', sessionId, cleanupError);
+      }
+    }
+    throw error;
+  }
 }
 
 /**

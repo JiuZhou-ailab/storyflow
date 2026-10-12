@@ -3,7 +3,12 @@
  * Summaries provide quick context; "Learn more" opens the full docs.
  */
 
-const DOC_BASE_URL = 'https://agents.craft.do/docs'
+import { STORYFLOW_SITE_URL } from '../branding'
+
+// Storyflow docs only have chapters for a few features; the rest open the
+// workbench reference until they get a chapter of their own.
+const DOC_BASE_URL = `${STORYFLOW_SITE_URL}/docs`
+const WORKBENCH_DOC_PATH = '/workspace/'
 
 export type DocFeature =
   | 'sources'
@@ -32,85 +37,85 @@ export interface DocInfo {
 
 export const DOCS: Record<DocFeature, DocInfo> = {
   sources: {
-    path: '/sources/overview',
+    path: WORKBENCH_DOC_PATH,
     title: 'Sources',
     summary:
       'Connect external data like MCP servers, REST APIs, and local filesystems. Sources give your agent tools to access services like GitHub, Linear, or your Obsidian vault.',
   },
   'sources-api': {
-    path: '/sources/apis/overview',
+    path: WORKBENCH_DOC_PATH,
     title: 'APIs',
     summary:
       'Connect to any REST API with flexible authentication. Make HTTP requests to external services directly from your conversations.',
   },
   'sources-mcp': {
-    path: '/sources/mcp-servers/overview',
+    path: WORKBENCH_DOC_PATH,
     title: 'MCP Servers',
     summary:
       'Connect to Model Context Protocol servers for rich tool integrations. MCP servers provide structured access to services like GitHub, Linear, and Notion.',
   },
   'sources-local': {
-    path: '/sources/local-filesystems',
+    path: WORKBENCH_DOC_PATH,
     title: 'Local Folders',
     summary:
       'Give your agent access to local directories like Obsidian vaults, code repositories, or data folders on your machine.',
   },
   skills: {
-    path: '/skills/overview',
+    path: '/skills/',
     title: 'Skills',
     summary:
       'Reusable instruction sets that teach your agent specialized behaviors. Create a SKILL.md file and invoke it with @mention in your messages.',
   },
   statuses: {
-    path: '/statuses/overview',
+    path: WORKBENCH_DOC_PATH,
     title: 'Statuses',
     summary:
       'Organize conversations into workflow states like Todo, In Progress, and Done. Open statuses appear in your inbox; closed ones move to the archive.',
   },
   permissions: {
-    path: '/core-concepts/permissions',
+    path: '/collaboration/',
     title: 'Permissions',
     summary:
       'Control how much autonomy your agent has. Explore mode is read-only, Ask to Edit prompts before changes, and Execute mode runs without prompts.',
   },
   labels: {
-    path: '/labels/overview',
+    path: WORKBENCH_DOC_PATH,
     title: 'Labels',
     summary:
       'Tag sessions with colored labels for organization and filtering. Labels support hierarchical nesting, typed values, and auto-apply rules that extract data from messages using regex patterns.',
   },
   workspaces: {
-    path: '/go-further/workspaces',
+    path: '/create-project/',
     title: 'Workspaces',
     summary:
       'Separate configurations for different contexts like personal projects or work. Each workspace has its own sources, skills, statuses, and session history.',
   },
   themes: {
-    path: '/go-further/themes',
+    path: WORKBENCH_DOC_PATH,
     title: 'Themes',
     summary:
       'Customize the visual appearance with a 6-color system. Override specific colors in theme.json or install preset themes for complete visual styles.',
   },
   'app-settings': {
-    path: '/reference/config/config-file',
+    path: WORKBENCH_DOC_PATH,
     title: 'App Settings',
     summary:
       'Configure global app settings like your default model, authentication method, and workspace list. Settings are stored in ~/.craft-agent/config.json.',
   },
   preferences: {
-    path: '/reference/config/preferences',
+    path: WORKBENCH_DOC_PATH,
     title: 'Preferences',
     summary:
       'Personal preferences like your name, timezone, and language that help the agent personalize responses. Stored in ~/.craft-agent/preferences.json.',
   },
   automations: {
-    path: '/automations/overview',
+    path: WORKBENCH_DOC_PATH,
     title: 'Automations',
     summary:
       'Automate actions when events occur — run commands on schedules, react to label changes, or trigger prompts. Configured in automations.json.',
   },
   messaging: {
-    path: '/messaging/overview',
+    path: WORKBENCH_DOC_PATH,
     title: 'Messaging',
     summary:
       'Connect a session to a chat platform — Telegram, WhatsApp, or Lark / Feishu — and reach your agent from anywhere. Pair workspace supergroups, route automations to forum topics, and send rich replies natively.',

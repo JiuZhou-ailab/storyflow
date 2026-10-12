@@ -1,11 +1,12 @@
-// input: Host data directory, OS-held per-acquisition liveness endpoints, legacy process identities
-// output: Exclusive, generation-owned Host lease; explicit override only for unverifiable owners
+// input: Host data directory, OS-held liveness endpoints, legacy identities and OS boot time
+// output: Exclusive Host lease with pre-boot legacy recovery and fail-closed identity fallback
 // pos: Cross-process write ownership for both Electron and headless bootstrap
-import { lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync, type Stats } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { createConnection, createServer, type Server } from 'node:net'
 import { basename, dirname, join } from 'node:path'
+import { uptime } from 'node:os'
 import { CONFIG_DIR } from '@craft-agent/shared/config/paths'
 import type { PlatformServices } from '../runtime/platform'
 
@@ -25,8 +26,8 @@ export class ServerLockError extends Error {
 
 // Liveness proof. Each acquisition listens on its own endpoint before publishing its
 // marker; the OS removes a named pipe and refuses a Unix socket once the process is
-// gone, even if it crashed or its PID was reused. PID identity remains only for older
-// owners and for the POSIX cases a socket cannot decide (see requireExited).
+// gone, even if it crashed or its PID was reused. PID identity protects older owners,
+// unavailable endpoints and POSIX cases a socket cannot decide (see requireExited).
 function livenessEndpoint(root: string, acquisitionId: string): string | undefined {
   if (process.platform === 'win32') return `\\\\.\\pipe\\storyflow-host-${acquisitionId}`
   const path = join(root, `.host-${acquisitionId.replaceAll('-', '').slice(0, 16)}.sock`)
@@ -98,7 +99,15 @@ function parseOwner(raw: string): Owner | null {
   } catch { return null }
 }
 
-async function requireExited(owner: Owner | null, override: boolean): Promise<void> {
+// shortcut: remove this migration once v0.24.x users have mostly upgraded.
+function predatesBoot(owner: Owner | null, modifiedAt: number): boolean {
+  if (owner?.livenessEndpoint || (owner?.leaseVersion ?? 0) > 2) return false
+  // Five minutes covers timestamp precision and small clock corrections. Prefer
+  // the newer timestamp so a copied file or corrected acquisition clock fails closed.
+  return Math.max(owner?.startedAt ?? 0, modifiedAt) < Date.now() - uptime() * 1000 - 300_000
+}
+
+async function requireExited(owner: Owner | null, override: boolean, modifiedAt: number): Promise<void> {
   if (owner?.livenessEndpoint) {
     const liveness = await probeLiveness(owner.livenessEndpoint)
     if (liveness === 'alive') throw new ServerLockError('OWNER_ACTIVE', owner.pid)
@@ -119,12 +128,12 @@ async function requireExited(owner: Owner | null, override: boolean): Promise<vo
     }
     // ENOENT: the socket file may have been removed externally, which proves nothing.
   }
-  const unknown = (pid?: number) => { if (!override) throw new ServerLockError('OWNER_UNKNOWN', pid) }
+  const unknown = (pid?: number) => { if (!override && !predatesBoot(owner, modifiedAt)) throw new ServerLockError('OWNER_UNKNOWN', pid) }
   if (!owner) return unknown()
   try { process.kill(owner.pid, 0) }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ESRCH') return
-    return unknown(owner.pid)
+    // A denied PID probe must not bypass an available creation-identity proof.
   }
   const current = processIdentity(owner.pid)
   if (!current) return unknown(owner.pid)
@@ -132,8 +141,7 @@ async function requireExited(owner: Owner | null, override: boolean): Promise<vo
     if (owner.processIdentity !== current.identity) return
     throw new ServerLockError('OWNER_ACTIVE', owner.pid)
   }
-  // Legacy wall-clock timestamps cannot prove reuse: clock corrections can make
-  // a live owner appear older than the current boot or process creation time.
+  // No identity match: only a pre-boot legacy record can establish exit automatically.
   return unknown(owner.pid)
 }
 
@@ -166,8 +174,7 @@ function removeGeneration(lease: string, marker: string): void {
 
 const MARKER = /^owner-[a-f0-9-]+\.json$/
 
-// Unrecognized ownership state is never deleted: after user confirmation it is moved
-// aside in the data directory so it no longer blocks startup and remains inspectable.
+// Unrecognized state is preserved after pre-boot recovery or user confirmation.
 function setAside(path: string): void {
   renameSync(path, `${path}.unrecognized-${Date.now()}`)
 }
@@ -178,7 +185,8 @@ function setAside(path: string): void {
  * owners are appended to `exited` for socket cleanup by the caller.
  */
 async function reclaimLease(lease: string, compatibility: string, override: boolean, settle: boolean, exited: Owner[]): Promise<boolean> {
-  const entries = lstatSync(lease).isDirectory() ? readdirSync(lease) : null
+  const stat = lstatSync(lease)
+  const entries = stat.isDirectory() ? readdirSync(lease) : null
   if (entries?.length === 1 && MARKER.test(entries[0]!)) {
     const marker = entries[0]!
     let raw: string
@@ -188,7 +196,7 @@ async function reclaimLease(lease: string, compatibility: string, override: bool
     }
     const owner = parseOwner(raw)
     if (owner?.acquisitionId && marker === `owner-${owner.acquisitionId}.json`) {
-      await requireExited(owner, override)
+      await requireExited(owner, override, lstatSync(join(lease, marker)).mtimeMs)
       removeGeneration(lease, marker)
       exited.push(owner)
       return true
@@ -200,17 +208,24 @@ async function reclaimLease(lease: string, compatibility: string, override: bool
     // releasing v3 owner removes compatibility before rmdir, so wait it out first.
     const owner = readOwner(compatibility)
     if (!owner && !settle) return false
-    await requireExited(owner, override)
+    let modifiedAt = stat.mtimeMs
+    try { modifiedAt = Math.max(modifiedAt, lstatSync(compatibility).mtimeMs) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    await requireExited(owner, override, modifiedAt)
     try { rmdirSync(lease) } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
     return true
   }
-  if (!override) throw new ServerLockError('OWNER_UNKNOWN')
   // Any recognizable owner inside still gets its proof-of-life check.
+  let modifiedAt = stat.mtimeMs
   for (const entry of entries ?? []) {
-    if (MARKER.test(entry)) await requireExited(readOwner(join(lease, entry)), override)
+    const entryModifiedAt = lstatSync(join(lease, entry)).mtimeMs
+    modifiedAt = Math.max(modifiedAt, entryModifiedAt)
+    if (MARKER.test(entry)) await requireExited(readOwner(join(lease, entry)), override, entryModifiedAt)
   }
+  await requireExited(null, override, modifiedAt)
   setAside(lease)
   return true
 }
@@ -229,8 +244,18 @@ export async function acquireServerLock(logger: PlatformServices['logger'], opti
   const endpoint = livenessEndpoint(root, acquisitionId)
   let liveness: Server | undefined
   if (endpoint) {
-    try { liveness = await listenLiveness(endpoint) }
-    catch (error) { logger.warn(`[bootstrap] Host liveness endpoint unavailable (${(error as NodeJS.ErrnoException).code ?? 'unknown'}); peers fall back to process identity`) }
+    for (let attempt = 0; ; attempt++) {
+      try { liveness = await listenLiveness(endpoint); break }
+      catch (error) {
+        if (attempt === 2) {
+          logger.error(`[bootstrap] Host liveness listen failed after 3 attempts (${(error as NodeJS.ErrnoException).code ?? 'unknown'}); continuing with process identity; unverifiable owners remain protected`)
+          // Fresh v3 leases cannot be reclaimed by pre-boot migration; peers fail
+          // closed as UNKNOWN when process identity cannot establish ownership.
+          break
+        }
+        await sleep(50 * 2 ** attempt)
+      }
+    }
   }
   // Publishing a nonempty generation establishes fresh ownership even if our
   // birth query is unavailable. Peers must still prove an existing owner exited.
@@ -266,16 +291,19 @@ export async function acquireServerLock(logger: PlatformServices['logger'], opti
       await sleep(50 * 2 ** attempt)
     }
     published = true
-    let old: ReturnType<typeof lstatSync> | undefined
+    let old: Stats | undefined
     try { old = lstatSync(compatibility) } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
     if (old) {
-      const recognized = old.isFile() || (old.isDirectory() && readdirSync(compatibility).join() === 'owner.json')
-      const previous = recognized ? readOwner(old.isFile() ? compatibility : join(compatibility, 'owner.json')) : null
-      await requireExited(previous, override)
+      const entries = old.isDirectory() ? readdirSync(compatibility) : []
+      const recognized = old.isFile() || (old.isDirectory() && entries.join() === 'owner.json')
+      const previous = old.isFile() ? readOwner(compatibility)
+        : entries.includes('owner.json') ? readOwner(join(compatibility, 'owner.json')) : null
+      const modifiedAt = Math.max(old.mtimeMs, ...entries.map(entry => lstatSync(join(compatibility, entry)).mtimeMs))
+      await requireExited(previous, override, modifiedAt)
       if (previous) exited.push(previous)
-      if (!recognized) setAside(compatibility)
+      if (!recognized || !previous) setAside(compatibility)
       else if (old.isFile()) unlinkSync(compatibility)
       else { unlinkSync(join(compatibility, 'owner.json')); rmdirSync(compatibility) }
     }

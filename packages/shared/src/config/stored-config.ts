@@ -5,13 +5,13 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { StoredConfig } from './storage.ts';
-import { atomicWriteFileSync, safeJsonParse } from '../utils/files.ts';
+import { atomicWriteFileSync, classifyFsError, safeJsonParse } from '../utils/files.ts';
 import { expandPath } from '../utils/paths.ts';
 import { CONFIG_DIR } from './paths.ts';
 
 export class StoredConfigError extends Error {
-  constructor(public readonly code: 'CONFIG_INVALID' | 'CONFIG_ACCESS', options?: ErrorOptions) {
-    super(code === 'CONFIG_INVALID' ? 'Host configuration is damaged. The original has been preserved.' : 'Host configuration could not be read. Check access to the data directory.', options);
+  constructor(public readonly code: 'CONFIG_INVALID' | 'CONFIG_ACCESS' | 'CONFIG_BUSY', options?: ErrorOptions) {
+    super(code === 'CONFIG_BUSY' ? 'Host configuration is temporarily busy. Please retry.' : code === 'CONFIG_INVALID' ? 'Host configuration is damaged. The original has been preserved.' : 'Host configuration could not be read. Check access to the data directory.', options);
     this.name = 'StoredConfigError';
   }
 }
@@ -40,7 +40,7 @@ export function readStoredConfig(path: string): StoredConfig | null {
   try { raw = readFileSync(path, 'utf8'); }
   catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw new StoredConfigError('CONFIG_ACCESS', { cause });
+    throw new StoredConfigError(classifyFsError(cause).kind === 'transient' ? 'CONFIG_BUSY' : 'CONFIG_ACCESS', { cause });
   }
   return parseStoredConfig(raw);
 }

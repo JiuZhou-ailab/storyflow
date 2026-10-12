@@ -23,7 +23,7 @@ import { dirname, isAbsolute, join, relative } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
-import { atomicWriteFileSync, readJsonFileSync, retryTransientFsErrorSync } from '../utils/files.ts';
+import { atomicWriteFileSync, classifyFsError, readJsonFileSync, retryTransientFsErrorSync } from '../utils/files.ts';
 import { getDefaultStatusConfig, saveStatusConfig, ensureDefaultIconFiles } from '../statuses/storage.ts';
 import { getDefaultLabelConfig, saveLabelConfig } from '../labels/storage.ts';
 import { loadConfigDefaults } from '../config/storage.ts';
@@ -396,7 +396,6 @@ function migrateLegacyWorkspaceState(rootPath: string): void {
  */
 function readWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
   const configPath = getExistingWorkspaceConfigPath(rootPath);
-  if (!existsSync(configPath)) return null;
 
   try {
     resolveProjectOwnedPath(rootPath, configPath);
@@ -440,8 +439,9 @@ function readWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
     }
 
     return config;
-  } catch {
-    return null;
+  } catch (error) {
+    if (classifyFsError(error).kind === 'missing' || error instanceof SyntaxError || error instanceof UnsafeProjectPathError) return null;
+    throw error;
   }
 }
 
@@ -455,7 +455,7 @@ export function inspectWorkspaceStateConfig(rootPath: string): WorkspaceConfig |
   const legacyConfigPath = getLegacyWorkspaceConfigPath(rootPath);
   const canonicalConfigPath = getWorkspaceConfigPath(rootPath);
   if (canonicalConfigPath === legacyConfigPath) {
-    return existsSync(canonicalConfigPath) ? readWorkspaceConfig(rootPath) : null;
+    return readWorkspaceConfig(rootPath);
   }
 
   // No existsSync pre-check: it reports false for *any* stat error (e.g. EPERM on a
@@ -466,34 +466,28 @@ export function inspectWorkspaceStateConfig(rootPath: string): WorkspaceConfig |
     const config = readJsonFileSync<WorkspaceConfig>(canonicalConfigPath);
     return isWorkspaceConfigLike(config) ? config : null;
   } catch (error) {
-    // Definitive absence/invalidity stays silent. Anything else already survived
-    // readJsonFileSync's transient-lock retry and still returns null ("no readable
-    // state"): availability is recomputed on the next workspaces fetch (the renderer
-    // refetches on focus while a Project is unavailable), so it self-heals. Log the
-    // code + path only so a sticky "unavailable" Project is diagnosable.
-    const code = (error as NodeJS.ErrnoException).code;
-    const definitive = error instanceof SyntaxError
-      || error instanceof UnsafeProjectPathError
-      || code === 'ENOENT'
-      || code === 'ENOTDIR';
-    if (!definitive) {
-      console.warn(`[workspace-storage] Project state config unreadable (${code ?? (error as Error)?.name}): ${canonicalConfigPath}`);
-    }
-    return null;
+    if (classifyFsError(error).kind === 'missing' || error instanceof SyntaxError || error instanceof UnsafeProjectPathError) return null;
+    throw error;
   }
 }
 
 export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
   try {
     const statePath = getWorkspaceStatePath(rootPath);
-    if (existsSync(statePath)) resolveProjectOwnedPath(rootPath, statePath);
+    resolveProjectOwnedFilePath(rootPath, statePath);
     // Legacy migration is only eligible before canonical Project state exists.
     // A newly registered ordinary directory may legitimately contain root-level
     // config.json/sources/sessions that Storyflow must never claim or move.
-    if (!existsSync(getWorkspaceConfigPath(rootPath))) migrateLegacyWorkspaceState(rootPath);
+    try {
+      readJsonFileSync(getWorkspaceConfigPath(rootPath));
+    } catch (error) {
+      if (classifyFsError(error).kind === 'missing') migrateLegacyWorkspaceState(rootPath);
+      else if (!(error instanceof SyntaxError)) throw error;
+    }
     return readWorkspaceConfig(rootPath);
-  } catch {
-    return null;
+  } catch (error) {
+    if (classifyFsError(error).kind === 'missing' || error instanceof UnsafeProjectPathError) return null;
+    throw error;
   }
 }
 
