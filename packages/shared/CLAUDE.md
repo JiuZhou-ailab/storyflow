@@ -36,7 +36,7 @@ cd packages/shared && bun run tsc --noEmit
   - use hard aborts for true cancellation/teardown (`UserStop`, redirect fallback)
   - use handoff interrupts for pause points where control moves to the UI (`AuthRequest`, `PlanSubmitted`)
 - Remote workspace handoff summaries are injected as one-shot hidden context on the destination session's first turn.
-- WebUI source OAuth uses a stable relay redirect URI (`https://agents.craft.do/auth/callback`); the deployment-specific callback target is carried in a relay-owned outer `state` envelope and unwrapped by the router worker.
+- WebUI source OAuth redirects directly to the server’s `/api/oauth/callback` with the original flow state; token exchange uses the same redirect URI. Deployers must register this callback in their OAuth client.
 - Automations matching is unified through canonical matcher adapters in `src/automations/utils.ts` (`matcherMatches*`). Avoid direct primitive-only matcher checks in feature code so condition gating stays consistent across app and agent events.
 - Automation matchers may declare an optional `telegramTopic?: string` to route spawned sessions into a Telegram forum topic in the workspace's paired supergroup. The field is plumbed through `PendingPrompt` and `ExecutePromptAutomationInput`; runtime resolution and topic creation live in `@craft-agent/messaging-gateway`'s `TopicRegistry` and `MessagingGatewayRegistry.bindAutomationSession`. SessionManager picks up the resolution via the optional `setAutomationBinder` hook installed by the messaging-gateway bootstrap.
 - Pi is the sole owner of provider request bodies, history, tool schemas, and SSE parsing. Storyflow provider hooks may add explicit headers or record response status, but must not rewrite protocol payloads; see ADR 0016.
@@ -70,7 +70,7 @@ Keys use **flat dot-notation** with a category prefix:
 | `sessionMenu.*` | Session context menu actions | `sessionMenu.archive` |
 | `settings.*` | Settings pages — nested by page ID | `settings.ai.connections` |
 | `chat.*` | Chat input, session viewer, inline UI | `chat.attachFiles` |
-| `toast.*` | Toast/notification messages | `toast.failedToShare` |
+| `toast.*` | Toast/notification messages | `toast.linkCopied` |
 | `errors.*` | Error screens | `errors.sessionNotFound` |
 | `onboarding.*` | Onboarding flow — nested by step | `onboarding.welcome.title` |
 | `dialog.*` | Modal dialogs | `dialog.reset.title` |

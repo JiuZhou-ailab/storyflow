@@ -10,6 +10,5 @@ export * from './google-oauth.ts';
 export * from './slack-oauth.ts';
 export * from './microsoft-oauth.ts';
 export * from './oauth.ts';
-export * from './oauth-relay.ts';
 export * from './pkce.ts';
 export * from './state.ts';

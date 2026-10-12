@@ -30,7 +30,6 @@ import { SOURCE_CREDENTIAL_TYPES, type CredentialId, type StoredCredential } fro
 import { getCredentialManager } from '../credentials/index.ts';
 import { CraftOAuth, prepareMcpOAuth, exchangeMcpOAuth, type OAuthCallbacks } from '../auth/oauth.ts';
 import { type OAuthSessionContext } from '../auth/types.ts';
-import { OAUTH_RELAY_CALLBACK_URL, wrapPreparedOAuthFlowForRelay } from '../auth/oauth-relay.ts';
 import type { PreparedOAuthFlow, OAuthExchangeParams, OAuthExchangeResult, OAuthProvider } from '../auth/oauth-flow-types.ts';
 import {
   startGoogleOAuth,
@@ -572,14 +571,7 @@ export class SourceCredentialManager {
     source: LoadedSource,
     options: { callbackPort?: number; callbackUrl?: string },
   ): Promise<PreparedOAuthFlow> {
-    const { callbackPort } = options;
-    const relayReturnTo = options.callbackUrl;
-    // When callbackUrl is provided (WebUI), keep the provider-facing redirect_uri
-    // stable so providers like Google only need a single registered callback.
-    // The relay unwraps the real server callback target from the outer state.
-    const providerCallbackUrl = relayReturnTo
-      ? OAUTH_RELAY_CALLBACK_URL
-      : undefined;
+    const { callbackPort, callbackUrl } = options;
     const provider = this.detectProvider(source);
 
     let prepared: PreparedOAuthFlow;
@@ -608,7 +600,7 @@ export class SourceCredentialManager {
           service,
           scopes,
           callbackPort,
-          callbackUrl: providerCallbackUrl,
+          callbackUrl,
           clientId: api?.googleOAuthClientId,
           clientSecret: api?.googleOAuthClientSecret,
         });
@@ -628,7 +620,7 @@ export class SourceCredentialManager {
           service = inferSlackServiceFromUrl(api?.baseUrl) || 'full';
         }
 
-        prepared = prepareSlackOAuth({ service, userScopes, callbackPort, callbackUrl: providerCallbackUrl });
+        prepared = prepareSlackOAuth({ service, userScopes, callbackPort, callbackUrl });
         break;
       }
 
@@ -651,7 +643,7 @@ export class SourceCredentialManager {
           }
         }
 
-        prepared = prepareMicrosoftOAuth({ service, scopes, callbackPort, callbackUrl: providerCallbackUrl });
+        prepared = prepareMicrosoftOAuth({ service, scopes, callbackPort, callbackUrl });
         break;
       }
 
@@ -659,7 +651,7 @@ export class SourceCredentialManager {
         const oauthConfig = source.config.api?.oauth;
         if (oauthConfig) {
           // Static config: endpoints provided in config.json
-          prepared = prepareGenericOAuth({ oauthConfig, callbackPort, callbackUrl: providerCallbackUrl });
+          prepared = prepareGenericOAuth({ oauthConfig, callbackPort, callbackUrl });
         } else {
           // Auto-discovery: hit baseUrl, discover OAuth metadata via RFC 9728/8414,
           // dynamically register a client — same flow as MCP OAuth.
@@ -667,7 +659,7 @@ export class SourceCredentialManager {
           if (!baseUrl) {
             throw new Error(`Source '${source.config.slug}' missing api.baseUrl for OAuth discovery`);
           }
-          prepared = await prepareMcpOAuth(baseUrl, { callbackPort, callbackUrl: providerCallbackUrl });
+          prepared = await prepareMcpOAuth(baseUrl, { callbackPort, callbackUrl });
           // Relabel as generic (discovery used MCP internals but this is an API source)
           prepared = { ...prepared, provider: 'generic' };
         }
@@ -678,14 +670,12 @@ export class SourceCredentialManager {
         if (!source.config.mcp?.url) {
           throw new Error('MCP URL not configured');
         }
-        prepared = await prepareMcpOAuth(source.config.mcp.url, { callbackPort, callbackUrl: providerCallbackUrl });
+        prepared = await prepareMcpOAuth(source.config.mcp.url, { callbackPort, callbackUrl });
         break;
       }
     }
 
-    return relayReturnTo
-      ? wrapPreparedOAuthFlowForRelay(prepared, relayReturnTo)
-      : prepared;
+    return prepared;
   }
 
   /**

@@ -237,7 +237,7 @@ export function createWebApi(options: WebApiOptions): {
   // The Electron preload uses shell.openExternal() which isn't available in browsers.
   const oauthOverrides: Partial<ElectronAPI> = {
     // Generic source OAuth — server prepares the flow, we open the auth URL in a new tab.
-    // The OAuth provider redirects through the relay to our server's /api/oauth/callback,
+    // The OAuth provider redirects directly to our server's /api/oauth/callback,
     // which completes the token exchange and pushes status via WebSocket.
     performOAuth: async (args: {
       sourceSlug: string

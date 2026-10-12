@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe('WebUI /api/oauth/callback', () => {
-  it('completes OAuth when the relay forwards the inner flow state', async () => {
+  it('completes OAuth when the provider returns the original flow state', async () => {
     const webuiDir = createTestWebuiDir();
     const sourceDir = join(webuiDir, '.craft-agent', 'sources', 'gmail');
     mkdirSync(sourceDir, { recursive: true });
@@ -45,7 +45,7 @@ describe('WebUI /api/oauth/callback', () => {
       flowId: 'flow-1',
       state: 'inner-state-123',
       codeVerifier: 'verifier',
-      redirectUri: 'https://agents.craft.do/auth/callback',
+      redirectUri: 'https://storyflow.example/api/oauth/callback',
       source,
       clientId: 'test-client-id',
       clientSecret: 'test-client-secret',
@@ -69,6 +69,7 @@ describe('WebUI /api/oauth/callback', () => {
       logger,
     });
 
+    const exchangeAndStore = mock(async () => ({ success: true, email: 'test@example.com' }));
     handler.setOAuthCallbackDeps({
       flowStore: {
         getByState: (state: string) => flows.get(state) ?? null,
@@ -82,7 +83,7 @@ describe('WebUI /api/oauth/callback', () => {
         },
       },
       credManager: {
-        exchangeAndStore: async () => ({ success: true, email: 'gyula@craft.do' }),
+        exchangeAndStore,
       },
       sessionManager: {
         completeAuthRequest: async () => {},
@@ -98,6 +99,9 @@ describe('WebUI /api/oauth/callback', () => {
         new Request('http://127.0.0.1/api/oauth/callback?code=auth-code-123&state=inner-state-123'),
       );
 
+      expect(exchangeAndStore).toHaveBeenCalledWith(source, 'google', expect.objectContaining({
+        code: 'auth-code-123', redirectUri: 'https://storyflow.example/api/oauth/callback',
+      }));
       expect(response.status).toBe(200);
       expect(await response.text()).toContain('Authorization Successful');
       expect(flows.has('inner-state-123')).toBe(false);
@@ -106,7 +110,7 @@ describe('WebUI /api/oauth/callback', () => {
     }
   });
 
-  it('renders an OAuth failure page when the relay forwards provider errors', async () => {
+  it('renders an OAuth failure page when the provider returns an error', async () => {
     const flow = {
       state: 'inner-state-456',
     };
