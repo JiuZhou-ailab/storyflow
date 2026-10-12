@@ -1,5 +1,5 @@
 // input: User-authored product feedback and pasted screenshots
-// output: Dialog that submits feedback through the Electron main process
+// output: Dialog that validates screenshot type and byte budgets before submitting feedback
 // pos: App-shell feedback capture surface
 
 import * as React from "react"
@@ -63,18 +63,19 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const [title, setTitle] = React.useState("")
   const [message, setMessage] = React.useState("")
   const [email, setEmail] = React.useState("")
-  const [screenshots, setScreenshots] = React.useState<ScreenshotAttachment[]>([])
+  const [{ screenshots, error }, setAttachments] = React.useState<{ screenshots: ScreenshotAttachment[]; error: string | null }>({ screenshots: [], error: null })
+  const generation = React.useRef(0)
+  const setError = (error: string | null) => setAttachments(prev => ({ ...prev, error }))
   const [submitting, setSubmitting] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
   const [issueUrl, setIssueUrl] = React.useState<string | null>(null)
 
   const reset = React.useCallback(() => {
     setTitle("")
     setMessage("")
     setEmail("")
-    setScreenshots([])
+    generation.current += 1
+    setAttachments({ screenshots: [], error: null })
     setSubmitting(false)
-    setError(null)
     setIssueUrl(null)
   }, [])
 
@@ -85,14 +86,25 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
 
   const addScreenshots = async (files: File[]) => {
     if (files.length === 0) return
-    const availableSlots = Math.max(0, 5 - screenshots.length)
-    const selected = files.filter((file) => file.type.startsWith('image/')).slice(0, availableSlots)
-    const next = await Promise.all(selected.map((file, index) => readScreenshot(file, screenshots.length + index + 1)))
-    const valid = next.filter((item): item is ScreenshotAttachment => item !== null)
-    if (valid.length > 0) {
-      setScreenshots((prev) => [...prev, ...valid])
-      setError(null)
+    const validate = (items: { size: number }[]) => {
+      if (files.some(file => !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.type))) return t('feedback.screenshotTypeError')
+      if (items.some(file => file.size > 5 * 1024 * 1024)) return t('feedback.screenshotSizeError')
+      if (items.reduce((total, file) => total + file.size, 0) > 15 * 1024 * 1024) return t('feedback.screenshotsTotalSizeError')
+      if (items.length > 5) return t('feedback.screenshotsCountError')
+      return null
     }
+    const error = validate([...screenshots, ...files])
+    if (error) { setError(error); return }
+    const batchGeneration = generation.current
+    const next = await Promise.all(files.map((file, index) => readScreenshot(file, screenshots.length + index + 1)))
+    if (batchGeneration !== generation.current) return
+    const valid = next.filter((item): item is ScreenshotAttachment => item !== null)
+    // Recheck against the latest state: concurrent pastes can finish in either order.
+    setAttachments(prev => {
+      const screenshots = [...prev.screenshots, ...valid]
+      const error = validate(screenshots)
+      return error ? { ...prev, error } : { screenshots, error: null }
+    })
   }
 
   const handlePaste = (event: React.ClipboardEvent) => {
@@ -179,7 +191,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
                         type="button"
                         className="absolute right-1 top-1 rounded bg-background/90 p-0.5 opacity-0 shadow-xs transition-opacity group-hover:opacity-100"
                         aria-label={t("common.remove", "移除")}
-                        onClick={() => setScreenshots((prev) => prev.filter((_, i) => i !== index))}
+                        onClick={() => setAttachments(prev => ({ ...prev, screenshots: prev.screenshots.filter((_, i) => i !== index) }))}
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -205,7 +217,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
           </div>
 
           {error && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           )}

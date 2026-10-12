@@ -1,4 +1,4 @@
-// input: Settings RPC requests, session manager, and shared persistent configuration
+// input: Settings RPC requests, session manager, and shared persistent configuration and native attachment grants
 // output: Validated app, workspace, session, input, and preference setting handlers
 // pos: Server RPC boundary for persisted user settings
 
@@ -19,6 +19,7 @@ import {
   resolveHostGrantedSourceSlugs,
 } from '@craft-agent/shared/sources'
 import { grantWorkspaceWorkingDirectory } from '@craft-agent/shared/workspaces'
+import { requiresUserAttachmentAuthorization, resolveAuthorizedUserAttachment } from './user-attachment-access'
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.workspace.SETTINGS_GET,
@@ -274,7 +275,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // ============================================================
-  // Session Drafts (persisted input text)
+  // Session Drafts (persisted input text and authorized attachment refs)
   // ============================================================
 
   // Get draft for a session (text + attachment refs)
@@ -283,7 +284,19 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Set draft for a session (empty drafts are cleared)
-  server.handle(RPC_CHANNELS.drafts.SET, async (_ctx, sessionId: string, draft: import('@craft-agent/shared/config').SessionDraft) => {
+  server.handle(RPC_CHANNELS.drafts.SET, async (ctx, sessionId: string, draft: import('@craft-agent/shared/config').SessionDraft) => {
+    if (requiresUserAttachmentAuthorization(ctx, deps) && Array.isArray(draft.attachments)) {
+      const attachments = draft.attachments.flatMap(ref => {
+        if (!ref) return []
+        if (resolveAuthorizedUserAttachment(ref.path)) return [ref]
+        // Storage may discard malformed content; never leave an unauthorized disk path behind.
+        return ref.content ? [{ ...ref, path: `inline:${ref.name}` }] : []
+      })
+      if (attachments.length !== draft.attachments.length) {
+        deps.platform.logger.warn('[drafts:set] stripped unauthorized attachment paths')
+      }
+      draft = { ...draft, attachments }
+    }
     setSessionDraft(sessionId, draft)
   })
 

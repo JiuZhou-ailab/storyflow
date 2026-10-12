@@ -172,6 +172,12 @@ DevTools opens automatically (configured in `index.ts`). Remove `mainWindow.webC
 - **Component playground** - Development tool for testing UI components in isolation
 - **Type-safe navigation** - Unified routing system for tabs, actions, and deep links
 
+## Inline icons
+
+Renderer icon loading sanitizes inline SVG with native XML parsing and an element/attribute
+allowlist. Active content, external references, and inline CSS are removed; local fragment
+references and `currentColor` remain supported. Malformed SVG is rejected.
+
 ## Navigation System
 
 The app uses a type-safe routing system for all internal navigation and deep links.
@@ -237,3 +243,16 @@ See `CLAUDE.md` for complete route reference.
 | `shared/types.ts` | IPC channels, Message/Session/FileAttachment types |
 | `shared/routes.ts` | Type-safe route definitions and builders |
 | `shared/route-parser.ts` | Route string parsing utilities |
+
+### User attachments and feedback screenshots
+
+Local desktop attachment reads and draft writes share main-process grants from native
+file dialogs, preload `webUtils.getPathForFile`, and a one-time startup snapshot of existing
+disk draft references (migration trust). `main/file-dialog.ts` registers those grants;
+`preload/user-attachment.ts` exposes only native `File` resolution, never raw path grants.
+Remote workspaces and client/server modes retain legacy attachment behavior until grants
+can cross hosts safely (see `packages/server-core/README.md`).
+
+`FeedbackDialog.tsx` accepts PNG/JPEG/GIF/WebP screenshots, at most 5 MiB each and 15 MiB
+combined, with at most five attachments. It checks totals again after asynchronous reads
+and ignores reads completed after reset. The feedback worker independently validates uploads.

@@ -1,4 +1,4 @@
-// input: Entity icon metadata, workspace image IPC, and cached icon assets
+// input: Entity icon metadata, workspace image IPC, native DOMParser, and cached icon assets
 // output: Sanitized renderable source, skill, and status icons
 // pos: Single renderer icon resolution and cache boundary
 
@@ -651,19 +651,61 @@ async function loadIconFile(
   return null
 }
 
-/**
- * Sanitize SVG content for safe inline rendering via dangerouslySetInnerHTML.
- * Removes script tags, event handlers, and JavaScript URLs.
- * Also strips width/height attributes so SVG fills its container.
- */
-function sanitizeSvgForInline(svg: string): string {
-  return svg
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/on\w+="[^"]*"/gi, '')
-    .replace(/on\w+='[^']*'/gi, '')
-    .replace(/javascript:/gi, '')
-    .replace(/\s+width="[^"]*"/gi, '')
-    .replace(/\s+height="[^"]*"/gi, '')
+/** DOM allowlist for SVG inserted into the renderer via dangerouslySetInnerHTML. */
+export function sanitizeSvgForInline(svg: string): string {
+  const namespace = 'http://www.w3.org/2000/svg'
+  const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml')
+  const root = parsed.documentElement
+  if (parsed.doctype || parsed.querySelector('parsererror') || root.localName !== 'svg'
+    || (root.namespaceURI !== null && root.namespaceURI !== namespace)) return ''
+
+  const elements = new Set([
+    'svg', 'g', 'defs', 'symbol', 'use', 'path', 'rect', 'circle', 'ellipse',
+    'line', 'polyline', 'polygon', 'linearGradient', 'radialGradient', 'stop',
+    'clipPath', 'mask', 'title', 'desc', 'text', 'tspan',
+  ])
+  const attributes = new Set([
+    'id', 'viewBox', 'preserveAspectRatio', 'd', 'x', 'y', 'x1', 'y1', 'x2', 'y2',
+    'cx', 'cy', 'r', 'rx', 'ry', 'points', 'transform', 'fill', 'fill-rule',
+    'fill-opacity', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+    'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-opacity',
+    'opacity', 'clip-path', 'clip-rule', 'mask', 'gradientUnits', 'gradientTransform',
+    'spreadMethod', 'offset', 'stop-color', 'stop-opacity', 'fx', 'fy', 'fr',
+    'clipPathUnits', 'maskUnits', 'maskContentUnits', 'text-anchor', 'dominant-baseline',
+    'font-size', 'font-weight', 'dx', 'dy', 'role', 'aria-label', 'aria-hidden',
+  ])
+  const paint = new Set(['fill', 'stroke', 'stop-color'])
+  const localUrl = /^url\(#[\w:.-]+\)$/
+  const clean = parsed.implementation.createDocument(namespace, 'svg')
+  const pending: Array<[Element, Element]> = [[root, clean.documentElement]]
+  while (pending.length) {
+    const [source, target] = pending.pop()!
+    for (const attribute of Array.from(source.attributes)) {
+      const { name, localName, namespaceURI, value } = attribute
+      if (localName === 'href' && (!namespaceURI || namespaceURI === 'http://www.w3.org/1999/xlink')) {
+        if (/^#[\w:.-]+$/.test(value)) target.setAttribute('href', value)
+        continue
+      }
+      if (namespaceURI || !attributes.has(name) || /^on/i.test(name)) continue
+      // Only simple colors and local paint servers; CSS escapes and external URLs are excluded.
+      if (paint.has(name) && !/^(?:[a-zA-Z]+|#[\da-fA-F]{3,8}|(?:rgb|rgba|hsl|hsla)\([\d.,% +\-]+\))$/.test(value)
+        && !localUrl.test(value)) continue
+      if ((name === 'clip-path' || name === 'mask') && value !== 'none' && !localUrl.test(value)) continue
+      target.setAttribute(name, value)
+    }
+    for (const child of Array.from(source.childNodes)) {
+      if (child.nodeType === 1) {
+        const element = child as Element
+        if (!elements.has(element.localName) || (element.namespaceURI !== null && element.namespaceURI !== namespace)) continue
+        const copy = clean.createElementNS(namespace, element.localName)
+        target.appendChild(copy)
+        pending.push([element, copy])
+      } else if (child.nodeType === 3 || child.nodeType === 4) {
+        target.appendChild(clean.createTextNode(child.textContent ?? ''))
+      }
+    }
+  }
+  return new XMLSerializer().serializeToString(clean.documentElement)
 }
 
 /**

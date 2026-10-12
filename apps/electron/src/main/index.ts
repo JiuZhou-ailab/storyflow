@@ -1,8 +1,9 @@
 // input: Electron app lifecycle, user config, workspace state, and local server runtime
-// output: Desktop bootstrap, startup-only recovery, token-safe IPC bridges, windows, and cleanup
+// output: Desktop bootstrap, startup-only recovery, token-safe IPC bridges, trusted file grants, windows, and cleanup
 // pos: Coordinates the Electron shell around the shared Storyflow server core
 
 import { startShellEnvLoad, whenShellEnvReady } from './shell-env'
+import { registerUserFileDialogHandlers } from './file-dialog'
 
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, shell, screen } from 'electron'
 import { randomUUID } from 'crypto'
@@ -32,7 +33,7 @@ import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
 import {
-  getLlmConnection, loadStoredConfig, restoreStoredConfigBackup,
+  getLlmConnection, loadStoredConfig, restoreStoredConfigBackup, getServerConfig,
   getWorkspaces,
   getWorkspaceByNameOrId,
   isManagedLlmConnectionSlug,
@@ -547,13 +548,7 @@ app.whenReady().then(async () => {
       const result = await dialog.showMessageBox(win, spec)
       return { response: result.response }
     })
-    ipcMain.handle('__dialog:showOpenDialog', async (event, spec) => {
-      const win = BrowserWindow.fromWebContents(event.sender)
-        || BrowserWindow.getFocusedWindow()
-        || BrowserWindow.getAllWindows()[0]
-      const result = await dialog.showOpenDialog(win, spec)
-      return { canceled: result.canceled, filePaths: result.filePaths }
-    })
+    registerUserFileDialogHandlers(!isClientOnly && !getServerConfig().enabled)
 
     const clientAuthOverrides = readClientAuthOverrides(app.getPath('userData'))
     const clientAuthOverrideKeys = Object.keys(clientAuthOverrides.values)
@@ -742,7 +737,6 @@ app.whenReady().then(async () => {
       const resolveClientId = (wcId: number) => clientMap.get(wcId)
 
       // Read embedded server config (Server settings page)
-      const { getServerConfig } = await import('@craft-agent/shared/config')
       const embeddedServerConfig = getServerConfig()
       const serverModeEnabled = embeddedServerConfig.enabled && !isClientOnly
       const managedConnection = getLlmConnection(MANAGED_LLM_CONNECTION_SLUG)
