@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * input: JSONL control messages from the main process, Pi SDK session files, model credentials, and tool definitions.
- * output: JSONL agent events, tool requests, auth/test results, and Pi session state updates.
+ * output: JSONL agent events, tool requests, auth/test results, Pi session state, and debug-gated startup timings.
  * pos: Out-of-process Pi SDK adapter that isolates provider/runtime details from the Electron main process.
  *
  * Pi Agent Server
@@ -79,6 +79,11 @@ import {
   type PromptAttemptState,
 } from './prompt-retry.ts';
 
+import { perf } from '../../shared/src/utils/perf.ts';
+
+if (perf.isEnabled()) {
+  process.stderr.write(`[PERF] pi.modules.loaded: ${(process.uptime() * 1000).toFixed(2)}ms\n`);
+}
 installNetworkProxy();
 
 // ============================================================
@@ -147,6 +152,7 @@ async function ensureSession(): Promise<AgentSession> {
   const piModels = await modelRuntime.getModelsRuntime();
   piModelsRuntime = piModels;
 
+  const endSession = perf.start('pi.session.create');
   const created = await createPrimaryPiSession({
     config: initConfig,
     getConfig: () => initConfig!,
@@ -164,6 +170,7 @@ async function ensureSession(): Promise<AgentSession> {
     send,
     debug: debugLog,
   });
+  endSession();
   piSession = created.session;
   systemPromptOverride = created.systemPromptOverride;
   toolsChanged = false;

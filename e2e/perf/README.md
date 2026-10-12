@@ -92,3 +92,30 @@ PERF_RUNTIME=1 PERF_RUNTIME_CYCLES=3 PERF_RUNTIME_RESUMES=0 bun run e2e/perf/sea
 `PERF_CATALOG_TRACE=1` additionally records cold-path WebSocket RPC channel/ID, timestamps, UTF-8 byte counts and image paths (no general RPC payloads). `PERF_CATALOG_PROFILE=1` captures a CPU profile. These instrumented runs diagnose waits and request fan-out; use runs with both disabled for acceptance timings. The cold trace stops before fixture verification and warm sampling.
 
 Runtime samples record complete owned process trees. `PERF_RUNTIME_CYCLES` accepts 1–3 and repeats 50 newly-created Sessions in the same Electron host; `PERF_RUNTIME_RESUMES` accepts 0–40 (default 20). A cold resume must create exactly one Pi, retain prior native assistant context, and make exactly one model request. Its paired clean restart terminates that newly-created, harness-owned Pi and uses the same Session. Warm measurements are explicitly distinguished from cold resumes. [Results and remaining acceptance gaps](../../docs/plans/2026-09-08-runtime-catalog-performance.md).
+
+### Cold and warm local request latency
+
+Wrap timing runs in `/tmp/perf/bench-lock.sh` when sharing this machine. The runtime
+scenario also measures 20 warm sends, each immediately after its paired cold resume
+and clean restart. `runtimeLocalLatency` records send-dispatch → local SSE request
+receipt separately from the existing renderer send → first delta metric. These
+clocks have different start boundaries; do not subtract their percentiles.
+`runtimeActualSend` separately starts immediately before the renderer invokes
+`sendMessage`, reporting send → local request and send → first delta without the
+listener-registration/CDP gap. The original resume metrics and budgets remain.
+Request
+samples include the CDP dispatch round trip and the loopback HTTP request. Each
+measured send must cause exactly one model request. The existing residency, native
+history, and cold-resume budgets still apply.
+
+`coldReadyToRequest` starts at receipt of the Host's ready PERF line and ends when
+the local model receives the request (wall-clock alignment; includes log delivery).
+Startup diagnostics retain `pi.modules.loaded` (process uptime at entry-module
+execution, excluding the OS work before the runtime clock starts),
+`pi.subprocess.ready` (Host spawn → init acknowledgement), `pi.session.create`,
+`pi.resources.skills`, and `pi.resources.extensions` (the full runtime resource
+loader, including Extensions, prompts, themes and context). These spans overlap;
+resource reloads occur during Session construction and again before each prompt.
+Ready precedes Session/Extension construction, so it does not mean model-ready.
+The fixture isolates HOME and does not execute the user's installed Extensions or
+MCP servers. User-extension compatibility needs its own isolated regression.
