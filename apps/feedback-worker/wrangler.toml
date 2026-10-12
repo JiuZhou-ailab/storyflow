@@ -13,3 +13,12 @@ FEEDBACK_GITHUB_LABELS = "feedback,ai-triage"
 [[r2_buckets]]
 binding = "FEEDBACK_ASSETS"
 bucket_name = "storyflow-feedback-assets"
+
+# Account-local namespace reserved for Storyflow feedback (tool gateway uses 19001/19002).
+[[ratelimits]]
+name = "FEEDBACK_RATE_LIMITER"
+namespace_id = "19003"
+
+[ratelimits.simple]
+limit = 5
+period = 60

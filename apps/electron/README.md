@@ -172,6 +172,12 @@ DevTools opens automatically (configured in `index.ts`). Remove `mainWindow.webC
 - **Component playground** - Development tool for testing UI components in isolation
 - **Type-safe navigation** - Unified routing system for tabs, actions, and deep links
 
+## Inline icons
+
+Renderer icon loading sanitizes inline SVG with native XML parsing and an element/attribute
+allowlist. Active content, external references, and inline CSS are removed; local fragment
+references and `currentColor` remain supported. Malformed SVG is rejected.
+
 ## Navigation System
 
 The app uses a type-safe routing system for all internal navigation and deep links.
