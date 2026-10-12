@@ -1,12 +1,14 @@
-// input: Simulated electron-updater events and a local updater cache directory
-// output: Regression coverage for stale pending update cache handling
-// pos: Guards the main-process updater against treating old downloads as ready
+// input: Updater events, a local cache, and main-process document exit preparation
+// output: Regression coverage for stale downloads and retryable install cancellation
+// pos: Guards main-process download validation and native installer handoff
 
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { EventEmitter } from 'node:events'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
+import { createQuitCoordinator } from '../quit-coordinator'
 
 let homeDir = ''
 let isPackaged = true
@@ -86,7 +88,7 @@ const tempDirs: string[] = []
 afterEach(() => {
   isPackaged = true
   autoUpdater.checkForUpdates.mockClear()
-  autoUpdater.quitAndInstall.mockClear()
+  autoUpdater.quitAndInstall.mockReset()
 
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop()
@@ -159,5 +161,65 @@ describe('auto-update stale cache handling', () => {
 
     expect(order).toEqual(['prepare', 'install'])
     expect(isUpdating()).toBe(true)
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
+  })
+
+  it('broadcasts ready after document cancellation and allows installing again', async () => {
+    const updater = await import('../auto-update')
+    const broadcasts: string[] = []
+    updater.setAutoUpdateEventSink((_channel, _target, info) => {
+      broadcasts.push((info as { downloadState: string }).downloadState)
+    })
+    let approved = false
+    const prepare = mock(async () => {})
+    const index = readFileSync(new URL('../index.ts', import.meta.url), 'utf8')
+    const preparation = index.slice(index.indexOf('async function allowDocumentExit()'), index.indexOf('let checkingDocumentQuit'))
+    runInNewContext(new Bun.Transpiler({ loader: 'ts' }).transformSync(preparation), {
+      ...updater,
+      BrowserWindow: { getAllWindows: () => [{ webContents: {
+        isDestroyed: () => false,
+        isLoading: () => false,
+        executeJavaScript: async () => approved,
+      } }] },
+      quitCoordinator: createQuitCoordinator({ isUpdating: updater.isUpdating, prepare, exit() {} }),
+    })
+    autoUpdater.emit('update-downloaded', latestUpdateInfo)
+
+    await expect(updater.installUpdate()).rejects.toThrow('Update cancelled: unsaved document')
+
+    expect(updater.getUpdateInfo().downloadState).toBe('ready')
+    expect(broadcasts).toEqual(['ready', 'installing', 'ready'])
+    expect(updater.isUpdating()).toBe(false)
+    expect(prepare).not.toHaveBeenCalled()
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled()
+
+    approved = true
+    await updater.installUpdate()
+
+    expect(prepare).toHaveBeenCalledTimes(1)
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
+    expect(updater.isUpdating()).toBe(true)
+  })
+
+  it.each(['preparation', 'installer'])('keeps genuine %s failures in error state', async (failureAt) => {
+    const updater = await import('../auto-update')
+    // Identical text must not turn an ordinary failure into a user cancellation.
+    const failure = new Error('Update cancelled: unsaved document')
+    const broadcasts: string[] = []
+    updater.setAutoUpdateEventSink((_channel, _target, info) => {
+      broadcasts.push((info as { downloadState: string }).downloadState)
+    })
+    updater.setUpdateInstallPreparation(async () => {
+      if (failureAt === 'preparation') throw failure
+    })
+    autoUpdater.quitAndInstall.mockImplementation(() => { throw failure })
+    autoUpdater.emit('update-downloaded', latestUpdateInfo)
+
+    await expect(updater.installUpdate()).rejects.toBe(failure)
+
+    expect(updater.getUpdateInfo().downloadState).toBe('error')
+    expect(broadcasts).toEqual(['ready', 'installing', 'error'])
+    expect(updater.isUpdating()).toBe(false)
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(failureAt === 'installer' ? 1 : 0)
   })
 })

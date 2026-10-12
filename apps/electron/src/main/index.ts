@@ -68,6 +68,7 @@ import {
   isUpdating,
   setAutoUpdateEventSink,
   setUpdateInstallPreparation,
+  UpdateInstallCancelledError,
 } from './auto-update'
 import { CONFIG_DIR } from '@craft-agent/shared/config/paths'
 import { recordStartupFailure, showStartupRecovery } from './startup-recovery'
@@ -1364,6 +1365,7 @@ const quitCoordinator = createQuitCoordinator({
   },
   exit: (code) => {
     // A timed-out writer retains ownership until this process actually exits.
+    // app.exit still emits quit, preserving electron-updater's install-on-quit hook.
     app.exit(fatalStartup ? 1 : code)
   },
 })
@@ -1378,7 +1380,7 @@ async function allowDocumentExit(): Promise<boolean> {
   return true
 }
 setUpdateInstallPreparation(async () => {
-  if (!await allowDocumentExit()) throw new Error('Update cancelled: unsaved document')
+  if (!await allowDocumentExit()) throw new UpdateInstallCancelledError('Update cancelled: unsaved document')
   await quitCoordinator.prepare()
 })
 
