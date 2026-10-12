@@ -63,7 +63,7 @@ export function getAppPermissionsDir(): string {
  * Handles migrations when bundled version is newer:
  * - If file doesn't exist → copy from bundle
  * - If file exists but is invalid/corrupt → copy from bundle (auto-heal)
- * - If file exists and bundled is newer → merge new patterns, update version
+ * - If file exists and bundled is newer → merge new patterns, drop retired defaults, update version
  * - If file exists and same/older version → no-op (preserve user changes)
  *
  * User customizations in workspace/source permissions.json files
@@ -141,6 +141,10 @@ const RETIRED_DEFAULT_MCP_PATTERNS = new Set(['query']);
 /** Installed copies older than this still carry the retired bundled entries. */
 const RETIRED_DEFAULT_MCP_PATTERNS_SINCE = '2026-10-10';
 
+// Unanchored help flags could allow arbitrary execution before the flag.
+const RETIRED_DEFAULT_BASH_PATTERNS = new Set(['--help\\b', '-h\\b$']);
+const RETIRED_DEFAULT_BASH_PATTERNS_SINCE = '2026-10-12';
+
 /**
  * Merge new patterns from bundled config into existing installed config.
  * Preserves user customizations, adds new patterns, drops retired defaults,
@@ -178,9 +182,13 @@ function migratePermissions(
     h => !installedHintKeys.has(`${h.command}::${h.whenNotMatching || ''}::${h.reason}`)
   );
 
-  // Only strip entries the old bundle shipped; a user re-adding a retired verb
-  // after this upgrade keeps it on later migrations.
-  const dropRetired = (installed.version || '2000-01-01') < RETIRED_DEFAULT_MCP_PATTERNS_SINCE;
+  // Keep patterns users re-add after their respective retirement upgrades.
+  const keepPattern = (
+    pattern: string | { pattern: string },
+    retired: Set<string>,
+    since: string,
+  ): boolean => (installed.version || '2000-01-01') >= since
+    || !retired.has(getPatternString(pattern));
 
   debug('[Permissions] Adding', newBashPatterns.length, 'new bash patterns');
   debug('[Permissions] Adding', newMcpPatterns.length, 'new MCP patterns');
@@ -190,12 +198,14 @@ function migratePermissions(
     ...installed,
     version: bundled.version,
     allowedBashPatterns: [
-      ...(installed.allowedBashPatterns || []),
+      ...(installed.allowedBashPatterns || []).filter(
+        p => keepPattern(p, RETIRED_DEFAULT_BASH_PATTERNS, RETIRED_DEFAULT_BASH_PATTERNS_SINCE)
+      ),
       ...newBashPatterns,
     ],
     allowedMcpPatterns: [
       ...(installed.allowedMcpPatterns || []).filter(
-        p => !dropRetired || !RETIRED_DEFAULT_MCP_PATTERNS.has(getPatternString(p))
+        p => keepPattern(p, RETIRED_DEFAULT_MCP_PATTERNS, RETIRED_DEFAULT_MCP_PATTERNS_SINCE)
       ),
       ...newMcpPatterns,
     ],

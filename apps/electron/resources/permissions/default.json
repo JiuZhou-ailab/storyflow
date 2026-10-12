@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-10",
+  "version": "2026-10-12",
   "allowedBashPatterns": [
     {
       "pattern": "^ls\\b",
@@ -554,12 +554,8 @@
       "comment": "Display manual pages"
     },
     {
-      "pattern": "--help\\b",
-      "comment": "Display command help"
-    },
-    {
-      "pattern": "-h\\b$",
-      "comment": "Display command help (short flag)"
+      "pattern": "^[A-Za-z0-9][\\w.-]*\\s+--help$",
+      "comment": "Help: only a single command name followed by --help"
     },
     {
       "pattern": "^Get-ChildItem\\b",

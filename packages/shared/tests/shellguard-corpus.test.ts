@@ -10,6 +10,7 @@
  * See: https://github.com/jonchun/shellguard/blob/main/security_pipeline_test.go
  */
 import { describe, it, expect } from 'bun:test';
+import { validateBashCommand } from '../src/agent/bash-validator.ts';
 import {
   isReadOnlyBashCommandWithConfig,
   getBashRejectionReason,
@@ -895,6 +896,57 @@ describe('ShellGuard corpus: craft-agent CLI allowlist', () => {
   for (const cmd of shouldBlock) {
     it(`blocks: ${cmd}`, () => {
       expect(isReadOnlyBashCommandWithConfig(cmd, TEST_MODE_CONFIG)).toBe(false);
+    });
+  }
+});
+
+// Argument policies must hold even when a user supplies a permissive allowlist.
+describe('ShellGuard corpus: Explore argument semantics', () => {
+  const config = {
+    ...TEST_MODE_CONFIG,
+    readOnlyBashPatterns: [{ regex: /.*/, source: '.*' }],
+  };
+  const blocked: [string, string][] = [
+    ...['-fprint', '-fprint0', '-fprintf', '-fls'].map(flag => [`find . ${flag} /tmp/x`, flag] as [string, string]),
+    ...['-i', '-ni', '-Ei', '-i.bak', '--in-place=.bak', '-fprog', '--file=prog'].map(flag => [`sed -n ${flag} p f`, flag] as [string, string]),
+    ...['e id', 'w /tmp/x', 'W /tmp/x', 's/a/b/e', 's/a/b/w /tmp/x', '/x/{p; e id;}', 'p\ne id'].map(script => [`sed -n '${script}' f`, script] as [string, string]),
+    ...['awk', 'gawk', 'mawk', 'nawk'].flatMap(cmd => ['-fprog', '-cfprog', '--fi=prog', '--file=prog', '-iinplace', '--include=inplace', '-lext', '--load=ext', '-Eprog', '--exec=prog'].map(flag => [`${cmd} ${flag}`, flag] as [string, string])),
+    ...['{sys\\\ntem("id")}', '{pri\\\nnt > "f"}', '/"/ {print > "f"}', '/#/ {system("id")}', '{print "{" > "f"}', '{print $1 > "f"}', '{printf "%s", $1 >> "f"}', '{print $1 | cmd}', '{getline x}', '@include "prog"', '@load "ext"'].map(script => [`awk '${script}' f`, script] as [string, string]),
+    ...['-o /tmp/x', '-o/tmp/x', '-uo/tmp/x', '--output=/tmp/x', '--out=/tmp/x', '--compress-program=sh', '--compress-prog=sh'].map(flag => [`sort ${flag} f`, flag.split(' ')[0]!] as [string, string]),
+    ["gawk -e 'BEGIN {print \\' -e '> \"f\"}'", '-e'],
+    ['tree -o/tmp/x', '-o/tmp/x'], ['yq -Pi . f', '-Pi'], ['yq --inplace . f', '--inplace'],
+    ['rg --pre=sh x', '--pre=sh'], ['rg --pre sh x', '--pre'],
+    ...['-x', '-X', '--exec', '--exec-batch=sh'].map(flag => [`fd ${flag} sh`, flag] as [string, string]),
+    ...['-Pcmd', '--pager=cmd', '-Hcmd', '--html=cmd'].map(flag => [`man ${flag} ls`, flag] as [string, string]),
+    ...['-c core.fsmonitor=cmd', '-ccore.fsmonitor=cmd', '--config-env=core.fsmonitor=CMD', '--exec-path=/tmp'].map(flag => [`git -C dir ${flag} status`, flag.split(' ')[0]!] as [string, string]),
+    ...['log', 'diff', 'show'].map(cmd => [`git ${cmd} --output=/tmp/x`, '--output=/tmp/x'] as [string, string]),
+    ...['branch new', 'branch -D old', 'branch -m old new', 'branch -c old new', 'branch --set-upstream-to=main', 'branch --edit-description', 'tag new', 'tag -d old', 'tag -s new', 'remote add origin url', 'remote set-url origin url'].map(args => [`git -C dir ${args}`, args.split(' ').at(-1)!] as [string, string]),
+    ...['-X DELETE', '-iXDELETE', '-XPOST', '--method=PATCH', '-f k=v', '-Fk=v', '--field=k=v', '--raw-field=k=v', '--input=body'].map(flag => [`gh api repos/o/r ${flag}`, flag.split(' ')[0]!] as [string, string]),
+  ];
+  for (const [command, argument] of blocked) {
+    it(`rejects with argument and effect: ${command}`, () => {
+      expect(getBashRejectionReason(command, config)).not.toBeNull();
+      const reason = validateBashCommand(command, config.readOnlyBashPatterns).reason;
+      expect(reason?.type).toBe('dangerous_argument');
+      if (reason?.type !== 'dangerous_argument') return;
+      expect(reason.explanation).toContain(argument);
+      expect(reason.explanation).toMatch(/execut|writ|modif/i);
+    });
+  }
+  const allowed = [
+    'find . -name "*.ts"', "sed -n '/x/p' f", "sed -n '1,5p; $=; 2l; 9q' f",
+    "sed -n -e '/x/p' -e '2,4p' f", "sed -n 's/a/b/gp' f", "sed -n '/x/{p;=;}' f",
+    "awk '{print $1}' f", "awk '$1 > 5' f", "awk '{printf \"%s\", $1}' f",
+    "awk -F: '{print $1}' f", 'sort -u f', 'rg pattern',
+    'git log -p', 'git branch', 'git branch -a', 'git branch --list "feature/*"',
+    'git tag', 'git tag -l', 'git tag -n3', 'git tag --contains HEAD',
+    'git remote', 'git remote -v', 'git remote show origin', 'git remote get-url origin',
+    'git -C dir status', 'git --no-pager -C dir branch -a', 'gh api repos/o/r',
+    'gh api repos/o/r -X GET', 'gh api repos/o/r --method=GET', 'ls --help', 'git --help',
+  ];
+  for (const command of allowed) {
+    it(`allows read-only arguments: ${command}`, () => {
+      expect(getBashRejectionReason(command, config)).toBeNull();
     });
   }
 });

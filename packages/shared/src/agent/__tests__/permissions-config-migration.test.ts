@@ -85,9 +85,9 @@ describe('ensureDefaultPermissions migration', () => {
     rmSync(tempConfig, { recursive: true, force: true });
   });
 
-  async function migrateMcpPatterns(
-    installed: { version: string; mcp: string[] },
-    bundled: { version: string; mcp: string[] },
+  async function migratePatterns(
+    installed: { version?: string; mcp: string[]; bash?: Array<string | { pattern: string; comment?: string }> },
+    bundled: { version?: string; mcp: string[]; bash?: Array<string | { pattern: string; comment?: string }> },
   ) {
     const tempRoot = mkdtempSync(join(tmpdir(), 'permissions-bundle-'));
     const tempConfig = mkdtempSync(join(tmpdir(), 'permissions-config-'));
@@ -97,16 +97,16 @@ describe('ensureDefaultPermissions migration', () => {
       mkdirSync(bundledDir, { recursive: true });
       mkdirSync(installedDir, { recursive: true });
       writeFileSync(join(bundledDir, 'default.json'), JSON.stringify({
-        version: bundled.version, allowedBashPatterns: [], allowedMcpPatterns: bundled.mcp,
+        version: bundled.version, allowedBashPatterns: bundled.bash ?? [], allowedMcpPatterns: bundled.mcp,
       }));
       writeFileSync(join(installedDir, 'default.json'), JSON.stringify({
-        version: installed.version, allowedBashPatterns: [], allowedMcpPatterns: installed.mcp,
+        version: installed.version, allowedBashPatterns: installed.bash ?? [], allowedMcpPatterns: installed.mcp,
       }));
 
       // afterEach restores cwd and CRAFT_CONFIG_DIR.
       process.env.CRAFT_CONFIG_DIR = tempConfig;
       process.chdir(tempRoot);
-      const mod = await import(`../permissions-config.ts?case=retired-${installed.version}-${bundled.version}`);
+      const mod = await import(`../permissions-config.ts?case=retired-${encodeURIComponent(tempRoot)}`);
       mod.ensureDefaultPermissions();
       return JSON.parse(readFileSync(join(installedDir, 'default.json'), 'utf-8'));
     } finally {
@@ -117,7 +117,7 @@ describe('ensureDefaultPermissions migration', () => {
   }
 
   it('drops retired bundled MCP verbs from installed defaults on upgrade', async () => {
-    const merged = await migrateMcpPatterns(
+    const merged = await migratePatterns(
       { version: '2026-03-07', mcp: ['search', 'list', 'query', 'custom_verb'] },
       { version: '2026-10-10', mcp: ['search', 'list'] },
     );
@@ -126,10 +126,38 @@ describe('ensureDefaultPermissions migration', () => {
   });
 
   it('keeps a retired verb the user re-added after the retirement', async () => {
-    const merged = await migrateMcpPatterns(
+    const merged = await migratePatterns(
       { version: '2026-10-10', mcp: ['search', 'query'] },
       { version: '2026-12-01', mcp: ['search'] },
     );
     expect(merged.allowedMcpPatterns).toEqual(['search', 'query']);
   });
+
+  for (const version of [undefined, '2026-10-09', '2026-10-10', '2026-10-11']) {
+    it(`drops retired Bash help patterns from ${version ?? 'unversioned'} defaults`, async () => {
+      const custom = { pattern: '^custom-review\\b', comment: 'User customization' };
+      const anchoredHelp = '^[A-Za-z0-9][\\w.-]*\\s+--help$';
+      const merged = await migratePatterns(
+        { version, mcp: ['query'], bash: ['--help\\b', { pattern: '-h\\b$', comment: 'Short help' }, custom] },
+        { version: '2026-10-12', mcp: ['search'], bash: [anchoredHelp] },
+      );
+      expect(merged.version).toBe('2026-10-12');
+      expect(merged.allowedBashPatterns).toEqual([custom, anchoredHelp]);
+      expect(merged.allowedMcpPatterns).toEqual(
+        version && version >= '2026-10-10' ? ['query', 'search'] : ['search'],
+      );
+    });
+  }
+
+  for (const bundledVersion of ['2026-10-12', '2026-12-01']) {
+    it(`keeps user-readded Bash help patterns with bundle ${bundledVersion}`, async () => {
+      const bash = [{ pattern: '--help\\b', comment: 'User re-added' }, '-h\\b$', '^custom-review\\b'];
+      const merged = await migratePatterns(
+        { version: '2026-10-12', mcp: ['query'], bash },
+        { version: bundledVersion, mcp: [] },
+      );
+      expect(merged.allowedBashPatterns).toEqual(bash);
+      expect(merged.allowedMcpPatterns).toEqual(['query']);
+    });
+  }
 });

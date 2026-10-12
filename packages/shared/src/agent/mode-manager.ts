@@ -662,6 +662,7 @@ export type BashRejectionReason =
   | { type: 'parameter_expansion'; explanation: string }
   | { type: 'env_assignment'; explanation: string }
   | { type: 'unsafe_command'; command: string; explanation: string }
+  | { type: 'dangerous_argument'; command: string; explanation: string }
   | { type: 'compound_partial_fail'; failedCommands: string[]; passedCommands: string[] };
 
 
@@ -1110,6 +1111,9 @@ export function getBashRejectionReason(command: string, config: ToolCheckConfig)
           explanation: reason.explanation,
         };
 
+      case 'dangerous_argument':
+        return { type: 'dangerous_argument', command: reason.command, explanation: reason.explanation };
+
       case 'unsafe_command': {
         // Find relevant patterns to help the agent understand what format is expected
         const relevantPatterns = findRelevantPatterns(reason.command, config.readOnlyBashPatterns);
@@ -1450,6 +1454,9 @@ export function formatBashRejectionMessage(reason: BashRejectionReason, config: 
 
     case 'env_assignment':
       return `Bash command blocked: contains environment variable assignment. ${reason.explanation}. ${modeSwitchHint}`;
+
+    case 'dangerous_argument':
+      return `Bash command blocked: \`${reason.command}\` — ${reason.explanation}. ${modeSwitchHint}`;
 
     case 'unsafe_command': {
       const lines: string[] = [];

@@ -1,5 +1,8 @@
 /**
  * Bash Command Validator
+ * input: Bash source and compiled read-only allowlist patterns
+ * output: AST and argument-policy validation with structured rejection reasons
+ * pos: Shared Explore-mode shell execution boundary
  *
  * Uses bash-parser to create a proper AST and validate commands in Explore mode.
  * This enables compound commands like `git status && git log` to be allowed
@@ -54,6 +57,7 @@ export type BashValidationReason =
   | { type: 'parameter_expansion'; explanation: string }
   | { type: 'env_assignment'; explanation: string }
   | { type: 'unsafe_command'; command: string; explanation: string }
+  | { type: 'dangerous_argument'; command: string; explanation: string }
   | { type: 'parse_error'; error: string }
   | { type: 'compound_partial_fail'; failedCommands: string[]; passedCommands: string[] }
   | { type: 'background_execution'; explanation: string };
@@ -124,38 +128,171 @@ interface ScriptNode extends ASTNode {
 // Dangerous Argument Patterns
 // ============================================================
 
-/**
- * Command arguments that execute subcommands or perform writes.
- * These are program-level features (not shell constructs) that the AST parser
- * cannot detect — e.g., `find -exec` runs arbitrary commands despite `find`
- * being a read-only search tool.
- *
- * Checked BEFORE the regex allowlist pattern match in validateCommand().
- */
-const DANGEROUS_COMMAND_ARGS: Record<string, Set<string>> = {
-  find: new Set(['-exec', '-execdir', '-ok', '-okdir', '-delete']),
+// Checked after an allowlist match; patterns cannot override these rules. New allowlisted commands must be evaluated
+// for execution and write options here, including attached and clustered forms.
+const COMMAND_ARGUMENT_POLICIES: Record<string, { execute?: (string | RegExp)[]; write?: (string | RegExp)[] }> = {
+  find: { execute: [/^-(exec|execdir|ok|okdir)$/], write: [/^-(delete|fprint|fprint0|fprintf|fls)$/] },
+  sed: { execute: ['--file', /^-[^-]*f/], write: ['--in-place', /^-[^-]*i/] },
+  sort: { execute: ['--compress-program'], write: ['--output', /^-[^-]*o/] },
+  tree: { write: [/^-[^-]*o/] },
+  yq: { write: ['--inplace', /^-[^-]*i/] },
+  rg: { execute: ['--pre'] },
+  fd: { execute: ['--exec', '--exec-batch', /^-[^-]*[xX]/] },
+  man: { execute: ['--pager', '--html', /^-[^-]*[PH]/] },
+  git: { write: ['--output'] },
 };
-
 const AWK_COMMANDS = new Set(['awk', 'gawk', 'mawk', 'nawk']);
 
-function getDangerousAwkReason(commandParts: string[]): string | null {
-  // commandParts[0] is awk/gawk/mawk/nawk - inspect script/args only
-  const scriptText = commandParts.slice(1).join(' ');
+function argumentReason(argument: string, effect: 'execution' | 'writes'): string {
+  return `Argument "${argument}" allows ${effect === 'execution' ? 'arbitrary command execution' : 'writes or state modification'}`;
+}
 
-  if (/\bsystem\s*\(/i.test(scriptText)) {
-    return 'awk system() executes arbitrary shell commands';
+function getDangerousSedReason(args: string[]): string | null {
+  const scripts: string[] = [];
+  let positional = true;
+  let options = true;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (options && arg === '--') { options = false; continue; }
+    if (options && arg.startsWith('-')) {
+      if (/^--(?:expression)(?:=|$)/.test(arg)) {
+        scripts.push(arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : args[++i] ?? '');
+        positional = false;
+      } else if (/^-[nErzsul]*e/.test(arg)) {
+        const offset = arg.indexOf('e') + 1;
+        scripts.push(arg.slice(offset) || args[++i] || '');
+        positional = false;
+      } else if (!/^(-[nErzs]+|--quiet|--silent|--regexp-extended|--sandbox|--help|--version)$/.test(arg)) {
+        return argumentReason(arg, 'execution');
+      }
+    } else if (positional) {
+      scripts.push(arg);
+      positional = false;
+    }
   }
-
-  // command | getline executes an external command and reads from it
-  if (/\|\s*getline\b/i.test(scriptText)) {
-    return 'awk command pipes to getline execute external commands';
+  // Parse only a read-only subset; unknown syntax cannot establish absence of writes.
+  const address = String.raw`(?:\d+(?:~\d+)?|\$|/(?:\\.|[^/\\\n])*/[IM]?)`;
+  const prefix = new RegExp(`^\\s*(?:${address}(?:\\s*,\\s*(?:${address}|[+~]\\d+))?)?\\s*!?\\s*`);
+  for (const script of scripts) {
+    let rest = script;
+    let depth = 0;
+    while (rest.trim()) {
+      rest = rest.replace(/^[\s;]+/, '');
+      if (!rest) break;
+      rest = rest.replace(prefix, '');
+      const command = rest[0];
+      rest = rest.slice(1);
+      if (command === '{') { depth++; continue; }
+      if (command === '}' && depth > 0) { depth--; continue; }
+      if (command === 's') {
+        const delimiter = rest[0];
+        if (!delimiter || /[\w\s\\]/.test(delimiter)) return argumentReason(script, 'execution');
+        rest = rest.slice(1);
+        for (let field = 0; field < 2; field++) {
+          let end = 0;
+          for (; end < rest.length; end++) {
+            if (rest[end] === '\\') { end++; continue; }
+            if (rest[end] === delimiter) break;
+          }
+          if (end >= rest.length) return argumentReason(script, 'execution');
+          rest = rest.slice(end + 1);
+        }
+        rest = rest.replace(/^[gp0-9IM]*/, '');
+      } else if (command && 'pP=dDhHgGxlnNqQ'.includes(command)) {
+        if ('lqQ'.includes(command)) rest = rest.replace(/^\s*\d+/, '');
+      } else {
+        return argumentReason(script, command === 'w' || command === 'W' ? 'writes' : 'execution');
+      }
+      if (rest && !/^[\s;}]/.test(rest)) return argumentReason(script, rest[0] === 'w' ? 'writes' : 'execution');
+      // Spaces do not separate sed commands; accepting them could hide flags.
+      rest = rest.replace(/^[ \t]+/, '');
+      if (rest && !/^[;\n}]/.test(rest)) return argumentReason(script, rest[0] === 'w' ? 'writes' : 'execution');
+    }
+    if (depth) return argumentReason(script, 'execution');
   }
+  return null;
+}
 
-  // print ... | "cmd" (or with quoted command forms) executes external commands
-  if (/\bprint\b[^\n]*\|\s*["'`]/i.test(scriptText)) {
-    return 'awk print-to-command pipes execute external commands';
+function getDangerousAwkReason(args: string[]): string | null {
+  for (const arg of args) {
+    // Separate source fragments and abbreviated loader options cannot be inspected in isolation.
+    const option = arg.split('=')[0]!;
+    if (/^-[^-]*[efilEW]/.test(arg) || (option.startsWith('--') && option.length > 2
+      && ['--file', '--include', '--load', '--exec', '--source'].some(name => name.startsWith(option)))) {
+      return argumentReason(arg, 'execution');
+    }
+    // Fail closed on operators even in ambiguous strings, comments or regex literals.
+    const program = arg.replace(/\\\r?\n/g, '');
+    if (/\bsystem\s*\(|\bgetline\b|[|@]/.test(program)) return argumentReason(arg, 'execution');
+    if (/\b(?:print|printf)\b[\s\S]*>/.test(program)) return argumentReason(arg, 'writes');
   }
+  return null;
+}
 
+function getDangerousGitReason(args: string[]): string | null {
+  let index = 0;
+  while (index < args.length && args[index]!.startsWith('-')) {
+    const arg = args[index++]!;
+    if (/^(--(?:config-env|exec-path)(?:=|$)|-c)/.test(arg)) return argumentReason(arg, 'execution');
+    if (['-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix'].includes(arg)) index++;
+    else if (!/^(-C.+|--(?:git-dir|work-tree|namespace|super-prefix)=.+|--(?:no-pager|paginate|bare|no-optional-locks|literal-pathspecs|glob-pathspecs|noglob-pathspecs|icase-pathspecs|help|version)|-[pP])$/.test(arg)) {
+      return argumentReason(arg, 'execution');
+    }
+  }
+  const subcommand = args[index++];
+  const rest = args.slice(index);
+  if (subcommand === 'remote') {
+    const operation = rest.filter(arg => arg !== '-v' && arg !== '--verbose')[0];
+    if (operation && operation !== 'show' && operation !== 'get-url') return argumentReason(rest.join(' '), 'writes');
+  }
+  if (subcommand === 'branch' || subcommand === 'tag') {
+    let listing = false;
+    let operands = false;
+    let options = true;
+    for (let i = 0; i < rest.length; i++) {
+      const arg = rest[i]!;
+      if (options && arg === '--') { options = false; continue; }
+      if (!options || !arg.startsWith('-')) { operands = true; continue; }
+      if (/^(--list|-l)$/.test(arg) || (subcommand === 'tag' && /^-n\d*$/.test(arg))) { listing = true; continue; }
+      if (/^--(?:no-)?(?:contains|merged)(?:=|$)/.test(arg) || /^--points-at(?:=|$)/.test(arg)) {
+        listing = true;
+        if (!arg.includes('=') && rest[i + 1] && !rest[i + 1]!.startsWith('-')) i++;
+        continue;
+      }
+      if (/^--(?:sort|format)(?:=|$)/.test(arg)) { if (!arg.includes('=')) i++; continue; }
+      if (/^--(?:color|column)(?:=|$)/.test(arg) || /^--(?:no-column|ignore-case)$/.test(arg)) continue;
+      if (subcommand === 'branch' && /^(?:-[arv]+|--(?:all|remotes|verbose|show-current|no-abbrev)|--abbrev(?:=\d+)?)$/.test(arg)) continue;
+      return argumentReason(rest.join(' '), 'writes');
+    }
+    if (operands && !listing) return argumentReason(rest.join(' '), 'writes');
+  }
+  return null;
+}
+
+function getDangerousArgumentReason(command: string, args: string[]): string | null {
+  const policy = COMMAND_ARGUMENT_POLICIES[command];
+  for (const arg of args) {
+    const option = arg.split('=')[0]!;
+    // GNU-style long options may accept unambiguous prefixes, including --opt=value.
+    const matches = (rule: string | RegExp) => typeof rule === 'string'
+      ? option.startsWith('--') && option.length > 2 && rule.startsWith(option)
+      : rule.test(arg);
+    if (policy?.execute?.some(matches)) return argumentReason(arg, 'execution');
+    if (policy?.write?.some(matches)) return argumentReason(arg, 'writes');
+  }
+  if (command === 'sed') return getDangerousSedReason(args);
+  if (AWK_COMMANDS.has(command)) return getDangerousAwkReason(args);
+  if (command === 'git') return getDangerousGitReason(args);
+  if (command === 'gh' && args[0] === 'api') {
+    for (let i = 1; i < args.length; i++) {
+      const arg = args[i]!;
+      if (/^(--(?:field|raw-field|input)(?:=|$)|-[^-]*[fF])/.test(arg)) return argumentReason(arg, 'writes');
+      if (/^(--method(?:=|$)|-[^-]*X)/.test(arg)) {
+        const method = arg === '-X' || arg === '--method' ? args[++i] : arg.replace(/^(--method=|-[^-]*?X)/, '');
+        if (method !== 'GET') return argumentReason(`${arg} ${method ?? ''}`, 'writes');
+      }
+    }
+  }
   return null;
 }
 
@@ -362,70 +499,14 @@ function validateCommand(
     }
   }
 
-  // Check for command arguments that enable sub-command execution or writes.
-  // e.g., `find -exec touch file \;` — the `-exec` flag runs arbitrary commands.
-  // These are program-level features invisible to the shell AST.
-  const cmdName = node.name?.text;
-  if (cmdName) {
-    const normalizedCmd = cmdName.toLowerCase();
-
-    if (AWK_COMMANDS.has(normalizedCmd)) {
-      const awkReason = getDangerousAwkReason(commandParts);
-      if (awkReason) {
-        const subResult: SubcommandResult = {
-          command: commandParts.join(' '),
-          allowed: false,
-          reason: awkReason,
-        };
-        results.push(subResult);
-        return {
-          allowed: false,
-          reason: {
-            type: 'unsafe_command',
-            command: commandParts.join(' '),
-            explanation: awkReason,
-          },
-        };
-      }
-    }
-
-    if (DANGEROUS_COMMAND_ARGS[normalizedCmd]) {
-      const dangerousArgs = DANGEROUS_COMMAND_ARGS[normalizedCmd];
-      for (const part of commandParts) {
-        if (dangerousArgs.has(part)) {
-          const subResult: SubcommandResult = {
-            command: commandParts.join(' '),
-            allowed: false,
-            reason: `Argument "${part}" executes subcommands or performs writes`,
-          };
-          results.push(subResult);
-          return {
-            allowed: false,
-            reason: {
-              type: 'unsafe_command',
-              command: commandParts.join(' '),
-              explanation: `"${part}" allows arbitrary command execution or file modification within "${normalizedCmd}"`,
-            },
-          };
-        }
-      }
-    }
-  }
-
   // Build the command string and check against patterns
   const commandStr = commandParts.join(' ');
 
   // Check if command matches any safe pattern
   const matchesPattern = patterns.some(pattern => pattern.regex.test(commandStr));
 
-  const subResult: SubcommandResult = {
-    command: commandStr,
-    allowed: matchesPattern,
-    reason: matchesPattern ? undefined : 'Not in read-only allowlist',
-  };
-  results.push(subResult);
-
   if (!matchesPattern) {
+    results.push({ command: commandStr, allowed: false, reason: 'Not in read-only allowlist' });
     return {
       allowed: false,
       reason: {
@@ -436,6 +517,15 @@ function validateCommand(
     };
   }
 
+  // Allowlisted commands still must not execute programs or write through
+  // their own arguments; patterns are user-editable, these rules are not.
+  const argumentReason = getDangerousArgumentReason(node.name?.text.toLowerCase() ?? '', commandParts.slice(1));
+  if (argumentReason) {
+    results.push({ command: commandStr, allowed: false, reason: argumentReason });
+    return { allowed: false, reason: { type: 'dangerous_argument', command: commandStr, explanation: argumentReason } };
+  }
+
+  results.push({ command: commandStr, allowed: true });
   return { allowed: true };
 }
 

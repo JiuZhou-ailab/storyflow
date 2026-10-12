@@ -82,4 +82,15 @@ describe('mode-manager blocked command hints', () => {
     const rejection = getBashRejectionReason("sed -n '1,5p' file.txt", config);
     expect(rejection).toBeNull();
   });
+
+  it('names the executing argument when an allowlisted command is rejected', () => {
+    const config = buildConfig();
+
+    const rejection = getBashRejectionReason("sed -n 'e id' file.txt", config);
+    expect(rejection?.type).toBe('dangerous_argument');
+
+    const formatted = formatBashRejectionMessage(rejection!, config);
+    expect(formatted).toContain('"e id" allows arbitrary command execution');
+    expect(formatted).not.toContain('not in the read-only allowlist');
+  });
 });
