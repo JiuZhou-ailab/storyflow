@@ -1,5 +1,5 @@
-// input: RPC request context, workspace file paths, attachments, and filesystem search queries
-// output: Registered file read/write, attachment, directory, and search RPC handlers
+// input: RPC context, startup-migrated and native desktop file grants, and workspace file queries
+// output: File RPC handlers with local desktop attachment authorization
 // pos: Server-side filesystem boundary for renderer and remote clients
 
 import { readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promises'
@@ -32,6 +32,7 @@ import {
 } from './file-workspace-scope'
 import { registerTextDocumentHandlers } from './text-document'
 import { notifyConfigWatcherForWrite } from './workspace-file-effects'
+import { requiresUserAttachmentAuthorization, resolveAuthorizedUserAttachment } from './user-attachment-access'
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.file.READ_DOCUMENT,
@@ -691,25 +692,27 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
     }
   })
 
-  // Read a user-attached file (bypasses workspace-dir validation).
-  // Used only by renderer draft hydration: the path was written to drafts.json by a
-  // previous user-initiated OS-picker / Finder-drag attach, so the path implies consent.
-  // NOT exposed to agent code — no equivalent MCP tool. Kept separate from readFileAttachment
-  // on purpose to preserve the agent-facing read's narrow trust boundary.
+  // Local desktop reads require a startup-migrated or native file grant.
   const USER_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024
-  server.handle(RPC_CHANNELS.file.READ_USER_ATTACHMENT, async (_ctx, path: string) => {
+  server.handle(RPC_CHANNELS.file.READ_USER_ATTACHMENT, async (ctx, path: string) => {
     try {
-      if (!path || typeof path !== 'string' || !isAbsolute(path)) return null
-      const info = await stat(path).catch(() => null)
+      const safePath = requiresUserAttachmentAuthorization(ctx, deps)
+        ? resolveAuthorizedUserAttachment(path)
+        : typeof path === 'string' && isAbsolute(path) ? path : null
+      if (!safePath) {
+        deps.platform.logger.warn('[readUserAttachment] rejected untrusted path')
+        return null
+      }
+      const info = await stat(safePath).catch(() => null)
       if (!info || !info.isFile()) return null
       if (info.size > USER_ATTACHMENT_MAX_BYTES) {
         deps.platform.logger.warn(`[readUserAttachment] file exceeds ${USER_ATTACHMENT_MAX_BYTES} bytes, skipping: ${path}`)
         return null
       }
-      const attachment = readFileAttachment(path)
+      const attachment = readFileAttachment(safePath)
       if (!attachment) return null
       try {
-        const thumbBuffer = await deps.platform.imageProcessor.process(path, {
+        const thumbBuffer = await deps.platform.imageProcessor.process(safePath, {
           resize: { width: 200, height: 200 },
           format: 'png',
         })

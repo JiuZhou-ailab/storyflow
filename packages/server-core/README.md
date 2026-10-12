@@ -64,3 +64,20 @@ See [startup QA](../../docs/startup-recovery-qa.md) for the actual acceptance co
 ## Interactive text documents
 
 The file RPC includes versioned text reads/saves and recovery access. `text-document` validates Project or Session ownership, keeps attachments immutable, preserves supported UTF-8 BOM and newline conventions, rejects stale versions, and retains observed pre-save/submitted bytes before replacement. Save As creates a new target exclusively. Recovery records remain in internal workspace/session storage and are not conversation content. The serialization boundary covers these editor saves only; external filesystem writers do not participate. Legacy file writes retain their existing contract.
+
+## User attachment reads
+
+`handlers/rpc/user-attachment-access.ts` holds the local desktop process's canonical
+attachment grants, shared by `files.ts` reads and `settings.ts` draft writes. Main grants
+native picker results and isolated preload registers native `File` paths before returning
+them to the renderer. No RPC accepts grant requests. Startup imports existing disk draft
+references once as **migration trust**; inline content does not grant disk access. Runtime
+draft writes strip unauthorized disk references while preserving text and inline content,
+so writing a draft cannot grant a subsequent read. Grants last until process exit, even
+when a draft is deleted. Reads resolve symlinks and retain the 50 MiB cap.
+
+Remote workspaces, thin-client/headless hosts, and desktop configured server mode retain
+the legacy behavior: native selection and reading may run in different processes. Their
+attachment reads still accept arbitrary absolute paths; a cross-host file capability
+protocol is required before enforcing these local grants there. Normal workspace file
+handlers keep their existing workspace boundary.

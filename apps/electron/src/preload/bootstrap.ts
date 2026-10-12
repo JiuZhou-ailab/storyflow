@@ -1,5 +1,5 @@
 // input: Electron IPC, local/remote WebSocket transports, and the shared channel map
-// output: The isolated renderer API plus desktop lifecycle and token-safe capability bridges
+// output: The isolated renderer API plus trusted native file grants, desktop lifecycle, and token-safe capability bridges
 // pos: Security boundary between untrusted renderer code and privileged desktop services
 
 /**
@@ -21,7 +21,8 @@
  */
 
 import NodeWebSocket from 'ws'
-import { contextBridge, ipcRenderer, shell, webUtils } from 'electron'
+import { getUserAttachmentPath } from './user-attachment'
+import { contextBridge, ipcRenderer, shell } from 'electron'
 import { WsRpcClient, type TransportConnectionState } from '@craft-agent/server-core/transport'
 import { RoutedClient } from '../transport/routed-client'
 import { buildClientApi } from '../transport/build-api'
@@ -499,15 +500,7 @@ client.onConnectionStateChanged((state) => {
 // i18n: sync language changes to main process (for native menus/dialogs)
 ;(api as ElectronAPI).changeLanguage = (lang: string) => ipcRenderer.invoke('i18n:changeLanguage', lang)
 
-// webUtils.getPathForFile: returns the absolute OS path of a File object obtained
-// from <input type="file"> or OS drag-drop. Returns null for Files fabricated from
-// Blobs (clipboard paste, web-drag) — those are content-only, no filesystem path.
-;(api as ElectronAPI).getFilePath = (file: File) => {
-  try {
-    return webUtils.getPathForFile(file) || null
-  } catch {
-    return null
-  }
-}
+// Only native File provenance can register a disk path; renderer strings cannot grant access.
+;(api as ElectronAPI).getFilePath = getUserAttachmentPath
 
 contextBridge.exposeInMainWorld('electronAPI', api)
