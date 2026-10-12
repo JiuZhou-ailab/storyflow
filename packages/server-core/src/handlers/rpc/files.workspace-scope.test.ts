@@ -3,7 +3,7 @@
 // pos: Guards file CRUD/search from escaping the active workspace id
 
 import { existsSync, rmSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -478,6 +478,47 @@ describe('workspace-scoped file RPCs', () => {
       workspaceRootPath = ''
       trackedReaddirPath = ''
       trackedReaddirCalls = 0
+    }
+  })
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('fails instead of returning a partial tree when a child directory is unreadable', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'workspace-list-denied-'))
+    const denied = join(workspaceRootPath, 'denied')
+    const { listWorkspaceFiles, ctx } = createFileHarness()
+    try {
+      await mkdir(denied)
+      await chmod(denied, 0)
+      await expect(listWorkspaceFiles(ctx, workspaceRootPath, [])).rejects.toThrow('EACCES')
+    } finally {
+      await chmod(denied, 0o700)
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
+    }
+  })
+
+  it('lists a broad tree in natural order and reads a fresh snapshot after mutations', async () => {
+    workspaceRootPath = await mkdtemp(join(tmpdir(), 'workspace-list-broad-'))
+    const { listWorkspaceFiles, ctx } = createFileHarness()
+    try {
+      await Promise.all(Array.from({ length: 12 }, async (_, index) => {
+        const directory = join(workspaceRootPath, `chapter-${index + 1}`)
+        await mkdir(directory)
+        await writeFile(join(directory, 'text.md'), 'original')
+      }))
+      await mkdir(join(workspaceRootPath, '.hidden'))
+      await writeFile(join(workspaceRootPath, '.hidden', 'private.md'), 'hidden')
+      const first = await listWorkspaceFiles(ctx, workspaceRootPath, []) as Array<{ relativePath: string }>
+      expect(first.map(entry => entry.relativePath)).toEqual(Array.from({ length: 12 }, (_, index) => [
+        `chapter-${index + 1}`, `chapter-${index + 1}/text.md`,
+      ]).flat())
+      rmSync(join(workspaceRootPath, 'chapter-1', 'text.md'))
+      await writeFile(join(workspaceRootPath, 'chapter-12', 'new.md'), 'new')
+      const refreshed = await listWorkspaceFiles(ctx, workspaceRootPath, []) as Array<{ relativePath: string }>
+      expect(refreshed.some(entry => entry.relativePath === 'chapter-1/text.md')).toBe(false)
+      expect(refreshed.some(entry => entry.relativePath === 'chapter-12/new.md')).toBe(true)
+    } finally {
+      rmSync(workspaceRootPath, { recursive: true, force: true })
+      workspaceRootPath = ''
     }
   })
 

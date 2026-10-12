@@ -3611,11 +3611,19 @@ function AppShellContent({
         tooltip={label}
         aria-label={label}
         aria-expanded={rightWorkspaceVisible}
-        onClick={() => { void requestDocumentLeave().then(ok => { if (ok) setRightWorkspaceVisible(visible => !visible) }) }}
+        onClick={() => { void requestDocumentLeave().then(ok => {
+          if (!ok) return
+          // Start IO before the visibility commit; the loader already publishes failures.
+          if (!rightWorkspaceVisible && activeWritingWorkspaceRoot
+            && !novelWorkspaceCatalogCacheRef.current.has(activeWritingWorkspaceRoot)) {
+            void loadNovelWorkspaceFiles(activeWritingWorkspaceRoot, undefined, true).catch(() => {})
+          }
+          setRightWorkspaceVisible(visible => !visible)
+        }) }}
         className="h-[26px] w-[26px] rounded-lg"
       />
     )
-  }, [isAutoCompact, isNovelWorkspaceNavigatorActive, novelWorkspaceRoot, rightWorkspaceVisible])
+  }, [activeWritingWorkspaceRoot, isAutoCompact, isNovelWorkspaceNavigatorActive, loadNovelWorkspaceFiles, novelWorkspaceRoot, rightWorkspaceVisible])
   const directoryToggleLabel = workspaceDirectoryVisible
     ? t('writing.directory.collapse', '收起目录')
     : t('writing.directory.expand', '展开目录')

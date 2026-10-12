@@ -1,5 +1,5 @@
 // input: Expanded directory state and the real project-sidebar component
-// output: Regression coverage for the directory module without duplicate header controls
+// output: Regression coverage for an immediately available directory tree without duplicate header controls
 // pos: Keeps directory visibility control on the document surface
 
 import * as React from 'react'
@@ -43,7 +43,7 @@ const treeProps: WorkspaceFileTreeProps = {
 }
 
 describe('WorkspaceProjectSidebar', () => {
-  it('does not duplicate the document-owned directory toggle', () => {
+  it('renders the ready tree without a module fallback or duplicate directory toggle', () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>
         <WorkspaceProjectSidebar
@@ -58,9 +58,11 @@ describe('WorkspaceProjectSidebar', () => {
       </TooltipProvider>
     )
 
-    expect(html).not.toContain('aria-expanded')
+    expect(html).not.toContain('aria-label="收起目录"')
     expect(html).not.toContain('lucide-folder-open')
     expect(html).not.toContain('h-[42px]')
     expect(html).toContain('flex min-h-full flex-col font-sans')
+    expect(html).toContain('role="tree"')
+    expect(html).not.toContain('正在加载项目目录...')
   })
 })

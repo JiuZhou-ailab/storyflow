@@ -1,17 +1,13 @@
 // input: Controlled project-tree props, sidebar focus, and empty-state copy
-// output: Expanded project directory rail with a lazy file tree
+// output: Expanded project directory rail with its ready-to-render file tree
 // pos: Project directory surface beside the writing document
 
 import * as React from 'react'
-import type {
-  WorkspaceFileTreeHandle,
-  WorkspaceFileTreeProps,
+import {
+  WorkspaceFileTree,
+  type WorkspaceFileTreeHandle,
+  type WorkspaceFileTreeProps,
 } from './WorkspaceFileTree'
-
-const WorkspaceFileTree = React.lazy(async () => {
-  const module = await import('./WorkspaceFileTree')
-  return { default: module.WorkspaceFileTree }
-})
 
 interface WorkspaceProjectSidebarProps {
   sidebarRef: React.RefObject<HTMLDivElement>
