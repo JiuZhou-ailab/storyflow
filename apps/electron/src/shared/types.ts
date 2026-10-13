@@ -1,4 +1,4 @@
-import type { TextDocumentTarget, TextDocumentSave, TextDocumentSnapshot, TextDocumentSaveResult, TextDocumentRecovery, TextDocumentRecoveryContent } from '@craft-agent/shared/protocol'
+import type { TextDocumentTarget, TextDocumentSave, TextDocumentSnapshot, TextDocumentSaveResult } from '@craft-agent/shared/protocol'
 // input: Shared package DTOs and renderer-facing Electron API contracts
 // output: Re-exported GUI types plus typed preload API and Skills Market surface
 // pos: Type boundary between Electron renderer, preload, and shared protocol packages
@@ -449,8 +449,6 @@ export interface ElectronAPI {
   writeFile(path: string, content: string): Promise<void>
   readTextDocument(target: TextDocumentTarget): Promise<TextDocumentSnapshot>
   saveTextDocument(request: TextDocumentSave): Promise<TextDocumentSaveResult>
-  listTextDocumentRecovery(target: TextDocumentTarget): Promise<TextDocumentRecovery[]>
-  readTextDocumentRecovery(target: TextDocumentTarget & { id: string }): Promise<TextDocumentRecoveryContent>
   deleteFile(path: string): Promise<void>
   moveWorkspaceEntry(input: MoveWorkspaceEntryInput): Promise<MoveWorkspaceEntryResult>
   deleteWorkspaceEntry(input: DeleteWorkspaceEntryInput): Promise<DeleteWorkspaceEntryResult>

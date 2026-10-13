@@ -38,8 +38,6 @@ import { requiresUserAttachmentAuthorization, resolveAuthorizedUserAttachment } 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.file.READ_DOCUMENT,
   RPC_CHANNELS.file.SAVE_DOCUMENT,
-  RPC_CHANNELS.file.LIST_DOCUMENT_RECOVERY,
-  RPC_CHANNELS.file.READ_DOCUMENT_RECOVERY,
   RPC_CHANNELS.file.READ,
   RPC_CHANNELS.file.WRITE,
   RPC_CHANNELS.file.DELETE,

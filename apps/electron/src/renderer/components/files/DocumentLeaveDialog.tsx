@@ -21,7 +21,7 @@ export function DocumentLeaveDialog() {
       <div className="flex justify-end gap-4">
         <button type="button" onClick={() => answerLeavePrompt('cancel')}>{t('common.cancel')}</button>
         <button type="button" onClick={() => answerLeavePrompt('discard')}>{t('textDocument.discard')}</button>
-        <button type="button" onClick={() => answerLeavePrompt('save')}>{t('textDocument.save')}</button>
+        <button type="button" onClick={() => answerLeavePrompt('save')}>{t(model?.state.conflict ? 'textDocument.keepDraft' : 'textDocument.save')}</button>
       </div>
     </DialogContent>
   </Dialog>

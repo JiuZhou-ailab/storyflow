@@ -248,7 +248,7 @@ function ConversationFilesContent({ sessionId, requestedFile, onClose, compact }
             <Button variant="ghost" size="sm" onClick={() => setRetry(value => value + 1)}>{t('conversationFiles.retry')}</Button>
           </div> : loading ? <div role="status" className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">{t('conversationFiles.loading')}</div>
             : selectedPath && !selected ? <div role="status" className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">{t('conversationFiles.missing')}</div>
-            : selected ? <FileViewer onOpenSavedFile={activate} workspaceId={FREE_CONVERSATION_WORKSPACE_ID} sessionId={sessionId} refresh={`${selected.modifiedAt}:${selected.size}:${revision}`} path={selected.path}
+            : selected ? <FileViewer workspaceId={FREE_CONVERSATION_WORKSPACE_ID} sessionId={sessionId} refresh={`${selected.modifiedAt}:${selected.size}:${revision}`} path={selected.path}
                 externalPreviewHint={selected.readOnly ? t('conversationFiles.unsupported') : undefined} />
             : <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">{t(empty ? 'conversationFiles.empty' : 'conversationFiles.select')}</div>}
         </div>

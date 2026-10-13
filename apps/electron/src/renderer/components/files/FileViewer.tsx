@@ -18,7 +18,6 @@ const FilePreviewRenderer = lazy(async () => {
 })
 
 interface FileViewerProps {
-  onOpenSavedFile?: (path: string) => void
   workspaceId?: string
   sessionId?: string
   refresh?: string | number
@@ -33,7 +32,7 @@ function getFileName(path: string): string {
   return path.replace(/\\/g, '/').split('/').pop() ?? path
 }
 
-export function FileViewer({ onOpenSavedFile, workspaceId, sessionId, refresh, path, searchTarget, onOpenExternal, onClose, externalPreviewHint }: FileViewerProps) {
+export function FileViewer({ workspaceId, sessionId, refresh, path, searchTarget, onOpenExternal, onClose, externalPreviewHint }: FileViewerProps) {
   const { t } = useTranslation()
   const { isDark } = useTheme()
   const [content, setContent] = useState<string>('')
@@ -154,7 +153,7 @@ export function FileViewer({ onOpenSavedFile, workspaceId, sessionId, refresh, p
 
       {/* File content */}
       {workspaceId && ['code', 'text', 'markdown', 'json'].includes(previewKind ?? '') ? (
-        <TextDocument onOpenSavedFile={onOpenSavedFile ?? (() => {})} key={JSON.stringify([workspaceId, sessionId, path])} path={path} workspaceId={workspaceId} sessionId={sessionId} refresh={refresh} searchTarget={searchTarget} />
+        <TextDocument key={JSON.stringify([workspaceId, sessionId, path])} path={path} workspaceId={workspaceId} sessionId={sessionId} refresh={refresh} searchTarget={searchTarget} />
       ) : isLoading ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
           <Spinner className="text-lg" />

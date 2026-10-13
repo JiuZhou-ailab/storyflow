@@ -15,6 +15,7 @@ import {
   type DocumentModel,
   type DocumentState,
 } from '@/components/files/text-document-state'
+import { useDocumentAutosave } from '@/components/files/TextDocument'
 
 export type WritingDocumentView = 'writing' | 'source'
 
@@ -29,7 +30,6 @@ export function isTextDocumentPath(path: string): boolean {
 }
 
 const EDITOR_FLUSH_DELAY_MS = 200
-const AUTOSAVE_DELAY_MS = 800
 
 export interface UseWritingDocumentOptions {
   workspaceId: string | null
@@ -160,12 +160,7 @@ export function useWritingDocument({
     })
   }, [flush, model, refresh])
 
-  React.useEffect(() => {
-    if (!state || state.loading || state.readOnly || state.saving || state.conflict) return
-    if (state.content === state.baseline) return
-    const timeoutId = window.setTimeout(() => { void save() }, AUTOSAVE_DELAY_MS)
-    return () => window.clearTimeout(timeoutId)
-  }, [save, state])
+  useDocumentAutosave(state, save)
 
   return { model: model as DocumentModel | null, state, flush, isDirty, save, reload, handleEditorChanged }
 }

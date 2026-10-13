@@ -3792,10 +3792,6 @@ function AppShellContent({
                   <TextDocumentBar
                     model={selectedNovelDocumentModel}
                     state={selectedNovelDocumentState}
-                    onOpenSavedFile={path => {
-                      setNovelDocumentTabs(current => openNovelDocumentTab(current, novelWorkspaceRoot, path, 'append'))
-                      setRightWorkspaceVisible(true)
-                    }}
                     leading={(
                       <p className="min-w-0 truncate font-mono text-muted-foreground" title={selectedNovelFile.path}>
                         {selectedNovelFile.relativePath}

@@ -1,5 +1,5 @@
 // input: Built Electron app and an isolated conversation with real text files
-// output: Raw text, line numbers, search-free opening, multi-file navigation and writing/source view acceptance
+// output: Raw text, autosave, conflict choice, multi-file navigation and writing/source view acceptance
 // pos: Offline Electron acceptance for the file workspace; no provider calls
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -49,11 +49,27 @@ try {
   await waitFor(live, `document.querySelector('[data-testid="text-source"]')?.value === ${JSON.stringify(original)}`)
   await evalOn(live, `(() => { const e=document.querySelector('[data-testid="text-source"]'); e.focus(); e.setSelectionRange(0,e.value.length) })()`)
   await live.cdp.send('Input.insertText', { text: '# 用户修改\n' }, live.sid)
-  await waitFor(live, `document.querySelector('[data-testid="text-document"] [role="status"]')?.textContent === '未保存修改'`)
-  const saveButton = `Array.from(document.querySelectorAll('[data-testid="text-document"] button')).find(e=>e.textContent==='保存')`
-  await evalOn(live, `${saveButton}.click()`)
-  await waitFor(live, `document.querySelector('[data-testid="text-document"] [role="status"]')?.textContent === '已保存'`)
-  assert.equal(readFileSync(path,'utf8'), '# 用户修改\n')
+  const status = `document.querySelector('[data-testid="text-document"] [role="status"]')?.textContent`
+  const waitDisk = async (file: string, content: string) => {
+    const deadline = Date.now() + 5000
+    while (readFileSync(file, 'utf8') !== content) {
+      if (Date.now() > deadline) throw new Error(`autosave did not reach ${file}: ${readFileSync(file, 'utf8')}`)
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+  }
+  const selectSource = `(() => { const e=document.querySelector('[data-testid="text-source"]'); e.focus(); e.setSelectionRange(0,e.value.length) })()`
+  const alertText = `document.querySelector('[data-testid="text-document"] [role="alert"]')?.textContent`
+  const clickBar = (label: string) => evalOn(live, `Array.from(document.querySelectorAll('[data-testid="text-document"] button')).find(e=>e.textContent===${JSON.stringify(label)}).click()`)
+  // The external write lands inside the autosave delay, so the draft always meets a newer disk version.
+  const typeAgainstExternalWrite = async (file: string, draft: string, external: string) => {
+    await evalOn(live, selectSource)
+    await live.cdp.send('Input.insertText', { text: draft }, live.sid)
+    writeFileSync(file, external)
+    await waitFor(live, `${alertText}?.includes('磁盘内容已变化')`)
+    assert.equal(readFileSync(file, 'utf8'), external)
+  }
+  await waitDisk(path, '# 用户修改\n')
+  await waitFor(live, `${status} === '已保存'`)
   // Delay real RPC responses at the transport boundary to control race ordering.
   const contexts: Array<{id:number;name:string}> = []
   live.cdp.on('Runtime.executionContextCreated', event => contexts.push(event.context))
@@ -94,58 +110,38 @@ try {
   await waitReply()
   await evalOn(live, `(() => {const e=document.querySelector('[data-testid="text-source"]');e.focus();e.setSelectionRange(0,e.value.length)})()`)
   await live.cdp.send('Input.insertText',{text:'保存后的新版本'},live.sid)
-  await evalOn(live, `${saveButton}.click()`)
-  await waitFor(live, `document.querySelector('[data-testid="text-document"] [role="status"]')?.textContent === '已保存'`)
+  await waitFor(live, `${status} === '已保存'`)
   await releaseReply()
   await new Promise(r=>setTimeout(r,100))
   assert.equal(await evalOn(live, `document.querySelector('[data-testid="text-source"]').value`),'保存后的新版本')
   console.log('PASS: late read cannot roll back a newer saved version')
 
-  await evalOn(live, `(() => { const e=document.querySelector('[data-testid="text-source"]'); e.focus(); e.setSelectionRange(0,e.value.length) })()`)
-  await live.cdp.send('Input.insertText', { text: '未保存的草稿' }, live.sid)
+  await typeAgainstExternalWrite(path, '未保存的草稿', 'Agent 的新版本')
   await clickFile('data.json')
   await waitFor(live, `document.querySelector('[role="dialog"]')?.textContent.includes('未保存修改')`)
   await evalOn(live, `Array.from(document.querySelectorAll('[role="dialog"] button')).find(e=>e.textContent==='取消').click()`)
   assert.equal(await evalOn(live, `document.querySelector('[data-testid="text-source"]').value`), '未保存的草稿')
-  writeFileSync(path,'Agent 的新版本')
-  await new Promise(resolve => setTimeout(resolve, 800))
-  assert.equal(await evalOn(live, `document.querySelector('[data-testid="text-source"]').value`), '未保存的草稿')
-  await evalOn(live, `${saveButton}.click()`)
-  await waitFor(live, `document.querySelector('[data-testid="text-document"] [role="alert"]')?.textContent.includes('磁盘内容已变化')`)
   assert.equal(readFileSync(path,'utf8'),'Agent 的新版本')
-  await evalOn(live, `Array.from(document.querySelectorAll('[data-testid="text-document"] button')).find(e=>e.textContent==='恢复副本').click()`)
-  await waitFor(live, `document.querySelectorAll('[data-testid="text-document"] button').length > 5`)
+  await clickBar('保留我的版本')
+  await waitDisk(path, '未保存的草稿')
+  await waitFor(live, `${status} === '已保存' && !${alertText}`)
+  await typeAgainstExternalWrite(path, '要放弃的草稿', 'Agent 的第二版')
   await clickFile('data.json')
   await waitFor(live, `document.querySelector('[role="dialog"]')`)
   await evalOn(live, `Array.from(document.querySelectorAll('[role="dialog"] button')).find(e=>e.textContent==='放弃修改').click()`)
   await waitFor(live, `document.querySelector('[data-testid="text-source"]')?.value === '{ invalid json\\n'`)
-  console.log('PASS: native input, durable save, leave/cancel, dirty watcher refresh and conflict rejection')
-  await evalOn(live, `(() => { const e=document.querySelector('[data-testid="text-source"]'); e.focus(); e.setSelectionRange(0,e.value.length) })()`)
-  await live.cdp.send('Input.insertText', { text: '窗口关闭草稿' }, live.sid)
+  assert.equal(readFileSync(path,'utf8'),'Agent 的第二版')
+  console.log('PASS: native input, autosave, conflict keeps both sides until the user chooses, keep/discard')
+  const dataPath = join(session.workingDirectory, 'data.json')
+  await typeAgainstExternalWrite(dataPath, '窗口关闭草稿', '{ agent json }\n')
   await evalOn(live, `void window.electronAPI.closeWindow()`)
   await waitFor(live, `document.querySelector('[role="dialog"]')?.textContent.includes('未保存修改')`)
   await evalOn(live, `Array.from(document.querySelectorAll('[role="dialog"] button')).find(e=>e.textContent==='取消').click()`)
   await new Promise(resolve => setTimeout(resolve, 3200))
   assert.equal(await evalOn(live, `document.querySelector('[data-testid="text-source"]').value`), '窗口关闭草稿')
-  await evalOn(live, `${saveButton}.click()`)
-  await waitFor(live, `document.querySelector('[data-testid="text-document"] [role="status"]')?.textContent === '已保存'`)
+  await clickBar('保留我的版本')
+  await waitDisk(dataPath, '窗口关闭草稿')
   console.log('PASS: native window close cancel survives the close timeout')
-  await transport("globalThis.__holdChannel='file:saveDocument'")
-  await evalOn(live, `Array.from(document.querySelectorAll('[data-testid="text-document"] button')).find(e=>e.textContent==='另存为').click()`)
-  await evalOn(live, `(() => {const e=document.querySelector('[aria-label="另存为路径"]');e.focus();e.select()})()`)
-  await live.cdp.send('Input.insertText',{text:join(session.workingDirectory,'data-copy.json')},live.sid)
-  await evalOn(live, `document.querySelector('[data-testid="text-document"] form button[type="submit"]').click()`)
-  await waitReply()
-  await evalOn(live, `(() => {const e=document.querySelector('[data-testid="text-source"]');e.focus();e.setSelectionRange(0,e.value.length)})()`)
-  await live.cdp.send('Input.insertText',{text:'复制期间继续输入'},live.sid)
-  await releaseReply()
-  await waitFor(live, `document.querySelector('[data-testid="text-source"]')?.getAttribute('aria-label')?.endsWith('data-copy.json')`)
-  assert.equal(await evalOn(live, `document.querySelector('[data-testid="text-source"]').value`),'复制期间继续输入')
-  await evalOn(live, `${saveButton}.click()`)
-  await waitFor(live, `document.querySelector('[data-testid="text-document"] [role="status"]')?.textContent === '已保存'`)
-  assert.equal(readFileSync(join(session.workingDirectory,'data-copy.json'),'utf8'),'复制期间继续输入')
-  assert.equal(readFileSync(join(session.workingDirectory,'data.json'),'utf8'),'窗口关闭草稿')
-  console.log('PASS: Save As rebinds the destination and retains input made while saving')
 
   await live.close(); app = undefined
   const projectFixture = join(fixture,'project-run')
@@ -173,9 +169,8 @@ try {
   await waitFor(live, `document.querySelector('[data-testid="text-source"]')?.value === ${JSON.stringify('# Project 原文\n')}`).catch(async error => { console.log(await evalOn(live, 'document.body.innerText')); throw error })
   await evalOn(live, `(() => { const e=document.querySelector('[data-testid="text-source"]'); e.focus(); e.setSelectionRange(0,e.value.length) })()`)
   await live.cdp.send('Input.insertText', {text:'Project 已保存\n'},live.sid)
-  await evalOn(live, `${saveButton}.click()`)
-  await waitFor(live, `document.querySelector('[data-testid="text-document"] [role="status"]')?.textContent === '已保存'`)
-  assert.equal(readFileSync(projectFile,'utf8'),'Project 已保存\n')
+  await waitDisk(projectFile,'Project 已保存\n')
+  await waitFor(live, `${status} === '已保存'`)
   console.log('PASS: Project tree opens original text and saves through the same editor')
 
   const doc = `document.querySelector('[data-testid="text-document"]')`

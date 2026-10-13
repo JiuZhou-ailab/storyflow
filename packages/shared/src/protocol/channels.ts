@@ -92,8 +92,6 @@ export const RPC_CHANNELS = {
   file: {
     READ_DOCUMENT: 'file:readDocument',
     SAVE_DOCUMENT: 'file:saveDocument',
-    LIST_DOCUMENT_RECOVERY: 'file:listDocumentRecovery',
-    READ_DOCUMENT_RECOVERY: 'file:readDocumentRecovery',
     READ: 'file:read',
     WRITE: 'file:write',
     DELETE: 'file:delete',

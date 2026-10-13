@@ -1,12 +1,12 @@
 // input: Authenticated runtime context, file identity and versioned text operations
-// output: Lossless text reads, conflict-checked saves and bounded persistent recovery copies
+// output: Lossless text reads and conflict-checked saves; an empty version recreates a deleted file
 // pos: Interactive editor filesystem boundary; legacy file writes remain unchanged
-import { access, lstat, mkdir, open, readFile, readdir, realpath, rename, unlink, link } from 'node:fs/promises'
+import { access, lstat, open, readFile, realpath, rename, unlink, link } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
-import { dirname, join, relative, isAbsolute, sep } from 'node:path'
+import { basename, dirname, join, relative, isAbsolute, sep } from 'node:path'
 import { RPC_CHANNELS, type TextDocumentTarget, type TextDocumentSave } from '@craft-agent/shared/protocol'
-import { getWorkspaceStatePath, isFreeConversationWorkspaceId, resolveProjectOwnedFilePath, resolveRuntimeWorkspaceById } from '@craft-agent/shared/workspaces'
+import { isFreeConversationWorkspaceId, resolveProjectOwnedFilePath, resolveRuntimeWorkspaceById } from '@craft-agent/shared/workspaces'
 import type { RpcServer, RequestContext } from '../../transport'
 import type { HandlerDeps } from '../handler-deps'
 import { resolveContextWorkspaceId, validateWorkspaceMutationPath, withWorkspaceMutation } from './file-workspace-scope'
@@ -17,7 +17,7 @@ const MAX_BYTES = 5 * 1024 * 1024
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex')
 const pending = new Map<string, Promise<unknown>>()
 
-// Serializes this boundary only. External writers do not participate; recovery preserves observed versions.
+// Serializes this boundary only. External writers do not participate; the version check before rename catches them.
 async function serial<T>(path: string, operation: () => Promise<T>): Promise<T> {
   const previous = pending.get(path) ?? Promise.resolve()
   const current = previous.catch(() => {}).then(operation)
@@ -47,7 +47,7 @@ function decode(bytes: Buffer) {
 }
 
 async function scope<T>(ctx: RequestContext, deps: HandlerDeps, target: TextDocumentTarget,
-  action: (path: string, recoveryRoot: string, readOnly: boolean, checkDestination: (path: string) => Promise<string>) => Promise<T>): Promise<T> {
+  action: (path: string, readOnly: boolean, recheck: (path: string) => Promise<string>) => Promise<T>): Promise<T> {
   if (!target || typeof target.path !== 'string' || !isAbsolute(target.path)) throw new Error('Invalid file identity')
   const workspaceId = resolveContextWorkspaceId(ctx, deps)
   if (!workspaceId) throw new Error('A runtime workspace is required')
@@ -71,8 +71,7 @@ async function scope<T>(ctx: RequestContext, deps: HandlerDeps, target: TextDocu
         if (!content.groups.find(group => group.kind === 'attachments')?.files.some(file => file.path === target.path)) throw new Error('Not a sent attachment')
         path = resolveProjectOwnedFilePath(sessionPath, target.path)
       } else path = await check(target.path)
-      const recoveryRoot = resolveProjectOwnedFilePath(sessionPath, join(sessionPath, '.text-recovery'))
-      return action(path, recoveryRoot, Boolean(inAttachments), check)
+      return action(path, Boolean(inAttachments), check)
     })
   }
   if (target.sessionId) throw new Error('Project file must not use a conversation identity')
@@ -84,8 +83,7 @@ async function scope<T>(ctx: RequestContext, deps: HandlerDeps, target: TextDocu
       await rejectSymlinks(workspace.rootPath, safe)
       return safe
     }
-    const recoveryRoot = resolveProjectOwnedFilePath(workspace.rootPath, join(getWorkspaceStatePath(workspace.rootPath), 'text-recovery'))
-    return action(await check(target.path), recoveryRoot, false, check)
+    return action(await check(target.path), false, check)
   })
 }
 
@@ -103,75 +101,38 @@ async function durableFile(path: string, bytes: Buffer, mode = 0o600) {
   try { await file.writeFile(bytes); await file.sync() } finally { await file.close() }
 }
 
-/** Newest first; ids are the record file names. */
-async function recoveryRecords(folder: string): Promise<Array<{ id: string; createdAt: number }>> {
-  let names: string[]
-  try { names = await readdir(folder) } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error }
-  return (await Promise.all(names.filter(name => /^[\da-f-]{36}\.json$/.test(name)).map(async name => ({ id: name.slice(0, -5), createdAt: (await lstat(join(folder, name))).mtimeMs })))).sort((a, b) => b.createdAt - a.createdAt)
-}
-
-// Autosave writes every idle pause, so an unbroken chain of saves shares one copy
-// (earliest before, latest submitted) and each file keeps a bounded history.
-const RECOVERY_MERGE_MS = 30 * 60_000
-const RECOVERY_MAX_RECORDS = 50
-
-async function writeRecovery(folder: string, before: string, submitted: string, mergeable: boolean) {
-  const [latest] = await recoveryRecords(folder)
-  let previous: { file: string; createdAt: number; before: string } | undefined
-  if (mergeable && latest) {
-    const file = join(folder, `${latest.id}.json`)
-    try {
-      const data = JSON.parse(await readFile(file, 'utf8'))
-      // Merge only when nothing else wrote the file since that copy; otherwise its content is history.
-      if (data.submitted === before && typeof data.before === 'string' && Date.now() - data.createdAt < RECOVERY_MERGE_MS) {
-        previous = { file, createdAt: data.createdAt, before: data.before }
-      }
-    } catch { /* unreadable copy stays as is; start a new one */ }
-  }
-  await durableFile(join(folder, `${randomUUID()}.json`), Buffer.from(JSON.stringify({ createdAt: previous?.createdAt ?? Date.now(), before: previous?.before ?? before, submitted })))
-  // The merged copy is durable before the one it replaces is removed.
-  const kept = (await recoveryRecords(folder)).map(record => join(folder, `${record.id}.json`)).filter(file => file !== previous?.file)
-  const stale = kept.slice(RECOVERY_MAX_RECORDS)
-  if (previous) stale.push(previous.file)
-  await Promise.all(stale.map(file => unlink(file).catch(error => { if (error.code !== 'ENOENT') throw error })))
-}
-
 export function registerTextDocumentHandlers(server: RpcServer, deps: HandlerDeps) {
-  server.handle(RPC_CHANNELS.file.READ_DOCUMENT, (ctx, target: TextDocumentTarget) => scope(ctx, deps, target, async (path, _, readOnly) => {
+  server.handle(RPC_CHANNELS.file.READ_DOCUMENT, (ctx, target: TextDocumentTarget) => scope(ctx, deps, target, async (path, readOnly) => {
     const bytes = await bytesAt(path)
     const decoded = decode(bytes)
     let writable = true
     try { await access(path, constants.W_OK) } catch { writable = false }
     return { content: decoded.content, version: hash(bytes), format: { bom: decoded.bom, crlf: decoded.crlf }, readOnly: readOnly || !writable || !!decoded.reason, reason: decoded.reason }
   }))
-  server.handle(RPC_CHANNELS.file.SAVE_DOCUMENT, (ctx, request: TextDocumentSave) => scope(ctx, deps, request, async (path, recoveryRoot, readOnly, checkDestination) => {
+  server.handle(RPC_CHANNELS.file.SAVE_DOCUMENT, (ctx, request: TextDocumentSave) => scope(ctx, deps, request, async (path, readOnly, recheck) => {
     if (readOnly) throw new Error('Attachment originals are immutable')
     if (typeof request.content !== 'string' || typeof request.version !== 'string' || Buffer.byteLength(request.content) > MAX_BYTES) throw new Error('Invalid text save')
     if (Buffer.from(request.content).toString('utf8') !== request.content || request.content.includes('\r')) throw new Error('Text must be valid Unicode with LF line endings')
-    const destination = request.destination ? await checkDestination(request.destination) : path
-    const lockPath = join(await realpath(dirname(destination)), destination.split(/[\\/]/).pop()!)
+    const lockPath = join(await realpath(dirname(path)), basename(path))
     return serial(lockPath, async () => {
-      let before: Buffer
-      let missing = false
-      try { before = await bytesAt(path) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; if (!request.destination) return { status: 'missing' }; missing = true; before = Buffer.alloc(0) }
-      if (!request.destination && hash(before) !== request.version) return { status: 'conflict' }
-      const decoded = missing ? { content: '', bom: request.format?.bom === true, crlf: request.format?.crlf === true, reason: undefined } : decode(before)
+      let before: Buffer | null
+      try { before = await bytesAt(path) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; before = null }
+      // The version is the expected disk state; '' expects the file to be absent.
+      if (!before) { if (request.version !== '') return { status: 'missing' } }
+      else if (hash(before) !== request.version) return { status: 'conflict' }
+      const decoded = before ? decode(before) : { content: '', bom: request.format?.bom === true, crlf: request.format?.crlf === true, reason: undefined }
       if (decoded.reason) throw new Error(decoded.reason)
-      if (!missing) await access(path, constants.W_OK)
+      if (before) await access(path, constants.W_OK)
       const submitted = Buffer.from((decoded.bom ? '\uFEFF' : '') + (decoded.crlf ? request.content.replaceAll('\n', '\r\n') : request.content))
       if (submitted.length > MAX_BYTES) throw new Error('File exceeds the text editing limit')
-      if (!request.destination && before.equals(submitted)) return { status: 'saved', version: hash(before), path }
-      const records = join(recoveryRoot, hash(path))
-      await rejectSymlinks(dirname(recoveryRoot), records)
-      await mkdir(records, { recursive: true, mode: 0o700 })
-      await writeRecovery(records, before.toString('utf8'), submitted.toString('utf8'), !request.destination)
-      const temp = join(dirname(destination), `.storyflow-${randomUUID()}.tmp`)
+      if (before?.equals(submitted)) return { status: 'saved', version: hash(before) }
+      const temp = join(dirname(path), `.storyflow-${randomUUID()}.tmp`)
       try {
-        await durableFile(temp, submitted, missing ? 0o600 : (await lstat(path)).mode & 0o777)
-        await checkDestination(destination)
-        if (request.destination) {
-          // link is exclusive, unlike rename: Save As must never overwrite an existing file.
-          await link(temp, destination)
+        await durableFile(temp, submitted, before ? (await lstat(path)).mode & 0o777 : 0o600)
+        await recheck(path)
+        if (!before) {
+          // link is exclusive, unlike rename: recreating must not replace a file that appeared meanwhile.
+          try { await link(temp, path) } catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return { status: 'conflict' }; throw error }
         } else {
           let current: Buffer
           try { current = await bytesAt(path) } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing' }; throw error }
@@ -179,22 +140,8 @@ export function registerTextDocumentHandlers(server: RpcServer, deps: HandlerDep
           await rename(temp, path)
         }
       } finally { await unlink(temp).catch(error => { if (error.code !== 'ENOENT') throw error }) }
-      notifyConfigWatcherForWrite(deps, resolveContextWorkspaceId(ctx, deps), destination)
-      return { status: 'saved', version: hash(submitted), path: destination }
+      notifyConfigWatcherForWrite(deps, resolveContextWorkspaceId(ctx, deps), path)
+      return { status: 'saved', version: hash(submitted) }
     })
-  }))
-  server.handle(RPC_CHANNELS.file.LIST_DOCUMENT_RECOVERY, (ctx, target: TextDocumentTarget) => scope(ctx, deps, target, async (path, root, readOnly) => {
-    if (readOnly) return []
-    const folder = join(root, hash(path))
-    await rejectSymlinks(dirname(root), folder)
-    return recoveryRecords(folder)
-  }))
-  server.handle(RPC_CHANNELS.file.READ_DOCUMENT_RECOVERY, (ctx, target: TextDocumentTarget & { id: string }) => scope(ctx, deps, target, async (path, root, readOnly) => {
-    if (readOnly || !/^[\da-f-]{36}$/.test(target.id)) throw new Error('Invalid recovery identity')
-    const record = join(root, hash(path), `${target.id}.json`)
-    await rejectSymlinks(dirname(root), record)
-    const data = JSON.parse(await readFile(record, 'utf8'))
-    if (typeof data.before !== 'string' || typeof data.submitted !== 'string') throw new Error('Invalid recovery record')
-    return { before: data.before, submitted: data.submitted }
   }))
 }

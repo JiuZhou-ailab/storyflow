@@ -83,8 +83,6 @@ export const CHANNEL_MAP = {
 
   readTextDocument: invoke(RPC_CHANNELS.file.READ_DOCUMENT),
   saveTextDocument: invoke(RPC_CHANNELS.file.SAVE_DOCUMENT),
-  listTextDocumentRecovery: invoke(RPC_CHANNELS.file.LIST_DOCUMENT_RECOVERY),
-  readTextDocumentRecovery: invoke(RPC_CHANNELS.file.READ_DOCUMENT_RECOVERY),
   // File operations
   readFile: invoke(RPC_CHANNELS.file.READ),
   writeFile: invoke(RPC_CHANNELS.file.WRITE),

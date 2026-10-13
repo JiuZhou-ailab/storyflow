@@ -1,5 +1,5 @@
 // input: A runtime-owned file identity and text editing commands
-// output: Versioned text snapshots, save outcomes and recovery records
+// output: Versioned text snapshots and save outcomes
 // pos: Interactive text editing contract; independent of legacy file writes
 export interface TextDocumentTarget { path: string; sessionId?: string }
 export interface TextDocumentSnapshot {
@@ -10,13 +10,11 @@ export interface TextDocumentSnapshot {
   reason?: string
 }
 export interface TextDocumentSave extends TextDocumentTarget {
+  /** Expected disk version; '' expects the file to be absent and recreates it. */
   version: string
   content: string
-  destination?: string
   format?: { bom: boolean; crlf: boolean }
 }
 export type TextDocumentSaveResult =
-  | { status: 'saved'; version: string; path: string }
+  | { status: 'saved'; version: string }
   | { status: 'conflict' | 'missing' }
-export interface TextDocumentRecovery { id: string; createdAt: number }
-export interface TextDocumentRecoveryContent { before: string; submitted: string }

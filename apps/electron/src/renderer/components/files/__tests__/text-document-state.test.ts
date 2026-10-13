@@ -4,6 +4,7 @@ import {
   dirtyDocument,
   getLeavePrompt,
   hasDirtyDocuments,
+  keepDraft,
   reloadDocument,
   requestDocumentLeave,
   saveDocument,
@@ -67,6 +68,20 @@ describe('text document lifecycle', () => {
     expect(model.state.content).toBe('mine')
     expect(model.state.conflict).toBe(true)
     updateDocument(model, { content: model.state.baseline })
+  })
+
+  it('keeps the draft over the newer disk content only when asked', async () => {
+    disk = { content: 'a', version: 'v0' }
+    installApi()
+    const model = await loadedModel('/p/keep.md')
+    updateDocument(model, { content: 'mine' })
+    disk = { content: 'agent', version: 'v-agent' }
+    expect(await saveDocument(model)).toBe(false)
+
+    expect(await keepDraft(model)).toBe(true)
+    expect(disk.content).toBe('mine')
+    expect(model.state.conflict).toBe(false)
+    expect(dirtyDocument(model)).toBe(false)
   })
 
   it('flushes view-held edits before reporting dirtiness', async () => {

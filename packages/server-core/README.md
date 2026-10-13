@@ -63,7 +63,7 @@ See [startup QA](../../docs/startup-recovery-qa.md) for the actual acceptance co
 
 ## Interactive text documents
 
-The file RPC includes versioned text reads/saves and recovery access. `text-document` validates Project or Session ownership, keeps attachments immutable, preserves supported UTF-8 BOM and newline conventions, rejects stale versions, and retains observed pre-save/submitted bytes before replacement. Save As creates a new target exclusively. Recovery records remain in internal workspace/session storage and are not conversation content. The serialization boundary covers these editor saves only; external filesystem writers do not participate. Legacy file writes retain their existing contract.
+The file RPC includes versioned text reads/saves. `text-document` validates Project or Session ownership, keeps attachments immutable, preserves supported UTF-8 BOM and newline conventions and rejects stale versions; an empty version expects the file to be absent and recreates it exclusively. Legacy `text-recovery/` folders from earlier releases are left on disk untouched and are no longer read or written. The serialization boundary covers these editor saves only; external filesystem writers do not participate. Legacy file writes retain their existing contract.
 
 ## User attachment reads
 

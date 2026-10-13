@@ -1,5 +1,5 @@
 // input: Runtime-scoped file identities, user edits and file RPC results
-// output: Stable drafts, versioned save state and a shared leave decision
+// output: Stable drafts, autosaved versioned state, conflict resolution and a shared leave decision
 // pos: Renderer-owned text document lifecycle across view remounts
 import type { TextDocumentTarget, TextDocumentSnapshot } from '@craft-agent/shared/protocol'
 
@@ -22,7 +22,7 @@ export interface DocumentModel {
   listeners: Set<() => void>
   generation: number
   savePromise?: Promise<boolean>
-  /** Project documents save on their own cadence; leaving saves instead of asking. */
+  /** The view saves on its own cadence; leaving saves instead of asking. */
   autosave?: boolean
   /** Pushes edits a view still holds (e.g. rich-text serialization) into `state.content`. */
   flush?: () => void
@@ -67,9 +67,9 @@ export async function reloadDocument(model: DocumentModel) {
     if (generation === model.generation) updateDocument(model, { loading: false, readOnly: dirtyDocument(model) ? model.state.readOnly : true, error: String(error).includes('ENOENT') ? 'missing' : String(error) })
   }
 }
-export async function saveDocument(model: DocumentModel, destination?: string): Promise<boolean> {
-  if (model.savePromise) { await model.savePromise; return saveDocument(model, destination) }
-  if (!dirtyDocument(model) && !destination) return true
+export async function saveDocument(model: DocumentModel): Promise<boolean> {
+  if (model.savePromise) { await model.savePromise; return saveDocument(model) }
+  if (!dirtyDocument(model)) return true
   if (model.state.loading || model.state.readOnly) return false
   model.generation += 1
   const content = model.state.content
@@ -77,16 +77,10 @@ export async function saveDocument(model: DocumentModel, destination?: string): 
   updateDocument(model, { saving: true, error: null })
   const task = (async () => {
     try {
-      const result = await window.electronAPI.saveTextDocument({ ...model.target, version, content, destination, format: model.format })
+      const result = await window.electronAPI.saveTextDocument({ ...model.target, version, content, format: model.format })
       if (result.status !== 'saved') {
         updateDocument(model, { conflict: true, error: result.status })
         return false
-      }
-      if (destination) {
-        documents.delete(model.key)
-        model.target = { ...model.target, path: result.path }
-        model.key = JSON.stringify([model.workspaceId, model.target.sessionId, result.path])
-        documents.set(model.key, model)
       }
       updateDocument(model, { baseline: content, version: result.version, conflict: false })
       return true
@@ -95,6 +89,24 @@ export async function saveDocument(model: DocumentModel, destination?: string): 
   })()
   model.savePromise = task
   return task
+}
+
+/**
+ * Resolves a conflict in favour of the draft: it replaces what is on disk now,
+ * or recreates a deleted file. A write landing in between still conflicts.
+ */
+export async function keepDraft(model: DocumentModel): Promise<boolean> {
+  let version = ''
+  try {
+    const current: TextDocumentSnapshot = await window.electronAPI.readTextDocument(model.target)
+    if (current.readOnly) { updateDocument(model, { error: current.reason ?? 'readOnly' }); return false }
+    version = current.version
+    model.format = current.format
+  } catch (error) {
+    if (!String(error).includes('ENOENT')) { updateDocument(model, { error: String(error) }); return false }
+  }
+  updateDocument(model, { version, conflict: false, error: null })
+  return saveDocument(model)
 }
 
 let leavePromise: Promise<boolean> | undefined
@@ -119,7 +131,7 @@ export function requestDocumentLeave(): Promise<boolean> {
       prompt = null; answer = undefined
       for (const listener of promptListeners) listener()
       if (choice === 'cancel') return false
-      if (choice === 'save' && (!await saveDocument(model) || dirtyDocument(model))) return false
+      if (choice === 'save' && (!await (model.state.conflict ? keepDraft(model) : saveDocument(model)) || dirtyDocument(model))) return false
       if (choice === 'discard') {
         updateDocument(model, { content: model.state.baseline })
         void reloadDocument(model)
