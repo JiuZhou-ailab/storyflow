@@ -20,6 +20,9 @@ const rendererEntryUrl = VITE_DEV_SERVER_URL ?? pathToFileURL(RENDERER_ENTRY_PAT
 const WINDOW_SCREEN_MARGIN = 64
 const RUNTIME_RELOAD_WINDOW_MS = 60_000
 const MAX_RUNTIME_RELOADS = 3
+// Chromium can stall a frame without dying. Ask only after 10s so a long
+// layout or IPC burst does not look like a hang.
+const UNRESPONSIVE_PROMPT_MS = 10_000
 const DEFAULT_MAIN_WINDOW_SIZE = { width: 1400, height: 900 }
 const MIN_WINDOW_SIZE = { width: 800, height: 600 }
 // Keep the 14px close button on the rail icons' rendered center line.
@@ -42,6 +45,45 @@ function resolveInitialWindowSize(): { width: number, height: number } {
 
 function getNativeWindowBackgroundColor(): string {
   return nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
+}
+
+function watchRendererResponsiveness(
+  window: BrowserWindow,
+  webContentsId: number,
+  isAppQuitting: () => boolean,
+): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const clear = (): void => {
+    if (!timer) return
+    clearTimeout(timer)
+    timer = undefined
+  }
+  window.webContents.on('unresponsive', () => {
+    windowLog.warn(`Window ${webContentsId} renderer unresponsive`)
+    if (timer || window.isDestroyed() || isAppQuitting()) return
+    timer = setTimeout(() => {
+      timer = undefined
+      if (window.isDestroyed() || isAppQuitting()) return
+      void dialog.showMessageBox(window, {
+        type: 'warning',
+        message: i18n.t('dialog.windowUnresponsive', { defaultValue: 'This window is not responding.' }),
+        buttons: [
+          i18n.t('common.wait', { defaultValue: 'Wait' }),
+          i18n.t('common.reload', { defaultValue: 'Reload' }),
+        ],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      }).then(({ response }) => {
+        if (response === 1 && !window.isDestroyed() && !isAppQuitting()) window.webContents.reload()
+      }).catch(error => windowLog.error('Failed to show unresponsive dialog', error))
+    }, UNRESPONSIVE_PROMPT_MS)
+  })
+  window.webContents.on('responsive', () => {
+    windowLog.info(`Window ${webContentsId} renderer responsive`)
+    clear()
+  })
+  return clear
 }
 
 /**
@@ -341,6 +383,7 @@ export class WindowManager {
     })
     window.webContents.on('preload-error', () => fail('PRELOAD'))
     window.webContents.on('render-process-gone', () => fail('RENDERER_CRASH'))
+    const clearUnresponsive = watchRendererResponsiveness(window, webContentsId, () => this.isAppQuitting)
     window.webContents.on('did-finish-load', () => {
       if (failed) return
       firstLoadSucceeded = true
@@ -348,6 +391,7 @@ export class WindowManager {
     })
     window.once('closed', () => {
       if (retry) clearTimeout(retry)
+      clearUnresponsive()
       rejectFirstLoad(Object.assign(new Error('Window closed before its first load'), { code: 'RENDERER_LOAD' }))
     })
     load()

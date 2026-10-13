@@ -16,7 +16,7 @@ it.each([false, true])('installs on native app.exit after document approval (cle
   try {
     const index = readFileSync(new URL('../index.ts', import.meta.url), 'utf8')
     const coordinator = readFileSync(new URL('../quit-coordinator.ts', import.meta.url), 'utf8')
-    const wiring = index.slice(index.indexOf('async function allowDocumentExit()'), index.indexOf("process.on('uncaughtException'"))
+    const wiring = index.slice(index.indexOf('const DOCUMENT_LEAVE_TIMEOUT_MS'), index.indexOf("process.on('uncaughtException'"))
     const script = join(directory, 'quit.cjs')
     const receipt = join(directory, 'events.json')
     writeFileSync(script, `

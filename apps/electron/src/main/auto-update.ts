@@ -342,11 +342,11 @@ function matchesExpectedDownload(params: {
   sha512?: string
   expectedFiles: ExpectedUpdateFile[]
 }): boolean {
-  if (params.expectedFiles.length === 0) return true
+  // A filename with no checksum can be a stale or swapped archive.
+  if (params.expectedFiles.length === 0 || !params.sha512) return false
 
   return params.expectedFiles.some((expected) => {
-    if (expected.fileName !== params.fileName) return false
-    if (!expected.sha512) return true
+    if (expected.fileName !== params.fileName || !expected.sha512) return false
     return params.sha512 === expected.sha512
   })
 }
@@ -505,6 +505,14 @@ export async function installUpdate(): Promise<void> {
   clearDismissedUpdateVersion()
 
   try {
+    // quitAndInstall returns void and, with no downloadedUpdateHelper, only
+    // emits "error" then leaves the process running. Stop the server only
+    // after this session has a validated package, so a cache-only "ready"
+    // cannot strand the user with the UI already torn down.
+    if (!checkElectronUpdaterState(updateInfo.latestVersion ?? undefined).ready) {
+      throw new Error('No validated update file is available to install')
+    }
+
     // Finish Storyflow-owned cleanup while the app is still running. Once
     // quitAndInstall starts, Electron must retain ownership of the quit flow.
     await prepareForUpdateInstall()

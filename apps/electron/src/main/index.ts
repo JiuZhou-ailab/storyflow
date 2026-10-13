@@ -1366,10 +1366,31 @@ const quitCoordinator = createQuitCoordinator({
 
 // The updater must finish the same cleanup before it takes ownership of the
 // native quit flow. The coordinator makes this idempotent across all exit paths.
+// A hung renderer never answers executeJavaScript. 3s covers a busy leave
+// prompt; past that, treat the window as free to leave so quit cannot stick.
+const DOCUMENT_LEAVE_TIMEOUT_MS = 3_000
+
+function withDocumentLeaveTimeout<T>(check: Promise<T>): Promise<T | 'timeout'> {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve('timeout'), DOCUMENT_LEAVE_TIMEOUT_MS)
+    check.then(
+      value => { clearTimeout(timer); resolve(value) },
+      () => { clearTimeout(timer); resolve('timeout') },
+    )
+  })
+}
+
 async function allowDocumentExit(): Promise<boolean> {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.webContents.isDestroyed() || win.webContents.isLoading()) continue
-    if (!await win.webContents.executeJavaScript('window.requestDocumentLeave ? window.requestDocumentLeave() : true')) return false
+    const allowed = await withDocumentLeaveTimeout(
+      win.webContents.executeJavaScript('window.requestDocumentLeave ? window.requestDocumentLeave() : true'),
+    )
+    if (allowed === 'timeout') {
+      mainLog.warn('Document leave check timed out; allowing exit')
+      continue
+    }
+    if (!allowed) return false
   }
   return true
 }
@@ -1395,6 +1416,13 @@ app.on('before-quit', async (event) => {
     mainLog.info('Update in progress, letting electron-updater handle quit')
   }
   await quitCoordinator.handleBeforeQuit(event)
+})
+
+// GPU death is logged only. Flipping --disable-gpu from a crash races the next
+// launch and hides a driver bug behind a permanent software renderer.
+app.on('child-process-gone', (_event, details) => {
+  if (details.type !== 'GPU') return
+  mainLog.error(`[process] GPU process gone (${details.reason})`)
 })
 
 process.on('uncaughtException', (error) => {

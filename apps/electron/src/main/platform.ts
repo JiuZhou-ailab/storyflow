@@ -27,7 +27,8 @@ export function createElectronPlatform(opts: ElectronPlatformOptions): PlatformS
     isPackaged: app.isPackaged,
     appVersion: app.getVersion(),
     openExternal: (url) => shell.openExternal(url),
-    openPath: (p) => shell.openPath(p).then(() => {}),
+    // openPath resolves with an error string; an empty string is success.
+    openPath: (p) => shell.openPath(p).then(error => { if (error) throw new Error(error) }),
     showItemInFolder: (p) => shell.showItemInFolder(p),
     quit: () => app.quit(),
     systemDarkMode: () => nativeTheme.shouldUseDarkColors,

@@ -340,6 +340,51 @@ describe('WindowManager', () => {
     }
   }, 10_000)
 
+  it('logs an unresponsive renderer and reloads only after the user chooses reload', async () => {
+    const pending: Array<() => void> = []
+    const win = new WindowManager(undefined, () => true).createWindow({ workspaceId: '' }) as any
+    win.webContents.emit('did-finish-load')
+    ;(dialog.showMessageBox as any).mockImplementation(async () => ({ response: 1 }))
+    const timers = spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, delay?: number) => {
+      if (delay === 10_000) pending.push(fn)
+      return 0 as unknown as ReturnType<typeof setTimeout>
+    }) as typeof setTimeout)
+    try {
+      win.webContents.emit('unresponsive')
+      expect(dialog.showMessageBox).not.toHaveBeenCalled()
+
+      pending.splice(0).forEach(fn => fn())
+      await Bun.sleep(0)
+      expect(dialog.showMessageBox).toHaveBeenCalledTimes(1)
+      expect(win.webContents.reload).toHaveBeenCalledTimes(1)
+
+      ;(dialog.showMessageBox as any).mockImplementation(async () => ({ response: 0 }))
+      win.webContents.emit('unresponsive')
+      pending.splice(0).forEach(fn => fn())
+      await Bun.sleep(0)
+      expect(win.webContents.reload).toHaveBeenCalledTimes(1)
+    } finally {
+      timers.mockRestore()
+      ;(dialog.showMessageBox as any).mockImplementation(async () => ({ response: 0 }))
+    }
+  })
+
+  it('drops the unresponsive prompt when the renderer recovers first', () => {
+    const win = new WindowManager(undefined, () => true).createWindow({ workspaceId: '' }) as any
+    win.webContents.emit('did-finish-load')
+    const timers = spyOn(globalThis, 'setTimeout').mockImplementation((() => 7) as unknown as typeof setTimeout)
+    const clear = spyOn(globalThis, 'clearTimeout')
+    try {
+      win.webContents.emit('unresponsive')
+      win.webContents.emit('responsive')
+      expect(clear).toHaveBeenCalledWith(7)
+      expect(dialog.showMessageBox).not.toHaveBeenCalled()
+    } finally {
+      timers.mockRestore()
+      clear.mockRestore()
+    }
+  })
+
   it('does not turn cancelled navigation into fatal startup recovery', async () => {
     loadError = Object.assign(new Error('Navigation was cancelled'), { code: 'ERR_ABORTED', errno: -3 })
     const recovery = mock(() => {})

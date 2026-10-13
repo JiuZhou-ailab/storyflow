@@ -37,6 +37,7 @@ class MockAutoUpdater extends EventEmitter {
   autoDownload = true
   autoInstallOnAppQuit = false
   logger: unknown = null
+  downloadedUpdateHelper: { versionInfo?: { version?: string } } | null = null
 
   checkForUpdates = mock(async () => {
     this.emit('checking-for-update')
@@ -85,8 +86,13 @@ mock.module('@craft-agent/shared/config', () => ({
 
 const tempDirs: string[] = []
 
+function markDownloadedThisSession(version = latestUpdateInfo.version): void {
+  autoUpdater.downloadedUpdateHelper = { versionInfo: { version } }
+}
+
 afterEach(() => {
   isPackaged = true
+  autoUpdater.downloadedUpdateHelper = null
   autoUpdater.checkForUpdates.mockClear()
   autoUpdater.quitAndInstall.mockReset()
 
@@ -155,6 +161,7 @@ describe('auto-update stale cache handling', () => {
     } = await import('../auto-update')
     setUpdateInstallPreparation(async () => { order.push('prepare') })
     autoUpdater.quitAndInstall.mockImplementation(() => { order.push('install') })
+    markDownloadedThisSession()
     autoUpdater.emit('update-downloaded', latestUpdateInfo)
 
     await installUpdate()
@@ -173,9 +180,11 @@ describe('auto-update stale cache handling', () => {
     let approved = false
     const prepare = mock(async () => {})
     const index = readFileSync(new URL('../index.ts', import.meta.url), 'utf8')
-    const preparation = index.slice(index.indexOf('async function allowDocumentExit()'), index.indexOf('let checkingDocumentQuit'))
+    const preparation = index.slice(index.indexOf('const DOCUMENT_LEAVE_TIMEOUT_MS'), index.indexOf('let checkingDocumentQuit'))
     runInNewContext(new Bun.Transpiler({ loader: 'ts' }).transformSync(preparation), {
       ...updater,
+      setTimeout,
+      clearTimeout,
       BrowserWindow: { getAllWindows: () => [{ webContents: {
         isDestroyed: () => false,
         isLoading: () => false,
@@ -183,6 +192,7 @@ describe('auto-update stale cache handling', () => {
       } }] },
       quitCoordinator: createQuitCoordinator({ isUpdating: updater.isUpdating, prepare, exit() {} }),
     })
+    markDownloadedThisSession()
     autoUpdater.emit('update-downloaded', latestUpdateInfo)
 
     await expect(updater.installUpdate()).rejects.toThrow('Update cancelled: unsaved document')
@@ -213,6 +223,7 @@ describe('auto-update stale cache handling', () => {
       if (failureAt === 'preparation') throw failure
     })
     autoUpdater.quitAndInstall.mockImplementation(() => { throw failure })
+    markDownloadedThisSession()
     autoUpdater.emit('update-downloaded', latestUpdateInfo)
 
     await expect(updater.installUpdate()).rejects.toBe(failure)
@@ -221,5 +232,39 @@ describe('auto-update stale cache handling', () => {
     expect(broadcasts).toEqual(['ready', 'installing', 'error'])
     expect(updater.isUpdating()).toBe(false)
     expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(failureAt === 'installer' ? 1 : 0)
+  })
+
+  it('does not tear down the app when this session has no validated installer', async () => {
+    const { installUpdate, isUpdating, setUpdateInstallPreparation } = await import('../auto-update')
+    const prepare = mock(async () => {})
+    setUpdateInstallPreparation(prepare)
+    autoUpdater.emit('update-downloaded', latestUpdateInfo)
+
+    await expect(installUpdate()).rejects.toThrow('No validated update file is available to install')
+
+    expect(prepare).not.toHaveBeenCalled()
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled()
+    expect(isUpdating()).toBe(false)
+  })
+
+  it('does not treat a cached file without a checksum as downloaded', async () => {
+    homeDir = join(tmpdir(), `storyflow-update-nosha-${Date.now()}`)
+    tempDirs.push(homeDir)
+    const pendingDir = join(homeDir, 'Library', 'Caches', 'Storyflow-updater', 'pending')
+    mkdirSync(pendingDir, { recursive: true })
+    writeFileSync(join(pendingDir, 'update-info.json'), JSON.stringify({
+      fileName: 'Storyflow-arm64.zip',
+      isAdminRightsRequired: false,
+    }))
+    writeFileSync(join(pendingDir, 'Storyflow-arm64.zip'), 'unverified archive')
+
+    const { checkForUpdates } = await import('../auto-update')
+    const info = await checkForUpdates({ autoDownload: true })
+
+    expect(info).toMatchObject({
+      available: true,
+      latestVersion: '0.9.24',
+      downloadState: 'downloading',
+    })
   })
 })
