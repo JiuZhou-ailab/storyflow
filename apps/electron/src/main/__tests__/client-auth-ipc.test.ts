@@ -49,9 +49,11 @@ describe('client auth IPC propagation', () => {
   })
 
   it('keeps native email verification behind the main-process IPC boundary', () => {
-    const mainSource = readElectronFile('main/index.ts')
+    const mainSource = readElectronFile('main/handlers/client-auth-ipc.ts')
+    const wiring = readElectronFile('main/index.ts')
     const preloadSource = readElectronFile('preload/bootstrap.ts')
 
+    expect(wiring).toContain('registerClientAuthIpc(authService)')
     expect(mainSource).toContain('CLIENT_AUTH_IPC_CHANNELS.VERIFY_EMAIL')
     expect(mainSource).toContain('CLIENT_AUTH_IPC_CHANNELS.RESEND_VERIFICATION_EMAIL')
     expect(mainSource).toContain("otp: typeof record.otp === 'string'")
@@ -77,10 +79,12 @@ describe('client auth IPC propagation', () => {
 
 describe('feedback IPC contract', () => {
   it('registers the main handler exposed by preload', () => {
-    const mainSource = readElectronFile('main/index.ts')
+    const mainSource = readElectronFile('main/handlers/feedback-ipc.ts')
+    const wiring = readElectronFile('main/index.ts')
     const preloadSource = readElectronFile('preload/bootstrap.ts')
 
     expect(preloadSource).toContain("ipcRenderer.invoke('feedback:submitIssue'")
+    expect(wiring).toContain('registerFeedbackIpc(')
     expect(mainSource).toContain("ipcMain.handle('feedback:submitIssue'")
   })
 })

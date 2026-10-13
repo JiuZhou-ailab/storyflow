@@ -13,6 +13,7 @@ Electron main-process shell: app startup, native windows, IPC registration, auth
 - `client-auth-session-store.ts` - Encrypted desktop auth and Neon session persistence.
 - `deep-link.ts` - Deep-link parsing and dispatch.
 - `file-dialog.ts` - Native picker and isolated preload file grants for user attachment reads; renderer path strings cannot grant access.
+- `handlers/` - GUI RPC handlers and domain `ipcMain` registrars. `index.ts` calls them; channel bodies live in `shell-ipc`, `client-auth-ipc`, `market-ipc`, `feedback-ipc`, and `host-ipc`. See `handlers/README.md`.
 - `feedback.ts` - Feedback issue submission adapter.
 - `entry.ts` - Minimal loader with native diagnostics for module initialization failures.
 - `index.ts` - Main-process bootstrap with preflight data ownership and shared Host teardown.

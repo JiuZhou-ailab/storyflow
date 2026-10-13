@@ -1,16 +1,16 @@
 // input: Electron app lifecycle, user config, workspace state, and local server runtime
-// output: Desktop bootstrap, startup-only recovery, token-safe IPC bridges, trusted file grants, windows, and cleanup
+// output: Desktop bootstrap, startup-only recovery, domain IPC registration, trusted file grants, windows, and cleanup
 // pos: Coordinates the Electron shell around the shared Storyflow server core
 
 import { startShellEnvLoad, whenShellEnvReady } from './shell-env'
 import { registerUserFileDialogHandlers } from './file-dialog'
 
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, shell, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, nativeTheme, net, shell, screen } from 'electron'
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
 
 // Initialize i18n for main process (menus, dialogs, etc.)
-import { setupI18n, i18n } from '@craft-agent/shared/i18n'
+import { setupI18n } from '@craft-agent/shared/i18n'
 setupI18n()
 
 import { dirname, join, delimiter } from 'path'
@@ -18,10 +18,14 @@ import { existsSync, mkdirSync } from 'fs'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
+import { registerShellIpc } from './handlers/shell-ipc'
+import { registerClientAuthIpc } from './handlers/client-auth-ipc'
+import { registerMarketIpc } from './handlers/market-ipc'
+import { registerFeedbackIpc } from './handlers/feedback-ipc'
+import { registerHostIpc } from './handlers/host-ipc'
 import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import type { PlatformServices } from '@craft-agent/server-core/runtime'
-import { CLIENT_AUTH_IPC_CHANNELS, MCP_MARKET_IPC_CHANNELS, SKILLS_MARKET_IPC_CHANNELS } from '../shared/types'
-import type { SkillMarketPublishInput } from '@craft-agent/shared/skills/marketplace'
+import { CLIENT_AUTH_IPC_CHANNELS } from '../shared/types'
 import { createElectronPlatform } from './platform'
 import type { HandlerDeps } from './handlers/handler-deps'
 import { bootstrapServer, acquireServerLock, loadServerTls, localServerEndpoint, type ServerInstance } from '@craft-agent/server-core/bootstrap'
@@ -35,7 +39,6 @@ import { loadWindowState, saveWindowState } from './window-state'
 import {
   getLlmConnection, loadStoredConfig, restoreStoredConfigBackup, getServerConfig,
   getWorkspaces,
-  getWorkspaceByNameOrId,
   isManagedLlmConnectionSlug,
   MANAGED_LLM_CONNECTION_SLUG,
   MANAGED_LLM_CONNECTION_SLUGS,
@@ -95,15 +98,10 @@ import {
   type ManagedCapabilityBroker,
 } from './managed-capability-broker'
 import { resolveElectronRuntimePaths } from './runtime-paths'
-import { normalizeFeedbackIssueInput, submitFeedbackIssue } from './feedback'
 import {
   createSkillsMarketCatalogLoader,
-  downloadSkillFromMarket,
-  getSkillDetailFromMarket,
   listSkillsFromMarket,
-  publishSkillToMarket,
 } from './skills-market-client'
-import { listMcpServersFromMarket } from './mcp-market-client'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -488,66 +486,8 @@ app.whenReady().then(async () => {
       getLogFilePath,
     })
 
-    // Bootstrap IPC handlers — preload uses sendSync for window-local details
-    ipcMain.on('__get-web-contents-id', (e) => {
-      e.returnValue = e.sender.id
-    })
-    ipcMain.on('__get-workspace-id', (e) => {
-      e.returnValue = windowManager?.getWorkspaceForWindow(e.sender.id) ?? ''
-    })
+    registerShellIpc({ windowManager, log: mainLog })
 
-    // Transport diagnostics bridge — preload reports remote WS connection state changes
-    // so failures are visible in terminal/main.log (not only renderer console).
-    ipcMain.on('__transport:status', (_event, payload: unknown) => {
-      if (!payload || typeof payload !== 'object') return
-      const p = payload as {
-        level?: 'info' | 'warn' | 'error'
-        message?: string
-        status?: string
-        attempt?: number
-        nextRetryInMs?: number
-        error?: unknown
-        close?: unknown
-        url?: string
-      }
-
-      const level = p.level ?? 'info'
-      const message = p.message ?? '[transport] status update'
-      const context = {
-        status: p.status,
-        attempt: p.attempt,
-        nextRetryInMs: p.nextRetryInMs,
-        error: p.error,
-        close: p.close,
-        url: p.url,
-      }
-
-      if (level === 'error') {
-        mainLog.error(message, context)
-      } else if (level === 'warn') {
-        mainLog.warn(message, context)
-      } else {
-        mainLog.info(message, context)
-      }
-    })
-
-    // Renderer React crash report — the root error boundary forwards the thrown
-    // error and component stack here so it lands in main.log even though the
-    // renderer tree is already in a failed state. Read the file once to get the
-    // exact component that threw; refresh resets the tree.
-    ipcMain.on('__renderer:crash', (_event, payload: unknown) => {
-      mainLog.error('[renderer-crash] Root React tree crashed', payload)
-    })
-
-    // Dialog bridge — preload capability handlers use ipcRenderer.invoke to
-    // call main-process-only dialog APIs (dialog, BrowserWindow).
-    ipcMain.handle('__dialog:showMessageBox', async (event, spec) => {
-      const win = BrowserWindow.fromWebContents(event.sender)
-        || BrowserWindow.getFocusedWindow()
-        || BrowserWindow.getAllWindows()[0]
-      const result = await dialog.showMessageBox(win, spec)
-      return { response: result.response }
-    })
     registerUserFileDialogHandlers(!isClientOnly && !getServerConfig().enabled)
 
     const clientAuthOverrides = readClientAuthOverrides(app.getPath('userData'))
@@ -611,87 +551,22 @@ app.whenReady().then(async () => {
       mainLog.info(`[client-auth] Required (${initialClientAuthState.configured ? 'configured' : 'not configured'})`)
     }
 
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.GET_STATE, () => authService.getState())
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN, async (_event, input: unknown) => {
-      const record = input && typeof input === 'object'
-        ? input as Record<string, unknown>
-        : {}
-      return authService.signIn({
-        identifier: typeof record.identifier === 'string' ? record.identifier : '',
-        password: typeof record.password === 'string' ? record.password : '',
-      })
-    })
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_UP, async (_event, input: unknown) => {
-      const record = input && typeof input === 'object'
-        ? input as Record<string, unknown>
-        : {}
-      return authService.signUp({
-        identifier: typeof record.identifier === 'string' ? record.identifier : '',
-        password: typeof record.password === 'string' ? record.password : '',
-        name: typeof record.name === 'string' ? record.name : undefined,
-      })
-    })
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.VERIFY_EMAIL, async (_event, input: unknown) => {
-      const record = input && typeof input === 'object'
-        ? input as Record<string, unknown>
-        : {}
-      await authService.verifyEmailOtp({
-        email: typeof record.email === 'string' ? record.email : '',
-        otp: typeof record.otp === 'string' ? record.otp : '',
-      })
-    })
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.RESEND_VERIFICATION_EMAIL, async (_event, input: unknown) => {
-      const record = input && typeof input === 'object'
-        ? input as Record<string, unknown>
-        : {}
-      await authService.sendEmailVerificationOtp({
-        email: typeof record.email === 'string' ? record.email : '',
-      })
-    })
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_IN_WITH_FEISHU, () => authService.signInWithFeishu())
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.CANCEL_FEISHU_SIGN_IN, () => {
-      authService.cancelFeishuSignIn()
-    })
-    ipcMain.handle(CLIENT_AUTH_IPC_CHANNELS.SIGN_OUT, () => authService.signOut())
+    registerClientAuthIpc(authService)
     const getSkillsMarketToken = async (): Promise<string | undefined> => {
       return authService.getState().authenticated
         ? authService.issueSkillsMarketAccessToken()
         : undefined
     }
-    ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.LIST, () => skillsMarketCatalog.load())
-    ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.DETAIL, async (_event, skillSlug: string) => {
-      return getSkillDetailFromMarket(skillSlug, {
-        token: await getSkillsMarketToken(),
-        fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
-      })
+    const marketFetch = (url: string | URL | Request, init?: RequestInit) =>
+      net.fetch(url instanceof URL ? url.toString() : url, init)
+    registerMarketIpc({
+      catalog: skillsMarketCatalog,
+      authService,
+      getToken: getSkillsMarketToken,
+      fetchImpl: marketFetch,
     })
-    ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.DOWNLOAD, async (_event, input) => {
-      return downloadSkillFromMarket(input, {
-        token: await getSkillsMarketToken(),
-        fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
-      })
-    })
-    ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.PUBLISH, async (_event, input: SkillMarketPublishInput) => {
-      const user = authService.getState().user
-      if (!user) throw new Error('Sign in before publishing a Skill')
-      const token = await authService.issueSkillsMarketAccessToken()
-      const result = await publishSkillToMarket(input, {
-        author: { name: user.name ?? user.email ?? user.userId },
-        token,
-        fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
-      })
-      skillsMarketCatalog.invalidate()
-      return result
-    })
-    ipcMain.handle(MCP_MARKET_IPC_CHANNELS.LIST, async (_event, search: string) => {
-      return listMcpServersFromMarket(typeof search === 'string' ? search : '', {
-        fetchImpl: (url, init) => net.fetch(url instanceof URL ? url.toString() : url, init),
-      })
-    })
-    ipcMain.handle('feedback:submitIssue', async (_event, input: unknown) => {
-      return submitFeedbackIssue(normalizeFeedbackIssueInput(input), {
-        fetch: (url, init) => net.fetch(url, init),
-      })
+    registerFeedbackIpc({
+      fetch: (url, init) => net.fetch(url, init),
     })
 
     let scheduleDeferredRuntime: (() => void) | null = null
@@ -970,133 +845,11 @@ app.whenReady().then(async () => {
         scheduleDeferredRuntime = scheduleRuntimeFallback
       }
 
-      // IPC handlers — preload uses sendSync to get WS connection details
-
-      // Remove workspace from config (cleanup stale entries)
-      ipcMain.handle('workspace:setArchived', async (_event, workspaceId: string, archived: boolean) => {
-        const { setWorkspaceArchived } = await import('@craft-agent/shared/config')
-        return setWorkspaceArchived(workspaceId, archived)
-      })
-
-      ipcMain.handle('workspace:remove', async (_event, workspaceId: string) => {
-        return instance.sessionManager.removeWorkspace(workspaceId)
-      })
-
-      // Cross-server RPC — invoke a channel on an arbitrary remote server
-      ipcMain.handle('server:invokeOnServer', async (_event, url: string, token: string, channel: string, ...args: unknown[]) => {
-        const { connectToRemote } = await import('./handlers/workspace')
-        const { client, error } = await connectToRemote(url, token)
-        if (!client) throw new Error(error ?? 'Connection failed')
-        try {
-          return await client.invoke(channel, ...args)
-        } finally {
-          client.destroy()
-        }
-      })
-
-      // Transfer one immutable summary snapshot to a fresh session on another
-      // server. Provider transcripts and workspace files never cross domains.
-      ipcMain.handle('session:transferToRemoteWorkspace', async (_event, sessionId: string, targetWorkspaceId: string) => {
-        const { resolveRuntimeWorkspaceById } = await import('@craft-agent/shared/workspaces')
-        const { connectToRemote } = await import('./handlers/workspace')
-
-        const targetWorkspace = resolveRuntimeWorkspaceById(targetWorkspaceId)
-        if (!targetWorkspace) throw new Error(`Target workspace ${targetWorkspaceId} not found`)
-        if (!sessionManager) throw new Error('Session manager not initialized')
-
-        const sourceWorkspaceLocalId = windowManager?.getWorkspaceForWindow(_event.sender.id)
-        if (!sourceWorkspaceLocalId) throw new Error('Unable to resolve source workspace for transfer')
-
-        const sourceWorkspace = resolveRuntimeWorkspaceById(sourceWorkspaceLocalId)
-        if (!sourceWorkspace) throw new Error(`Source workspace ${sourceWorkspaceLocalId} not found`)
-
-        let transferPayload: import('@craft-agent/shared/protocol').RemoteSessionTransferPayload
-
-        if (sourceWorkspace.remoteServer) {
-          const { url: sourceUrl, remoteWorkspaceId: sourceRemoteWorkspaceId } = sourceWorkspace.remoteServer
-          const sourceToken = await getCredentialManager().getRemoteServerToken(sourceWorkspace.id)
-          if (!sourceToken) throw new Error('Source remote server credential is unavailable')
-          console.log(`[Transfer] Exporting remote-owned session ${sessionId} from workspace ${sourceRemoteWorkspaceId}...`)
-          const { client: sourceClient, error: sourceError } = await connectToRemote(sourceUrl, sourceToken, sourceRemoteWorkspaceId)
-          if (!sourceClient) throw new Error(sourceError ?? 'Connection failed to source remote server')
-
-          try {
-            transferPayload = await sourceClient.invoke('sessions:exportRemoteTransfer', sessionId)
-            if (!transferPayload?.summary) throw new Error(`Failed to summarize session ${sessionId}`)
-          } finally {
-            sourceClient.destroy()
-          }
-        } else {
-          const payload = await sessionManager.exportRemoteSessionTransfer(sessionId, sourceWorkspace.id)
-          if (!payload) throw new Error(`Failed to summarize session ${sessionId}`)
-          transferPayload = payload
-        }
-
-        if (!targetWorkspace.remoteServer) {
-          return sessionManager.importRemoteSessionTransfer(
-            targetWorkspace.id,
-            transferPayload,
-          )
-        }
-
-        const { url, remoteWorkspaceId } = targetWorkspace.remoteServer
-        const token = await getCredentialManager().getRemoteServerToken(targetWorkspace.id)
-        if (!token) throw new Error('Target remote server credential is unavailable')
-        console.log(`[Transfer] Connecting to target remote server: ${url}`)
-        const { client, error } = await connectToRemote(url, token, remoteWorkspaceId)
-        if (!client) throw new Error(error ?? 'Connection failed to target remote server')
-        console.log('[Transfer] Connected to target remote server')
-
-        try {
-          const result = await client.invoke(
-            'sessions:importRemoteTransfer',
-            remoteWorkspaceId,
-            transferPayload,
-          )
-          return result
-        } finally {
-          client.destroy()
-        }
-      })
-
-      // App relaunch (for server config changes — NOT an update install)
-      ipcMain.handle('app:relaunch', () => {
-        app.relaunch({ args: getStartupRelaunchArgs(process.argv) })
-        app.quit()
-      })
-
-      // Language change: sync from renderer to main process and rebuild native menu
-      ipcMain.handle('i18n:changeLanguage', async (_event, lang: string) => {
-        i18n.changeLanguage(lang)
-        const { rebuildMenu } = await import('./menu')
-        await rebuildMenu()
-      })
-
-      ipcMain.on('__get-ws-endpoint', (e) => {
-        e.returnValue = localServerEndpoint(instance.host, instance.port, tls)
-      })
-      ipcMain.on('__get-ws-token', (e) => {
-        e.returnValue = instance.token
-      })
-      ipcMain.on('__get-workspace-remote-config', (e) => {
-        const wsId = windowManager?.getWorkspaceForWindow(e.sender.id)
-        if (!wsId) { e.returnValue = null; return }
-        const ws = getWorkspaceByNameOrId(wsId)
-        if (!ws?.remoteServer) { e.returnValue = null; return }
-        e.returnValue = {
-          url: ws.remoteServer.url,
-          token: getCredentialManager().peekRemoteServerToken(ws.id) ?? '',
-          remoteWorkspaceId: ws.remoteServer.remoteWorkspaceId,
-        }
-      })
-      ipcMain.on('__get-remote-server-token', (e, credentialRef: unknown) => {
-        if (typeof credentialRef !== 'string') { e.returnValue = null; return }
-        const workspace = getWorkspaces().find(
-          candidate => candidate.remoteServer?.credentialRef === credentialRef,
-        )
-        e.returnValue = workspace
-          ? getCredentialManager().peekRemoteServerToken(workspace.id)
-          : null
+      registerHostIpc({
+        sessionManager: instance.sessionManager,
+        getWorkspaceId: (webContentsId) => windowManager?.getWorkspaceForWindow(webContentsId),
+        endpoint: () => localServerEndpoint(instance.host, instance.port, tls),
+        token: instance.token,
       })
 
       // Server config RPC handlers (LOCAL_ONLY — Electron-specific)
