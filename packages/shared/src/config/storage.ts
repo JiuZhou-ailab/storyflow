@@ -11,6 +11,7 @@ import {
   loadWorkspaceConfig,
   saveWorkspaceConfig,
 } from '../workspaces/storage.ts';
+import { isPathWithinProjectRoot } from '../workspaces/paths.ts';
 import { findIconFile } from '../utils/icon.ts';
 import { extractWorkspaceSlugFromPath } from '../utils/workspace-slug.ts';
 import { initializeDocs } from '../docs/index.ts';
@@ -1038,7 +1039,7 @@ export async function removeWorkspace(workspaceId: string): Promise<boolean> {
   const index = config.workspaces.findIndex(w => w.id === workspaceId);
   if (index === -1) return false;
 
-  config.workspaces.splice(index, 1);
+  const [removedWorkspace] = config.workspaces.splice(index, 1);
 
   // If we removed the active workspace, switch to first available
   if (config.activeWorkspaceId === workspaceId) {
@@ -1057,13 +1058,33 @@ export async function removeWorkspace(workspaceId: string): Promise<boolean> {
     console.error(`[storage] Failed to delete credentials for removed Project ${workspaceId}`, error);
   }
 
-  // Delete workspace data directory (sessions, plans, etc.)
+  // Preserve workspace data after removing its Host registration.
   const workspaceDataDir = join(WORKSPACES_DIR, workspaceId);
-  if (existsSync(workspaceDataDir)) {
+  // A Project root may live under this directory; it is user content, never app data.
+  const holdsProjectRoot = [removedWorkspace, ...config.workspaces].some(workspace => (
+    !!workspace?.rootPath && isPathWithinProjectRoot(workspaceDataDir, workspace.rootPath, { allowMissing: true })
+  ));
+  if (holdsProjectRoot) {
+    console.warn(`[storage] Left workspace data directory in place because it contains a Project root: ${workspaceDataDir}`);
+  } else if (existsSync(workspaceDataDir)) {
     try {
-      rmSync(workspaceDataDir, { recursive: true });
+      const removedDir = join(CONFIG_DIR, 'removed-workspaces');
+      mkdirSync(removedDir, { recursive: true });
+      const backupName = `${Date.now()}-${randomUUID()}-${workspaceId}`;
+      // Keep the original on rename failure (including EXDEV); never fall back to deletion.
+      renameSync(workspaceDataDir, join(removedDir, backupName));
+      try {
+        // Timestamp-first names order removals, independent of the original directory mtime.
+        const backups = readdirSync(removedDir, { withFileTypes: true })
+          .filter(entry => entry.isDirectory() && /^\d{13}-[0-9a-f-]{36}-.+$/.test(entry.name) && entry.name !== backupName)
+          .map(entry => entry.name)
+          .sort().reverse();
+        for (const name of backups.slice(4)) rmSync(join(removedDir, name), { recursive: true });
+      } catch (error) {
+        console.error(`[storage] Failed to prune removed workspace backups: ${removedDir}`, error);
+      }
     } catch (error) {
-      console.error(`[storage] Failed to delete workspace data directory: ${workspaceDataDir}`, error);
+      console.error(`[storage] Failed to preserve workspace data directory: ${workspaceDataDir}`, error);
     }
   }
 
