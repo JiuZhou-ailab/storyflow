@@ -22,6 +22,7 @@ import { useTheme, type FontFamily, type ThemeMode } from '@/context/ThemeContex
 import { windowWorkspacesAtom } from '@/atoms/sessions'
 import { routes } from '@/lib/navigate'
 import { Monitor, Sun, Moon } from 'lucide-react'
+import { isWindows } from '@/lib/platform'
 import type { ToolIconMapping } from '../../../shared/types'
 
 import {
@@ -112,6 +113,34 @@ export default function AppearanceSettingsPage() {
     themeResolvedFrom,
   } = useTheme()
   const workspaces = useAtomValue(windowWorkspacesAtom)
+
+  const [windowsMaterial, setWindowsMaterial] = useState(false)
+  const [windowsMaterialReady, setWindowsMaterialReady] = useState(false)
+  const [windowsMaterialSaving, setWindowsMaterialSaving] = useState(false)
+  const [windowsMaterialError, setWindowsMaterialError] = useState(false)
+  useEffect(() => {
+    if (!isWindows) return
+    let cancelled = false
+    window.electronAPI.getWindowsBackgroundMaterialEnabled().then(enabled => {
+      if (cancelled) return
+      setWindowsMaterial(enabled)
+      setWindowsMaterialReady(true)
+    }).catch(() => { if (!cancelled) setWindowsMaterialError(true) })
+    return () => { cancelled = true }
+  }, [])
+
+  const handleWindowsMaterialChange = async (enabled: boolean) => {
+    setWindowsMaterialSaving(true)
+    setWindowsMaterialError(false)
+    try {
+      await window.electronAPI.setWindowsBackgroundMaterialEnabled(enabled)
+      setWindowsMaterial(enabled)
+    } catch {
+      setWindowsMaterialError(true)
+    } finally {
+      setWindowsMaterialSaving(false)
+    }
+  }
 
   // Fetch workspace icons as data URLs (file:// URLs don't work in renderer)
   const workspaceIconMap = useWorkspaceIcons(workspaces)
@@ -341,6 +370,20 @@ export default function AppearanceSettingsPage() {
               {/* Interface */}
               <SettingsSection title={t("settings.appearance.interface")}>
                 <SettingsCard>
+                  {isWindows && (
+                    <SettingsToggle
+                      label={t("settings.appearance.windowsMaterial")}
+                      description={t("settings.appearance.windowsMaterialDesc")}
+                      checked={windowsMaterial}
+                      disabled={!windowsMaterialReady || windowsMaterialSaving}
+                      onCheckedChange={handleWindowsMaterialChange}
+                    />
+                  )}
+                  {isWindows && windowsMaterialError && (
+                    <p role="alert" className="px-4 py-3 text-sm text-destructive">
+                      {t("settings.appearance.windowsMaterialError")}
+                    </p>
+                  )}
                   <SettingsToggle
                     label={t("settings.appearance.connectionIcons")}
                     description={t("settings.appearance.connectionIconsDesc")}

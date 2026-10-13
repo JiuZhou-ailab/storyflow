@@ -701,6 +701,8 @@ export interface ElectronAPI {
   getAppTheme(): Promise<import('@config/theme').ThemeOverrides | null>
   loadPresetThemes(): Promise<import('@config/theme').PresetTheme[]>
   loadPresetTheme(themeId: string): Promise<import('@config/theme').PresetTheme | null>
+  getWindowsBackgroundMaterialEnabled(): Promise<boolean>
+  setWindowsBackgroundMaterialEnabled(enabled: boolean): Promise<void>
   getColorTheme(): Promise<string>
   setColorTheme(themeId: string): Promise<void>
   getWorkspaceColorTheme(workspaceId: string): Promise<string | null>

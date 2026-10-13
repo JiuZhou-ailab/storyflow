@@ -129,6 +129,8 @@ export const RPC_CHANNELS = {
     GET_APP: 'theme:getApp',
     GET_PRESETS: 'theme:getPresets',
     LOAD_PRESET: 'theme:loadPreset',
+    GET_WINDOWS_BACKGROUND_MATERIAL: 'theme:getWindowsBackgroundMaterial',
+    SET_WINDOWS_BACKGROUND_MATERIAL: 'theme:setWindowsBackgroundMaterial',
     GET_COLOR_THEME: 'theme:getColorTheme',
     SET_COLOR_THEME: 'theme:setColorTheme',
     BROADCAST_PREFERENCES: 'theme:broadcastPreferences',

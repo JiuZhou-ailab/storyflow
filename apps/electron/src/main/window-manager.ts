@@ -8,6 +8,7 @@ import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { existsSync } from 'fs'
 import { release } from 'os'
+import { getWindowsBackgroundMaterialEnabled } from '@craft-agent/shared/config/storage'
 import { RPC_CHANNELS, type WindowCloseRequestSource } from '../shared/types'
 import { i18n } from '@craft-agent/shared/i18n'
 import type { SavedWindow } from './window-state'
@@ -93,7 +94,7 @@ function watchRendererResponsiveness(
  * - Older versions: No transparency
  */
 function getWindowsBackgroundMaterial(): 'mica' | 'acrylic' | undefined {
-  if (process.platform !== 'win32') return undefined
+  if (process.platform !== 'win32' || !getWindowsBackgroundMaterialEnabled()) return undefined
 
   // os.release() returns "10.0.xxxxx" where xxxxx is the build number
   const buildNumber = parseInt(release().split('.')[2] || '0', 10)
@@ -250,7 +251,7 @@ export class WindowManager {
         vibrancy: 'under-window',
         visualEffectState: 'active',
       }),
-      // Windows: use native frame with Mica/Acrylic transparency (Windows 10/11)
+      // Windows: native frame with optional Mica/Acrylic (Windows 10/11)
       ...(isWindows && {
         frame: true, // Keep native frame for better UX
         autoHideMenuBar: true, // Menu is null on Windows, this is just for safety

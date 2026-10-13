@@ -304,6 +304,8 @@ export const CHANNEL_MAP = {
   getAppTheme: invoke(RPC_CHANNELS.theme.GET_APP),
   loadPresetThemes: invoke(RPC_CHANNELS.theme.GET_PRESETS),
   loadPresetTheme: invoke(RPC_CHANNELS.theme.LOAD_PRESET),
+  getWindowsBackgroundMaterialEnabled: invoke(RPC_CHANNELS.theme.GET_WINDOWS_BACKGROUND_MATERIAL),
+  setWindowsBackgroundMaterialEnabled: invoke(RPC_CHANNELS.theme.SET_WINDOWS_BACKGROUND_MATERIAL),
   getColorTheme: invoke(RPC_CHANNELS.theme.GET_COLOR_THEME),
   setColorTheme: invoke(RPC_CHANNELS.theme.SET_COLOR_THEME),
   getWorkspaceColorTheme: invoke(RPC_CHANNELS.theme.GET_WORKSPACE_COLOR_THEME),

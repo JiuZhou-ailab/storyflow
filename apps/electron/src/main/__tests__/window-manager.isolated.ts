@@ -108,6 +108,13 @@ mock.module('../logger', () => {
   }
 })
 
+let windowsMaterialEnabled = false
+let windowsRelease = '10.0.22631'
+mock.module('@craft-agent/shared/config/storage', () => ({
+  getWindowsBackgroundMaterialEnabled: () => windowsMaterialEnabled,
+}))
+mock.module('os', () => ({ release: () => windowsRelease, tmpdir }))
+
 const { WindowManager } = await import('../window-manager')
 const { dialog } = await import('electron')
 
@@ -118,6 +125,31 @@ describe('WindowManager', () => {
     loadError = undefined
     ;(dialog.showMessageBox as any).mockClear()
   })
+
+  for (const [enabled, version, expected] of [
+    [false, '10.0.22631', undefined],
+    [false, '10.0.19045', undefined],
+    [true, '10.0.22000', 'mica'],
+    [true, '10.0.17763', 'acrylic'],
+    [true, '10.0.17762', undefined],
+    [true, 'invalid', undefined],
+  ] as const) {
+    it(`Windows material enabled=${enabled} version=${version}: ${expected}`, () => {
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+      windowsMaterialEnabled = enabled
+      windowsRelease = version
+      try {
+        new WindowManager().createWindow({ workspaceId: '' })
+        expect(createdWindowOptions[0].backgroundMaterial).toBe(expected)
+        expect(createdWindowOptions[0].transparent).not.toBe(true)
+        expect(createdWindowOptions[0].backgroundColor).toBe('#fafafb')
+      } finally {
+        Object.defineProperty(process, 'platform', platform)
+        windowsMaterialEnabled = false
+      }
+    })
+  }
 
   it('sets a native window background to avoid packaged paint flashes', () => {
     const manager = new WindowManager()

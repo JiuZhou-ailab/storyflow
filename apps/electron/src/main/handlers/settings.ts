@@ -3,6 +3,8 @@ import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
 
 export const GUI_HANDLED_CHANNELS = [
+  RPC_CHANNELS.theme.GET_WINDOWS_BACKGROUND_MATERIAL,
+  RPC_CHANNELS.theme.SET_WINDOWS_BACKGROUND_MATERIAL,
   RPC_CHANNELS.power.SET_KEEP_AWAKE,
   RPC_CHANNELS.settings.SET_NETWORK_PROXY,
 ] as const
@@ -12,6 +14,15 @@ export const GUI_HANDLED_CHANNELS = [
 // ============================================================
 
 export function registerSettingsGuiHandlers(server: RpcServer, _deps: HandlerDeps): void {
+  server.handle(RPC_CHANNELS.theme.GET_WINDOWS_BACKGROUND_MATERIAL, async () => {
+    const { getWindowsBackgroundMaterialEnabled } = await import('@craft-agent/shared/config/storage')
+    return getWindowsBackgroundMaterialEnabled()
+  })
+  server.handle(RPC_CHANNELS.theme.SET_WINDOWS_BACKGROUND_MATERIAL, async (_ctx, enabled: boolean) => {
+    const { setWindowsBackgroundMaterialEnabled } = await import('@craft-agent/shared/config/storage')
+    setWindowsBackgroundMaterialEnabled(enabled)
+  })
+
   // Set keep awake while running setting (requires Electron power-manager)
   server.handle(RPC_CHANNELS.power.SET_KEEP_AWAKE, async (_ctx, enabled: boolean) => {
     const { setKeepAwakeWhileRunning } = await import('@craft-agent/shared/config/storage')

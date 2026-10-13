@@ -79,6 +79,8 @@ export const CHANNEL_ROUTING = {
   'theme:getApp': 'LOCAL_ONLY',
   'theme:getPresets': 'LOCAL_ONLY',
   'theme:loadPreset': 'LOCAL_ONLY',
+  'theme:getWindowsBackgroundMaterial': 'LOCAL_ONLY',
+  'theme:setWindowsBackgroundMaterial': 'LOCAL_ONLY',
   'theme:getColorTheme': 'LOCAL_ONLY',
   'theme:setColorTheme': 'LOCAL_ONLY',
   'theme:broadcastPreferences': 'LOCAL_ONLY',

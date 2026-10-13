@@ -86,6 +86,7 @@ export interface StoredConfig {
   // Notifications
   notificationsEnabled?: boolean;  // Desktop notifications for task completion (default: true)
   // Appearance
+  windowsBackgroundMaterialEnabled?: boolean;  // Native Mica/Acrylic is opt-in (default: false)
   colorTheme?: string;  // ID of selected preset theme (e.g., 'dracula', 'nord'). Default: 'default'
   // Auto-update
   dismissedUpdateVersion?: string;  // Version that user dismissed (skip notifications for this version)
@@ -1533,6 +1534,18 @@ export function loadPresetTheme(id: string): PresetTheme | null {
 // ============================================
 // Color Theme Selection (stored in config)
 // ============================================
+
+export function getWindowsBackgroundMaterialEnabled(): boolean {
+  return loadStoredConfig()?.windowsBackgroundMaterialEnabled === true;
+}
+
+export function setWindowsBackgroundMaterialEnabled(enabled: boolean): void {
+  if (typeof enabled !== 'boolean') throw new TypeError('Expected a boolean');
+  const config = loadStoredConfig();
+  if (!config) throw new Error('App configuration is not initialized');
+  config.windowsBackgroundMaterialEnabled = enabled;
+  saveConfig(config);
+}
 
 /**
  * Get the currently selected color theme ID.
