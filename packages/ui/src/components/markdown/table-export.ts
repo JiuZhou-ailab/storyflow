@@ -6,6 +6,7 @@
  */
 
 import { zipSync } from 'fflate'
+import i18n from 'i18next'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,7 +25,8 @@ export function tableToMarkdown(columns: ExportColumn[], rows: Record<string, un
     columns.map((col) => {
       const v = row[col.key]
       if (v === null || v === undefined) return ''
-      return String(v).replace(/\|/g, '\\|')
+      // GFM cells are single-line; <br> keeps the row intact. Escape \ before | so \| stays a pipe.
+      return String(v).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r\n|\n/g, '<br>')
     })
   )
 
@@ -54,8 +56,13 @@ export function tableToCsv(columns: ExportColumn[], rows: Record<string, unknown
 
 // ── XLSX ─────────────────────────────────────────────────────────────────────
 
-function xmlEscape(s: string): string {
+// XML 1.0 forbids C0 controls except \t \n \r, plus unpaired surrogates and U+FFFE/U+FFFF.
+const XML_ILLEGAL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
+
+/** @internal exported for regression tests */
+export function xmlEscape(s: string): string {
   return s
+    .replace(XML_ILLEGAL, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -195,7 +202,8 @@ function getCellStyle(col: ExportColumn, val: unknown): number {
   }
 }
 
-function buildSheetXml(columns: ExportColumn[], rows: Record<string, unknown>[]): string {
+/** @internal exported for regression tests */
+export function buildSheetXml(columns: ExportColumn[], rows: Record<string, unknown>[]): string {
   let xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
   xml += '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
   xml += '<sheetData>'
@@ -222,8 +230,7 @@ function buildSheetXml(columns: ExportColumn[], rows: Record<string, unknown>[])
       if (typeof val === 'number' && isFinite(val)) {
         xml += `<c r="${ref}"${sAttr} t="n"><v>${val}</v></c>`
       } else if (col.type === 'boolean') {
-        // Write as string "Yes"/"No" with color
-        const label = val ? 'Yes' : 'No'
+        const label = val ? i18n.t('table.booleanYes') : i18n.t('table.booleanNo')
         xml += `<c r="${ref}"${sAttr} t="inlineStr"><is><t>${label}</t></is></c>`
       } else {
         xml += `<c r="${ref}"${sAttr} t="inlineStr"><is><t>${xmlEscape(String(val))}</t></is></c>`
@@ -236,26 +243,77 @@ function buildSheetXml(columns: ExportColumn[], rows: Record<string, unknown>[])
   return xml
 }
 
-export function tableToXlsx(columns: ExportColumn[], rows: Record<string, unknown>[], filename: string): void {
-  const enc = new TextEncoder()
-  const sheetXml = buildSheetXml(columns, rows)
+export type TableExportFormat = 'markdown' | 'csv' | 'xlsx'
 
+export interface TableExportNotices {
+  success: (message: string) => void
+  error: (message: string) => void
+}
+
+/** Copy or download a table and report both outcomes. Throws nothing. */
+export async function runTableExport(
+  format: TableExportFormat,
+  columns: ExportColumn[],
+  rows: Record<string, unknown>[],
+  filename: string,
+  notices: TableExportNotices,
+  copyText: (text: string) => Promise<void>,
+  messages: { copied: string; copyFailed: string; downloaded: string; exportFailed: string },
+): Promise<boolean> {
+  if (format === 'xlsx') {
+    try {
+      tableToXlsx(columns, rows, filename)
+      notices.success(messages.downloaded)
+      return true
+    } catch (err) {
+      console.error('Failed to export:', err)
+      notices.error(messages.exportFailed)
+      return false
+    }
+  }
+  const text = format === 'markdown' ? tableToMarkdown(columns, rows) : tableToCsv(columns, rows)
+  try {
+    await copyText(text)
+    notices.success(messages.copied)
+    return true
+  } catch (err) {
+    console.error('Failed to copy:', err)
+    notices.error(messages.copyFailed)
+    return false
+  }
+}
+
+export function buildXlsxBlob(columns: ExportColumn[], rows: Record<string, unknown>[]): Blob {
+  const enc = new TextEncoder()
   const zipData = zipSync({
     '[Content_Types].xml': enc.encode(CONTENT_TYPES),
     '_rels/.rels': enc.encode(RELS),
     'xl/workbook.xml': enc.encode(WORKBOOK),
     'xl/_rels/workbook.xml.rels': enc.encode(WORKBOOK_RELS),
-    'xl/worksheets/sheet1.xml': enc.encode(sheetXml),
+    'xl/worksheets/sheet1.xml': enc.encode(buildSheetXml(columns, rows)),
     'xl/styles.xml': enc.encode(STYLES),
   })
+  return new Blob([zipData.buffer as ArrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+}
 
-  const blob = new Blob([zipData.buffer as ArrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  const url = URL.createObjectURL(blob)
+export interface BlobUrl {
+  createObjectURL: (blob: Blob) => string
+  revokeObjectURL: (url: string) => void
+}
+
+export function tableToXlsx(
+  columns: ExportColumn[],
+  rows: Record<string, unknown>[],
+  filename: string,
+  blobUrl: BlobUrl = URL,
+): void {
+  const url = blobUrl.createObjectURL(buildXlsxBlob(columns, rows))
   const a = document.createElement('a')
   a.href = url
   a.download = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  // Chromium starts the download asynchronously; revoking in this turn can cancel it.
+  setTimeout(() => blobUrl.revokeObjectURL(url), 1000)
 }

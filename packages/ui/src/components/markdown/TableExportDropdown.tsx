@@ -6,6 +6,7 @@
 
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Check, ChevronDown, Copy, Download, FileText } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import {
@@ -14,7 +15,7 @@ import {
   StyledDropdownMenuContent,
   StyledDropdownMenuItem,
 } from '../ui/StyledDropdown'
-import { tableToMarkdown, tableToCsv, tableToXlsx, type ExportColumn } from './table-export'
+import { runTableExport, type ExportColumn } from './table-export'
 
 export interface TableExportDropdownProps {
   columns: ExportColumn[]
@@ -28,19 +29,25 @@ export function TableExportDropdown({ columns, rows, filename }: TableExportDrop
   const [copiedFormat, setCopiedFormat] = useState<string | null>(null)
 
   const handleExport = useCallback(async (format: 'markdown' | 'csv' | 'xlsx') => {
-    if (format === 'xlsx') {
-      tableToXlsx(columns, rows, filename)
-      return
-    }
-    const text = format === 'markdown' ? tableToMarkdown(columns, rows) : tableToCsv(columns, rows)
-    try {
-      await navigator.clipboard.writeText(text)
+    const ok = await runTableExport(
+      format,
+      columns,
+      rows,
+      filename,
+      toast,
+      (text) => navigator.clipboard.writeText(text),
+      {
+        copied: t('toast.copied'),
+        copyFailed: t('toast.copyFailed'),
+        downloaded: t('table.exportDownloaded'),
+        exportFailed: t('table.exportFailed'),
+      },
+    )
+    if (ok && format !== 'xlsx') {
       setCopiedFormat(format)
       setTimeout(() => setCopiedFormat(null), 2000)
-    } catch (err) {
-      console.error('Failed to copy:', err)
     }
-  }, [columns, rows, filename])
+  }, [columns, rows, filename, t])
 
   return (
     <DropdownMenu>
