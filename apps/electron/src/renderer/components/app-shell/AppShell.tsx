@@ -76,6 +76,9 @@ import type { ChatDisplayHandle } from "./ChatDisplay"
 import { NovelDocumentEditorPanel, type NovelDocumentEditorPanelHandle, type NovelSelectionAiRequest } from "@/components/writing/NovelDocumentEditorPanel"
 import { NovelDocumentTabStrip } from "@/components/writing/NovelDocumentTabStrip"
 import { FileViewer } from "@/components/files/FileViewer"
+import { TextDocumentBar, TextDocumentSource } from "@/components/files/TextDocument"
+import { canWriteInRichText, isTextDocumentPath, useWritingDocument, type WritingDocumentView } from "@/components/writing/useWritingDocument"
+import { SettingsSegmentedControl } from "@/components/settings/SettingsSegmentedControl"
 import { useConversationWorkspace } from "../right-sidebar/ConversationFilesPanel"
 import { NovelVersionHistoryDialog } from "@/components/writing/NovelVersionHistoryDialog"
 import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
@@ -93,7 +96,6 @@ import {
 import { revealWorkspaceFile } from "@/components/workspace/workspace-file-actions"
 import {
   advanceWorkspaceCatalogRevision,
-  getWorkspaceFileOpenTarget,
   readWorkspaceCatalogRevision,
   type WorkspaceCreateEntryKind,
 } from "@/components/workspace/workspace-file-tree-model"
@@ -480,16 +482,6 @@ function getContentChangeSize(previous: string, next: string): number {
   const previousChanged = previous.length - prefixLength - suffixLength
   const nextChanged = next.length - prefixLength - suffixLength
   return Math.max(previousChanged, nextChanged)
-}
-
-function isSuspiciousEmptyNovelSnapshot(
-  contentToSave: string,
-  savedContent: string,
-  lastLoadedContent: string,
-): boolean {
-  return contentToSave.length === 0
-    && savedContent.length > 0
-    && lastLoadedContent === savedContent
 }
 
 /** Wraps children in a Tooltip that shows instantly on hover — only rendered when `show` is true. */
@@ -2218,6 +2210,8 @@ function AppShellContent({
 
     const syncWorkspaceTreeFromDisk = (): void => {
       void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
+      // The catalog carries no mtime, so the open document re-reads itself; a dirty draft is kept and only flagged as a conflict.
+      setNovelDocumentReloadVersion(version => version + 1)
     }
     const handleVisibilityChange = (): void => {
       if (document.visibilityState === 'visible') syncWorkspaceTreeFromDisk()
@@ -2286,35 +2280,24 @@ function AppShellContent({
 
   const [novelSearchTarget, setNovelSearchTarget] = React.useState<(DocumentSearchTarget & { path: string }) | null>(null)
   const [novelDocumentReloadVersion, setNovelDocumentReloadVersion] = React.useState(0)
-  const [loadedNovelDocumentPath, setLoadedNovelDocumentPath] = React.useState<string | null>(null)
-  // Buffer ownership survives a same-file refresh while read readiness is pending.
-  const novelDocumentBufferPathRef = React.useRef<string | null>(null)
-  const [novelDocumentContent, setNovelDocumentContent] = React.useState('')
-  const [savedNovelDocumentContent, setSavedNovelDocumentContent] = React.useState('')
-  const [novelDocumentChangeVersion, setNovelDocumentChangeVersion] = React.useState(0)
-  const [savedNovelDocumentChangeVersion, setSavedNovelDocumentChangeVersion] = React.useState(0)
-  const novelDocumentChangeVersionRef = React.useRef(0)
-  const savedNovelDocumentChangeVersionRef = React.useRef(0)
-  const novelDocumentChangeVersionFlushRef = React.useRef<number | null>(null)
-  const [novelDocumentLoading, setNovelDocumentLoading] = React.useState(false)
-  const [novelDocumentSaving, setNovelDocumentSaving] = React.useState(false)
-  const [novelDocumentError, setNovelDocumentError] = React.useState<string | null>(null)
   const [novelVersionDialogOpen, setNovelVersionDialogOpen] = React.useState(false)
   const [novelVersions, setNovelVersions] = React.useState<WorkspaceVersionEntry[]>([])
   const [novelVersionsLoading, setNovelVersionsLoading] = React.useState(false)
   const [novelVersionSaving, setNovelVersionSaving] = React.useState(false)
   const [novelVersionRestoringHash, setNovelVersionRestoringHash] = React.useState<string | null>(null)
-  const [writingFilePath, setWritingFilePath] = React.useState<string | null>(null)
-  const selectedNovelFileOpenTarget = selectedNovelFile
-    ? (writingFilePath === selectedNovelFile.path ? getWorkspaceFileOpenTarget(selectedNovelFile.path) : 'file-handler')
+  // One draft per file; the view is only how it is shown. Markdown opens in the writing view.
+  const [novelSourceViewPaths, setNovelSourceViewPaths] = React.useState<ReadonlySet<string>>(() => new Set())
+  const selectedNovelDocumentPath = selectedNovelFile && isTextDocumentPath(selectedNovelFile.path)
+    ? selectedNovelFile.path
     : null
-  const selectedNovelDocumentPath = selectedNovelFileOpenTarget === 'editor'
-    ? selectedNovelFile?.path ?? null
-    : null
+  const selectedNovelDocumentView: WritingDocumentView = selectedNovelDocumentPath
+    && canWriteInRichText(selectedNovelDocumentPath)
+    && !novelSourceViewPaths.has(selectedNovelDocumentPath)
+    ? 'writing'
+    : 'source'
   const novelDocumentEditorRef = React.useRef<NovelDocumentEditorPanelHandle>(null)
   const latestNovelDocumentPathRef = React.useRef<string | null>(null)
   const novelDocumentSwitchStartRef = React.useRef<{ filePath: string; startedAt: number } | null>(null)
-  const novelDocumentSaveSeqRef = React.useRef(0)
   const novelVersionBaselinesRef = React.useRef<Record<string, { content: string; timestamp: number }>>({})
   const novelAutoVersionInFlightRef = React.useRef(false)
   const novelAutoVersionTimerRef = React.useRef<number | null>(null)
@@ -2364,68 +2347,61 @@ function AppShellContent({
     latestNovelDocumentPathRef.current = selectedNovelDocumentPath
   }, [selectedNovelDocumentPath])
 
-  const flushNovelDocumentChangeVersion = React.useCallback(() => {
-    if (novelDocumentChangeVersionFlushRef.current != null) {
-      window.clearTimeout(novelDocumentChangeVersionFlushRef.current)
-      novelDocumentChangeVersionFlushRef.current = null
-    }
-    setNovelDocumentChangeVersion(novelDocumentChangeVersionRef.current)
-  }, [])
-
-  const markSavedNovelDocumentChangeVersion = React.useCallback((version: number) => {
-    savedNovelDocumentChangeVersionRef.current = version
-    setSavedNovelDocumentChangeVersion(version)
-  }, [])
-
-  React.useEffect(() => () => {
-    if (novelDocumentChangeVersionFlushRef.current != null) {
-      window.clearTimeout(novelDocumentChangeVersionFlushRef.current)
-      novelDocumentChangeVersionFlushRef.current = null
-    }
-  }, [])
-
-  const replaceNovelDocumentContent = React.useCallback((content: string) => {
-    setNovelDocumentContent(content)
-    setSavedNovelDocumentContent(content)
-    novelDocumentChangeVersionRef.current = 0
-    setNovelDocumentChangeVersion(0)
-    markSavedNovelDocumentChangeVersion(0)
-  }, [markSavedNovelDocumentChangeVersion])
-
-  const handleNovelDocumentChanged = React.useCallback(() => {
-    novelDocumentChangeVersionRef.current += 1
-    if (novelDocumentChangeVersionFlushRef.current != null) {
-      window.clearTimeout(novelDocumentChangeVersionFlushRef.current)
-    }
-    novelDocumentChangeVersionFlushRef.current = window.setTimeout(() => {
-      novelDocumentChangeVersionFlushRef.current = null
-      setNovelDocumentChangeVersion(novelDocumentChangeVersionRef.current)
-    }, 200)
-  }, [])
-
-  const getCurrentNovelDocumentContent = React.useCallback(() => (
-    novelDocumentEditorRef.current?.getMarkdownSnapshot() ?? novelDocumentContent
-  ), [novelDocumentContent])
-
-  const isCurrentNovelDocumentDirty = React.useCallback(() => (
-    latestNovelDocumentPathRef.current != null
-    && (
-      novelDocumentContent !== savedNovelDocumentContent
-      || novelDocumentChangeVersionRef.current !== savedNovelDocumentChangeVersionRef.current
-    )
-  ), [novelDocumentContent, savedNovelDocumentContent])
+  const {
+    model: selectedNovelDocumentModel,
+    state: selectedNovelDocumentState,
+    flush: flushSelectedNovelDocument,
+    save: saveSelectedNovelDocument,
+    reload: reloadSelectedNovelDocument,
+    isDirty: isCurrentNovelDocumentDirty,
+    handleEditorChanged: handleNovelDocumentChanged,
+  } = useWritingDocument({
+    workspaceId: activeWorkspaceId ?? null,
+    path: selectedNovelDocumentPath,
+    view: selectedNovelDocumentView,
+    refresh: `${selectedNovelFile?.modifiedAt ?? ''}:${novelDocumentReloadVersion}`,
+    editorRef: novelDocumentEditorRef,
+    emptySnapshotBlockedMessage: t(
+      'writing.emptySnapshotSaveBlocked',
+      '已阻止一次空内容覆盖。请重新打开该文件后再保存。'
+    ),
+    onLoaded: (filePath, content, durationMs) => {
+      rendererPerf.recordNovelDocumentEvent({ filePath, phase: 'readFile', durationMs, contentLength: content.length })
+      rememberNovelVersionBaseline(filePath, content, 'ensure')
+      const switchStart = novelDocumentSwitchStartRef.current
+      if (switchStart?.filePath !== filePath) return
+      novelDocumentSwitchStartRef.current = null
+      rendererPerf.recordNovelDocumentEvent({
+        filePath,
+        phase: 'readyAfterRead',
+        durationMs: performance.now() - switchStart.startedAt,
+      })
+      window.requestAnimationFrame(() => {
+        if (latestNovelDocumentPathRef.current !== filePath) return
+        rendererPerf.recordNovelDocumentEvent({
+          filePath,
+          phase: 'paintAfterRead',
+          durationMs: performance.now() - switchStart.startedAt,
+        })
+      })
+    },
+    onBeforeSave: (filePath) => { novelUserSavedPathsRef.current.add(filePath) },
+    onSaved: (filePath, content) => { void maybeCreateNovelAutoVersion(filePath, content) },
+  })
+  const getCurrentNovelDocumentContent = React.useCallback(() => {
+    flushSelectedNovelDocument()
+    return selectedNovelDocumentModel?.state.content ?? ''
+  }, [flushSelectedNovelDocument, selectedNovelDocumentModel])
 
   React.useLayoutEffect(() => {
     if (requestedCompact === isAutoCompact) return
     // Capture the live editor before the layout moves it between dock and dialog.
     // Autosave keeps its normal cadence; the new surface receives the unsaved text.
-    if (novelDocumentEditorRef.current && isCurrentNovelDocumentDirty()) {
-      setNovelDocumentContent(getCurrentNovelDocumentContent())
-    }
+    flushSelectedNovelDocument()
     // A desktop-width rail would leave the compact conversation only a few characters wide.
     if (requestedCompact) setIsActivityRailVisible(false)
     setIsAutoCompact(requestedCompact)
-  }, [requestedCompact, isAutoCompact, getCurrentNovelDocumentContent, isCurrentNovelDocumentDirty])
+  }, [requestedCompact, isAutoCompact, flushSelectedNovelDocument])
 
   React.useEffect(() => {
     novelVersionBaselinesRef.current = {}
@@ -2436,83 +2412,8 @@ function AppShellContent({
     }
   }, [novelWorkspaceRoot])
 
-  React.useEffect(() => {
-    setLoadedNovelDocumentPath(null)
-    if (!selectedNovelDocumentPath) {
-      novelDocumentBufferPathRef.current = null
-      replaceNovelDocumentContent('')
-      setNovelDocumentLoading(false)
-      setNovelDocumentError(null)
-      return
-    }
-
-    let cancelled = false
-    const readStartedAt = performance.now()
-    setNovelDocumentLoading(true)
-    setNovelDocumentError(null)
-
-    window.electronAPI.readFile(selectedNovelDocumentPath)
-      .then((content) => {
-        if (cancelled) return
-        rendererPerf.recordNovelDocumentEvent({
-          filePath: selectedNovelDocumentPath,
-          phase: 'readFile',
-          durationMs: performance.now() - readStartedAt,
-          contentLength: content.length,
-        })
-        replaceNovelDocumentContent(content)
-        novelDocumentBufferPathRef.current = selectedNovelDocumentPath
-        setLoadedNovelDocumentPath(selectedNovelDocumentPath)
-        rememberNovelVersionBaseline(selectedNovelDocumentPath, content, 'ensure')
-      })
-      .catch((error) => {
-        if (cancelled) return
-        rendererPerf.recordNovelDocumentEvent({
-          filePath: selectedNovelDocumentPath,
-          phase: 'readFile.error',
-          durationMs: performance.now() - readStartedAt,
-        })
-        if (novelDocumentBufferPathRef.current === selectedNovelDocumentPath) {
-          setLoadedNovelDocumentPath(selectedNovelDocumentPath)
-        } else {
-          novelDocumentBufferPathRef.current = null
-          replaceNovelDocumentContent('')
-        }
-        setNovelDocumentError(error instanceof Error ? error.message : 'Failed to load document')
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setNovelDocumentLoading(false)
-
-          const switchStart = novelDocumentSwitchStartRef.current
-          if (switchStart?.filePath === selectedNovelDocumentPath) {
-            rendererPerf.recordNovelDocumentEvent({
-              filePath: selectedNovelDocumentPath,
-              phase: 'readyAfterRead',
-              durationMs: performance.now() - switchStart.startedAt,
-            })
-            window.requestAnimationFrame(() => {
-              if (latestNovelDocumentPathRef.current !== selectedNovelDocumentPath) return
-              rendererPerf.recordNovelDocumentEvent({
-                filePath: selectedNovelDocumentPath,
-                phase: 'paintAfterRead',
-                durationMs: performance.now() - switchStart.startedAt,
-              })
-            })
-            novelDocumentSwitchStartRef.current = null
-          }
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [novelDocumentReloadVersion, rememberNovelVersionBaseline, replaceNovelDocumentContent, selectedNovelDocumentPath])
-
-  const novelDocumentDirty = !!selectedNovelFile && (
-    novelDocumentContent !== savedNovelDocumentContent
-    || novelDocumentChangeVersion !== savedNovelDocumentChangeVersion
-  )
+  const novelDocumentDirty = !!selectedNovelDocumentState
+    && selectedNovelDocumentState.content !== selectedNovelDocumentState.baseline
   const {
     expandedFolders, workspaceFileTreeRef, handleWorkspaceTreeExpandedChange,
     workspaceCreateEntryTarget, setWorkspaceCreateEntryTarget,
@@ -2586,113 +2487,17 @@ function AppShellContent({
     }
   }, [novelVersionDialogOpen, novelWorkspaceRoot, refreshNovelVersions, rememberNovelVersionBaseline])
 
-  React.useEffect(() => {
-    if (!selectedNovelDocumentPath || !novelDocumentDirty || novelDocumentLoading || loadedNovelDocumentPath !== selectedNovelDocumentPath) return
-
-    const pathToSave = selectedNovelDocumentPath
-    const versionToSave = novelDocumentChangeVersion
-    const timeoutId = window.setTimeout(() => {
-      const contentToSave = getCurrentNovelDocumentContent()
-      if (contentToSave === savedNovelDocumentContent) {
-        setNovelDocumentContent(contentToSave)
-        markSavedNovelDocumentChangeVersion(versionToSave)
-        return
-      }
-      if (isSuspiciousEmptyNovelSnapshot(contentToSave, savedNovelDocumentContent, novelDocumentContent)) {
-        setNovelDocumentError(t(
-          'writing.emptySnapshotSaveBlocked',
-          '已阻止一次空内容覆盖。请重新打开该文件后再保存。'
-        ))
-        markSavedNovelDocumentChangeVersion(versionToSave)
-        return
-      }
-
-      const saveSeq = ++novelDocumentSaveSeqRef.current
-      setNovelDocumentSaving(true)
-      setNovelDocumentError(null)
-
-      novelUserSavedPathsRef.current.add(pathToSave)
-      window.electronAPI.writeFile(pathToSave, contentToSave)
-        .then(() => {
-          if (
-            novelDocumentSaveSeqRef.current === saveSeq
-            && latestNovelDocumentPathRef.current === pathToSave
-            && novelDocumentChangeVersionRef.current === versionToSave
-          ) {
-            setNovelDocumentContent(contentToSave)
-            setSavedNovelDocumentContent(contentToSave)
-            markSavedNovelDocumentChangeVersion(versionToSave)
-          }
-          void maybeCreateNovelAutoVersion(pathToSave, contentToSave)
-        })
-        .catch((error) => {
-          if (novelDocumentSaveSeqRef.current !== saveSeq || latestNovelDocumentPathRef.current !== pathToSave) return
-          setNovelDocumentError(error instanceof Error ? error.message : 'Failed to save document')
-        })
-        .finally(() => {
-          if (novelDocumentSaveSeqRef.current === saveSeq) {
-            setNovelDocumentSaving(false)
-          }
-        })
-    }, 800)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-    }
-  }, [getCurrentNovelDocumentContent, markSavedNovelDocumentChangeVersion, maybeCreateNovelAutoVersion, novelDocumentChangeVersion, novelDocumentContent, novelDocumentDirty, novelDocumentLoading, loadedNovelDocumentPath, savedNovelDocumentContent, selectedNovelDocumentPath, t])
-
   const ensureNovelDocumentSaved = React.useCallback(async (): Promise<boolean> => {
-    if (!await requestDocumentLeave()) return false
-    if (!selectedNovelDocumentPath || !isCurrentNovelDocumentDirty()) return true
-    if (novelDocumentLoading || loadedNovelDocumentPath !== selectedNovelDocumentPath) return false
-
-    flushNovelDocumentChangeVersion()
-    const contentToSave = getCurrentNovelDocumentContent()
-    const versionToSave = novelDocumentChangeVersionRef.current
-    if (contentToSave === savedNovelDocumentContent) {
-      setNovelDocumentContent(contentToSave)
-      markSavedNovelDocumentChangeVersion(versionToSave)
-      return true
-    }
-    if (isSuspiciousEmptyNovelSnapshot(contentToSave, savedNovelDocumentContent, novelDocumentContent)) {
-      const message = t(
-        'writing.emptySnapshotSaveBlocked',
-        '已阻止一次空内容覆盖。请重新打开该文件后再保存。'
-      )
-      setNovelDocumentError(message)
-      markSavedNovelDocumentChangeVersion(versionToSave)
-      toast.error(message)
+    // The Project draft saves silently; other open documents go through the shared leave gate.
+    if (!await saveSelectedNovelDocument()) {
+      const error = selectedNovelDocumentModel?.state.error
+      toast.error(t('writing.autoSaveFailed', 'Failed to save document'), {
+        description: error === 'conflict' || error === 'missing' ? t(`textDocument.${error}`) : error ?? undefined,
+      })
       return false
     }
-
-    const saveSeq = ++novelDocumentSaveSeqRef.current
-    setNovelDocumentSaving(true)
-    setNovelDocumentError(null)
-    try {
-      novelUserSavedPathsRef.current.add(selectedNovelDocumentPath)
-      await window.electronAPI.writeFile(selectedNovelDocumentPath, contentToSave)
-      if (
-        novelDocumentSaveSeqRef.current === saveSeq
-        && latestNovelDocumentPathRef.current === selectedNovelDocumentPath
-        && novelDocumentChangeVersionRef.current === versionToSave
-      ) {
-        setNovelDocumentContent(contentToSave)
-        setSavedNovelDocumentContent(contentToSave)
-        markSavedNovelDocumentChangeVersion(versionToSave)
-      }
-      void maybeCreateNovelAutoVersion(selectedNovelDocumentPath, contentToSave)
-      return true
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to save document'
-      setNovelDocumentError(message)
-      toast.error(t('writing.autoSaveFailed', 'Failed to save document'), { description: message })
-      return false
-    } finally {
-      if (novelDocumentSaveSeqRef.current === saveSeq) {
-        setNovelDocumentSaving(false)
-      }
-    }
-  }, [flushNovelDocumentChangeVersion, getCurrentNovelDocumentContent, isCurrentNovelDocumentDirty, markSavedNovelDocumentChangeVersion, maybeCreateNovelAutoVersion, novelDocumentContent, novelDocumentLoading, loadedNovelDocumentPath, savedNovelDocumentContent, selectedNovelDocumentPath, t])
+    return requestDocumentLeave()
+  }, [saveSelectedNovelDocument, selectedNovelDocumentModel, t])
   ensureNovelDocumentSavedRef.current = ensureNovelDocumentSaved
 
   const handleSelectNovelFile = React.useCallback(async (
@@ -2755,8 +2560,6 @@ function AppShellContent({
     const refreshCleanDocument = !!target && filePath === selectedNovelDocumentPath && !isCurrentNovelDocumentDirty()
     const selected = await handleSelectNovelFile(file)
     if (selected && refreshCleanDocument) {
-      setLoadedNovelDocumentPath(null)
-      setNovelDocumentLoading(true)
       setNovelDocumentReloadVersion(version => version + 1)
     }
     if (selected) setNovelSearchTarget(target ? { ...target, path: filePath } : null)
@@ -2918,11 +2721,10 @@ function AppShellContent({
     }
 
     try {
-      const content = await window.electronAPI.readFile(filePath)
+      await reloadSelectedNovelDocument()
       if (latestNovelDocumentPathRef.current !== filePath) return true
 
-      replaceNovelDocumentContent(content)
-      rememberNovelVersionBaseline(filePath, content, 'ensure')
+      rememberNovelVersionBaseline(filePath, selectedNovelDocumentModel?.state.content ?? '', 'ensure')
       return true
     } catch (error) {
       toast.error(t('writing.review.acceptFailed', 'Failed to accept this change'), {
@@ -2930,7 +2732,7 @@ function AppShellContent({
       })
       return false
     }
-  }, [isCurrentNovelDocumentDirty, rememberNovelVersionBaseline, replaceNovelDocumentContent, selectedNovelFile?.path, t])
+  }, [isCurrentNovelDocumentDirty, rememberNovelVersionBaseline, reloadSelectedNovelDocument, selectedNovelDocumentModel, selectedNovelFile?.path, t])
 
   React.useEffect(() => {
     if (!selectedNovelDocumentPath || novelDocumentDirty || latestNovelFileChanges.length === 0) return
@@ -2992,9 +2794,8 @@ function AppShellContent({
       await window.electronAPI.restoreWorkspaceVersion(novelWorkspaceRoot, commitHash)
       novelVersionBaselinesRef.current = {}
       if (selectedNovelDocumentPath) {
-        const content = await window.electronAPI.readFile(selectedNovelDocumentPath)
-        replaceNovelDocumentContent(content)
-        rememberNovelVersionBaseline(selectedNovelDocumentPath, content, 'set')
+        await reloadSelectedNovelDocument()
+        rememberNovelVersionBaseline(selectedNovelDocumentPath, selectedNovelDocumentModel?.state.content ?? '', 'set')
       }
       await refreshNovelVersions()
       await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
@@ -3006,7 +2807,7 @@ function AppShellContent({
     } finally {
       setNovelVersionRestoringHash(null)
     }
-  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFilesAfterMutation, rememberNovelVersionBaseline, replaceNovelDocumentContent, selectedNovelDocumentPath, t])
+  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, refreshNovelVersions, refreshNovelWorkspaceFilesAfterMutation, reloadSelectedNovelDocument, rememberNovelVersionBaseline, selectedNovelDocumentModel, selectedNovelDocumentPath, t])
 
   const novelReviewUndoStackRef = React.useRef<NovelReviewUndoEntry[]>([])
 
@@ -3037,7 +2838,7 @@ function AppShellContent({
     const entry = novelReviewUndoStackRef.current.pop()
     if (!entry) return false
 
-    if (novelDocumentDirty) {
+    if (isCurrentNovelDocumentDirty()) {
       novelReviewUndoStackRef.current.push(entry)
       toast.error(t(
         'writing.review.undoBlockedByUnsavedEdits',
@@ -3057,14 +2858,12 @@ function AppShellContent({
 
       persistNovelChangeReviewStatus(entry.status)
 
-      const selectedWrite = selectedNovelFile?.path
-        ? entry.writes.find(write => write.filePath === selectedNovelFile.path)
-        : undefined
-      if (selectedWrite) {
-        replaceNovelDocumentContent(selectedWrite.content)
-      }
-      if (selectedNovelFile?.path && entry.deletes.some(deleted => deleted.filePath === selectedNovelFile.path)) {
-        replaceNovelDocumentContent('')
+      const selectedPath = selectedNovelFile?.path
+      if (selectedPath && (
+        entry.writes.some(write => write.filePath === selectedPath)
+        || entry.deletes.some(deleted => deleted.filePath === selectedPath)
+      )) {
+        await reloadSelectedNovelDocument()
       }
       if (novelWorkspaceRoot) {
         void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
@@ -3080,11 +2879,11 @@ function AppShellContent({
       return true
     }
   }, [
-    novelDocumentDirty,
+    isCurrentNovelDocumentDirty,
     novelWorkspaceRoot,
     persistNovelChangeReviewStatus,
     refreshNovelWorkspaceFilesAfterMutation,
-    replaceNovelDocumentContent,
+    reloadSelectedNovelDocument,
     selectedNovelFile?.path,
     t,
   ])
@@ -3545,8 +3344,7 @@ function AppShellContent({
       pushNovelReviewUndoEntry(undoEntry)
 
       if (selectedNovelFile?.path === filePath) {
-        const nextContent = rejected.operation === 'write' ? rejected.content : ''
-        replaceNovelDocumentContent(nextContent)
+        await reloadSelectedNovelDocument()
       }
       if (novelWorkspaceRoot) {
         void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
@@ -3569,9 +3367,9 @@ function AppShellContent({
     novelChangeReviewStatus,
     novelWorkspaceRoot,
     persistNovelChangeReviewStatus,
-    replaceNovelDocumentContent,
     pushNovelReviewUndoEntry,
     refreshNovelWorkspaceFilesAfterMutation,
+    reloadSelectedNovelDocument,
     selectedNovelFile?.path,
     t,
   ])
@@ -3698,17 +3496,8 @@ function AppShellContent({
         persistNovelChangeReviewStatus(nextStatus)
         pushNovelReviewUndoEntry(undoEntry)
 
-        if (selectedNovelFile?.path) {
-          const selectedOperation = planned.find(({ plan }) => plan.filePath === selectedNovelFile.path)
-          if (selectedOperation?.operation.ok) {
-            replaceNovelDocumentContent(
-              selectedOperation.operation.operation === 'write'
-                ? selectedOperation.operation.content
-                : selectedOperation.operation.operation === 'noop'
-                  ? selectedOperation.current ?? ''
-                  : ''
-            )
-          }
+        if (selectedNovelFile?.path && planned.some(({ plan, operation }) => plan.filePath === selectedNovelFile.path && operation.ok)) {
+          await reloadSelectedNovelDocument()
         }
         if (novelWorkspaceRoot) {
           await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
@@ -3734,8 +3523,8 @@ function AppShellContent({
       persistNovelChangeReviewStatus,
       pushNovelReviewUndoEntry,
       refreshNovelWorkspaceFilesAfterMutation,
-      replaceNovelDocumentContent,
       reviewableNovelFileChanges,
+      reloadSelectedNovelDocument,
       selectedNovelFile?.path,
       snapshotNovelRevert,
       t,
@@ -4191,43 +3980,91 @@ function AppShellContent({
   // distinct columns. Sharing one slot is what let a route change (opening a new
   // conversation) silently replace the manuscript.
   const writingDocumentSurface = showNovelDocumentNavigator && novelWorkspaceRoot ? (
-              selectedNovelFile ? selectedNovelFileOpenTarget === 'editor' ? (
-                <NovelDocumentEditorPanel
-                  ref={novelDocumentEditorRef}
-                  file={selectedNovelFile}
-                  content={novelDocumentContent}
-                  searchTarget={novelSearchTarget?.path === loadedNovelDocumentPath && loadedNovelDocumentPath === selectedNovelDocumentPath ? novelSearchTarget : undefined}
-                  loading={novelDocumentLoading}
-                  editable={loadedNovelDocumentPath === selectedNovelDocumentPath}
-                  saving={novelDocumentSaving}
-                  error={novelDocumentError}
-                  onDocumentChanged={handleNovelDocumentChanged}
-                  onAskAiForSelection={handleAskAiForNovelSelection}
-                  onAddSelectionToChat={handleAddNovelSelectionToChat}
-                  onSendSelectionToChat={handleSendNovelSelectionToChat}
-                  reviewChanges={selectedNovelPendingChanges}
-                  toolbarAccessory={(
-                    <HeaderIconButton
-                      icon={<History className="h-4 w-4" strokeWidth={1.7} />}
-                      tooltip={t('writing.version.title', '版本管理')}
-                      disabled={!novelWorkspaceRoot}
-                      onClick={() => setNovelVersionDialogOpen(true)}
-                      className="h-[26px] w-[26px] rounded-lg"
+              selectedNovelFile ? selectedNovelDocumentModel && selectedNovelDocumentState ? (
+                <div
+                  className="flex h-full min-h-0 min-w-0 flex-col bg-background"
+                  data-testid="text-document"
+                  data-document-view={selectedNovelDocumentView}
+                  onKeyDown={(event) => {
+                    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+                      event.preventDefault()
+                      void ensureNovelDocumentSaved()
+                    }
+                  }}
+                >
+                  <TextDocumentBar
+                    model={selectedNovelDocumentModel}
+                    state={selectedNovelDocumentState}
+                    onOpenSavedFile={path => {
+                      setNovelDocumentTabs(current => openNovelDocumentTab(current, novelWorkspaceRoot, path, 'append'))
+                      setRightWorkspaceVisible(true)
+                    }}
+                    leading={(
+                      <p className="min-w-0 truncate font-mono text-muted-foreground" title={selectedNovelFile.path}>
+                        {selectedNovelFile.relativePath}
+                      </p>
+                    )}
+                    trailing={(
+                      <>
+                        {canWriteInRichText(selectedNovelFile.path) && (
+                          <SettingsSegmentedControl<WritingDocumentView>
+                            size="sm"
+                            className="ml-1"
+                            value={selectedNovelDocumentView}
+                            onValueChange={(view) => {
+                              const path = selectedNovelFile.path
+                              setNovelSourceViewPaths(current => {
+                                const next = new Set(current)
+                                if (view === 'source') next.add(path)
+                                else next.delete(path)
+                                return next
+                              })
+                            }}
+                            options={[
+                              { value: 'writing', label: t('textDocument.viewWriting') },
+                              { value: 'source', label: t('textDocument.viewSource') },
+                            ]}
+                          />
+                        )}
+                        <HeaderIconButton
+                          icon={<History className="h-4 w-4" strokeWidth={1.7} />}
+                          tooltip={t('writing.version.title', '版本管理')}
+                          disabled={!novelWorkspaceRoot}
+                          onClick={() => setNovelVersionDialogOpen(true)}
+                          className="h-[26px] w-[26px] rounded-lg"
+                        />
+                      </>
+                    )}
+                  />
+                  {selectedNovelDocumentView === 'writing' ? (
+                    <NovelDocumentEditorPanel
+                      ref={novelDocumentEditorRef}
+                      className="h-auto min-h-0 flex-1"
+                      file={selectedNovelFile}
+                      content={selectedNovelDocumentState.content}
+                      searchTarget={novelSearchTarget?.path === selectedNovelFile.path && !selectedNovelDocumentState.loading ? novelSearchTarget : undefined}
+                      loading={selectedNovelDocumentState.loading}
+                      editable={!selectedNovelDocumentState.readOnly}
+                      saving={selectedNovelDocumentState.saving}
+                      onDocumentChanged={handleNovelDocumentChanged}
+                      onAskAiForSelection={handleAskAiForNovelSelection}
+                      onAddSelectionToChat={handleAddNovelSelectionToChat}
+                      onSendSelectionToChat={handleSendNovelSelectionToChat}
+                      reviewChanges={selectedNovelPendingChanges}
+                    />
+                  ) : (
+                    <TextDocumentSource
+                      model={selectedNovelDocumentModel}
+                      state={selectedNovelDocumentState}
+                      searchTarget={novelSearchTarget?.path === selectedNovelFile.path ? novelSearchTarget : undefined}
                     />
                   )}
-                />
+                </div>
               ) : (
                 <FileViewer
-                  onOpenSavedFile={path => {
-                    setNovelDocumentTabs(current => openNovelDocumentTab(current, novelWorkspaceRoot, path, 'append'))
-                    setRightWorkspaceVisible(true)
-                  }}
-                  workspaceId={activeWorkspaceId ?? undefined}
-                  refresh={`${selectedNovelFile.modifiedAt}:${novelDocumentReloadVersion}`}
                   path={selectedNovelFile.path}
                   searchTarget={novelSearchTarget?.path === selectedNovelFile.path ? novelSearchTarget : undefined}
                   onClose={() => { void handleCloseNovelFileTab(selectedNovelFile.path) }}
-                  onEditWriting={getWorkspaceFileOpenTarget(selectedNovelFile.path) === 'editor' ? () => { void requestDocumentLeave().then(ok => { if (ok) setWritingFilePath(selectedNovelFile.path) }) } : undefined}
                 />
               ) : (
                 <WorkspaceEmptyState
@@ -4281,16 +4118,12 @@ function AppShellContent({
         <>
           {selectedNovelFile && <WorkspaceFileHeaderActions
             path={selectedNovelFile.path}
-            busy={!!selectedNovelDocumentPath && (novelDocumentLoading || novelDocumentSaving)}
+            busy={!!selectedNovelDocumentState && (selectedNovelDocumentState.loading || selectedNovelDocumentState.saving)}
             beforeOpen={ensureNovelDocumentSaved}
             onRefresh={async () => {
               if (!await ensureNovelDocumentSaved()) return
               // A delayed save must not reload a different document or newer edits.
               if (latestNovelDocumentPathRef.current !== selectedNovelDocumentPath || isCurrentNovelDocumentDirty()) return
-              if (selectedNovelDocumentPath) {
-                setLoadedNovelDocumentPath(null)
-                setNovelDocumentLoading(true)
-              }
               setNovelDocumentReloadVersion(version => version + 1)
             }}
           />}

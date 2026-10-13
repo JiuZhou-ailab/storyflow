@@ -26,7 +26,6 @@ interface FileViewerProps {
   searchTarget?: DocumentSearchTarget
   onOpenExternal?: (path: string) => void
   onClose?: () => void
-  onEditWriting?: () => void
   externalPreviewHint?: string
 }
 
@@ -34,7 +33,7 @@ function getFileName(path: string): string {
   return path.replace(/\\/g, '/').split('/').pop() ?? path
 }
 
-export function FileViewer({ onOpenSavedFile, workspaceId, sessionId, refresh, path, searchTarget, onOpenExternal, onClose, externalPreviewHint, onEditWriting }: FileViewerProps) {
+export function FileViewer({ onOpenSavedFile, workspaceId, sessionId, refresh, path, searchTarget, onOpenExternal, onClose, externalPreviewHint }: FileViewerProps) {
   const { t } = useTranslation()
   const { isDark } = useTheme()
   const [content, setContent] = useState<string>('')
@@ -150,7 +149,6 @@ export function FileViewer({ onOpenSavedFile, workspaceId, sessionId, refresh, p
         <p className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={path}>
           {path}
         </p>
-        {onEditWriting && <button type="button" className="text-xs" onClick={onEditWriting}>{t('fileViewer.writingMode')}</button>}
         {openExternalButton}
       </div>
 

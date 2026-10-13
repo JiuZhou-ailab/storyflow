@@ -51,7 +51,7 @@ describe('WorkspaceEmptyState', () => {
     const appShellSource = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf-8')
     const editorSource = readFileSync(new URL('../../writing/NovelDocumentEditorPanel.tsx', import.meta.url), 'utf-8')
 
-    expect(appShellSource).toContain("selectedNovelFile ? selectedNovelFileOpenTarget === 'editor' ? (")
+    expect(appShellSource).toContain('selectedNovelFile ? selectedNovelDocumentModel && selectedNovelDocumentState ? (')
     expect(appShellSource).toContain('<WorkspaceEmptyState')
     expect(appShellSource).toContain('onCreateFile={() => handleWorkspaceOpeningCommand')
     expect(appShellSource).toContain("onCreateFile={() => handleWorkspaceOpeningCommand('create-file')}")

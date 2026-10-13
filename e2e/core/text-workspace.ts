@@ -1,5 +1,5 @@
 // input: Built Electron app and an isolated conversation with real text files
-// output: Raw text, line numbers, search-free opening and multi-file navigation acceptance
+// output: Raw text, line numbers, search-free opening, multi-file navigation and writing/source view acceptance
 // pos: Offline Electron acceptance for the file workspace; no provider calls
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -153,6 +153,8 @@ try {
   const project = JSON.parse(readFileSync(join(projectFixture,'config.json'),'utf8')).workspaces[0]
   const projectFile = join(project.rootPath,'editor-acceptance.txt')
   writeFileSync(projectFile,'# Project 原文\n')
+  const chapterFile = join(project.rootPath,'chapter.md')
+  writeFileSync(chapterFile,'# 第一章\n\n开头\n')
   const projectSessions = join(project.rootPath,'.craft-agent','sessions')
   const projectSession = readdirSync(projectSessions)[0]!
   const transcript = join(projectSessions,projectSession,'session.jsonl')
@@ -175,6 +177,27 @@ try {
   await waitFor(live, `document.querySelector('[data-testid="text-document"] [role="status"]')?.textContent === '已保存'`)
   assert.equal(readFileSync(projectFile,'utf8'),'Project 已保存\n')
   console.log('PASS: Project tree opens original text and saves through the same editor')
+
+  const doc = `document.querySelector('[data-testid="text-document"]')`
+  await evalOn(live, `Array.from(document.querySelectorAll('[role="treeitem"]')).find(e=>e.textContent.includes('chapter.md')).click()`)
+  await waitFor(live, `${doc}?.dataset.documentView === 'writing' && ${doc}.querySelector('[contenteditable="true"]')?.textContent.includes('开头')`)
+  await evalOn(live, `(() => { const e=${doc}.querySelector('[contenteditable="true"]'); e.focus(); const r=document.createRange(); r.selectNodeContents(e); r.collapse(false); const s=getSelection(); s.removeAllRanges(); s.addRange(r) })()`)
+  await live.cdp.send('Input.insertText', {text:'写作视图输入'},live.sid)
+  // Writing view autosaves; no explicit save is needed.
+  const deadline = Date.now() + 5000
+  while (!readFileSync(chapterFile,'utf8').includes('写作视图输入')) {
+    if (Date.now() > deadline) throw new Error('writing view did not autosave: '+readFileSync(chapterFile,'utf8'))
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  await evalOn(live, `Array.from(${doc}.querySelectorAll('[role="radio"]')).find(e=>e.textContent==='原文').click()`)
+  await waitFor(live, `${doc}.dataset.documentView === 'source' && document.querySelector('[data-testid="text-source"]')?.value.includes('写作视图输入')`)
+  writeFileSync(chapterFile,'# 第一章\n\nagent 改写\n')
+  // Project trees resync from disk when the window regains focus.
+  await evalOn(live, `window.dispatchEvent(new Event('focus'))`)
+  await waitFor(live, `document.querySelector('[data-testid="text-source"]')?.value === ${JSON.stringify('# 第一章\n\nagent 改写\n')}`)
+  await evalOn(live, `Array.from(${doc}.querySelectorAll('[role="radio"]')).find(e=>e.textContent==='写作').click()`)
+  await waitFor(live, `${doc}.querySelector('[contenteditable="true"]')?.textContent.includes('agent 改写')`)
+  console.log('PASS: Markdown writing and source views share one autosaved draft that follows disk changes')
 
 } finally {
   await app?.close()
