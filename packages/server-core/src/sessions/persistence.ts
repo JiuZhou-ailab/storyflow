@@ -63,7 +63,8 @@ export class SessionPersistence {
   // Deduplicates concurrent lazy loads of the same session's messages.
   private messageLoadingPromises: Map<string, Promise<void>> = new Map()
   private queuedRecoveryScheduled = new Set<string>()
-  private deferredInvalidationWrites = new WeakMap<ManagedSession, number>()
+  // A live session still owes its deferred write when invalidation ownership changes epochs.
+  private deferredInvalidationWrites = new WeakSet<ManagedSession>()
   // Coordinates startup initialization waiters from IPC handlers.
   private initGate = new InitGate()
 
@@ -243,7 +244,7 @@ export class SessionPersistence {
   persistSession(managed: ManagedSession): void {
     if (this.deps.getSession(managed.id) !== managed) return
     if (managed.runtimeState) {
-      if (managed.runtimeState === 'invalidating') this.deferredInvalidationWrites.set(managed, managed.runtimeEpoch ?? 0)
+      if (managed.runtimeState === 'invalidating') this.deferredInvalidationWrites.add(managed)
       return
     }
     if (!managed.messagesLoaded) {
@@ -372,7 +373,7 @@ export class SessionPersistence {
     if (managed.runtimeState !== 'invalidating') {
       throw new Error(`Session ${managed.id} is not owned by a runtime invalidation`)
     }
-    if (pendingWritesOnly && this.deferredInvalidationWrites.get(managed) !== (managed.runtimeEpoch ?? 0)) return
+    if (pendingWritesOnly && !this.deferredInvalidationWrites.has(managed)) return
     if (!managed.messagesLoaded) this.hydrateMessagesForColdPersist(managed, false)
     this.enqueuePersistStrict(managed)
     this.deferredInvalidationWrites.delete(managed)

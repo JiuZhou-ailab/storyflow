@@ -354,7 +354,13 @@ export async function waitForCompaction(
   debugLog('Compaction finished, proceeding with prompt');
 }
 
-async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>): Promise<void> {
+export async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>, prepareSession = ensureSession): Promise<void> {
+  const epoch = queryCancellationEpoch;
+  const cancelled = () => {
+    if (epoch === queryCancellationEpoch) return false;
+    send({ type: 'prompt_result', id: msg.id, status: 'completed_without_agent' });
+    return true;
+  };
   currentUserMessage = msg.message;
   const promptAttemptState = createPromptAttemptState();
   currentPromptAttemptState = promptAttemptState;
@@ -375,13 +381,15 @@ async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>):
       piSession = null;
     }
 
-    const session = await ensureSession();
+    const session = await prepareSession();
+    if (cancelled()) return;
 
     systemPromptOverride?.set(msg.systemPrompt, msg.turnPolicy, msg.turnContext);
 
     // Keep Pi's ResourceLoader and ExtensionRunner on the same generation.
     // Reloading the loader alone leaves slash commands bound to stale resources.
     await session.reload();
+    if (cancelled()) return;
     debugLog(
       `Active Pi Extension commands: ${session.extensionRunner.getRegisteredCommands().map(command => command.invocationName).join(', ') || '(none)'}`,
     );
@@ -428,6 +436,7 @@ async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>):
 
     // Wait for any in-flight auto-compaction to avoid race (craft-agents-oss#464)
     await waitForCompaction(session);
+    if (cancelled()) return;
 
     // Fire prompt — use followUp when session is already streaming so the
     // message is queued instead of throwing "Agent is already processing".
@@ -436,12 +445,15 @@ async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'prompt' }>):
       streamingBehavior: 'followUp',
     });
 
+    if (cancelled()) return;
+
     // Extension commands can finish without starting an agent turn. Complete
     // the correlated host command without manufacturing a Pi lifecycle event.
     if (!sawAgentSettled && session.isIdle) {
       send({ type: 'prompt_result', id: msg.id, status: 'completed_without_agent' });
     }
   } catch (error) {
+    if (cancelled()) return;
     const errorMsg = error instanceof Error ? error.message : String(error);
 
     // No wrapper-side overflow recovery here. The Pi SDK's _checkCompaction
@@ -511,7 +523,7 @@ async function abortActiveSubagentSessions(): Promise<void> {
   );
 }
 
-async function handleAbort(): Promise<void> {
+export async function handleAbort(): Promise<void> {
   queryCancellationEpoch++;
   const sessions = [
     ...(piSession ? [piSession] : []),

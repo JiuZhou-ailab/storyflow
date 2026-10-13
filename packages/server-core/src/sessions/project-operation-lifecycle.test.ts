@@ -572,3 +572,66 @@ describe('Project operation lifecycle', () => {
     }
   })
 })
+
+it('persists a turn completed during exclusive work and resumes its queued message after restore', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'storyflow-exclusive-turn-'))
+  const configDir = join(parent, 'host')
+  const projectRoot = join(parent, 'project')
+  mkdirSync(join(projectRoot, '.craft-agent'), { recursive: true })
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(join(projectRoot, '.craft-agent/config.json'), JSON.stringify({
+    id: 'directory-id', name: 'Project', slug: 'project', createdAt: 1, updatedAt: 1,
+  }))
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({
+    workspaces: [{ id: 'project-1', name: 'Project', slug: 'project', rootPath: projectRoot, createdAt: 1, directoryConfigId: 'directory-id' }],
+    activeWorkspaceId: 'project-1', activeSessionId: null,
+  }))
+  try {
+    const result = runIsolatedJson(configDir, 'EXCLUSIVE_TURN', `
+      import { readFileSync } from 'node:fs';
+      import { SessionManager, createManagedSession } from '${SESSION_MANAGER_PATH}';
+      import { getSessionFilePath } from '${pathToFileURL(join(import.meta.dir, '../../../shared/src/sessions/storage.ts')).href}';
+      const gate = () => { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; };
+      const started = gate(), finish = gate(), invalidated = gate(), replayed = gate();
+      const manager = new SessionManager();
+      const workspace = manager.getWorkspaces()[0];
+      const managed = createManagedSession({ id: 'exclusive-turn', name: 'Test' }, workspace, { messagesLoaded: true });
+      manager.sessions.set(managed.id, managed);
+      const chats = [];
+      const agent = {
+        getModel: () => 'test-model', setAllSources() {}, getSessionId: () => undefined, dispose() {},
+        async *chat(message) {
+          chats.push(message);
+          if (message === 'first') { started.resolve(); await finish.promise; }
+          try {
+            yield { type: 'text_complete', text: 'reply:' + message };
+            yield { type: 'complete' };
+          } finally { if (message === 'second') replayed.resolve(); }
+        },
+      };
+      manager.getOrCreateAgentLocked = async () => agent;
+      const begin = manager.beginProjectInvalidation.bind(manager);
+      manager.beginProjectInvalidation = (...args) => { const claim = begin(...args); invalidated.resolve(); return claim; };
+      const first = manager.sendMessage(managed.id, 'first');
+      await started.promise;
+      await manager.sendMessage(managed.id, 'second');
+      let chatsDuringExclusive;
+      const operation = manager.withProjectExclusiveOperation(workspace.id, async () => {
+        chatsDuringExclusive = [...chats];
+      });
+      await invalidated.promise;
+      finish.resolve();
+      await first;
+      await operation;
+      await manager.flushSession(managed.id);
+      const persistedAfterRestore = readFileSync(getSessionFilePath(workspace.rootPath, managed.id), 'utf8').includes('reply:first');
+      await replayed.promise;
+      await manager.flushAllSessions();
+      manager.cleanup();
+      console.log('EXCLUSIVE_TURN=' + JSON.stringify({ chatsDuringExclusive, persistedAfterRestore, chats, runtimeState: managed.runtimeState ?? null }));
+    `)
+    expect(result).toEqual({ chatsDuringExclusive: ['first'], persistedAfterRestore: true, chats: ['first', 'second'], runtimeState: null })
+  } finally {
+    rmSync(parent, { recursive: true, force: true })
+  }
+})

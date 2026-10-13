@@ -119,6 +119,7 @@ describe('queued message send-now', () => {
 
   it('hands replay to sendMessage before dequeuing', () => {
     const { sessionId, managed } = buildProcessingSession()
+    managed.isProcessing = false
     managed.messages = [
       { id: 'first', role: 'user', content: 'first', timestamp: 1 },
       { id: 'q1', role: 'user', content: 'later', timestamp: 2, isQueued: true },

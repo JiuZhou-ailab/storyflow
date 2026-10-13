@@ -1,5 +1,5 @@
 // input: Workspace sessions, Pi product projections, persistence stores, and Host services
-// output: Atomic sends with stable interruption/freshness policies and transient facts, projected Pi events, commands, and drained Host teardown
+// output: Generation-owned atomic sends with stable interruption/freshness policies and transient facts, projected Pi events, commands, and drained Host teardown
 // pos: Storyflow Product Host session boundary; Pi owns Agent turn execution
 
 import type { EventSink } from '@craft-agent/server-core/transport'
@@ -258,6 +258,16 @@ export class SessionManager implements ISessionManager {
   ) {}
 
   private sessions: Map<string, ManagedSession> = new Map()
+  private stopTimers = new Map<ManagedSession, ReturnType<typeof setTimeout>>()
+  private stoppingGenerations = new WeakMap<ManagedSession, number>()
+  private queuedReplays = new WeakMap<ManagedSession, object>()
+  private turnDrains = new WeakMap<ManagedSession, Promise<void>>()
+
+  private clearStopTimer(managed: ManagedSession): void {
+    const timer = this.stopTimers.get(managed)
+    if (timer) clearTimeout(timer)
+    this.stopTimers.delete(managed)
+  }
   /** Refresh the Host-owned Project snapshot before a Session operation or Pi lease. */
   private refreshSessionWorkspace(managed: ManagedSession): boolean {
     if (isFreeConversationWorkspaceId(managed.workspace.id)) return false
@@ -471,6 +481,7 @@ export class SessionManager implements ISessionManager {
   private setProcessing(managed: ManagedSession, processing: boolean): void {
     const was = managed.isProcessing
     managed.isProcessing = processing
+    this.clearStopTimer(managed)
     if (!was && processing) {
       getSessionRuntimeHooks().onSessionStarted()
     } else if (was && !processing) {
@@ -703,17 +714,26 @@ export class SessionManager implements ISessionManager {
 
   private restoreProjectInvalidation(claim: ProjectInvalidationClaim): void {
     for (const managed of claim.sessions) {
-      if (this.ownsProjectInvalidation(claim, managed)) managed.runtimeState = undefined
+      if (this.ownsProjectInvalidation(claim, managed)) {
+        this.persistence.enqueueInvalidationSnapshot(managed, true)
+        managed.runtimeState = undefined
+      }
     }
   }
 
-  private releaseProjectTransition(claim: ProjectTransitionClaim): void {
+  private releaseProjectTransition(claim: ProjectTransitionClaim | ProjectInvalidationClaim): void {
     if (this.projectLifecycleTransitions.get(claim.workspace.id) === claim.token) {
       this.projectLifecycleTransitions.delete(claim.workspace.id)
     }
     for (const rootKey of claim.rootKeys) {
       if (this.projectRootLifecycleTransitions.get(rootKey) === claim.token) {
         this.projectRootLifecycleTransitions.delete(rootKey)
+      }
+    }
+    if (!('sessions' in claim)) return
+    for (const managed of claim.sessions) {
+      if (this.sessions.get(managed.id) === managed && !managed.runtimeState && !this.shuttingDown) {
+        this.persistence.recoverOrphanedQueuedMessages(managed)
       }
     }
   }
@@ -779,8 +799,11 @@ export class SessionManager implements ISessionManager {
       }
       return await work(transition.workspace)
     } finally {
-      this.restoreProjectInvalidation(transition)
-      this.releaseProjectTransition(transition)
+      try {
+        this.restoreProjectInvalidation(transition)
+      } finally {
+        this.releaseProjectTransition(transition)
+      }
     }
   }
 
@@ -835,7 +858,7 @@ export class SessionManager implements ISessionManager {
       timestamp: timeoutMessage.timestamp,
     }, managed.workspace.id)
     managed.agent?.forceAbort(AbortReason.Timeout)
-    void this.onProcessingStopped(sessionId, 'timeout').catch(error => {
+    void this.onProcessingStopped(sessionId, 'timeout', generation).catch(error => {
       getSessionLog().error('Failed to stop processing after turn timeout:', error)
     })
   }
@@ -1460,9 +1483,11 @@ export class SessionManager implements ISessionManager {
   }
 
   private async handlePlanSubmitted(managed: ManagedSession, planPath: string): Promise<void> {
+    const generation = managed.processingGeneration
     getSessionLog().info(`Plan submitted for session ${managed.id}:`, planPath)
     try {
       const planContent = await readFile(planPath, 'utf-8')
+      if (managed.processingGeneration !== generation) return
 
       const submitPlanMsg = managed.messages.find(
         m => m.toolName?.includes('SubmitPlan') && m.toolStatus === 'executing'
@@ -1489,6 +1514,7 @@ export class SessionManager implements ISessionManager {
 
       this.persistSession(managed)
       await this.flushSession(managed.id)
+      if (managed.processingGeneration !== generation) return
 
       this.sendEvent({
         type: 'plan_submitted',
@@ -1502,6 +1528,7 @@ export class SessionManager implements ISessionManager {
         this.setProcessing(managed, false)
 
         await releaseBrowserOwnershipOnForcedStop(this.browserPaneManager, managed.id)
+        if (managed.processingGeneration !== generation) return
 
         this.sendEvent({
           type: 'complete',
@@ -1769,9 +1796,6 @@ export class SessionManager implements ISessionManager {
       throw error
     } finally {
       this.releaseProjectTransition(claim)
-    }
-    for (const managed of claim.sessions) {
-      this.persistence.recoverOrphanedQueuedMessages(managed)
     }
     return updated
   }
@@ -2959,6 +2983,7 @@ export class SessionManager implements ISessionManager {
 
   /** Tear down a session's Pi runtime and MCP pool. (Delegates to AgentRuntime.) */
   private async disposeManagedAgentRuntime(managed: ManagedSession, reason: string): Promise<void> {
+    this.clearStopTimer(managed)
     await this.agentRuntime.disposeManagedAgentRuntime(managed, reason)
   }
 
@@ -3647,7 +3672,7 @@ export class SessionManager implements ISessionManager {
     if (managed.isProcessing && isQueuedReplay) {
       throw new Error('Cannot replay a queued message while this conversation is processing')
     }
-    if (managed.isProcessing) {
+    if (managed.isProcessing || (!isQueuedReplay && this.queuedReplays.has(managed))) {
       getSessionLog().info('mid-stream send', {
         sessionId,
         behavior: 'queue',
@@ -3842,6 +3867,11 @@ export class SessionManager implements ISessionManager {
     // Capture the generation to detect if a new request supersedes this one.
     // This prevents the finally block from clobbering state when a follow-up message arrives.
     const myGeneration = managed.processingGeneration
+    this.queuedReplays.delete(managed)
+    const previousTurn = this.turnDrains.get(managed)
+    let finishTurn!: () => void
+    const turnDrain = new Promise<void>(resolve => { finishTurn = resolve })
+    this.turnDrains.set(managed, turnDrain)
     // Later sends may now queue, without waiting for this turn's model execution.
     releaseAdmission()
     const turnWatchdog = new TurnWatchdog({
@@ -3953,6 +3983,9 @@ export class SessionManager implements ISessionManager {
     // Claim the agent for the full source-setup and chat lifecycle. Its cold-session build at
     // ~L2956 now sees fresh tokens (or correctly-needs_auth failed sources, since
     // ensureFreshToken mirrors the disk write to source.config in-memory).
+    // A forced stop may finish the UI turn before its iterator has settled.
+    await previousTurn
+    if (managed.processingGeneration !== myGeneration || !managed.isProcessing) return
     await this.withAgentRuntimeLease(managed, async agent => {
     sendSpan.mark('agent.facade.ready')
 
@@ -4172,7 +4205,7 @@ export class SessionManager implements ISessionManager {
 
           if (event.usage) sendSpan.setMetadata('usage', event.usage)
           sendSpan.mark('chat.complete')
-          await this.onProcessingStopped(sessionId, 'complete')
+          await this.onProcessingStopped(sessionId, 'complete', myGeneration)
           sendSpan.mark('session.flushed')
           sendSpan.end()
           return  // Exit function, skip finally block (onProcessingStopped handles cleanup)
@@ -4195,23 +4228,19 @@ export class SessionManager implements ISessionManager {
         sendSpan.end()
       } else if (managed.stopRequested) {
         getSessionLog().info('Chat loop completed after stop request - events drained successfully')
-        await this.onProcessingStopped(sessionId, 'interrupted')
+        await this.onProcessingStopped(sessionId, 'interrupted', myGeneration)
       } else {
         getSessionLog().info('Chat loop exited unexpectedly')
       }
     })
     } catch (error) {
-      // Check if this is an abort error (expected when interrupted)
-      const isAbortError = error instanceof Error && (
-        error.name === 'AbortError' ||
-        error.message === 'Request was aborted.' ||
-        error.message.includes('aborted')
-      )
+      if (managed.processingGeneration !== myGeneration) return
+      const reason = error instanceof Error ? error.cause as AbortReason | undefined : undefined
+      const isAbortError = managed.stopRequested || (error instanceof Error && (
+        error.name === 'AbortError' || Object.values(AbortReason).includes(reason as AbortReason)
+      ))
 
       if (isAbortError) {
-        // Extract abort reason if available (safety net for unexpected abort propagation)
-        const reason = (error as DOMException).cause as AbortReason | undefined
-
         getSessionLog().info(`Chat aborted (reason: ${reason || 'unknown'})`)
         sendSpan.mark('chat.aborted')
         sendSpan.setMetadata('abort_reason', reason || 'unknown')
@@ -4221,7 +4250,7 @@ export class SessionManager implements ISessionManager {
         // by setting isProcessing = false directly. All other abort reasons route
         // through onProcessingStopped for queue draining.
         if (reason === AbortReason.UserStop || reason === AbortReason.Redirect || reason === undefined) {
-          await this.onProcessingStopped(sessionId, 'interrupted')
+          await this.onProcessingStopped(sessionId, 'interrupted', myGeneration)
         }
       } else {
         getSessionLog().error('Error in chat:', error)
@@ -4240,10 +4269,12 @@ export class SessionManager implements ISessionManager {
           error: error instanceof Error ? error.message : 'Unknown error'
         }, managed.workspace.id)
         // Handle error via centralized handler
-        if (managed.isProcessing) await this.onProcessingStopped(sessionId, 'error')
+        if (managed.isProcessing) await this.onProcessingStopped(sessionId, 'error', myGeneration)
       }
     } finally {
       turnWatchdog.stop()
+      finishTurn()
+      if (this.turnDrains.get(managed) === turnDrain) this.turnDrains.delete(managed)
       // Only handle cleanup for unexpected exits (loop break without complete event)
       // Normal completion returns early after calling onProcessingStopped
       // Errors are handled in catch block
@@ -4251,7 +4282,7 @@ export class SessionManager implements ISessionManager {
         getSessionLog().info('Finally block cleanup - unexpected exit')
         sendSpan.mark('chat.unexpected_exit')
         sendSpan.end()
-        await this.onProcessingStopped(sessionId, 'interrupted')
+        await this.onProcessingStopped(sessionId, 'interrupted', myGeneration)
       }
     }
 
@@ -4334,14 +4365,18 @@ export class SessionManager implements ISessionManager {
 
     // Safety timeout: if event loop doesn't complete within 5 seconds, force cleanup
     // This handles cases where the generator gets stuck
-    setTimeout(() => {
-      if (managed.stopRequested && managed.isProcessing) {
+    const generation = managed.processingGeneration
+    this.clearStopTimer(managed)
+    const timer = setTimeout(() => {
+      if (managed.processingGeneration === generation && managed.stopRequested && managed.isProcessing) {
         getSessionLog().warn('Generator did not complete after stop request, forcing cleanup')
-        void this.onProcessingStopped(sessionId, 'timeout').catch(error => {
+        void this.onProcessingStopped(sessionId, 'timeout', generation).catch(error => {
           getSessionLog().error('Failed to stop processing after cancel timeout:', error)
         })
       }
     }, 5000)
+    timer.unref()
+    this.stopTimers.set(managed, timer)
 
     // NOTE: We don't clear isProcessing or send complete event here anymore.
     // The event loop will drain remaining events and call onProcessingStopped when done.
@@ -4387,14 +4422,18 @@ export class SessionManager implements ISessionManager {
         reason: 'queued_handoff',
       }, managed.workspace.id)
 
-      setTimeout(() => {
-        if (managed.stopRequested && managed.isProcessing) {
+      const generation = managed.processingGeneration
+      this.clearStopTimer(managed)
+      const timer = setTimeout(() => {
+        if (managed.processingGeneration === generation && managed.stopRequested && managed.isProcessing) {
           getSessionLog().warn('Generator did not complete after queued send-now request, forcing cleanup')
-          void this.onProcessingStopped(sessionId, 'timeout').catch(error => {
+          void this.onProcessingStopped(sessionId, 'timeout', generation).catch(error => {
             getSessionLog().error('Failed to stop queued processing after timeout:', error)
           })
         }
       }, 5000)
+      timer.unref()
+      this.stopTimers.set(managed, timer)
     })
   }
 
@@ -4428,95 +4467,106 @@ export class SessionManager implements ISessionManager {
    */
   private async onProcessingStopped(
     sessionId: string,
-    reason: 'complete' | 'interrupted' | 'error' | 'timeout'
+    reason: 'complete' | 'interrupted' | 'error' | 'timeout',
+    generation: number,
   ): Promise<void> {
     const managed = this.sessions.get(sessionId)
-    if (!managed) return
+    if (!managed || !managed.isProcessing || managed.processingGeneration !== generation
+      || this.stoppingGenerations.get(managed) === generation) return
+    this.stoppingGenerations.set(managed, generation)
+    this.clearStopTimer(managed)
+    try {
+      getSessionLog().info(`Processing stopped for session ${sessionId}: ${reason}`)
 
-    getSessionLog().info(`Processing stopped for session ${sessionId}: ${reason}`)
+      // Keep admission queued until cleanup and the next dispatch are decided together.
+      // 1. Cleanup state
+      managed.stopRequested = false  // Reset for next turn
 
-    // 1. Cleanup state
-    this.setProcessing(managed, false)
-    managed.stopRequested = false  // Reset for next turn
+      const turnStartFinalMessageId = managed.turnStartFinalMessageId
+      managed.turnStartFinalMessageId = undefined
+      managed.turnStartedAt = undefined
 
-    const turnStartFinalMessageId = managed.turnStartFinalMessageId
-    managed.turnStartFinalMessageId = undefined
-    managed.turnStartedAt = undefined
-
-    // Clear agent control overlay between turns. The session keeps browser
-    // ownership (boundSessionId) — only the visual overlay is removed.
-    // Full unbind happens below when the queue is empty (session truly done).
-    if (this.browserPaneManager) {
-      await this.browserPaneManager.clearVisualsForSession(sessionId)
-    }
-
-    // 2. Handle unread state based on whether user is viewing this session
-    //    This is the explicit state machine for NEW badge:
-    //    - If user is viewing: mark as read (they saw it complete)
-    //    - If user is NOT viewing: mark as unread (they have new content)
-    //    IMPORTANT: only apply this when the turn produced a NEW final output.
-    const isViewing = this.isSessionBeingViewed(sessionId, managed.workspace.id)
-    const currentFinalMessageId = getLastFinalOutputMessageId(managed.messages)
-    const didReceiveNewFinalOutput = !!currentFinalMessageId && currentFinalMessageId !== turnStartFinalMessageId
-
-    if (reason === 'complete' && didReceiveNewFinalOutput) {
-      if (isViewing) {
-        // User is watching - mark as read immediately
-        await this.markSessionRead(sessionId)
-      } else {
-        // User is not watching - mark as unread for NEW badge
-        if (!managed.hasUnread) {
-          managed.hasUnread = true
-          this.emitUnreadSummaryChanged()
-        }
-      }
-    }
-
-    // 3. Auto-complete mini agent sessions to avoid session list clutter
-    //    Mini agents are spawned from EditPopovers for quick config edits
-    //    and should automatically move to 'done' when finished
-    if (reason === 'complete' && managed.systemPromptPreset === 'mini' && managed.sessionStatus !== 'done') {
-      getSessionLog().info(`Auto-completing mini agent session ${sessionId}`)
-      await this.setSessionStatus(sessionId, 'done')
-    }
-
-    // 4. Apply deferred external metadata updates captured while processing.
-    if (managed.pendingExternalMetadata) {
-      const pendingHeader = readSessionHeader(getSessionFilePath(managed.workspace.rootPath, managed.id))
-        ?? managed.pendingExternalMetadata
-      managed.pendingExternalMetadata = undefined
-      getSessionLog().info(`Applying deferred external metadata for session ${sessionId} after processing stop`)
-      this.applyExternalSessionMetadata(managed, pendingHeader)
-    }
-
-    // 5. Commit the complete in-memory snapshot before announcing completion.
-    this.persistSession(managed)
-    await this.flushSession(sessionId)
-
-    // 6. Check queue and process or complete
-    if (managed.messageQueue.length > 0) {
-      // Has queued messages - process next
-      this.processNextQueuedMessage(sessionId)
-    } else {
-      // Session is truly done — release browser ownership.
-      // The window stays alive (hidden) and becomes reusable by future sessions.
-      // On the next turn, getOrCreateForSession() will re-bind it.
+      // Clear agent control overlay between turns. The session keeps browser
+      // ownership (boundSessionId) — only the visual overlay is removed.
+      // Full unbind happens below when the queue is empty (session truly done).
       if (this.browserPaneManager) {
         await this.browserPaneManager.clearVisualsForSession(sessionId)
-        this.browserPaneManager.unbindAllForSession(sessionId)
+        if (managed.processingGeneration !== generation) return
       }
 
-      // No queue - emit complete to UI (include tokenUsage and hasUnread for state updates)
-      this.sendEvent({
-        type: 'complete',
-        sessionId,
-        tokenUsage: managed.tokenUsage,
-        turnMetrics: managed.pendingTurnMetrics
-          ? Array.from(managed.pendingTurnMetrics, ([messageId, metrics]) => ({ messageId, metrics }))
-          : undefined,
-        hasUnread: managed.hasUnread,  // Propagate unread state to renderer
-      }, managed.workspace.id)
-      managed.pendingTurnMetrics = undefined
+      // 2. Handle unread state based on whether user is viewing this session
+      //    This is the explicit state machine for NEW badge:
+      //    - If user is viewing: mark as read (they saw it complete)
+      //    - If user is NOT viewing: mark as unread (they have new content)
+      //    IMPORTANT: only apply this when the turn produced a NEW final output.
+      const isViewing = this.isSessionBeingViewed(sessionId, managed.workspace.id)
+      const currentFinalMessageId = getLastFinalOutputMessageId(managed.messages)
+      const didReceiveNewFinalOutput = !!currentFinalMessageId && currentFinalMessageId !== turnStartFinalMessageId
+
+      if (reason === 'complete' && didReceiveNewFinalOutput) {
+        if (isViewing) {
+          // User is watching - mark as read immediately
+          await this.markSessionRead(sessionId)
+          if (managed.processingGeneration !== generation) return
+        } else {
+          // User is not watching - mark as unread for NEW badge
+          if (!managed.hasUnread) {
+            managed.hasUnread = true
+            this.emitUnreadSummaryChanged()
+          }
+        }
+      }
+
+      // 3. Auto-complete mini agent sessions to avoid session list clutter
+      //    Mini agents are spawned from EditPopovers for quick config edits
+      //    and should automatically move to 'done' when finished
+      if (reason === 'complete' && managed.systemPromptPreset === 'mini' && managed.sessionStatus !== 'done') {
+        getSessionLog().info(`Auto-completing mini agent session ${sessionId}`)
+        await this.setSessionStatus(sessionId, 'done')
+        if (managed.processingGeneration !== generation) return
+      }
+
+      // 4. Apply deferred external metadata updates captured while processing.
+      if (managed.pendingExternalMetadata) {
+        const pendingHeader = readSessionHeader(getSessionFilePath(managed.workspace.rootPath, managed.id))
+          ?? managed.pendingExternalMetadata
+        managed.pendingExternalMetadata = undefined
+        getSessionLog().info(`Applying deferred external metadata for session ${sessionId} after processing stop`)
+        this.applyExternalSessionMetadata(managed, pendingHeader)
+      }
+
+      // 5. Commit the complete in-memory snapshot before announcing completion.
+      this.persistSession(managed)
+      await this.flushSession(sessionId)
+
+      if (this.sessions.get(sessionId) !== managed || managed.processingGeneration !== generation) return
+      // 6. Check queue and process or complete without yielding admission.
+      this.setProcessing(managed, false)
+      if (managed.messageQueue.length > 0) {
+        // Has queued messages - process next
+        this.processNextQueuedMessage(sessionId)
+      } else {
+        // Session is truly done — release browser ownership.
+        // The window stays alive (hidden) and becomes reusable by future sessions.
+        // On the next turn, getOrCreateForSession() will re-bind it.
+        if (this.browserPaneManager) {
+          this.browserPaneManager.unbindAllForSession(sessionId)
+        }
+
+        // No queue - emit complete to UI (include tokenUsage and hasUnread for state updates)
+        this.sendEvent({
+          type: 'complete',
+          sessionId,
+          tokenUsage: managed.tokenUsage,
+          turnMetrics: managed.pendingTurnMetrics
+            ? Array.from(managed.pendingTurnMetrics, ([messageId, metrics]) => ({ messageId, metrics }))
+            : undefined,
+          hasUnread: managed.hasUnread,  // Propagate unread state to renderer
+        }, managed.workspace.id)
+        managed.pendingTurnMetrics = undefined
+      }
+    } finally {
+      if (this.stoppingGenerations.get(managed) === generation) this.stoppingGenerations.delete(managed)
     }
   }
 
@@ -4526,7 +4576,10 @@ export class SessionManager implements ISessionManager {
    */
   private processNextQueuedMessage(sessionId: string): void {
     const managed = this.sessions.get(sessionId)
-    if (!managed || managed.runtimeState || managed.messageQueue.length === 0) return
+    if (!managed || this.shuttingDown || managed.runtimeState || managed.isProcessing
+      || this.queuedReplays.has(managed) || managed.messageQueue.length === 0) return
+    const replay = {}
+    this.queuedReplays.set(managed, replay)
 
     const next = managed.messageQueue[0]!
     getSessionLog().info('replay queued', {
@@ -4565,11 +4618,8 @@ export class SessionManager implements ISessionManager {
             originalError: err instanceof Error ? err.message : String(err),
           },
         }, managed.workspace.id)
-        if (managed.isProcessing) {
-          void this.onProcessingStopped(sessionId, 'error').catch(error => {
-            getSessionLog().error('Failed to stop processing after queued message failure:', error)
-          })
-        }
+      }).finally(() => {
+        if (this.queuedReplays.get(managed) === replay) this.queuedReplays.delete(managed)
       })
   }
 
@@ -5739,6 +5789,7 @@ export class SessionManager implements ISessionManager {
    * Should be called on app shutdown to prevent resource leaks.
    */
   cleanup(): void {
+    for (const managed of this.stopTimers.keys()) this.clearStopTimer(managed)
     getSessionLog().info('Cleaning up resources...')
     const configWatcherCount = this.configWatchers.size
     const automationSystemCount = this.automationSystems.size
