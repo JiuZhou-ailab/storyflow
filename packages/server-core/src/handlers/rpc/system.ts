@@ -1,33 +1,18 @@
-// input: System, shell, release-note, and Project Git RPC requests
-// output: Platform responses plus lifecycle-scoped Project version mutations
-// pos: Core RPC boundary for host capabilities and Project version control
+// input: System, shell, release-note, Git branch and Git Bash RPC requests
+// output: Platform and host-capability responses
+// pos: Core RPC boundary for host capabilities
 
 import { resolve } from 'path'
 import { join } from 'path'
 import { homedir } from 'os'
 import { execSync } from 'child_process'
-import {
-  RPC_CHANNELS,
-  type CreateWorkspaceVersionOptions,
-} from '@craft-agent/shared/protocol'
+import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId, getGitBashPath, setGitBashPath, clearGitBashPath } from '@craft-agent/shared/config'
-import { canonicalizeProjectRoot } from '@craft-agent/shared/workspaces'
-import { normalizePathForComparison } from '@craft-agent/shared/utils'
 import { CONTENT_LINK_ACTION_REFUSED, isAllowedExternalDeepLinkAction, isDeepLinkWithinLimits, isSafeExternalUrl } from '@craft-agent/shared/utils/url-safety'
-import {
-  compareWorkspaceVersions,
-  readWorkspaceFileAtCommit,
-  createWorkspaceVersion,
-  getWorkspaceVersionStatus,
-  isUsableGitBashPath,
-  listWorkspaceVersions,
-  restoreWorkspaceVersion,
-  validateGitBashPath,
-} from '@craft-agent/server-core/services'
+import { isUsableGitBashPath, validateGitBashPath } from '@craft-agent/server-core/services'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
-import type { RequestContext, RpcServer } from '@craft-agent/server-core/transport'
+import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
-import { resolveContextWorkspaceId } from './file-workspace-scope'
 import {
   requestClientOpenExternal,
   requestClientOpenPath,
@@ -48,12 +33,6 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION,
   RPC_CHANNELS.releaseNotes.GET_WHATS_NEW_MANIFEST,
   RPC_CHANNELS.git.GET_BRANCH,
-  RPC_CHANNELS.git.GET_VERSION_STATUS,
-  RPC_CHANNELS.git.COMPARE_VERSIONS,
-  RPC_CHANNELS.git.READ_FILE_AT_VERSION,
-  RPC_CHANNELS.git.CREATE_VERSION,
-  RPC_CHANNELS.git.LIST_VERSIONS,
-  RPC_CHANNELS.git.RESTORE_VERSION,
   RPC_CHANNELS.gitbash.CHECK,
   RPC_CHANNELS.gitbash.BROWSE,
   RPC_CHANNELS.gitbash.SET_PATH,
@@ -227,59 +206,6 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
     } catch {
       return null
     }
-  })
-
-  async function validateWorkspaceRoot(ctx: RequestContext, rootPath: string): Promise<string> {
-    const workspaceId = resolveContextWorkspaceId(ctx, deps)
-    return validateFilePath(rootPath, getWorkspaceAllowedDirs(workspaceId))
-  }
-
-  function resolveVersionProjectId(ctx: RequestContext, rootPath: string): string | null | undefined {
-    const localWindowWorkspaceId = ctx.webContentsId == null
-      ? null
-      : deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId)
-    if (!localWindowWorkspaceId) return ctx.workspaceId
-    const requestedRoot = normalizePathForComparison(canonicalizeProjectRoot(rootPath, true))
-    return deps.sessionManager.getWorkspaces().find(workspace => (
-      !workspace.remoteServer
-      && normalizePathForComparison(canonicalizeProjectRoot(workspace.rootPath, true)) === requestedRoot
-    ))?.id
-  }
-
-  server.handle(RPC_CHANNELS.git.GET_VERSION_STATUS, async (ctx, rootPath: string) => {
-    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
-    return getWorkspaceVersionStatus(safeRoot)
-  })
-
-  server.handle(RPC_CHANNELS.git.COMPARE_VERSIONS, async (ctx, rootPath: string, baseCommit: string, headCommit?: string) => {
-    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
-    return compareWorkspaceVersions(safeRoot, baseCommit, headCommit)
-  })
-
-  server.handle(RPC_CHANNELS.git.READ_FILE_AT_VERSION, async (ctx, rootPath: string, commitHash: string, relativePath: string) => {
-    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
-    return readWorkspaceFileAtCommit(safeRoot, commitHash, relativePath)
-  })
-
-  server.handle(RPC_CHANNELS.git.CREATE_VERSION, async (ctx, rootPath: string, options: CreateWorkspaceVersionOptions) => {
-    const workspaceId = resolveVersionProjectId(ctx, rootPath)
-    if (!workspaceId) throw new Error('Workspace not found')
-    return deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
-      return createWorkspaceVersion(workspace.rootPath, options)
-    })
-  })
-
-  server.handle(RPC_CHANNELS.git.LIST_VERSIONS, async (ctx, rootPath: string, limit?: number) => {
-    const safeRoot = await validateWorkspaceRoot(ctx, rootPath)
-    return listWorkspaceVersions(safeRoot, limit)
-  })
-
-  server.handle(RPC_CHANNELS.git.RESTORE_VERSION, async (ctx, rootPath: string, commitHash: string) => {
-    const workspaceId = resolveVersionProjectId(ctx, rootPath)
-    if (!workspaceId) throw new Error('Workspace not found')
-    return deps.sessionManager.withProjectLifecycle(workspaceId, async workspace => {
-      return restoreWorkspaceVersion(workspace.rootPath, commitHash)
-    })
   })
 
   // Git Bash detection and configuration (Windows only)

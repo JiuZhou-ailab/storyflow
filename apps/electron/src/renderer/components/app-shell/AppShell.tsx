@@ -108,7 +108,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusActions } from "@/context/FocusContext"
 import { createConversationWithFeedback } from "./ActivityRailRows"
 import { hasSessionHistoryContent } from "@/utils/session"
-import type { Session, LoadedSource, LoadedSkill, AutomationFilter, WorkspaceVersionFileChange, WhatsNewManifest } from "../../../shared/types"
+import type { Session, LoadedSource, LoadedSkill, AutomationFilter, WhatsNewManifest } from "../../../shared/types"
 import {
   ensureSessionMessagesLoadedAtom,
   reconcileSessionTranscriptWorkingSetAtom,
@@ -259,13 +259,6 @@ function hasBlockingFocusDialog(): boolean {
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
 type FilterMode = 'include' | 'exclude'
 
-interface NovelWorkspaceBriefPreparation {
-  shouldSend: boolean
-  brief?: string
-  checkpoint?: { rootPath: string; commitHash: string }
-  agentTouchedPaths?: string[]
-}
-
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
 const SESSION_LIST_MIN_WIDTH = 240
 const SESSION_LIST_MAX_WIDTH = 480
@@ -274,61 +267,6 @@ const NOVEL_WORKSPACE_NAVIGATOR_DEFAULT_WIDTH = DEFAULT_WORKSPACE_WIDTH
 const WRITING_ASSISTANT_MIN_WIDTH = 320
 /** Fraction of the window the manuscript column takes before the user resizes it. */
 const DEFAULT_DOCUMENT_DOCK_WIDTH_RATIO = 0.34
-const NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT = 20
-function getKnownWorkspaceCommit(rootPath: string, sessionId: string): string | undefined {
-  const commits = storage.get<Record<string, string>>(storage.KEYS.workspaceVersionKnownCommit, {}, rootPath)
-  return commits[sessionId]
-}
-
-function setKnownWorkspaceCommit(rootPath: string, sessionId: string, commitHash: string): void {
-  const commits = storage.get<Record<string, string>>(storage.KEYS.workspaceVersionKnownCommit, {}, rootPath)
-  storage.set(storage.KEYS.workspaceVersionKnownCommit, {
-    ...commits,
-    [sessionId]: commitHash,
-  }, rootPath)
-}
-
-function formatWorkspaceChange(change: WorkspaceVersionFileChange): string {
-  if (change.status === 'renamed' && change.previousPath) {
-    return `${change.previousPath} -> ${change.path} renamed`
-  }
-  return `${change.path} ${change.status}`
-}
-
-function buildNovelWorkspaceFreshnessBrief(
-  changes: WorkspaceVersionFileChange[],
-  activeFile?: string | null,
-): string | undefined {
-  if (changes.length === 0) return undefined
-
-  const visibleChanges = changes.slice(0, NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT)
-  const overflow = changes.length - visibleChanges.length
-  const lines = [
-    '<workspace-brief>',
-    'Workspace files changed since your last known checkpoint in this session.',
-    activeFile ? `Active writing file: ${activeFile}` : undefined,
-    '',
-    'Unknown changes:',
-    ...visibleChanges.map(change => `- ${formatWorkspaceChange(change)}`),
-    overflow > 0 ? `- ...and ${overflow} more file(s)` : undefined,
-    '</workspace-brief>',
-  ].filter((line): line is string => line !== undefined)
-
-  return lines.join('\n')
-}
-
-function collectAgentTouchedRelativePaths(
-  changes: FileChange[],
-  rootPath: string,
-  files: Pick<NovelWorkspaceFile, 'path' | 'relativePath'>[],
-): string[] {
-  const relativeByAbsolutePath = new Map(files.map(file => [file.path, file.relativePath]))
-  return [...new Set(changes
-    .filter(change => !change.error)
-    .map(change => relativeByAbsolutePath.get(change.filePath) ?? getNovelWorkspaceRelativePath(change.filePath, rootPath))
-    .filter(Boolean))]
-}
-
 function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
@@ -2190,9 +2128,8 @@ function AppShellContent({
   const novelDocumentEditorRef = React.useRef<NovelDocumentEditorPanelHandle>(null)
   const latestNovelDocumentPathRef = React.useRef<string | null>(null)
   const novelDocumentSwitchStartRef = React.useRef<{ filePath: string; startedAt: number } | null>(null)
-  const novelAgentTurnCheckpointInFlightRef = React.useRef(false)
+  // Read by the file-tree refresh: a turn that just ended may have changed files.
   const novelSessionProcessingRef = React.useRef<Record<string, boolean>>({})
-  const novelAgentTouchedPathsRef = React.useRef<Record<string, string[]>>({})
 
   React.useEffect(() => {
     latestNovelDocumentPathRef.current = selectedNovelDocumentPath
@@ -2360,84 +2297,10 @@ function AppShellContent({
     setNovelDocumentTabs(nextTabs)
   }, [ensureNovelDocumentSaved, novelDocumentTabs, selectedNovelFilePath])
 
-  const prepareNovelWorkspaceBriefForSend = React.useCallback(async (sessionId: string): Promise<NovelWorkspaceBriefPreparation> => {
-    if (!novelWorkspaceRoot) return { shouldSend: true }
-
-    const saved = await ensureNovelDocumentSaved()
-    if (!saved) return { shouldSend: false }
-
-    try {
-      const snapshot = await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'user-preprompt' })
-      const headCommit = snapshot.commitHash
-      if (!headCommit) return { shouldSend: true }
-
-      const previousCommit = getKnownWorkspaceCommit(novelWorkspaceRoot, sessionId)
-      const checkpoint = { rootPath: novelWorkspaceRoot, commitHash: headCommit }
-      const agentTouchedPaths = novelAgentTouchedPathsRef.current[sessionId] ?? []
-      if (!previousCommit || previousCommit === headCommit) {
-        return { shouldSend: true, checkpoint, agentTouchedPaths }
-      }
-
-      const changedFiles = await window.electronAPI.compareWorkspaceVersions(novelWorkspaceRoot, previousCommit, headCommit)
-      const agentTouchedPathSet = new Set(agentTouchedPaths)
-
-      const unknownChanges = changedFiles.filter(change => !agentTouchedPathSet.has(change.path))
-
-      return {
-        shouldSend: true,
-        brief: buildNovelWorkspaceFreshnessBrief(unknownChanges, selectedNovelFile?.relativePath),
-        checkpoint,
-        agentTouchedPaths,
-      }
-    } catch (error) {
-      console.warn('[writing] Failed to prepare workspace freshness brief:', error)
-      return { shouldSend: true }
-    }
-  }, [ensureNovelDocumentSaved, novelWorkspaceRoot, selectedNovelFile?.relativePath])
-
-  const checkpointNovelWorkspaceAgentTurn = React.useCallback(async (sessionId: string): Promise<void> => {
-    if (!novelWorkspaceRoot || novelAgentTurnCheckpointInFlightRef.current) return
-
-    const previousCommit = getKnownWorkspaceCommit(novelWorkspaceRoot, sessionId)
-    novelAgentTouchedPathsRef.current[sessionId] = collectAgentTouchedRelativePaths(
-      reviewableNovelFileChanges,
-      novelWorkspaceRoot,
-      novelWorkspaceFiles,
-    )
-
-    novelAgentTurnCheckpointInFlightRef.current = true
-    try {
-      const snapshot = await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'agent-turn' })
-      const headCommit = snapshot.commitHash
-      if (previousCommit && headCommit && previousCommit !== headCommit) {
-        setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
-        const refreshSignature = latestNovelFileChangesSignatureRef.current
-        const refreshKey = refreshSignature ? `${novelWorkspaceRoot}\n${refreshSignature}` : null
-        if (refreshKey) pendingNovelFileChangeRefreshKeys.add(refreshKey)
-        void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot).then((refreshed) => {
-          if (refreshed) markNovelWorkspaceFileChangesCovered(novelWorkspaceRoot)
-        }).finally(() => {
-          if (refreshKey) pendingNovelFileChangeRefreshKeys.delete(refreshKey)
-        })
-      }
-    } catch (error) {
-      console.warn('[writing] Failed to create agent turn workspace version:', error)
-    } finally {
-      novelAgentTurnCheckpointInFlightRef.current = false
-    }
-  }, [markNovelWorkspaceFileChangesCovered, novelWorkspaceFiles, novelWorkspaceRoot, refreshNovelWorkspaceFilesAfterMutation, reviewableNovelFileChanges])
-
   React.useEffect(() => {
     if (!effectiveSessionId || !novelWorkspaceRoot) return
-
-    const isProcessing = effectiveSessionIsProcessing
-    const wasProcessing = novelSessionProcessingRef.current[effectiveSessionId] === true
-    novelSessionProcessingRef.current[effectiveSessionId] = isProcessing
-
-    if (wasProcessing && !isProcessing) {
-      void checkpointNovelWorkspaceAgentTurn(effectiveSessionId)
-    }
-  }, [checkpointNovelWorkspaceAgentTurn, effectiveSessionIsProcessing, effectiveSessionId, novelWorkspaceRoot])
+    novelSessionProcessingRef.current[effectiveSessionId] = effectiveSessionIsProcessing
+  }, [effectiveSessionIsProcessing, effectiveSessionId, novelWorkspaceRoot])
 
   React.useEffect(() => {
     if (!selectedNovelDocumentPath || novelDocumentDirty || latestNovelFileChanges.length === 0) return
@@ -2523,27 +2386,10 @@ function AppShellContent({
     badges,
     options,
   ) => {
-    const preparation = sessionId === effectiveSessionId
-      ? await prepareNovelWorkspaceBriefForSend(sessionId)
-      : { shouldSend: true }
-    if (!preparation.shouldSend) return
-
-    const accepted = await onSendMessage(sessionId, message, attachments, skillSlugs, badges, {
-      ...options,
-      workspaceFreshnessContext: preparation.brief,
-    })
-    if (accepted === 'accepted' && preparation.checkpoint) {
-      setKnownWorkspaceCommit(
-        preparation.checkpoint.rootPath,
-        sessionId,
-        preparation.checkpoint.commitHash,
-      )
-      if (novelAgentTouchedPathsRef.current[sessionId] === preparation.agentTouchedPaths) {
-        novelAgentTouchedPathsRef.current[sessionId] = []
-      }
-    }
-    return accepted
-  }, [effectiveSessionId, onSendMessage, prepareNovelWorkspaceBriefForSend])
+    // The server briefs the agent on outside file changes; it can only see what is on disk.
+    if (sessionId === effectiveSessionId && novelWorkspaceRoot && !await ensureNovelDocumentSaved()) return
+    return onSendMessage(sessionId, message, attachments, skillSlugs, badges, options)
+  }, [effectiveSessionId, ensureNovelDocumentSaved, novelWorkspaceRoot, onSendMessage])
 
   const handleSendNovelSelectionToChat = React.useCallback(async (message: string) => {
     if (!effectiveSessionId) return

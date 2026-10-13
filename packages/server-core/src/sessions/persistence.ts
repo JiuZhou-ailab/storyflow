@@ -317,9 +317,6 @@ export class SessionPersistence {
           messageId: msg.id,
           attachments: undefined,
           storedAttachments: msg.attachments,
-          options: msg.queuedWorkspaceFreshnessContext
-            ? { workspaceFreshnessContext: msg.queuedWorkspaceFreshnessContext }
-            : undefined,
         })
       }
     }

@@ -8,7 +8,6 @@ export function createDemoAdapter(notice: (message: string) => void) {
   const files = new Map(Object.entries(initialFiles))
   const sessions = new Map<string, Session>([[initialSession.id, structuredClone(initialSession)]])
   const listeners = new Set<(event: SessionEvent) => void>()
-  const versions = new Map<string, Map<string, string>>()
   const drafts: Record<string, { text: string }> = {}
   let disposed = false
   let selected: { id: ScenarioId; sessionId: string } | undefined
@@ -80,22 +79,6 @@ export function createDemoAdapter(notice: (message: string) => void) {
     getAppTheme: async () => null, getColorTheme: async () => 'default', getWorkspaceColorTheme: async () => null,
     getSystemTheme: async () => false,
     onSessionEvent: (callback) => { listeners.add(callback); return () => { listeners.delete(callback) } },
-    createWorkspaceVersion: async (root) => {
-      checkRoot(root)
-      const hash = String(versions.size + 1)
-      versions.set(hash, new Map(files))
-      return { created: true, commitHash: hash, changedFiles: 0 }
-    },
-    getWorkspaceVersionStatus: async (root) => { checkRoot(root); return { isGitRepo: false, hasChanges: false, lastCommit: null } },
-    listWorkspaceVersions: async (root) => { checkRoot(root); return [] },
-    readWorkspaceFileAtVersion: async (root, hash, relative) => { checkRoot(root); return versions.get(hash)?.get(`${root}/${relative}`) ?? null },
-    compareWorkspaceVersions: async (root, base, head) => {
-      checkRoot(root)
-      const before = versions.get(base)
-      const after = head ? versions.get(head) : files
-      if (!before || !after) throw new Error('示例版本不存在。')
-      return [...after].filter(([path, text]) => before.get(path) !== text).map(([path]) => ({ path: path.slice(root.length + 1), status: 'modified' as const }))
-    },
     sessionCommand: async (id, command) => {
       getSession(id)
       if (['setActiveViewing', 'markRead'].includes(command.type)) return

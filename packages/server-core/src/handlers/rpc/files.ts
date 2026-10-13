@@ -248,7 +248,7 @@ function pushFileListEntry(entries: FileSearchEntry[], seenPaths: Set<string>, e
   entries.push(entry)
 }
 
-async function collectWorkspaceFileList(
+export async function collectWorkspaceFileList(
   basePath: string,
   rootPaths: readonly string[],
   maxEntries = FILE_LIST_MAX_ENTRIES,

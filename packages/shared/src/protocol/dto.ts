@@ -232,8 +232,6 @@ export interface SendMessageOptions {
   optimisticMessageId?: string
   /** Runtime-only context appended to the model request without persisting in chat history. */
   oneTimeContext?: string
-  /** Host-produced workspace freshness data; the server owns the matching read-before-edit policy. */
-  workspaceFreshnessContext?: string
   /** Send to the model without creating or persisting a visible user-message bubble. */
   hideUserMessage?: boolean
 }
@@ -313,47 +311,6 @@ export type SessionCommand =
 export interface NewChatActionParams {
   input?: string
   name?: string
-}
-
-// ---------------------------------------------------------------------------
-// Workspace version control
-// ---------------------------------------------------------------------------
-
-export interface WorkspaceVersionEntry {
-  hash: string
-  timestamp: number
-  subject: string
-}
-
-export interface WorkspaceVersionStatus {
-  isGitRepo: boolean
-  hasChanges: boolean
-  lastCommit: WorkspaceVersionEntry | null
-}
-
-export interface CreateWorkspaceVersionOptions {
-  reason: 'auto' | 'manual' | 'before-restore' | 'restore' | 'user-preprompt' | 'agent-turn'
-  label?: string
-}
-
-export interface CreateWorkspaceVersionResult {
-  created: boolean
-  commitHash?: string
-  message?: string
-  changedFiles: number
-}
-
-export interface RestoreWorkspaceVersionResult {
-  restored: boolean
-  commitHash: string
-  restoreCommitHash?: string
-}
-
-export interface WorkspaceVersionFileChange {
-  path: string
-  status: 'added' | 'modified' | 'deleted' | 'renamed'
-  previousPath?: string
-  unifiedDiff?: string
 }
 
 // ---------------------------------------------------------------------------

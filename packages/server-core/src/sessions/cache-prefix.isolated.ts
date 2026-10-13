@@ -119,10 +119,10 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
     events.push(event);
     if (event.type === 'permission_request') manager.respondToPermission(sessionId, event.request.requestId, true, false);
   });
-  const run = async (name: string, workspaceFreshnessContext?: string) => {
+  const run = async (name: string) => {
     phase = name; call = 0;
     const start = captures.length;
-    await manager.sendMessage(sessionId, name === 'seed' ? 'hi' : `USER_${name}`, undefined, undefined, { workspaceFreshnessContext });
+    await manager.sendMessage(sessionId, name === 'seed' ? 'hi' : `USER_${name}`);
     // Bounded: the message is built on every call; an unbounded one aborted Bun 1.3 on Linux CI here without output.
     expect(captures.length, `${JSON.stringify(events.slice(-20)).slice(-8000)}\n${logs.slice(-60).join('\n').slice(-12000)}`).toBeGreaterThan(start);
     return { name, start, end: captures.length - 1 };
@@ -178,7 +178,7 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
     const steered = await steeredRun;
     const afterSteer = await run('after-steer');
     await writeFile(join(project, 'chapter.md'), 'Externally revised chapter.');
-    const external = await run('external', '<workspace-brief>chapter.md changed outside this conversation.</workspace-brief>');
+    const external = await run('external');
     const afterExternal = await run('after-external');
     await manager.setSessionPermissionMode(sessionId, 'safe');
     const permission = await run('policy-permission');
@@ -219,6 +219,7 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
     expect(latestUser(bodies[resumed.start])).toContain('<previous_response_interrupted>true</previous_response_interrupted>');
     expect(latestUser(bodies[following.start])).not.toContain('<previous_response_interrupted>');
     expect(latestUser(bodies[external.start])).toContain('<workspace-brief>');
+    expect(latestUser(bodies[external.start])).toContain('- chapter.md ');
     expect(latestUser(bodies[afterExternal.start])).not.toContain('<workspace-brief>');
     expect(latestUser(bodies[permission.start])).toContain('permissionMode: explore');
     expect(latestUser(bodies[permission.start])).toContain('modeChangeUserSignal:');

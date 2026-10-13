@@ -291,7 +291,7 @@ describe('sendMessage durability', () => {
       'queued message',
       undefined,
       undefined,
-      { workspaceFreshnessContext: 'read chapter-2.md before editing' },
+      undefined,
       undefined,
       (messageId) => {
         ackedMessageId = messageId
@@ -315,8 +315,7 @@ describe('sendMessage durability', () => {
     await ((restoredManager as unknown as {
       persistence: { loadMessagesFromDisk(session: typeof restored): Promise<void> }
     }).persistence).loadMessagesFromDisk(restored)
-    expect(restored.messageQueue[0]?.options?.workspaceFreshnessContext)
-      .toBe('read chapter-2.md before editing')
+    expect(restored.messageQueue.map(entry => entry.messageId as string | null)).toEqual([ackedMessageId])
   })
 
   it('dequeues a replay only inside the durable send transaction', async () => {
@@ -354,10 +353,9 @@ describe('sendMessage durability', () => {
     expect(managed.messages.map(message => message.id)).toEqual(['answer-1', 'queued-1'])
   })
 
-  it('keeps one-time and interruption context out of the durable model message', async () => {
+  it('briefs outside text changes and keeps one-time and interruption context out of the durable model message', async () => {
     const sessionId = 'transient-turn-context'
     const managed = buildSession(sessionId)
-    managed.wasInterrupted = true
     let captured: { message: string; oneTimeContext?: string; turnPolicy?: string } | undefined
     ;(sm as unknown as { getOrCreateAgentLocked: () => Promise<unknown> }).getOrCreateAgentLocked = async () => ({
       getModel: () => 'test-model',
@@ -377,25 +375,22 @@ describe('sendMessage durability', () => {
       },
     })
 
-    await sm.sendMessage(
-      sessionId,
-      'hello',
-      undefined,
-      undefined,
-      {
-        oneTimeContext: 'OTHER TRANSIENT DATA',
-        workspaceFreshnessContext: '<workspace-brief>\nNOVEL WORKSPACE BRIEF\n</workspace-brief>',
-      },
-    )
+    // The first turn sets the baseline; the agent's own turn is not an outside change.
+    await sm.sendMessage(sessionId, 'first')
+    expect(captured?.oneTimeContext ?? '').not.toContain('<workspace-brief>')
+    writeFileSync(join(tmpRoot, 'chapter-outside.md'), 'edited outside the conversation\n')
+    managed.wasInterrupted = true
+
+    await sm.sendMessage(sessionId, 'hello', undefined, undefined, { oneTimeContext: 'OTHER TRANSIENT DATA' })
 
     expect(captured?.message).toBe('hello')
     expect(captured?.oneTimeContext).toContain('OTHER TRANSIENT DATA')
-    expect(captured?.oneTimeContext).toContain('NOVEL WORKSPACE BRIEF')
+    expect(captured?.oneTimeContext).toContain('- chapter-outside.md added')
     expect(captured?.turnPolicy).toContain('previous assistant response was interrupted')
     expect(captured?.turnPolicy).toContain('Before editing any listed file, read its latest content first')
     expect(managed.wasInterrupted).toBe(false)
     expect(readFileSync(getSessionFilePath(tmpRoot, sessionId), 'utf-8'))
-      .not.toContain('NOVEL WORKSPACE BRIEF')
+      .not.toContain('chapter-outside.md')
   })
 
   it('shares one-shot queries with chat while disposal waits for the chat lease', async () => {

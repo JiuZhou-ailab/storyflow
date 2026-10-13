@@ -109,6 +109,7 @@ import { getPiTurnAnchor, loadPiTurnAnchors, requireSdkForkBranchAnchor, savePiT
 import { resolveToolDisplayMeta } from './tool-display'
 export { consumePendingSdkFork } from './managed-session'
 import { SESSION_TURN_HARD_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
+import { WorkspaceFreshness } from './workspace-freshness'
 import {
   isManagedDefaultGatewayConnection,
   normalizeManagedDefaultGatewayAuthError,
@@ -240,6 +241,7 @@ export class SessionManager implements ISessionManager {
 
   private sessions: Map<string, ManagedSession> = new Map()
   private stopTimers = new Map<ManagedSession, ReturnType<typeof setTimeout>>()
+  private readonly workspaceFreshness = new WorkspaceFreshness()
   private stoppingGenerations = new WeakMap<ManagedSession, number>()
   private queuedReplays = new WeakMap<ManagedSession, object>()
   private turnDrains = new WeakMap<ManagedSession, Promise<void>>()
@@ -3095,6 +3097,7 @@ export class SessionManager implements ISessionManager {
           throw new Error(`Could not delete Session ${sessionId} from its Project-owned storage`)
         }
         this.sessions.delete(sessionId)
+        this.workspaceFreshness.forget(sessionId)
       })
     } catch (error) {
       if (ownsDeletion()) claimedSession.runtimeState = undefined
@@ -3244,7 +3247,7 @@ export class SessionManager implements ISessionManager {
       attachmentCount: attachments?.length ?? 0,
       storedAttachmentCount: storedAttachments?.length ?? 0,
       hiddenUserMessage: options?.hideUserMessage === true,
-      hasOneTimeContext: !!(options?.oneTimeContext?.trim() || options?.workspaceFreshnessContext?.trim()),
+      hasOneTimeContext: !!options?.oneTimeContext?.trim(),
       existingMessage: existingMessageId !== undefined,
     })
     let acceptSpanEnded = false
@@ -3304,7 +3307,6 @@ export class SessionManager implements ISessionManager {
         attachments: storedAttachments,
         badges: options?.badges,
         isQueued: true,
-        queuedWorkspaceFreshnessContext: options?.workspaceFreshnessContext,
       }
 
       if (!hideUserMessage && userMessage) {
@@ -3350,7 +3352,6 @@ export class SessionManager implements ISessionManager {
         }
         const existingIndex = managed.messages.indexOf(userMessage)
         userMessage.isQueued = false
-        delete userMessage.queuedWorkspaceFreshnessContext
         userMessage.timestamp = this.monotonic()
         managed.messages.splice(existingIndex, 1)
         managed.messages.push(userMessage)
@@ -3600,6 +3601,9 @@ export class SessionManager implements ISessionManager {
     // ensureFreshToken mirrors the disk write to source.config in-memory).
     // A forced stop may finish the UI turn before its iterator has settled.
     await previousTurn
+    const workspaceBrief = isFreeConversationWorkspaceId(managed.workspace.id)
+      ? undefined
+      : await this.workspaceFreshness.brief(sessionId, workspaceRootPath)
     if (managed.processingGeneration !== myGeneration || !managed.isProcessing) return
     await this.withAgentRuntimeLease(managed, async agent => {
     sendSpan.mark('agent.facade.ready')
@@ -3699,7 +3703,7 @@ export class SessionManager implements ISessionManager {
         ...(userMessage ? { draftText: message } : {}),
       }
       const chatIterator = agent.chat(message, modelInputAttachments.attachments, {
-        oneTimeContext: [interruptionContext, options?.oneTimeContext, options?.workspaceFreshnessContext]
+        oneTimeContext: [interruptionContext, options?.oneTimeContext, workspaceBrief]
           .map(context => context?.trim())
           .filter(Boolean)
           .join('\n\n') || undefined,
@@ -4092,6 +4096,10 @@ export class SessionManager implements ISessionManager {
     this.clearStopTimer(managed)
     try {
       getSessionLog().info(`Processing stopped for session ${sessionId}: ${reason}`)
+      // Whatever the stop reason, the agent may have written files during the turn.
+      if (!isFreeConversationWorkspaceId(managed.workspace.id)) {
+        void this.workspaceFreshness.checkpoint(sessionId, managed.workspace.rootPath)
+      }
 
       // Keep admission queued until cleanup and the next dispatch are decided together.
       // 1. Cleanup state

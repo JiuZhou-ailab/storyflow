@@ -315,12 +315,6 @@ import type {
   WindowCloseRequest,
   DirectoryListingResult,
   RemoteSessionTransferPayload,
-  WorkspaceVersionEntry,
-  WorkspaceVersionStatus,
-  CreateWorkspaceVersionOptions,
-  CreateWorkspaceVersionResult,
-  WorkspaceVersionFileChange,
-  RestoreWorkspaceVersionResult,
 } from '@craft-agent/shared/protocol'
 
 export interface ElectronAPI {
@@ -495,13 +489,6 @@ export interface ElectronAPI {
   getRuntimeEnvironment(): 'electron' | 'web'
   getHomeDir(): Promise<string>
   isDebugMode(): Promise<boolean>
-  getWorkspaceVersionStatus(rootPath: string): Promise<WorkspaceVersionStatus>
-  compareWorkspaceVersions(rootPath: string, baseCommit: string, headCommit?: string): Promise<WorkspaceVersionFileChange[]>
-  /** Returns file content at a commit, or null when the path is absent there (absence != empty). */
-  readWorkspaceFileAtVersion(rootPath: string, commitHash: string, relativePath: string): Promise<string | null>
-  createWorkspaceVersion(rootPath: string, options: CreateWorkspaceVersionOptions): Promise<CreateWorkspaceVersionResult>
-  listWorkspaceVersions(rootPath: string, limit?: number): Promise<WorkspaceVersionEntry[]>
-  restoreWorkspaceVersion(rootPath: string, commitHash: string): Promise<RestoreWorkspaceVersionResult>
 
   // Transport connection status (preload-local, not RPC channels)
   getTransportConnectionState(): Promise<TransportConnectionState>

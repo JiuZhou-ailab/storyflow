@@ -376,12 +376,6 @@ export const CHANNEL_ROUTING = {
   'automations:changed': 'REMOTE_ELIGIBLE',
 
   'git:getBranch': 'REMOTE_ELIGIBLE',
-  'git:getVersionStatus': 'REMOTE_ELIGIBLE',
-  'git:compareVersions': 'REMOTE_ELIGIBLE',
-  'git:readFileAtVersion': 'REMOTE_ELIGIBLE',
-  'git:createVersion': 'REMOTE_ELIGIBLE',
-  'git:listVersions': 'REMOTE_ELIGIBLE',
-  'git:restoreVersion': 'REMOTE_ELIGIBLE',
 
   'resources:export': 'REMOTE_ELIGIBLE',
   'resources:import': 'REMOTE_ELIGIBLE',

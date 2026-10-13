@@ -1,5 +1,5 @@
 // input: Built Electron app, a v0.17-style local Project, and a deterministic OpenAI-compatible HTTP stub
-// output: Assertions for upgrades, login routing, safe Session cleanup, a real Pi edit turn, version restore, and restart recovery
+// output: Assertions for upgrades, login routing, safe Session cleanup, a real Pi edit turn that leaves the user's Git state alone, and restart recovery
 // pos: Release-gate smoke test for the desktop product's durable core loop
 
 import { spawnSync } from 'node:child_process'
@@ -34,7 +34,6 @@ const CONNECTION_SLUG = 'core-e2e-local'
 const MODEL_ID = 'core-e2e-model'
 const ORIGINAL = '# Core E2E\n\nbefore\n'
 const AGENT_EDIT = '# Core E2E\n\nafter agent edit\n'
-const USER_DRIFT = '# Core E2E\n\nuncommitted user drift\n'
 const launchOptions: LaunchAppOptions = process.env.CRAFT_E2E_ELECTRON_BIN
   ? { executablePath: process.env.CRAFT_E2E_ELECTRON_BIN, packaged: true }
   : {}
@@ -137,41 +136,9 @@ async function main(): Promise<void> {
     )
     assert.equal(cleanup.deleted, false, 'automatic cleanup must retain a Session with a user message')
 
-    const version = await callOn<{ created: boolean; commitHash?: string }>(
-      app,
-      `async function (rootPath) {
-        return await window.electronAPI.createWorkspaceVersion(rootPath, {
-          reason: 'agent-turn',
-          label: 'Core E2E agent edit',
-        })
-      }`,
-      [fixture.workspaceRoot],
-    )
-    assert.ok(version.commitHash)
-    const versionedContent = await callOn<string | null>(
-      app,
-      `async function (rootPath, commitHash) {
-        return await window.electronAPI.readWorkspaceFileAtVersion(rootPath, commitHash, 'README.md')
-      }`,
-      [fixture.workspaceRoot, version.commitHash],
-    )
-    assert.equal(versionedContent, AGENT_EDIT)
     assert.equal(git(fixture.workspaceRoot, 'rev-parse', 'HEAD'), userHeadBefore)
     assert.equal(git(fixture.workspaceRoot, 'diff', '--cached', '--binary'), userIndexBefore)
     assert.match(git(fixture.workspaceRoot, 'status', '--short'), /M README\.md/)
-
-    writeFileSync(fixture.targetFile, USER_DRIFT)
-    const restored = await callOn<{ restored: boolean; commitHash: string }>(
-      app,
-      `async function (rootPath, commitHash) {
-        return await window.electronAPI.restoreWorkspaceVersion(rootPath, commitHash)
-      }`,
-      [fixture.workspaceRoot, version.commitHash],
-    )
-    assert.equal(restored.restored, true)
-    assert.equal(readFileSync(fixture.targetFile, 'utf8'), AGENT_EDIT)
-    assert.equal(git(fixture.workspaceRoot, 'rev-parse', 'HEAD'), userHeadBefore)
-    assert.equal(git(fixture.workspaceRoot, 'diff', '--cached', '--binary'), userIndexBefore)
 
     await sleep(250)
     await app.close()

@@ -1434,7 +1434,7 @@ function AppContent() {
     }
   }, [updateSessionById, store])
 
-  const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], externalBadges?: ContentBadge[], sendOptions?: Pick<SendMessageOptions, 'oneTimeContext' | 'workspaceFreshnessContext' | 'hideUserMessage'> & { forceQueuedUserMessage?: boolean }) => {
+  const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], externalBadges?: ContentBadge[], sendOptions?: Pick<SendMessageOptions, 'oneTimeContext' | 'hideUserMessage'> & { forceQueuedUserMessage?: boolean }) => {
     try {
       const session = store.get(sessionAtomFamily(sessionId))
       const connectionSlug = resolveEffectiveConnectionSlug(
@@ -1603,7 +1603,6 @@ function AppContent() {
         badges: badges.length > 0 ? badges : undefined,
         optimisticMessageId,
         oneTimeContext: sendOptions?.oneTimeContext,
-        workspaceFreshnessContext: sendOptions?.workspaceFreshnessContext,
         hideUserMessage,
       })
       return 'accepted' as const
