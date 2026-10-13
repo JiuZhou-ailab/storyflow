@@ -69,6 +69,29 @@ export function getSnapshotChangeKind(status: WorkspaceChangeStatus): 'create' |
   return 'modify'
 }
 
+function toComparablePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+/**
+ * A snapshot diff spans the whole agent turn, so it also captures the user's own
+ * saves made while the agent ran. Those files cannot be attributed to the agent,
+ * and reverting them would discard the user's writing.
+ */
+export function excludeUserSavedSnapshotChanges<T extends { path: string; previousPath?: string }>(
+  changes: readonly T[],
+  rootPath: string,
+  userSavedPaths: ReadonlySet<string>,
+): T[] {
+  if (userSavedPaths.size === 0) return [...changes]
+  const root = toComparablePath(rootPath)
+  const saved = new Set([...userSavedPaths].map(toComparablePath))
+  return changes.filter(change => (
+    !saved.has(`${root}/${change.path}`)
+    && !(change.previousPath && saved.has(`${root}/${change.previousPath}`))
+  ))
+}
+
 export interface BuildSnapshotRevertPlanInput {
   filePath: string
   /** File content at the base commit — the state to restore. */

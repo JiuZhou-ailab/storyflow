@@ -180,6 +180,7 @@ import { buildRejectFileChangesOperation } from "@/lib/file-change-review"
 import {
   buildRevertOperation,
   buildSnapshotRevertPlan,
+  excludeUserSavedSnapshotChanges,
   getSnapshotChangeKind,
   type FileRevertPlan,
   type FileState,
@@ -1793,7 +1794,11 @@ function AppShellContent({
   const effectiveSessionFolderPath = useAtomValue(effectiveSessionFolderPathAtom)
   const novelFileChangeActivityKey = useAtomValue(effectiveSessionFileChangeKeyAtom)
   const effectiveSessionMessageCount = useAtomValue(effectiveSessionMessageCountAtom)
-  const [snapshotNovelFileChanges, setSnapshotNovelFileChanges] = React.useState<FileChange[]>([])
+  // Keyed by Session: the fallback must never surface another Session's turn.
+  const [snapshotNovelFileChanges, setSnapshotNovelFileChanges] = React.useState<{
+    sessionId: string
+    changes: FileChange[]
+  } | null>(null)
   const [snapshotNovelRevert, setSnapshotNovelRevert] = React.useState<{
     sessionId: string
     changePaths: string[]
@@ -1821,7 +1826,7 @@ function AppShellContent({
     return getLatestNovelFileChangesFromMessages({
       messages: effectiveSession.messages,
       basePath: activeSessionWorkingDirectory || effectiveSessionFolderPath,
-      fallbackChanges: snapshotNovelFileChanges,
+      fallbackChanges: snapshotNovelFileChanges?.sessionId === effectiveSession.id ? snapshotNovelFileChanges.changes : [],
     })
   }, [activeSessionWorkingDirectory, effectiveSessionAtom, effectiveSessionFolderPath, novelFileChangeActivityKey, snapshotNovelFileChanges, store])
   const latestNovelFileChangesSignature = React.useMemo(
@@ -2316,6 +2321,8 @@ function AppShellContent({
   const novelAgentTurnCheckpointInFlightRef = React.useRef(false)
   const novelSessionProcessingRef = React.useRef<Record<string, boolean>>({})
   const novelAgentTouchedPathsRef = React.useRef<Record<string, string[]>>({})
+  /** Editor saves since the current agent turn started; excluded from snapshot attribution. */
+  const novelUserSavedPathsRef = React.useRef(new Set<string>())
 
   // Bound auto-version baselines to a small working set. Unbounded path→content
   // retention was the root cause of document open/close heap growth in the perf
@@ -2604,6 +2611,7 @@ function AppShellContent({
       setNovelDocumentSaving(true)
       setNovelDocumentError(null)
 
+      novelUserSavedPathsRef.current.add(pathToSave)
       window.electronAPI.writeFile(pathToSave, contentToSave)
         .then(() => {
           if (
@@ -2661,6 +2669,7 @@ function AppShellContent({
     setNovelDocumentSaving(true)
     setNovelDocumentError(null)
     try {
+      novelUserSavedPathsRef.current.add(selectedNovelDocumentPath)
       await window.electronAPI.writeFile(selectedNovelDocumentPath, contentToSave)
       if (
         novelDocumentSaveSeqRef.current === saveSeq
@@ -2823,7 +2832,11 @@ function AppShellContent({
       const snapshot = await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'agent-turn' })
       const headCommit = snapshot.commitHash
       if (previousCommit && headCommit && previousCommit !== headCommit) {
-        const changedFiles = await window.electronAPI.compareWorkspaceVersions(novelWorkspaceRoot, previousCommit, headCommit)
+        const changedFiles = excludeUserSavedSnapshotChanges(
+          await window.electronAPI.compareWorkspaceVersions(novelWorkspaceRoot, previousCommit, headCommit),
+          novelWorkspaceRoot,
+          novelUserSavedPathsRef.current,
+        )
         const snapshotChanges = buildWorkspaceVersionReviewChanges(changedFiles, novelWorkspaceRoot)
         const relativePaths = [...new Set(changedFiles.flatMap(change => (
           change.status === 'renamed' && change.previousPath
@@ -2844,7 +2857,7 @@ function AppShellContent({
             relativePath,
           ),
         })))
-        setSnapshotNovelFileChanges(snapshotChanges)
+        setSnapshotNovelFileChanges({ sessionId, changes: snapshotChanges })
         setSnapshotNovelRevert({
           sessionId,
           changePaths: snapshotChanges.map(change => change.filePath),
@@ -2883,8 +2896,9 @@ function AppShellContent({
     novelSessionProcessingRef.current[effectiveSessionId] = isProcessing
 
     if (!wasProcessing && isProcessing) {
-      setSnapshotNovelFileChanges([])
+      setSnapshotNovelFileChanges(null)
       setSnapshotNovelRevert(null)
+      novelUserSavedPathsRef.current.clear()
     }
 
     if (wasProcessing && !isProcessing) {

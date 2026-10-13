@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   buildRevertOperation,
   buildSnapshotRevertPlan,
+  excludeUserSavedSnapshotChanges,
   getSnapshotChangeKind,
   type FileRevertPlan,
 } from '../snapshot-revert'
@@ -120,5 +121,31 @@ describe('buildSnapshotRevertPlan', () => {
       operation: 'write',
       content: 'was here\n',
     })
+  })
+})
+
+describe('excludeUserSavedSnapshotChanges', () => {
+  const changes = [
+    { path: 'manuscript/ch1.md', status: 'modified' as const },
+    { path: 'manuscript/ch2.md', status: 'modified' as const },
+    { path: 'notes/new.md', status: 'renamed' as const, previousPath: 'notes/old.md' },
+  ]
+
+  it('drops files the user saved during the turn so they are neither attributed nor reverted', () => {
+    const saved = new Set(['/workspace/manuscript/ch1.md'])
+    expect(excludeUserSavedSnapshotChanges(changes, '/workspace/', saved).map(change => change.path))
+      .toEqual(['manuscript/ch2.md', 'notes/new.md'])
+  })
+
+  it('drops a rename when the user saved either side', () => {
+    const saved = new Set(['/workspace/notes/old.md'])
+    expect(excludeUserSavedSnapshotChanges(changes, '/workspace', saved).map(change => change.path))
+      .toEqual(['manuscript/ch1.md', 'manuscript/ch2.md'])
+  })
+
+  it('matches Windows separators', () => {
+    const saved = new Set(['C:\\book\\manuscript\\ch2.md'])
+    expect(excludeUserSavedSnapshotChanges(changes, 'C:\\book', saved).map(change => change.path))
+      .toEqual(['manuscript/ch1.md', 'notes/new.md'])
   })
 })
