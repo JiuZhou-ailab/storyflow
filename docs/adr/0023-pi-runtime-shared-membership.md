@@ -1,9 +1,25 @@
 # ADR 0023: Pi runtime 宿主与 shared 子域边界
 
-状态：Proposed
+状态：Rejected（B、C 均不采纳；宿主维持原位）
 日期：2026-10-13
 
-推荐方案是新建 `@craft-agent/pi-runtime`，只迁出进程宿主；权限模式与 thinking level 契约留在 `packages/shared`。此结论需要用户决策后才能实施。本文不改代码，不授权迁包。
+## 决策
+
+不新建 `@craft-agent/pi-runtime`，也不迁入 server-core。四个 `pi-agent*.ts` 留在 `packages/shared/src/agent`。
+
+理由：
+
+1. Pi 原生没有"宿主包"这一层。官方给出的嵌入方式只有 SDK（`createAgentSession`）、RPC 子进程（`pi --mode rpc` + `RpcClient`）和实验性 `pi-client`。Storyflow 的形态是"SDK 跑在隔离子进程里"，与 ADR 0018 一致；新包只是重新摆放这层宿主代码，不减少任何胶水。
+2. 不能改用 `RpcClient` 替换自有 JSONL 协议：RPC 模式的子进程到父进程请求只有扩展 UI 对话框，承载不了父进程侧的 session tools、MCP 池工具、权限裁决、rewind 两阶段提交和凭据推送。硬套反而要新增转译层。
+3. 稳定性优先：迁移改动 37 个引用方并需先拆 `mode-manager.ts`，没有用户可见收益。
+
+重审条件：Pi 原生提供"宿主侧工具回调"（父进程注册工具、子进程调用）的 RPC 能力，或 `pi-client` 脱离实验状态。届时评估直接替换 `pi-agent-transport.ts` 与 `pi-agent-server` 的自有协议，而不是搬包。
+
+以下为决策前的原始分析，保留供重审时参考。
+
+---
+
+原推荐方案是新建 `@craft-agent/pi-runtime`，只迁出进程宿主；权限模式与 thinking level 契约留在 `packages/shared`。
 
 本决定不改变 ADR 0018：Pi `AgentSession` 仍是唯一 Agent Runtime，Storyflow 仍是 Product Host。这里只决定宿主适配代码放在哪个包。不新增第二套 runtime，因此不推翻 ADR 0006 的单一 Agent Kernel。
 
