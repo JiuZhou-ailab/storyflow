@@ -54,8 +54,11 @@ jobs:
       - name: Install Electron binary for main-process tests
         run: node node_modules/electron/install.js
 
-      - name: Run validation suite
-        # Real Electron renderer tests need a display on the Linux runner.
+      - name: Start virtual display for Electron renderer tests
         run: |
-          command -v xvfb-run >/dev/null || sudo apt-get install -y xvfb
-          xvfb-run -a bun run validate:ci
+          command -v Xvfb >/dev/null || sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1280x1024x24 >/dev/null 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Run validation suite
+        run: bun run validate:ci
