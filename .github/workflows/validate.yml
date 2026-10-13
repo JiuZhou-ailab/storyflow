@@ -55,4 +55,7 @@ jobs:
         run: node node_modules/electron/install.js
 
       - name: Run validation suite
-        run: bun run validate:ci
+        # Real Electron renderer tests need a display on the Linux runner.
+        run: |
+          command -v xvfb-run >/dev/null || sudo apt-get install -y xvfb
+          xvfb-run -a bun run validate:ci
