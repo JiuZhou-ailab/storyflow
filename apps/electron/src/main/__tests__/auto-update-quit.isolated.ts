@@ -4,7 +4,7 @@
 
 import { expect, it } from 'bun:test'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -24,6 +24,7 @@ it.each([false, true])('installs on native app.exit after document approval (cle
       const { writeFileSync } = require('node:fs');
       const { BaseUpdater } = require(${JSON.stringify(require.resolve('electron-updater/out/BaseUpdater'))});
       const events = [];
+      process.on('exit', () => writeFileSync(${JSON.stringify(receipt)} + '.trace', JSON.stringify(events)));
       class TestUpdater extends BaseUpdater {
         doInstall(options) { events.push(['install', options.isSilent, options.isForceRunAfter]); return true; }
       }
@@ -68,6 +69,7 @@ it.each([false, true])('installs on native app.exit after document approval (cle
       env, encoding: 'utf8', timeout: 15_000,
     })
     expect({ status: result.status, error: result.error, stderr: result.stderr }).toMatchObject({ status: 0, error: undefined })
+    expect(existsSync(receipt), `events before exit: ${readFileSync(`${receipt}.trace`, 'utf8')}\n${result.stderr}`).toBe(true)
     expect(JSON.parse(readFileSync(receipt, 'utf8'))).toEqual([
       ['document', false], ['cancelled'], ['document', true], ['prepare'],
       ...(stalls ? [['timed-out']] : []),
