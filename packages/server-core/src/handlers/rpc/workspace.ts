@@ -1,21 +1,21 @@
 // input: Workspace/config RPC requests plus host window and SessionManager services
-// output: Shell-safe workspace navigation, registration, relinking, media, theme, and view handlers
+// output: Shell-safe workspace navigation, registration, relinking, Project folder reveal, media, theme, and view handlers
 // pos: Keeps workspace/file access available before the deferred Agent runtime is ready
 
 import { join, resolve } from 'path'
 import { homedir } from 'os'
-import type { RemoteServerConnectionInput } from '@craft-agent/core/types'
+import type { RemoteServerConnectionInput, Workspace } from '@craft-agent/core/types'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId, getWorkspaceCatalog, setActiveWorkspace, getWorkspaces } from '@craft-agent/shared/config'
 import {
   ensureProjectOwnedDirectory,
   isPathWithinProjectRoot,
-  isWorkspaceRootAvailable,
+  getWorkspaceRootUnavailableReason,
   resolveProjectOwnedPath,
   resolveRuntimeWorkspaceById,
 } from '@craft-agent/shared/workspaces'
 import { perf } from '@craft-agent/shared/utils'
-import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
+import { pushTyped, requestClientOpenPath, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { isValidWorkingDirectory, isValidWorkspaceRootPath } from '../../utils/path-validation'
 import {
@@ -28,6 +28,7 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.workspaces.GET,
   RPC_CHANNELS.workspaces.CREATE,
   RPC_CHANNELS.workspaces.RELINK,
+  RPC_CHANNELS.workspaces.OPEN_ROOT,
   RPC_CHANNELS.workspaces.CHECK_SLUG,
   RPC_CHANNELS.workspaces.UPDATE_REMOTE,
   RPC_CHANNELS.window.GET_WORKSPACE,
@@ -52,16 +53,20 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.logo.GET_URL,
 ] as const
 
+function withRootAvailability<T extends Workspace>(workspace: T): T {
+  const rootUnavailableReason = getWorkspaceRootUnavailableReason(workspace)
+  return rootUnavailableReason
+    ? { ...workspace, rootAvailable: false, rootUnavailableReason }
+    : { ...workspace, rootAvailable: true }
+}
+
 export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { sessionManager } = deps
   const windowManager = deps.windowManager
 
   // Get workspaces (LOCAL_ONLY — includes rootPath for local Electron renderer)
   server.handle(RPC_CHANNELS.workspaces.GET, async () => {
-    return getWorkspaceCatalog().map(workspace => ({
-      ...workspace,
-      rootAvailable: isWorkspaceRootAvailable(workspace),
-    }))
+    return getWorkspaceCatalog().map(withRootAvailability)
   })
 
   // Create a new workspace at a folder path (Obsidian-style: folder IS the workspace)
@@ -82,7 +87,7 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     await sessionManager.waitForInit()
     const workspace = await sessionManager.registerProject(name, rootPath, options.remoteServer)
     deps.platform.logger.info(`Created workspace "${name}" at ${rootPath}${options.remoteServer ? ` (remote: ${options.remoteServer.url})` : ''}`)
-    return { ...workspace, rootAvailable: isWorkspaceRootAvailable(workspace) }
+    return withRootAvailability(workspace)
   })
 
   // Explicitly move one stable Host Project identity to its new local locator.
@@ -102,6 +107,18 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     setActiveWorkspace(projectId)
     deps.platform.logger.info(`Relinked Project ${projectId} to ${updated.rootPath}`)
     return updated
+  })
+
+  // Open a local Project's registered folder in the caller's file manager. The path comes from the
+  // Host registry, never from the renderer, so a window can only reveal Projects it can already see.
+  server.handle(RPC_CHANNELS.workspaces.OPEN_ROOT, async (ctx, projectId: string) => {
+    await sessionManager.waitForInit(projectId)
+    const project = sessionManager.getWorkspaces().find(workspace => workspace.id === projectId)
+    if (!project) throw new Error(`Project not found: ${projectId}`)
+    if (project.remoteServer) throw new Error('Remote Projects have no local folder to open.')
+    if (getWorkspaceRootUnavailableReason(project)) throw new Error(`Project folder is unavailable: ${project.rootPath}`)
+    const result = await requestClientOpenPath(server, ctx.clientId, project.rootPath)
+    if (result.error) throw new Error(`Failed to open Project folder: ${result.error}`)
   })
 
   // Check if a workspace slug already exists (for validation before creation)

@@ -58,6 +58,7 @@ export const CHANNEL_MAP = {
   getWorkspaces: invoke(RPC_CHANNELS.workspaces.GET),
   createWorkspace: invoke(RPC_CHANNELS.workspaces.CREATE),
   relinkWorkspace: invoke(RPC_CHANNELS.workspaces.RELINK),
+  openWorkspaceRoot: invoke(RPC_CHANNELS.workspaces.OPEN_ROOT),
   checkWorkspaceSlug: invoke(RPC_CHANNELS.workspaces.CHECK_SLUG),
   updateWorkspaceRemoteServer: invoke(RPC_CHANNELS.workspaces.UPDATE_REMOTE),
   testRemoteConnection: invoke(RPC_CHANNELS.remote.TEST_CONNECTION),

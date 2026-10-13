@@ -10,6 +10,7 @@
 export type {
   WorkspaceInfo,
   Workspace,
+  WorkspaceRootUnavailableReason,
   RemoteServerConfig,
   RemoteServerConnectionInput,
   McpAuthType,

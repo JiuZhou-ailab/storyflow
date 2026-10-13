@@ -1,5 +1,5 @@
 // input: Ordered session/workspace metadata, project disclosure state, runtime indicators, and row callbacks
-// output: Session/project rows and shared conversation-creation feedback with retry
+// output: Session/project rows (with unavailable-reason hover and shared dropdown/right-click actions) and conversation-creation feedback with retry
 // pos: Visual primitives for ActivityRail; owns row grouping, interaction affordances, and context actions
 
 import * as React from 'react'
@@ -24,6 +24,7 @@ import { useAtomValue } from 'jotai'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { getFileManagerName } from '@/lib/platform'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -359,6 +360,17 @@ export function ActivityRailSessionList({
   )
 }
 
+/** Hover text: an unavailable Project explains why, so a moved folder is not mistaken for app breakage. */
+function getProjectRowTitle(workspace: Workspace, canRelink: boolean): string {
+  if (workspace.rootAvailable !== false) return workspace.name
+  const reason = workspace.rootUnavailableReason === 'mismatch'
+    ? '原位置的文件夹已不是这个项目'
+    : workspace.rootUnavailableReason === 'unreadable'
+      ? '无法读取项目文件夹（权限或磁盘错误）'
+      : '项目文件夹已被移动、重命名或删除'
+  return `${workspace.name}\n${reason}\n原位置：${workspace.rootPath}${canRelink ? '\n右键或在“…”菜单中重新关联' : ''}`
+}
+
 export function ProjectFolderRow({
   workspace,
   active,
@@ -377,6 +389,7 @@ export function ProjectFolderRow({
   sessionActions,
   sessionDragHandlers,
   onRenameSession,
+  onOpenFolder,
   onOpenInNewWindow,
   onRelink,
   onRename,
@@ -401,6 +414,7 @@ export function ProjectFolderRow({
   sessionActions?: ActivityRailSessionActions
   sessionDragHandlers?: ActivityRailSessionDragHandlers
   onRenameSession?: (meta: SessionMeta) => void
+  onOpenFolder?: () => void
   onOpenInNewWindow?: () => void
   onRelink?: () => void
   onRename?: () => void
@@ -409,9 +423,18 @@ export function ProjectFolderRow({
   onRemove?: () => void
 }) {
   const { t } = useTranslation()
+  // One action list feeds both the "…" dropdown and the right-click menu so they cannot drift.
+  const actions = [
+    onOpenFolder && { key: 'open-folder', icon: Folder, label: t('sessionMenu.showInFileManager', { fileManager: getFileManagerName() }), onSelect: onOpenFolder },
+    onRelink && { key: 'relink', icon: FolderOpen, label: t('workspace.reconnect', { name: workspace.name }), onSelect: onRelink },
+    onOpenInNewWindow && { key: 'new-window', icon: ArrowUpRight, label: '新窗口打开', onSelect: onOpenInNewWindow },
+    onRename && { key: 'rename', icon: Pencil, label: '重命名', onSelect: onRename },
+    onArchive && { key: 'archive', icon: Archive, label: '归档', onSelect: onArchive },
+    onRestore && { key: 'restore', icon: ArchiveRestore, label: '恢复', onSelect: onRestore },
+  ].filter(action => !!action)
+  const hasMenu = actions.length > 0 || !!onRemove
 
-  return (
-    <div>
+  const rowContent = (
       <div className={cn(
         'group flex min-w-0 items-center rounded-[6px] hover:bg-foreground/[0.045]',
         active && 'bg-foreground/[0.07] text-foreground',
@@ -419,16 +442,18 @@ export function ProjectFolderRow({
         <button
           type="button"
           aria-label={`项目：${workspace.name}`}
-          title={workspace.name}
+          title={getProjectRowTitle(workspace, !!onRelink)}
           aria-current={active ? 'page' : undefined}
           aria-expanded={expandable ? expanded : undefined}
-          disabled={disabled}
+          // aria-disabled instead of disabled: Chromium drops hover/contextmenu events on disabled
+          // buttons, which would hide the unavailable-reason tooltip and the right-click menu.
+          aria-disabled={disabled || undefined}
           className={cn(
             'flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-[6px] px-2 text-left outline-none',
-            'focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default',
+            'focus-visible:ring-1 focus-visible:ring-ring aria-disabled:cursor-default',
             archived && 'opacity-60',
           )}
-          onClick={() => onToggleExpanded?.()}
+          onClick={() => { if (!disabled) onToggleExpanded?.() }}
         >
           {expanded
             ? <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -448,7 +473,7 @@ export function ProjectFolderRow({
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="有未读对话" />
           ) : null}
         </button>
-        {(onOpenInNewWindow || onRelink || onRename || onArchive || onRestore || onRemove) ? (
+        {hasMenu ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -463,36 +488,12 @@ export function ProjectFolderRow({
               </button>
             </DropdownMenuTrigger>
             <StyledDropdownMenuContent align="end" sideOffset={4}>
-              {onRelink ? (
-                <StyledDropdownMenuItem onClick={onRelink}>
-                  <FolderOpen className="size-3.5" />
-                  <span>{t('workspace.reconnect', { name: workspace.name })}</span>
+              {actions.map(({ key, icon: Icon, label, onSelect }) => (
+                <StyledDropdownMenuItem key={key} onClick={onSelect}>
+                  <Icon className="size-3.5" />
+                  <span>{label}</span>
                 </StyledDropdownMenuItem>
-              ) : null}
-              {onOpenInNewWindow ? (
-                <StyledDropdownMenuItem onClick={onOpenInNewWindow}>
-                  <ArrowUpRight className="size-3.5" />
-                  <span>新窗口打开</span>
-                </StyledDropdownMenuItem>
-              ) : null}
-              {onRename ? (
-                <StyledDropdownMenuItem onClick={onRename}>
-                  <Pencil className="size-3.5" />
-                  <span>重命名</span>
-                </StyledDropdownMenuItem>
-              ) : null}
-              {onArchive ? (
-                <StyledDropdownMenuItem onClick={onArchive}>
-                  <Archive className="size-3.5" />
-                  <span>归档</span>
-                </StyledDropdownMenuItem>
-              ) : null}
-              {onRestore ? (
-                <StyledDropdownMenuItem onClick={onRestore}>
-                  <ArchiveRestore className="size-3.5" />
-                  <span>恢复</span>
-                </StyledDropdownMenuItem>
-              ) : null}
+              ))}
               {onRemove ? <StyledDropdownMenuSeparator /> : null}
               {onRemove ? (
                 <StyledDropdownMenuItem variant="destructive" onClick={onRemove}>
@@ -515,6 +516,30 @@ export function ProjectFolderRow({
           </button>
         ) : null}
       </div>
+  )
+
+  return (
+    <div>
+      {hasMenu ? (
+        <ContextMenu>
+          <ContextMenuTrigger asChild>{rowContent}</ContextMenuTrigger>
+          <StyledContextMenuContent>
+            {actions.map(({ key, icon: Icon, label, onSelect }) => (
+              <StyledContextMenuItem key={key} onSelect={onSelect}>
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </StyledContextMenuItem>
+            ))}
+            {onRemove ? <StyledContextMenuSeparator /> : null}
+            {onRemove ? (
+              <StyledContextMenuItem variant="destructive" onSelect={onRemove}>
+                <Trash2 className="h-3.5 w-3.5" />
+                移除
+              </StyledContextMenuItem>
+            ) : null}
+          </StyledContextMenuContent>
+        </ContextMenu>
+      ) : rowContent}
       {expandable && expanded ? (
         <div className="mt-0.5 space-y-0.5" data-testid="activity-project-conversations">
           {loadingSessions && !sessions ? (

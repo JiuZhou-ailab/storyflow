@@ -404,6 +404,8 @@ export interface ElectronAPI {
   getWorkspaces(): Promise<Workspace[]>
   createWorkspace(folderPath: string, name: string, options?: CreateWorkspaceOptions): Promise<Workspace>
   relinkWorkspace(projectId: string, folderPath: string): Promise<Workspace>
+  /** Open a local Project's registered folder in the system file manager. */
+  openWorkspaceRoot(projectId: string): Promise<void>
   checkWorkspaceSlug(slug: string): Promise<{ exists: boolean; path: string }>
   updateWorkspaceRemoteServer(workspaceId: string, remoteServer: CoreRemoteServerConnectionInput): Promise<{ success: boolean }>
 

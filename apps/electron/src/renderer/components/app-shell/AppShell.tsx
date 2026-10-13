@@ -264,6 +264,7 @@ interface AppShellProps {
     detail?: string
   }
   onOpenProjectInNewWindow?: (workspaceId: string) => void
+  onOpenProjectFolder?: (workspaceId: string) => void
   onRelinkProject?: (workspaceId: string) => void | Promise<void>
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
   onSetProjectArchived?: (workspaceId: string, archived: boolean) => void | Promise<void>
@@ -869,6 +870,7 @@ function AppShellContent({
   onReleaseNotesSeen,
   profile,
   onOpenProjectInNewWindow,
+  onOpenProjectFolder,
   onRelinkProject,
   onRenameProject,
   onSetProjectArchived,
@@ -4763,6 +4765,7 @@ function AppShellContent({
                 onAddLocalProject={onAddLocalProject}
                 isAddingLocalProject={isAddingLocalProject}
                 onOpenProjectInNewWindow={onOpenProjectInNewWindow}
+                onOpenProjectFolder={onOpenProjectFolder}
                 onRelinkProject={onRelinkProject}
                 onRenameProject={onRenameProject}
                 onSetProjectArchived={onSetProjectArchived}

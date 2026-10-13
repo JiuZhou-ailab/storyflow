@@ -2033,12 +2033,18 @@ function AppContent() {
       window.electronAPI.getWorkspaces()
         .then((refreshed) => {
           if (seq !== focusRefetchSeqRef.current) return
-          const availability = new Map(refreshed.map(workspace => [workspace.id, workspace.rootAvailable]))
+          const availability = new Map(refreshed.map(workspace => [workspace.id, workspace]))
+          const changed = (workspace: Workspace) => {
+            const next = availability.get(workspace.id)
+            return !!next && (next.rootAvailable !== workspace.rootAvailable || next.rootUnavailableReason !== workspace.rootUnavailableReason)
+          }
           setWorkspaces(prev => {
-            if (prev.every(workspace => !availability.has(workspace.id) || availability.get(workspace.id) === workspace.rootAvailable)) return prev
-            return prev.map(workspace => availability.has(workspace.id) && availability.get(workspace.id) !== workspace.rootAvailable
-              ? { ...workspace, rootAvailable: availability.get(workspace.id) }
-              : workspace)
+            if (!prev.some(changed)) return prev
+            return prev.map(workspace => {
+              if (!changed(workspace)) return workspace
+              const { rootAvailable, rootUnavailableReason } = availability.get(workspace.id)!
+              return { ...workspace, rootAvailable, rootUnavailableReason }
+            })
           })
         })
         .catch((error) => {
@@ -2314,6 +2320,11 @@ function AppContent() {
     isAddingLocalProject,
     onOpenProjectInNewWindow: (workspaceId: string) => {
       void window.electronAPI.openWorkspace(workspaceId)
+    },
+    onOpenProjectFolder: (workspaceId: string) => {
+      window.electronAPI.openWorkspaceRoot(workspaceId).catch((error: unknown) => {
+        toast.error('无法打开项目文件夹', { description: error instanceof Error ? error.message : String(error) })
+      })
     },
     onRelinkProject: (workspaceId: string) => {
       void handleRelinkProjectFromHub(workspaceId)
@@ -2674,6 +2685,7 @@ function AppContent() {
                   onAddLocalProject={projectManagerActions.onAddLocalProject}
                   isAddingLocalProject={projectManagerActions.isAddingLocalProject}
                   onOpenProjectInNewWindow={projectManagerActions.onOpenProjectInNewWindow}
+                  onOpenProjectFolder={projectManagerActions.onOpenProjectFolder}
                   onRelinkProject={projectManagerActions.onRelinkProject}
                   onRenameProject={projectManagerActions.onRenameProject}
                   onSetProjectArchived={projectManagerActions.onSetProjectArchived}

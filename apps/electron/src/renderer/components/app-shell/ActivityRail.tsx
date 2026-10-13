@@ -93,6 +93,7 @@ export interface ActivityRailProps {
   onAddLocalProject?: () => void | Promise<void>
   isAddingLocalProject?: boolean
   onOpenProjectInNewWindow?: (workspaceId: string) => void
+  onOpenProjectFolder?: (workspaceId: string) => void
   onRelinkProject?: (workspaceId: string) => void | Promise<void>
   onRenameProject?: (workspaceId: string, name: string) => void | Promise<void>
   onSetProjectArchived?: (workspaceId: string, archived: boolean) => void | Promise<void>
@@ -171,6 +172,7 @@ export function ActivityRail({
   onAddLocalProject,
   isAddingLocalProject = false,
   onOpenProjectInNewWindow,
+  onOpenProjectFolder,
   onRelinkProject,
   onRenameProject,
   onSetProjectArchived,
@@ -753,6 +755,9 @@ export function ActivityRail({
                             setRenameTarget({ kind: 'session', id: meta.id, workspaceId: meta.workspaceId, name: getSessionTitle(meta) })
                             setRenameValue(getSessionTitle(meta))
                           }}
+                          onOpenFolder={onOpenProjectFolder && rootAvailable && !workspace.remoteServer
+                            ? () => onOpenProjectFolder(workspace.id)
+                            : undefined}
                           onOpenInNewWindow={onOpenProjectInNewWindow && rootAvailable
                             ? () => onOpenProjectInNewWindow(workspace.id)
                             : undefined}
@@ -804,6 +809,9 @@ export function ActivityRail({
                         archived
                         hasUnread={false}
                         disabled
+                        onOpenFolder={onOpenProjectFolder && workspace.rootAvailable !== false && !workspace.remoteServer
+                          ? () => onOpenProjectFolder(workspace.id)
+                          : undefined}
                         onRestore={onSetProjectArchived
                           ? () => onSetProjectArchived(workspace.id, false)
                           : undefined}

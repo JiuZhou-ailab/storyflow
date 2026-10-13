@@ -63,7 +63,16 @@ export interface Workspace extends WorkspaceInfo {
   automationsEnabled?: boolean;
   /** Derived local runtime state. Never persisted and always available for remote workspaces. */
   rootAvailable?: boolean;
+  /** Derived with `rootAvailable === false`: why the registered folder cannot be used. Never persisted. */
+  rootUnavailableReason?: WorkspaceRootUnavailableReason;
 }
+
+/**
+ * - `missing`: nothing at the registered path (folder moved, renamed, or deleted)
+ * - `mismatch`: a folder exists there but is not this Project's directory
+ * - `unreadable`: the Project state could not be read (permissions or IO)
+ */
+export type WorkspaceRootUnavailableReason = 'missing' | 'mismatch' | 'unreadable';
 
 /** Project a Host Workspace onto the exact client-safe RPC contract. */
 export function toWorkspaceInfo(workspace: Workspace): WorkspaceInfo {

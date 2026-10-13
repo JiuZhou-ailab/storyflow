@@ -70,6 +70,7 @@ export const RPC_CHANNELS = {
     GET: 'workspaces:get',
     CREATE: 'workspaces:create',
     RELINK: 'workspaces:relink',
+    OPEN_ROOT: 'workspaces:openRoot',
     CHECK_SLUG: 'workspaces:checkSlug',
     UPDATE_REMOTE: 'workspaces:updateRemote',
   },

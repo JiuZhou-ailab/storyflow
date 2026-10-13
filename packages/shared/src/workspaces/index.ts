@@ -37,6 +37,7 @@ export {
 export {
   canonicalizeProjectRoot,
   isWorkspaceRootAvailable,
+  getWorkspaceRootUnavailableReason,
   commitWorkspaceRootRelink,
   discoverLegacyWorkingDirectoryRoots,
   prepareWorkspaceRootRelink,

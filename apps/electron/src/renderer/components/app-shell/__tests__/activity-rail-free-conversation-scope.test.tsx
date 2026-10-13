@@ -262,6 +262,7 @@ describe('ActivityRail free-conversation scope', () => {
               slug: 'moved-project',
               rootPath: '/tmp/missing-project',
               rootAvailable: false,
+              rootUnavailableReason: 'missing',
               createdAt: 0,
             }]}
             onSelectSession={() => {}}
@@ -274,11 +275,20 @@ describe('ActivityRail free-conversation scope', () => {
 
     const projectRowStart = html.indexOf('aria-label="项目：已移动项目"')
     const projectRow = html.slice(projectRowStart, html.indexOf('</div></div>', projectRowStart))
-    expect(projectRow).toContain('disabled=""')
-    expect(projectRow).toContain('aria-label="workspace.reconnect"')
+    // aria-disabled keeps hover and right-click alive; a native disabled button would swallow both.
+    expect(projectRow).toContain('aria-disabled="true"')
+    expect(projectRow).not.toContain('disabled=""')
+    expect(projectRow).toContain('项目文件夹已被移动、重命名或删除')
+    expect(projectRow).toContain('原位置：/tmp/missing-project')
+    expect(projectRow).toContain('lucide-shield-alert')
     expect(projectRow).not.toContain('lucide-chevron-right')
     expect(activityRailSource).toContain('onRelinkProject(workspace.id)')
     expect(appSource).toContain('window.electronAPI.relinkWorkspace(workspaceId, rootPath)')
+  })
+
+  it('offers opening the Project folder only for available local Projects', () => {
+    expect(activityRailSource).toContain('onOpenProjectFolder && rootAvailable && !workspace.remoteServer')
+    expect(appSource).toContain('window.electronAPI.openWorkspaceRoot(workspaceId)')
   })
 
   it('orders a newly created Project before older Projects without access timestamps', () => {

@@ -26,7 +26,7 @@ import {
   loadWorkspaceConfig,
   resolveProjectOwnedPath,
 } from '@craft-agent/shared/workspaces'
-import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
+import { CLIENT_OPEN_PATH, type HandlerFn, type RequestContext, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
 interface CreatedWorkspace {
@@ -96,8 +96,8 @@ mock.module('@craft-agent/shared/workspaces', () => ({
   isValidWorkspace,
   isPathWithinProjectRoot,
   loadWorkspaceConfig,
-  isWorkspaceRootAvailable: (workspace: CreatedWorkspace) => (
-    Boolean(workspace.remoteServer || loadWorkspaceConfig(workspace.rootPath))
+  getWorkspaceRootUnavailableReason: (workspace: CreatedWorkspace) => (
+    workspace.remoteServer || loadWorkspaceConfig(workspace.rootPath) ? null : 'missing'
   ),
   registerLocalProject: registerProjectForTest,
   relinkWorkspaceRoot: (projectId: string, rootPath: string) => {
@@ -128,13 +128,15 @@ function createWorkspaceHarness() {
   const rebindWorkspaceRootCalls: Array<[string, string]> = []
   const projectLifecycleCalls: string[] = []
   let projectLifecycleWorkspaceOverride: CreatedWorkspace | undefined
+  const clientInvocations: Array<[string, string, ...unknown[]]> = []
 
   const server: RpcServer = {
     handle(channel, handler) {
       handlers.set(channel, handler)
     },
     push() {},
-    async invokeClient() {
+    async invokeClient(clientId: string, channel: string, ...args: unknown[]) {
+      clientInvocations.push([clientId, channel, ...args])
       return undefined
     },
   }
@@ -231,6 +233,8 @@ function createWorkspaceHarness() {
   if (!relinkWorkspace) {
     throw new Error('workspace relink handler not registered')
   }
+  const openWorkspaceRoot = handlers.get(RPC_CHANNELS.workspaces.OPEN_ROOT)
+  if (!openWorkspaceRoot) throw new Error('workspace open root handler not registered')
   const writeWorkspaceImage = handlers.get(RPC_CHANNELS.workspace.WRITE_IMAGE)
   if (!writeWorkspaceImage) {
     throw new Error('workspace image handler not registered')
@@ -271,6 +275,8 @@ function createWorkspaceHarness() {
     getReloadSessionScopes: () => reloadSessionScopes,
     getSetupConfigWatcherCalls: () => setupConfigWatcherCalls,
     getRebindWorkspaceRootCalls: () => rebindWorkspaceRootCalls,
+    openWorkspaceRoot,
+    getClientInvocations: () => clientInvocations,
     getProjectLifecycleCalls: () => projectLifecycleCalls,
     setProjectLifecycleWorkspace: (workspace: CreatedWorkspace) => {
       projectLifecycleWorkspaceOverride = workspace
@@ -554,6 +560,29 @@ describe('workspace core RPC registration', () => {
       expect(workspace.id).toBe('project-stable')
       expect(workspace.rootPath).toBe(currentRoot)
       expect(getRebindWorkspaceRootCalls()).toEqual([['project-stable', currentRoot]])
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('opens only an available local Project folder resolved from the Host registry', async () => {
+    createdWorkspaces.length = 0
+    const parent = mkdtempSync(join(tmpdir(), 'craft-workspace-open-root-'))
+    const root = join(parent, 'novel')
+    createWorkspaceAtPath(root, 'Novel')
+    createdWorkspaces.push(
+      { id: 'project-local', name: 'Novel', rootPath: root, slug: 'novel' },
+      { id: 'project-moved', name: 'Moved', rootPath: join(parent, 'gone'), slug: 'moved' },
+    )
+    const { openWorkspaceRoot, ctx, getClientInvocations } = createWorkspaceHarness()
+
+    try {
+      await openWorkspaceRoot(ctx, 'project-local')
+      expect(getClientInvocations()).toEqual([['client-1', CLIENT_OPEN_PATH, root]])
+
+      await expect(openWorkspaceRoot(ctx, 'project-moved')).rejects.toThrow('Project folder is unavailable')
+      await expect(openWorkspaceRoot(ctx, 'project-unknown')).rejects.toThrow('Project not found')
+      expect(getClientInvocations()).toHaveLength(1)
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }

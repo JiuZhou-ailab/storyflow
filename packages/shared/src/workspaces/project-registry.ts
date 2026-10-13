@@ -1,10 +1,10 @@
 // input: Host Project registrations, selected local roots, and project-owned Session metadata
-// output: Canonical Project registration, Host-owned Pi cwd grants, compatibility migration, availability, and relinking
+// output: Canonical Project registration, Host-owned Pi cwd grants, compatibility migration, availability with its reason, and relinking
 // pos: Product Host boundary that keeps stable Project identity separate from its filesystem locator
 
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, relative, resolve } from 'node:path'
-import type { Workspace } from '@craft-agent/core/types'
+import type { Workspace, WorkspaceRootUnavailableReason } from '@craft-agent/core/types'
 import {
   addWorkspace,
   getWorkspaces,
@@ -90,16 +90,29 @@ function assertProjectContentIsUnclaimed(
 }
 
 export function isWorkspaceRootAvailable(workspace: Workspace): boolean {
-  if (workspace.remoteServer) return true
+  return getWorkspaceRootUnavailableReason(workspace) === null
+}
+
+/** Explain an unavailable local Project root; null means usable (remote Projects always are). */
+export function getWorkspaceRootUnavailableReason(workspace: Workspace): WorkspaceRootUnavailableReason | null {
+  if (workspace.remoteServer) return null
   try {
     const config = inspectWorkspaceStateConfig(workspace.rootPath)
-    return Boolean(config && workspace.directoryConfigId === config.id)
+    if (config && workspace.directoryConfigId === config.id) return null
+    if (config) return 'mismatch'
+    try {
+      statSync(workspace.rootPath)
+      return 'mismatch'
+    } catch (error) {
+      if (classifyFsError(error).kind === 'missing') return 'missing'
+      throw error
+    }
   } catch (error) {
     // A busy file is not evidence that the registered directory was lost.
-    if (classifyFsError(error).kind === 'transient') return true
+    if (classifyFsError(error).kind === 'transient') return null
     const failure = classifyFsError(error)
     console.warn(`[workspace-storage] Project state config unreadable (${failure.code}): ${getWorkspaceConfigPath(workspace.rootPath)}`)
-    return false
+    return 'unreadable'
   }
 }
 
