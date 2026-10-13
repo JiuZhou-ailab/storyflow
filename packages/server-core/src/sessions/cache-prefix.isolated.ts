@@ -123,7 +123,8 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
     phase = name; call = 0;
     const start = captures.length;
     await manager.sendMessage(sessionId, name === 'seed' ? 'hi' : `USER_${name}`, undefined, undefined, { workspaceFreshnessContext });
-    expect(captures.length, JSON.stringify(events) + logs.join('\n')).toBeGreaterThan(start);
+    // Bounded: CI log viewers drop a multi-megabyte single-line failure message.
+    expect(captures.length, `${JSON.stringify(events.slice(-20)).slice(-8000)}\n${logs.slice(-60).join('\n').slice(-12000)}`).toBeGreaterThan(start);
     return { name, start, end: captures.length - 1 };
   };
   try {
