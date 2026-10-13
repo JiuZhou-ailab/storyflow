@@ -464,18 +464,18 @@ function LandingPage() {
               />
             </article>
             <article className="info-card">
-              <h3>为作品留一个版本</h3>
-              <p>保存本地版本节点，随时回看，必要时恢复更早的内容。</p>
+              <h3>改错了也能找回</h3>
+              <p>正文自动保存，每次保存前的内容都留一份本地恢复副本，随时回看、复制回正文。</p>
               <a
                 className="text-arrow"
                 href="/docs/#review-changes"
                 data-storyflow-page-link="true"
               >
-                了解版本管理 ↗
+                了解恢复副本 ↗
               </a>
               <ProductCapture
                 src={assets.versionHistory}
-                alt="本地版本历史与恢复入口"
+                alt="文档栏中的本地恢复副本列表"
               />
             </article>
           </div>

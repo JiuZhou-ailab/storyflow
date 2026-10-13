@@ -228,19 +228,17 @@ try {
     app,
     `[...document.querySelectorAll('a')].find(a=>a.textContent==='第01章.md').click()`,
   );
-  await waitFor(app, `document.querySelector('button[aria-label="版本管理"]')`);
+  const recoveryButton = `[...document.querySelectorAll('button')].find(b=>b.textContent==='恢复副本')`;
+  await waitFor(app, recoveryButton);
+  // Two saves through the document RPC leave one recovery copy and the sample text unchanged.
   await evalOn(
     app,
-    `window.electronAPI.createWorkspaceVersion(${JSON.stringify(ws.rootPath)}, {reason:'manual',label:'第一章初稿'})`,
+    `(async()=>{const target={path:${JSON.stringify(join(directory, "第01章.md"))}};const original=await window.electronAPI.readTextDocument(target);const saved=await window.electronAPI.saveTextDocument({...target,version:original.version,content:original.content+'\\n'});await window.electronAPI.saveTextDocument({...target,version:saved.version,content:original.content})})()`,
   );
-  await evalOn(
-    app,
-    `document.querySelector('button[aria-label="版本管理"]').click()`,
-  );
-  await shot(
-    "history",
-    `document.querySelector('[role="dialog"]')?.textContent.includes('手动保存')`,
-  );
+  await evalOn(app, `${recoveryButton}.click()`);
+  await waitFor(app, `document.querySelector('button.block')`);
+  await evalOn(app, `document.querySelector('button.block').click()`);
+  await shot("history", `document.body.textContent.includes('保存前版本')`);
   await go("skills/skill/chapter-review");
   await shot("skills", `document.body.textContent.includes('检查顺序')`);
   await go("sources/local/source/story-notes");
