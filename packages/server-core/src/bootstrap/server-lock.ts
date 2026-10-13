@@ -52,7 +52,15 @@ function probeLiveness(endpoint: string): Promise<string> {
     const settle = (result: string) => { clearTimeout(timer); socket.destroy(); resolve(result) }
     const timer = setTimeout(() => settle('timeout'), 3000)
     socket.once('connect', () => settle('alive'))
-    socket.once('error', error => settle((error as NodeJS.ErrnoException).code ?? 'unknown'))
+    socket.once('error', error => {
+      const code = (error as NodeJS.ErrnoException).code ?? 'unknown'
+      // shortcut: Bun < 1.4 reports a refused Unix socket as ENOENT. A socket file
+      // that still exists was refused, not removed. Remove once bundled and CI Bun are >= 1.4.
+      if (code === 'ENOENT' && process.platform !== 'win32') {
+        try { if (lstatSync(endpoint).isSocket()) return settle('ECONNREFUSED') } catch { /* Truly absent. */ }
+      }
+      settle(code)
+    })
   })
 }
 
