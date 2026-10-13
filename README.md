@@ -2,18 +2,18 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-Storyflow 是一个基于 Bun workspace 的 AI Agent 工作台项目，支持桌面端和无头服务端两种运行形态。核心产品是 Electron 桌面应用，集成聊天会话、本地工作区、外部来源、技能、文件编辑、差异审阅、自动化和写作项目工作流。
+Storyflow 是一个基于 Bun workspace 的 AI Agent 工作台项目，支持桌面端和无头服务端两种运行形态。核心产品是 Electron 桌面应用，集成聊天会话、本地工作区、外部来源、技能、文件编辑、改动展示、自动化和写作项目工作流。
 
 当前仓库主要面向源码开发、本地打包和自定义工作区流程。仓库内包含共享 RPC 服务、Pi SDK 子进程适配器、可复用 UI 包、Web 客户端、会话查看器，以及项目文件工作台。
 
 ## 项目能力
 
-- **Electron 桌面应用**：支持多会话 Agent 工作、来源管理、文件编辑、本地差异审阅和工作区导航。
+- **Electron 桌面应用**：支持多会话 Agent 工作、来源管理、文件编辑、Agent 改动展示和工作区导航。
 - **无头服务端**：通过 WebSocket 远程运行会话和工具。
 - **CLI 客户端**：用于脚本化访问无头服务端。
 - **共享 UI 与协议包**：供 Electron、Web UI 和 Viewer 复用。
 - **统一 Agent runtime**：会话执行统一由 Pi runtime 承担，模型与认证由 Provider adapter 处理。
-- **写作工作区模式**：支持 Markdown 编辑、文件提及、行号、总字数、选区改写、导出、本地版本快照和差异审阅。
+- **写作工作区模式**：支持 Markdown 编辑、文件提及、行号、总字数、选区改写、导出和自动保存。
 - **空白项目冷启动**：新项目不预设目录或方法，用户可从描述目标、导入内容、新建文件或选择 Skill 开始。
 - **来源、技能和自动化**：支持 MCP server、REST API、本地文件、工作区指令和 Agent 原生集成。
 
@@ -46,7 +46,7 @@ storyflow/
 ├── docs/
 │   └── plans/               # 计划、实施验收与历史评估的统一索引
 ├── e2e/
-│   ├── core/                # 桌面核心闭环：Agent 编辑、版本恢复、重启恢复
+│   ├── core/                # 桌面核心闭环：Agent 编辑不扰动用户 Git、重启恢复
 │   └── perf/                # 大型合成工作区的 Electron 性能基线
 ├── scripts/                 # 构建、验证、发布和维护脚本
 └── README.md                # 项目总览和开发入口
@@ -89,7 +89,7 @@ bun run electron:start
 | `bun run electron:start` | 构建并运行 Electron 应用 |
 | `bun run electron:build` | 构建 Electron main、preload、renderer、resources 和 assets |
 | `bun run electron:dist:dev:mac` | 通过 runtime-staged 打包路径构建未签名的 macOS 开发包 |
-| `bun run e2e:core` | 驱动真实 Pi 编辑、独立版本恢复与重启恢复的 Electron 核心闭环 |
+| `bun run e2e:core` | 驱动真实 Pi 编辑（不改变用户 Git 状态）与重启恢复的 Electron 核心闭环 |
 | `bun run release -- --platform=darwin --arch=arm64` | 运行版本检查、CI 验证和 runtime-staged 本地打包 |
 | `bun run server:start` | 启动独立无头服务端 |
 | `bun run server:dev` | 以 debug 设置启动无头服务端 |
@@ -142,9 +142,8 @@ bun run electron:start
 - 面向作者的章节、规划文件标签。
 - 按展示名进行 `@file` 提及，同时保留真实文件路径。
 - 选区改写：直接编辑当前文档，而不是走普通聊天转录流程。
-- 对项目内任意文件变更的内联差异审阅。
+- Agent 工具调用改动的只读摘要与多文件 diff 展示；文本自动保存，与磁盘冲突时由用户选择保留哪一版。
 - 按真实文件或文件夹显式选择导出，并保留原目录结构。
-- 通过导出附近的版本历史按钮创建本地 git 版本快照。
 
 项目文件与写作编辑逻辑位于：
 
@@ -213,7 +212,7 @@ bun run apps/cli/src/index.ts run --workspace-dir . "Inspect this repository"
 └── sessions/
 ```
 
-写作工作区还可能包含项目文件、skills、`craft-writing.json`、`craft-pack-lock.json`，以及用于版本快照的本地 `.git` 目录。
+写作工作区还可能包含项目文件、skills、`craft-writing.json` 和 `craft-pack-lock.json`。Storyflow 不在项目内创建 git 仓库。
 
 ## LLM Provider
 
