@@ -1,3 +1,7 @@
+// input: Credential values, encrypted file, and OS machine identity
+// output: Encrypted credential persistence with recoverable corrupt-file backups
+// pos: File backend; preserves existing data when machine identity is unavailable
+
 /**
  * Secure Storage Backend
  *
@@ -28,18 +32,20 @@ import {
   createCipheriv,
   createDecipheriv,
   randomBytes,
+  randomUUID,
   pbkdf2Sync,
   createHash,
 } from 'crypto';
 import { execSync } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, renameSync, readdirSync, unlinkSync } from 'fs';
 import { hostname, userInfo, homedir } from 'os';
-import { join } from 'path';
+import { join, dirname, basename } from 'path';
 
 import type { CredentialBackend } from './types.ts';
 import type { CredentialId, StoredCredential } from '../types.ts';
 import { credentialIdToAccount, accountToCredentialId } from '../types.ts';
 import { CONFIG_DIR } from '../../config/paths.ts';
+import { atomicWriteFileSync } from '../../utils/files.ts';
 
 // File location
 const CREDENTIALS_DIR = CONFIG_DIR;
@@ -61,9 +67,9 @@ const PBKDF2_ITERATIONS = 100000;
 /**
  * Get stable machine identifier using OS-native hardware UUID.
  * This is far more stable than hostname which can change with network/DHCP.
- * Falls back to username + homedir if hardware UUID unavailable.
+ * Returns null when hardware UUID is unavailable; callers must preserve existing files.
  */
-function getStableMachineId(): string {
+function getStableMachineId(): string | null {
   try {
     if (process.platform === 'darwin') {
       // macOS: IOPlatformUUID - tied to logic board, never changes
@@ -86,17 +92,16 @@ function getStableMachineId(): string {
       const machineIdPath = '/var/lib/dbus/machine-id';
       const altPath = '/etc/machine-id';
       if (existsSync(machineIdPath)) {
-        return readFileSync(machineIdPath, 'utf-8').trim();
+        return readFileSync(machineIdPath, 'utf-8').trim() || null;
       } else if (existsSync(altPath)) {
-        return readFileSync(altPath, 'utf-8').trim();
+        return readFileSync(altPath, 'utf-8').trim() || null;
       }
     }
   } catch {
-    // Fall through to fallback
+    // Report unavailability at the backend boundary without logging command output.
   }
 
-  // Fallback: username + homedir (stable enough for most cases)
-  return `${userInfo().username}:${homedir()}`;
+  return null;
 }
 
 /** Internal credential store structure */
@@ -114,8 +119,14 @@ export class SecureStorageBackend implements CredentialBackend {
   readonly priority = 100;
 
   private cachedStore: CredentialStore | null = null;
-  private encryptionKey: Buffer | null = null;
+  private stableMachineId: string | null = null;
+  private encryptionKey: { cacheKey: string; key: Buffer } | null = null;
   private salt: Buffer | null = null;
+
+  constructor(
+    private readonly credentialsFile = CREDENTIALS_FILE,
+    private readonly readMachineId: () => string | null = getStableMachineId,
+  ) {}
 
   async isAvailable(): Promise<boolean> {
     // File backend is always available - we can always write to filesystem
@@ -146,10 +157,11 @@ export class SecureStorageBackend implements CredentialBackend {
     }
 
     const key = credentialIdToAccount(id);
-    store.credentials[key] = credential;
-    store.metadata.updatedAt = Date.now();
-
-    await this.saveStore(store);
+    await this.saveStore({
+      ...store,
+      credentials: { ...store.credentials, [key]: credential },
+      metadata: { ...store.metadata, updatedAt: Date.now() },
+    });
   }
 
   async delete(id: CredentialId): Promise<boolean> {
@@ -159,10 +171,13 @@ export class SecureStorageBackend implements CredentialBackend {
     const key = credentialIdToAccount(id);
     if (!(key in store.credentials)) return false;
 
-    delete store.credentials[key];
-    store.metadata.updatedAt = Date.now();
-
-    await this.saveStore(store);
+    const credentials = { ...store.credentials };
+    delete credentials[key];
+    await this.saveStore({
+      ...store,
+      credentials,
+      metadata: { ...store.metadata, updatedAt: Date.now() },
+    });
     return true;
   }
 
@@ -192,18 +207,14 @@ export class SecureStorageBackend implements CredentialBackend {
     // Return cached store if available
     if (this.cachedStore) return this.cachedStore;
 
-    if (!existsSync(CREDENTIALS_FILE)) return null;
+    if (!existsSync(this.credentialsFile)) return null;
 
-    let fileData: Buffer;
-    try {
-      fileData = readFileSync(CREDENTIALS_FILE);
-    } catch {
-      return null;
-    }
+    // Read failures must not turn an existing store into an empty writable store.
+    const fileData = readFileSync(this.credentialsFile);
 
     // Validate minimum size
     if (fileData.length < HEADER_SIZE + IV_SIZE + AUTH_TAG_SIZE) {
-      // File is corrupted, delete and return null
+      // Preserve malformed data for recovery before starting a new store.
       this.handleCorruptedFile();
       return null;
     }
@@ -222,28 +233,31 @@ export class SecureStorageBackend implements CredentialBackend {
     // Extract encrypted data
     const encryptedData = fileData.subarray(HEADER_SIZE);
 
-    // Try new stable key first (v2 - hardware UUID based)
-    const newKey = this.getEncryptionKey(salt);
-    let store = this.tryDecrypt(encryptedData, newKey);
+    const machineId = this.getMachineId();
+    const fallbackId = `${userInfo().username}:${homedir()}`;
+    let store = machineId
+      ? this.tryDecrypt(encryptedData, this.getEncryptionKey(salt, machineId))
+      : null;
 
     if (store) {
       this.cachedStore = store;
       return store;
     }
 
-    // Try legacy key for migration (v1 - included hostname)
-    // This handles credentials encrypted with old key derivation
-    const legacyKey = this.getLegacyEncryptionKey(salt);
-    store = this.tryDecrypt(encryptedData, legacyKey);
-
+    // The v2 fallback is distinct from the hostname-based v1 legacy key.
+    store = this.tryDecrypt(encryptedData, this.getEncryptionKey(salt, fallbackId))
+      || this.tryDecrypt(encryptedData, this.getLegacyEncryptionKey(salt));
     if (store) {
-      // Migration: re-save with new stable key so future loads use hardware UUID
+      if (machineId) await this.saveStore(store);
       this.cachedStore = store;
-      await this.saveStore(store);
       return store;
     }
 
-    // Both keys failed - file is truly corrupted
+    if (!machineId) {
+      throw new Error('Machine identity unavailable; existing credentials preserved. Retry when available.');
+    }
+
+    // Authentication failure may mean a changed identity, so retain the original bytes.
     this.handleCorruptedFile();
     return null;
   }
@@ -268,9 +282,14 @@ export class SecureStorageBackend implements CredentialBackend {
   }
 
   private async saveStore(store: CredentialStore): Promise<void> {
+    const machineId = this.getMachineId();
+    if (!machineId && existsSync(this.credentialsFile)) {
+      throw new Error('Machine identity unavailable; refusing to overwrite existing credentials.');
+    }
+    const credentialsDir = dirname(this.credentialsFile);
     // Ensure directory exists
-    if (!existsSync(CREDENTIALS_DIR)) {
-      mkdirSync(CREDENTIALS_DIR, { recursive: true, mode: 0o700 });
+    if (!existsSync(credentialsDir)) {
+      mkdirSync(credentialsDir, { recursive: true, mode: 0o700 });
     }
 
     // Use existing salt or generate new one
@@ -278,7 +297,7 @@ export class SecureStorageBackend implements CredentialBackend {
     this.salt = salt;
 
     // Get encryption key
-    const key = this.getEncryptionKey(salt);
+    const key = this.getEncryptionKey(salt, machineId || `${userInfo().username}:${homedir()}`);
 
     // Serialize payload
     const plaintext = Buffer.from(JSON.stringify(store), 'utf8');
@@ -301,24 +320,31 @@ export class SecureStorageBackend implements CredentialBackend {
     const fileData = Buffer.concat([header, iv, authTag, ciphertext]);
 
     // Write with restrictive permissions (owner read/write only)
-    writeFileSync(CREDENTIALS_FILE, fileData, { mode: 0o600 });
+    atomicWriteFileSync(this.credentialsFile, fileData, { mode: 0o600 });
     this.cachedStore = store;
   }
 
-  private getEncryptionKey(salt: Buffer): Buffer {
-    if (this.encryptionKey) return this.encryptionKey;
+  private getMachineId(): string | null {
+    this.stableMachineId ||= this.readMachineId();
+    if (!this.stableMachineId) {
+      console.warn('[SecureStorage] Machine identity unavailable; existing credentials will not be overwritten.');
+    }
+    return this.stableMachineId;
+  }
 
-    // New stable machine ID using hardware UUID (v2)
-    // This is far more stable than hostname which can change with network/DHCP
+  private getEncryptionKey(salt: Buffer, machineId: string): Buffer {
+    // PBKDF2 is ~100k rounds on the main process; reuse the key for the same salt + identity.
+    const cacheKey = `${salt.toString('hex')}:${machineId}`;
+    if (this.encryptionKey?.cacheKey === cacheKey) return this.encryptionKey.key;
+
     const stableMachineId = createHash('sha256')
-      .update(getStableMachineId())
-      .update('craft-agent-v2') // Bumped version for new key derivation
+      .update(machineId)
+      .update('craft-agent-v2')
       .digest();
 
-    // Derive key using PBKDF2
-    this.encryptionKey = pbkdf2Sync(stableMachineId, salt, PBKDF2_ITERATIONS, KEY_SIZE, 'sha256');
-
-    return this.encryptionKey;
+    const key = pbkdf2Sync(stableMachineId, salt, PBKDF2_ITERATIONS, KEY_SIZE, 'sha256');
+    this.encryptionKey = { cacheKey, key };
+    return key;
   }
 
   /**
@@ -337,22 +363,28 @@ export class SecureStorageBackend implements CredentialBackend {
   }
 
   private handleCorruptedFile(): void {
-    // Delete corrupted file - user will need to re-enter credentials
+    const backup = `${this.credentialsFile}.corrupt-${Date.now()}-${randomUUID()}`;
+    // Let rename failure propagate: a subsequent write must never overwrite the only copy.
+    renameSync(this.credentialsFile, backup);
+    console.warn('[SecureStorage] Unreadable credentials preserved in a .corrupt- backup.');
+    this.clearCache();
+
     try {
-      if (existsSync(CREDENTIALS_FILE)) {
-        unlinkSync(CREDENTIALS_FILE);
-      }
+      const directory = dirname(this.credentialsFile);
+      const prefix = `${basename(this.credentialsFile)}.corrupt-`;
+      const backups = readdirSync(directory)
+        .filter(name => name.startsWith(prefix) && name !== basename(backup))
+        .sort().reverse();
+      for (const name of backups.slice(2)) unlinkSync(join(directory, name));
     } catch {
-      // Ignore deletion errors
+      console.warn('[SecureStorage] Could not prune old credential backups.');
     }
-    this.cachedStore = null;
-    this.encryptionKey = null;
-    this.salt = null;
   }
 
   /** Clear cached data (for testing or forced refresh) */
   clearCache(): void {
     this.cachedStore = null;
+    this.stableMachineId = null;
     this.encryptionKey = null;
     this.salt = null;
   }

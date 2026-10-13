@@ -99,10 +99,15 @@ export function retryTransientFsErrorSync<T>(operation: () => T): T {
  * Uses write-to-temp-then-rename pattern which is atomic on POSIX systems.
  * The rename retries transient Windows sharing violations (AV scan / reader holding the target).
  */
-export function atomicWriteFileSync(filePath: string, data: string): void {
+export function atomicWriteFileSync(
+  filePath: string,
+  data: string | Uint8Array,
+  options: { mode?: number } = {},
+): void {
   const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    writeFileSync(tmpPath, data, { flag: 'wx' });
+    // mode applies at creation so secrets never exist with default permissions.
+    writeFileSync(tmpPath, data, { flag: 'wx', mode: options.mode });
     retryTransientFsErrorSync(() => renameSync(tmpPath, filePath));
   } catch (error) {
     // Clean up temp file if rename failed
