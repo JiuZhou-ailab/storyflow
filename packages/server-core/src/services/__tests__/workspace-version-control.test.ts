@@ -3,6 +3,7 @@
 // pos: Public-seam integration tests for Storyflow workspace history
 
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'fs/promises'
+import { existsSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { describe, expect, it } from 'bun:test'
@@ -53,6 +54,32 @@ describe('workspace version control', () => {
       expect((await getWorkspaceVersionStatus(root)).hasChanges).toBe(false)
     } finally {
       await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps history in project state without creating or touching any repository', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'craft-version-external-'))
+    try {
+      const plain = join(parent, 'plain')
+      await mkdir(plain)
+      await writeFile(join(plain, 'chapter.md'), 'plain\n')
+      const first = await createWorkspaceVersion(plain, { reason: 'manual' })
+      expect(first.created).toBe(true)
+      expect(existsSync(join(plain, '.git'))).toBe(false)
+      expect(await readWorkspaceFileAtCommit(plain, first.commitHash as string, 'chapter.md')).toBe('plain\n')
+
+      // A Project inside a user's repository must not become a nested repository.
+      const outer = join(parent, 'outer')
+      const nested = join(outer, 'novel')
+      await mkdir(nested, { recursive: true })
+      await Bun.$`git init -b main`.cwd(outer).quiet()
+      await writeFile(join(nested, 'chapter.md'), 'nested\n')
+      await createWorkspaceVersion(nested, { reason: 'manual' })
+      expect(existsSync(join(nested, '.git'))).toBe(false)
+      expect((await Bun.$`git for-each-ref refs/storyflow`.cwd(outer).quiet().text()).trim()).toBe('')
+      expect(await listWorkspaceVersions(nested, 10)).toHaveLength(1)
+    } finally {
+      await rm(parent, { recursive: true, force: true })
     }
   })
 
@@ -212,7 +239,7 @@ describe('workspace version control', () => {
     }
   })
 
-  it('creates an isolated repository when workspace is nested inside another repository', async () => {
+  it('leaves a parent repository clean when the workspace is nested inside it', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'craft-version-parent-'))
     try {
       await writeFile(join(parent, 'parent.md'), 'parent\n')
@@ -227,10 +254,13 @@ describe('workspace version control', () => {
       const result = await createWorkspaceVersion(root, { reason: 'manual' })
       const workspaceTopLevel = await Bun.$`git rev-parse --show-toplevel`.cwd(root).text()
       const parentLog = await Bun.$`git log --oneline`.cwd(parent).text()
+      // The workspace files are the user's untracked work; the history store must not show up beside them.
+      const parentStatus = await Bun.$`git status --porcelain --untracked-files=all`.cwd(parent).text()
 
       expect(result.created).toBe(true)
-      expect(await realpath(workspaceTopLevel.trim())).toBe(await realpath(root))
+      expect(await realpath(workspaceTopLevel.trim())).toBe(await realpath(parent))
       expect(parentLog.trim().split('\n')).toHaveLength(1)
+      expect(parentStatus.trim()).toBe('?? workspace/chapter.md')
     } finally {
       await rm(parent, { recursive: true, force: true })
     }

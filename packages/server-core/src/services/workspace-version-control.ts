@@ -1,10 +1,11 @@
 // input: Workspace root paths, editable text files, and git command availability
 // output: Isolated text-only git snapshot, history, status, and restore helpers
-// pos: Server-side adapter that keeps Storyflow history separate from user git state
+// pos: Server-side adapter that keeps Storyflow history in Project state, separate from any user repository
 
 import { execFile } from 'child_process'
-import { realpath } from 'fs/promises'
+import { access, mkdir, realpath, writeFile } from 'fs/promises'
 import { join } from 'path'
+import { getWorkspaceStatePath } from '@craft-agent/shared/workspaces'
 
 export interface WorkspaceVersionEntry {
   hash: string
@@ -66,17 +67,32 @@ interface RunGitOptions {
   raw?: boolean
   maxBuffer?: number
   indexFile?: string
+  /** Run against the user's own repository at the root (legacy history migration only). */
+  userRepository?: boolean
+}
+
+/**
+ * History lives in Project state rather than a `.git` at the root: the root may
+ * be a plain folder (where `git init` would add a repository the user never
+ * asked for) or a subdirectory of the user's repository (where it would nest one).
+ */
+function historyGitDir(rootPath: string): string {
+  return join(getWorkspaceStatePath(rootPath), 'history.git')
 }
 
 async function runGit(rootPath: string, args: string[], options: RunGitOptions = {}): Promise<string> {
-  const { raw = false, maxBuffer = GIT_MAX_BUFFER_BYTES, indexFile } = options
+  const { raw = false, maxBuffer = GIT_MAX_BUFFER_BYTES, indexFile, userRepository = false } = options
+  const env: NodeJS.ProcessEnv = { ...process.env }
+  delete env.GIT_DIR; delete env.GIT_WORK_TREE; delete env.GIT_INDEX_FILE
+  if (!userRepository) Object.assign(env, { GIT_DIR: historyGitDir(rootPath), GIT_WORK_TREE: rootPath })
+  if (indexFile) env.GIT_INDEX_FILE = indexFile
   return await new Promise((resolve, reject) => {
     execFile('git', args, {
       cwd: rootPath,
       encoding: 'utf-8',
       timeout: GIT_TIMEOUT_MS,
       maxBuffer,
-      env: indexFile ? { ...process.env, GIT_INDEX_FILE: indexFile } : undefined,
+      env,
     }, (error, stdout, stderr) => {
       if (error) {
         const message = stderr.trim() || stdout.trim() || error.message
@@ -88,9 +104,9 @@ async function runGit(rootPath: string, args: string[], options: RunGitOptions =
   })
 }
 
-async function isGitRepo(rootPath: string): Promise<boolean> {
+async function isUserRepositoryRoot(rootPath: string): Promise<boolean> {
   try {
-    const topLevel = await runGit(rootPath, ['rev-parse', '--show-toplevel'])
+    const topLevel = await runGit(rootPath, ['rev-parse', '--show-toplevel'], { userRepository: true })
     const [resolvedRoot, resolvedTopLevel] = await Promise.all([
       realpath(rootPath),
       realpath(topLevel),
@@ -101,9 +117,39 @@ async function isGitRepo(rootPath: string): Promise<boolean> {
   }
 }
 
-async function ensureGitRepo(rootPath: string): Promise<void> {
-  if (await isGitRepo(rootPath)) return
-  await runGit(rootPath, ['init'])
+async function historyExists(rootPath: string): Promise<boolean> {
+  try { await access(join(historyGitDir(rootPath), 'HEAD')); return true } catch { return false }
+}
+
+const historyOpenings = new Map<string, Promise<boolean>>()
+
+/**
+ * Opens history, moving it once from the user's repository where earlier
+ * versions kept `refs/storyflow/history`. Fetching keeps commit hashes, so
+ * stored review baselines stay valid; the legacy ref is left untouched.
+ * TODO: drop the migration once no supported release wrote history into user repositories.
+ */
+function openHistory(rootPath: string, create: boolean): Promise<boolean> {
+  const key = `${rootPath}\n${create}`
+  const inFlight = historyOpenings.get(key)
+  if (inFlight) return inFlight
+  const opening = (async () => {
+    const exists = await historyExists(rootPath)
+    if (exists && await getStoryflowHead(rootPath)) return true
+    const legacy = await isUserRepositoryRoot(rootPath)
+      && await runGit(rootPath, ['rev-parse', '--verify', '--quiet', STORYFLOW_HISTORY_REF], { userRepository: true }).then(Boolean, () => false)
+    if (!exists && !legacy && !create) return false
+    if (!exists) {
+      await mkdir(getWorkspaceStatePath(rootPath), { recursive: true })
+      await runGit(rootPath, ['init', '--quiet'])
+      // Outside `.git`, the store is plain files to the user's repository; without this a `git add -A` there would commit it.
+      await writeFile(join(historyGitDir(rootPath), '.gitignore'), '*\n')
+    }
+    if (legacy) await runGit(rootPath, ['fetch', '--quiet', '--no-tags', rootPath, `+${STORYFLOW_HISTORY_REF}:${STORYFLOW_HISTORY_REF}`])
+    return true
+  })()
+  historyOpenings.set(key, opening)
+  return opening.finally(() => { if (historyOpenings.get(key) === opening) historyOpenings.delete(key) })
 }
 
 async function withWorkspaceOperation<T>(rootPath: string, operation: () => Promise<T>): Promise<T> {
@@ -201,7 +247,7 @@ function parseNameStatusLine(line: string): WorkspaceVersionFileChange | null {
 }
 
 async function getWorkspaceVersionStatusUnlocked(rootPath: string): Promise<WorkspaceVersionStatus> {
-  const repo = await isGitRepo(rootPath)
+  const repo = await openHistory(rootPath, false)
   if (!repo) {
     return { isGitRepo: false, hasChanges: true, lastCommit: null }
   }
@@ -226,7 +272,7 @@ async function createWorkspaceVersionUnlocked(
   rootPath: string,
   options: CreateWorkspaceVersionOptions,
 ): Promise<CreateWorkspaceVersionResult> {
-  await ensureGitRepo(rootPath)
+  await openHistory(rootPath, true)
   const snapshot = await prepareWorkspaceSnapshot(rootPath)
 
   if (snapshot.changedFiles.length === 0) {
@@ -264,7 +310,7 @@ export function createWorkspaceVersion(
 }
 
 export async function listWorkspaceVersions(rootPath: string, limit = 20): Promise<WorkspaceVersionEntry[]> {
-  if (!await isGitRepo(rootPath)) return []
+  if (!await openHistory(rootPath, false)) return []
 
   try {
     const output = await runGit(rootPath, [
@@ -304,7 +350,7 @@ export async function readWorkspaceFileAtCommit(
   commitHash: string,
   relativePath: string,
 ): Promise<string | null> {
-  if (!await isGitRepo(rootPath)) return null
+  if (!await openHistory(rootPath, false)) return null
 
   const normalizedPath = relativePath.replace(/\\/g, '/').replace(/^\/+/, '')
   if (!normalizedPath) return null
@@ -332,7 +378,7 @@ export async function compareWorkspaceVersions(
   baseCommit: string,
   headCommit = STORYFLOW_HISTORY_REF,
 ): Promise<WorkspaceVersionFileChange[]> {
-  if (!await isGitRepo(rootPath)) return []
+  if (!await openHistory(rootPath, false)) return []
 
   const output = await runGit(rootPath, [
     'diff',
@@ -367,7 +413,7 @@ async function restoreWorkspaceVersionUnlocked(
   rootPath: string,
   commitHash: string,
 ): Promise<RestoreWorkspaceVersionResult> {
-  await ensureGitRepo(rootPath)
+  await openHistory(rootPath, true)
 
   const pendingSnapshot = await prepareWorkspaceSnapshot(rootPath)
   if (pendingSnapshot.changedFiles.length > 0) {

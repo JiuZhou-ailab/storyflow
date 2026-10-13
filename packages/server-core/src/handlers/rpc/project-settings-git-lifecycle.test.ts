@@ -101,8 +101,8 @@ describe('Project settings and Git RPC lifecycle', () => {
             settingSuccess: settingResult.success,
             previousDefault: loadWorkspaceConfig(${JSON.stringify(previousRoot)})?.defaults?.defaultLlmConnection ?? null,
             currentDefault: loadWorkspaceConfig(${JSON.stringify(currentRoot)})?.defaults?.defaultLlmConnection ?? null,
-            previousGitCreated: existsSync(join(${JSON.stringify(previousRoot)}, '.git')),
-            currentGitCreated: existsSync(join(${JSON.stringify(currentRoot)}, '.git')),
+            previousGitCreated: existsSync(join(${JSON.stringify(previousRoot)}, '.craft-agent', 'history.git')),
+            currentGitCreated: existsSync(join(${JSON.stringify(currentRoot)}, '.craft-agent', 'history.git')),
             versionCreated: versionResult.created,
           }));
         `)
@@ -251,8 +251,8 @@ describe('Project settings and Git RPC lifecycle', () => {
           manager.cleanup();
           console.log('GIT_REMOTE_SCOPE=' + JSON.stringify({
             created: version.created,
-            projectAGitCreated: existsSync(join(${JSON.stringify(projectARoot)}, '.git')),
-            projectBGitCreated: existsSync(join(${JSON.stringify(projectBRoot)}, '.git')),
+            projectAGitCreated: existsSync(join(${JSON.stringify(projectARoot)}, '.craft-agent', 'history.git')),
+            projectBGitCreated: existsSync(join(${JSON.stringify(projectBRoot)}, '.craft-agent', 'history.git')),
           }));
         `)
       expect(result).toEqual({
