@@ -22,9 +22,14 @@ export interface DocumentModel {
   listeners: Set<() => void>
   generation: number
   savePromise?: Promise<boolean>
+  /** Project documents save on their own cadence; leaving saves instead of asking. */
+  autosave?: boolean
+  /** Pushes edits a view still holds (e.g. rich-text serialization) into `state.content`. */
+  flush?: () => void
 }
 const documents = new Map<string, DocumentModel>()
 export const dirtyDocument = (model: DocumentModel) => model.state.content !== model.state.baseline
+const flushDocuments = () => { for (const model of documents.values()) model.flush?.() }
 export function documentModel(workspaceId: string, target: TextDocumentTarget): DocumentModel {
   const key = JSON.stringify([workspaceId, target.sessionId, target.path])
   let model = documents.get(key)
@@ -102,9 +107,11 @@ export const answerLeavePrompt = (value: 'save' | 'discard' | 'cancel') => answe
 export function requestDocumentLeave(): Promise<boolean> {
   if (leavePromise) return leavePromise
   leavePromise = (async () => {
+    flushDocuments()
     for (const model of documents.values()) {
       if (model.savePromise) await model.savePromise
       if (!dirtyDocument(model)) continue
+      if (model.autosave && !model.state.conflict && await saveDocument(model) && !dirtyDocument(model)) continue
       const choice = await new Promise<'save' | 'discard' | 'cancel'>(resolve => {
         answer = resolve; prompt = model
         for (const listener of promptListeners) listener()
@@ -123,4 +130,4 @@ export function requestDocumentLeave(): Promise<boolean> {
   })().finally(() => { leavePromise = undefined })
   return leavePromise
 }
-export const hasDirtyDocuments = () => [...documents.values()].some(model => dirtyDocument(model) || model.state.saving)
+export const hasDirtyDocuments = () => (flushDocuments(), [...documents.values()]).some(model => dirtyDocument(model) || model.state.saving)
