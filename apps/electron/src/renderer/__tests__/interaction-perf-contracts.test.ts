@@ -176,13 +176,9 @@ describe('interaction perf contracts (ADR-0001 CI proxy)', () => {
     expect(appShellSource).toContain('reconcileSessionTranscriptWorkingSet(openIds)')
   })
 
-  it('bounds novel version baselines so document open/close cannot retain every chapter', () => {
-    expect(appShellSource).toContain('NOVEL_VERSION_BASELINE_WORKING_SET')
-    expect(appShellSource).toContain('rememberNovelVersionBaseline')
-    expect(appShellSource).toContain('pruneNovelVersionBaselines')
-    expect(appShellSource).not.toMatch(
-      /novelVersionBaselinesRef\.current\[selectedNovelDocumentPath\]\s*\?\?=/,
-    )
+  it('keeps no per-chapter content cache so document open/close cannot retain every chapter', () => {
+    // Drafts live in text-document-state, which releases a clean file when its last view unmounts.
+    expect(appShellSource).not.toContain('novelVersionBaselinesRef')
   })
 
   it('reuses the manuscript TipTap editor across chapter switches', () => {
