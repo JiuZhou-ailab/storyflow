@@ -194,6 +194,26 @@ try {
   await waitFor(live, `${doc}.querySelector('[contenteditable="true"]')?.textContent.includes('agent 改写')`)
   console.log('PASS: Markdown writing and source views share one autosaved draft that follows disk changes')
 
+  // Opening, switching views and following a disk change must never rewrite untouched bytes.
+  const irregular = 'Setext 标题\n===\n\n* 星号列表\n+ 加号列表\n\n*强调* 与 __粗体__  \n行尾两个空格\n\n| a | b |\n|---|:-:|\n| 1 | 2 |\n\n<div>原样 HTML</div>\n'
+  const irregularFile = join(project.rootPath,'irregular.md')
+  writeFileSync(irregularFile, irregular)
+  await evalOn(live, `window.dispatchEvent(new Event('focus'))`)
+  await waitFor(live, `Array.from(document.querySelectorAll('[role="treeitem"]')).find(e=>e.textContent.includes('irregular.md'))`)
+  await evalOn(live, `Array.from(document.querySelectorAll('[role="treeitem"]')).find(e=>e.textContent.includes('irregular.md')).click()`)
+  await waitFor(live, `${doc}?.dataset.documentView === 'writing' && ${doc}.querySelector('[contenteditable="true"]')?.textContent.includes('星号列表')`)
+  await new Promise(resolve => setTimeout(resolve, 2000))
+  await evalOn(live, `Array.from(${doc}.querySelectorAll('[role="radio"]')).find(e=>e.textContent==='原文').click()`)
+  await waitFor(live, `${doc}.dataset.documentView === 'source'`)
+  await evalOn(live, `Array.from(${doc}.querySelectorAll('[role="radio"]')).find(e=>e.textContent==='写作').click()`)
+  const irregularExternal = irregular + '\n外部追加\n'
+  writeFileSync(irregularFile, irregularExternal)
+  await evalOn(live, `window.dispatchEvent(new Event('focus'))`)
+  await waitFor(live, `${doc}.querySelector('[contenteditable="true"]')?.textContent.includes('外部追加')`)
+  await new Promise(resolve => setTimeout(resolve, 2000))
+  assert.equal(readFileSync(irregularFile,'utf8'), irregularExternal)
+  console.log('PASS: viewing irregular Markdown in either view never rewrites its bytes')
+
 } finally {
   await app?.close()
   rmSync(fixture, { recursive: true, force: true })
