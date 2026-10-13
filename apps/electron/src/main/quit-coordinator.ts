@@ -58,6 +58,9 @@ export function createQuitCoordinator(options: QuitCoordinatorOptions): QuitCoor
       try {
         await prepare()
       } finally {
+        // Cleanup may settle within before-quit's native dispatch; exiting there
+        // skips `quit` on Windows/Linux and with it electron-updater's install-on-quit.
+        await new Promise(resolve => setTimeout(resolve, 0))
         options.exit(0)
       }
     },
