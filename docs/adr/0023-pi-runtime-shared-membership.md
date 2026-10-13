@@ -43,7 +43,15 @@ rg -l --glob '!**/node_modules/**' --glob '!packages/shared/src/agent/**' \
   "from ['\"](?:\\.\\./)+agent(?:/|['\"])" packages/shared
 ```
 
-两条 `rg -l` 的并集去掉 `packages/shared/src/index.ts` 后是 **66** 个文件。其中路径匹配 `\.(test|isolated)\.ts$` 的是 **13** 个，生产文件 **53** 个。
+两条 `rg -l` 的并集去掉 `packages/shared/src/index.ts` 后是 **66** 个文件。其中路径匹配 `\.(test|isolated)\.ts$` 的是 **13** 个，生产文件 **53** 个。位置分布是对这 66 行做 `^<前缀>/` 计数：`apps/electron` 22，`packages/server-core/src/sessions` 16，`handlers` 6，`model-fetchers` 2，server-core 其余 3，`packages/shared/src/config` 7，`automations` 3，`sessions` 2，`workspaces` 2，`prompts`、`protocol`、`skills` 各 1。
+
+非契约引用用下面的命令。它会多命中 `packages/shared/src/index.ts` 的注释，排除后是 **37**。66 减 37 是 **29**，即只引用 `thinking-levels`、`mode-types` 或 `modes` 的文件。37 里匹配 `\.(test|isolated)\.ts$` 的是 **11**。
+
+```bash
+rg -l --glob '!**/node_modules/**' --glob '!**/dist/**' --glob '!packages/shared/src/agent/**' \
+  "(?:from|import\\(|mock\\.module\\()\\s*['\"](?:@craft-agent/shared/agent(?:['\"\`]|/backend|/pi-agent|/permissions-config|/core|/session-scoped)|(?:\\.\\./)+agent/(?:mode-manager|permissions-config|index|__tests__))" \
+  packages apps
+```
 
 | 位置 | 文件数 |
 | --- | ---: |
