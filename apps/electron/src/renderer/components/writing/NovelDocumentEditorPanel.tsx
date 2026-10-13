@@ -1,18 +1,17 @@
-// input: Selected document content, read readiness, review changes, and save/open callbacks
-// output: Markdown document editor, read-only document rendering, or inline review surface
+// input: Selected document content, read readiness, and save/open callbacks
+// output: Markdown document editor or read-only document rendering
 // pos: Shared document surface for project workspaces and conversation file previews
 
 import * as React from 'react'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { FileChange, DocumentSearchTarget, DocumentSearchLocation } from '@craft-agent/ui'
+import type { DocumentSearchTarget, DocumentSearchLocation } from '@craft-agent/ui'
 import {
   buildNovelSelectionContext,
   formatNovelSelectionChatMessage,
   formatNovelSelectionContextForChat,
 } from '@craft-agent/shared/writing/selection-context'
 import { TiptapMarkdownEditor, type TiptapMarkdownEditorHandle } from '@/components/markdown'
-import { resolveReviewFileChangeSnapshot, type ReviewFileChangeSnapshot } from '@/lib/file-change-review'
 import { cn } from '@/lib/utils'
 import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
 
@@ -54,7 +53,6 @@ export interface NovelDocumentEditorPanelProps {
   onAskAiForSelection?: (request: NovelSelectionAiRequest) => Promise<string>
   onAddSelectionToChat?: (message: string) => void
   onSendSelectionToChat?: (message: string) => Promise<void> | void
-  reviewChanges?: FileChange[]
   toolbarAccessory?: React.ReactNode
   className?: string
 }
@@ -75,7 +73,6 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
   onAskAiForSelection,
   onAddSelectionToChat,
   onSendSelectionToChat,
-  reviewChanges,
   toolbarAccessory,
   className,
 }, ref) {
@@ -93,23 +90,6 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
     getMarkdownSnapshot,
   }), [getMarkdownSnapshot])
   const characterCount = React.useMemo(() => countMarkdownTextCharacters(content), [content])
-  const reviewChangesForFile = React.useMemo(
-    () => (reviewChanges ?? []).filter(change => !change.error),
-    [reviewChanges]
-  )
-  const reviewFileChangeSnapshotRef = React.useRef<ReviewFileChangeSnapshot | null>(null)
-  const fileReviewChange = React.useMemo(
-    () => {
-      const snapshot = resolveReviewFileChangeSnapshot(
-        reviewFileChangeSnapshotRef.current,
-        reviewChangesForFile,
-        content
-      )
-      reviewFileChangeSnapshotRef.current = snapshot
-      return snapshot.change
-    },
-    [reviewChangesForFile, content]
-  )
   const handleAddSelectionToChat = React.useCallback(({ selectedText }: NovelSelectionChatRequest) => {
     if (!file || !onAddSelectionToChat) return
 
@@ -181,7 +161,6 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
             toolbarAccessory={toolbarAccessory}
             surface="manuscript"
             showLineNumbers
-            reviewDiffOriginalContent={fileReviewChange?.original ?? null}
             bottomRightAccessory={t('writing.totalCharacters', { defaultValue: 'Total {{count}} characters', count: characterCount })}
             onAskAiForSelection={onSendSelectionToChat || onAskAiForSelection ? handleAskAiForSelection : undefined}
             onAddSelectionToChat={onAddSelectionToChat ? handleAddSelectionToChat : undefined}

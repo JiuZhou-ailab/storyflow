@@ -126,7 +126,6 @@ import { useStatuses } from "@/hooks/useStatuses"
 import { useLabels } from "@/hooks/useLabels"
 import { useViews } from "@/hooks/useViews"
 import { useContainerWidth } from "@/hooks/useContainerWidth"
-import { useNovelReviewController } from "@/hooks/useNovelReviewController"
 import { invalidateWorkspaceSkillsCache, loadSkillsForWorkspace } from "@/hooks/useWorkspaceSkills"
 import { PERMISSION_MODE_ORDER } from "@craft-agent/shared/agent/modes"
 import { LabelIcon } from "@/components/ui/label-icon"
@@ -176,22 +175,7 @@ import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { rendererPerf } from "@/lib/perf"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
-import { buildRejectFileChangesOperation } from "@/lib/file-change-review"
-import {
-  buildRevertOperation,
-  buildSnapshotRevertPlan,
-  excludeUserSavedSnapshotChanges,
-  getSnapshotChangeKind,
-  type FileRevertPlan,
-  type FileState,
-} from "@/lib/snapshot-revert"
-import {
-  getNovelReviewChangeKey,
-  getNovelReviewStatus,
-  normalizeNovelFileChangePaths,
-  type NovelReviewStatusMap,
-} from "@/lib/novel-review-workflow"
-import type { NovelReviewUndoEntry } from "@/lib/novel-review-undo"
+import { normalizeNovelFileChangePaths } from "@/lib/novel-file-changes"
 import {
   detectNovelProjectFromSearchResults,
   getLatestNovelFileChangesFromMessages,
@@ -264,23 +248,6 @@ interface AppShellProps {
   /** Opens the native folder picker and registers the selected local Project. */
   onAddLocalProject?: () => void | Promise<void>
   isAddingLocalProject?: boolean
-}
-
-function isNovelReviewUndoShortcut(event: KeyboardEvent): boolean {
-  return (event.metaKey || event.ctrlKey)
-    && !event.shiftKey
-    && !event.altKey
-    && event.key.toLowerCase() === 'z'
-}
-
-function isTextEditingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-
-  const tagName = target.tagName.toLowerCase()
-  return tagName === 'input'
-    || tagName === 'textarea'
-    || target.isContentEditable
-    || target.closest('[contenteditable="true"]') != null
 }
 
 function hasBlockingFocusDialog(): boolean {
@@ -362,24 +329,6 @@ function collectAgentTouchedRelativePaths(
     .filter(Boolean))]
 }
 
-function buildWorkspaceVersionReviewChanges(
-  changes: WorkspaceVersionFileChange[],
-  rootPath: string,
-): FileChange[] {
-  const normalizedRoot = rootPath.replace(/\/+$/, '')
-  return changes
-    .filter(change => change.unifiedDiff?.trim())
-    .map((change): FileChange => ({
-      id: `workspace-version:${change.path}`,
-      filePath: `${normalizedRoot}/${change.path}`,
-      toolType: 'Edit',
-      changeKind: getSnapshotChangeKind(change.status),
-      original: '',
-      modified: '',
-      unifiedDiff: change.unifiedDiff,
-    }))
-}
-
 function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
@@ -397,21 +346,6 @@ function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
       }
     )
   })
-}
-
-async function readCurrentFileState(filePath: string): Promise<FileState> {
-  try {
-    return await window.electronAPI.readFile(filePath)
-  } catch (error) {
-    const code = typeof error === 'object' && error && 'code' in error
-      ? String(error.code)
-      : ''
-    const message = error instanceof Error ? error.message : String(error)
-    if (code === 'ENOENT' || message.includes('ENOENT') || message.includes('no such file')) {
-      return null
-    }
-    throw error
-  }
 }
 
 async function searchNovelWorkspaceFiles(
@@ -1760,16 +1694,6 @@ function AppShellContent({
   const effectiveSessionFolderPath = useAtomValue(effectiveSessionFolderPathAtom)
   const novelFileChangeActivityKey = useAtomValue(effectiveSessionFileChangeKeyAtom)
   const effectiveSessionMessageCount = useAtomValue(effectiveSessionMessageCountAtom)
-  // Keyed by Session: the fallback must never surface another Session's turn.
-  const [snapshotNovelFileChanges, setSnapshotNovelFileChanges] = React.useState<{
-    sessionId: string
-    changes: FileChange[]
-  } | null>(null)
-  const [snapshotNovelRevert, setSnapshotNovelRevert] = React.useState<{
-    sessionId: string
-    changePaths: string[]
-    plans: FileRevertPlan[]
-  } | null>(null)
   const [conversationDiffReview, setConversationDiffReview] = React.useState<{
     sessionId: string
     changes: FileChange[]
@@ -1792,9 +1716,8 @@ function AppShellContent({
     return getLatestNovelFileChangesFromMessages({
       messages: effectiveSession.messages,
       basePath: activeSessionWorkingDirectory || effectiveSessionFolderPath,
-      fallbackChanges: snapshotNovelFileChanges?.sessionId === effectiveSession.id ? snapshotNovelFileChanges.changes : [],
     })
-  }, [activeSessionWorkingDirectory, effectiveSessionAtom, effectiveSessionFolderPath, novelFileChangeActivityKey, snapshotNovelFileChanges, store])
+  }, [activeSessionWorkingDirectory, effectiveSessionAtom, effectiveSessionFolderPath, novelFileChangeActivityKey, store])
   const latestNovelFileChangesSignature = React.useMemo(
     () => latestNovelFileChanges
       .map(change => `${change.id}:${change.filePath}:${change.changeKind}:${change.error ?? ''}`)
@@ -2270,8 +2193,6 @@ function AppShellContent({
   const novelAgentTurnCheckpointInFlightRef = React.useRef(false)
   const novelSessionProcessingRef = React.useRef<Record<string, boolean>>({})
   const novelAgentTouchedPathsRef = React.useRef<Record<string, string[]>>({})
-  /** Editor saves since the current agent turn started; excluded from snapshot attribution. */
-  const novelUserSavedPathsRef = React.useRef(new Set<string>())
 
   React.useEffect(() => {
     latestNovelDocumentPathRef.current = selectedNovelDocumentPath
@@ -2314,7 +2235,6 @@ function AppShellContent({
         })
       })
     },
-    onBeforeSave: (filePath) => { novelUserSavedPathsRef.current.add(filePath) },
   })
 
   React.useLayoutEffect(() => {
@@ -2490,42 +2410,6 @@ function AppShellContent({
       const snapshot = await window.electronAPI.createWorkspaceVersion(novelWorkspaceRoot, { reason: 'agent-turn' })
       const headCommit = snapshot.commitHash
       if (previousCommit && headCommit && previousCommit !== headCommit) {
-        const changedFiles = excludeUserSavedSnapshotChanges(
-          await window.electronAPI.compareWorkspaceVersions(novelWorkspaceRoot, previousCommit, headCommit),
-          novelWorkspaceRoot,
-          novelUserSavedPathsRef.current,
-        )
-        const snapshotChanges = buildWorkspaceVersionReviewChanges(changedFiles, novelWorkspaceRoot)
-        const relativePaths = [...new Set(changedFiles.flatMap(change => (
-          change.status === 'renamed' && change.previousPath
-            ? [change.previousPath, change.path]
-            : [change.path]
-        )))]
-        const normalizedRoot = novelWorkspaceRoot.replace(/\/+$/, '')
-        const plans = await Promise.all(relativePaths.map(async relativePath => buildSnapshotRevertPlan({
-          filePath: `${normalizedRoot}/${relativePath}`,
-          baseContent: await window.electronAPI.readWorkspaceFileAtVersion(
-            novelWorkspaceRoot,
-            previousCommit,
-            relativePath,
-          ),
-          headContent: await window.electronAPI.readWorkspaceFileAtVersion(
-            novelWorkspaceRoot,
-            headCommit,
-            relativePath,
-          ),
-        })))
-        setSnapshotNovelFileChanges({ sessionId, changes: snapshotChanges })
-        setSnapshotNovelRevert({
-          sessionId,
-          changePaths: snapshotChanges.map(change => change.filePath),
-          plans,
-        })
-        novelAgentTouchedPathsRef.current[sessionId] = collectAgentTouchedRelativePaths(
-          snapshotChanges.length > 0 ? snapshotChanges : reviewableNovelFileChanges,
-          novelWorkspaceRoot,
-          novelWorkspaceFiles,
-        )
         setKnownWorkspaceCommit(novelWorkspaceRoot, sessionId, headCommit)
         const refreshSignature = latestNovelFileChangesSignatureRef.current
         const refreshKey = refreshSignature ? `${novelWorkspaceRoot}\n${refreshSignature}` : null
@@ -2550,38 +2434,10 @@ function AppShellContent({
     const wasProcessing = novelSessionProcessingRef.current[effectiveSessionId] === true
     novelSessionProcessingRef.current[effectiveSessionId] = isProcessing
 
-    if (!wasProcessing && isProcessing) {
-      setSnapshotNovelFileChanges(null)
-      setSnapshotNovelRevert(null)
-      novelUserSavedPathsRef.current.clear()
-    }
-
     if (wasProcessing && !isProcessing) {
       void checkpointNovelWorkspaceAgentTurn(effectiveSessionId)
     }
   }, [checkpointNovelWorkspaceAgentTurn, effectiveSessionIsProcessing, effectiveSessionId, novelWorkspaceRoot])
-
-  const syncSelectedNovelDocumentFromDisk = React.useCallback(async (filePath: string): Promise<boolean> => {
-    if (selectedNovelFile?.path !== filePath) return true
-
-    if (isCurrentNovelDocumentDirty()) {
-      toast.error(t(
-        'writing.review.acceptBlockedByUnsavedEdits',
-        'Save or discard your current edits before accepting this change.'
-      ))
-      return false
-    }
-
-    try {
-      await reloadSelectedNovelDocument()
-      return true
-    } catch (error) {
-      toast.error(t('writing.review.acceptFailed', 'Failed to accept this change'), {
-        description: error instanceof Error ? error.message : String(error),
-      })
-      return false
-    }
-  }, [isCurrentNovelDocumentDirty, reloadSelectedNovelDocument, selectedNovelFile?.path, t])
 
   React.useEffect(() => {
     if (!selectedNovelDocumentPath || novelDocumentDirty || latestNovelFileChanges.length === 0) return
@@ -2592,7 +2448,7 @@ function AppShellContent({
     if (!hasSelectedFileChange) return
 
     const timeoutId = window.setTimeout(() => {
-      void syncSelectedNovelDocumentFromDisk(selectedNovelDocumentPath)
+      void reloadSelectedNovelDocument()
     }, 250)
 
     return () => {
@@ -2602,104 +2458,9 @@ function AppShellContent({
     latestNovelFileChanges.length,
     novelDocumentDirty,
     reviewableNovelFileChanges,
-    selectedNovelDocumentPath,
-    syncSelectedNovelDocumentFromDisk,
-  ])
-
-  const novelReviewUndoStackRef = React.useRef<NovelReviewUndoEntry[]>([])
-
-  const {
-    novelChangeReviewStatus,
-    persistNovelChangeReviewStatus,
-    selectedNovelPendingChanges,
-  } = useNovelReviewController({
-    novelWorkspaceRoot,
-    reviewableNovelFileChanges,
-    selectedNovelFilePath: selectedNovelFile?.path,
-  })
-
-  React.useEffect(() => {
-    novelReviewUndoStackRef.current = []
-  }, [novelWorkspaceRoot])
-
-  const pushNovelReviewUndoEntry = React.useCallback((entry: NovelReviewUndoEntry | null | undefined) => {
-    if (!entry || (entry.writes.length === 0 && entry.deletes.length === 0 && Object.keys(entry.status).length === 0)) return
-
-    novelReviewUndoStackRef.current.push(entry)
-    if (novelReviewUndoStackRef.current.length > 20) {
-      novelReviewUndoStackRef.current.shift()
-    }
-  }, [])
-
-  const handleUndoNovelReviewAction = React.useCallback(async () => {
-    const entry = novelReviewUndoStackRef.current.pop()
-    if (!entry) return false
-
-    if (isCurrentNovelDocumentDirty()) {
-      novelReviewUndoStackRef.current.push(entry)
-      toast.error(t(
-        'writing.review.undoBlockedByUnsavedEdits',
-        'Save or discard your current edits before undoing the review action.'
-      ))
-      return true
-    }
-
-    try {
-      for (const deleted of entry.deletes) {
-        await window.electronAPI.deleteFile(deleted.filePath)
-      }
-
-      for (const write of entry.writes) {
-        await window.electronAPI.writeFile(write.filePath, write.content)
-      }
-
-      persistNovelChangeReviewStatus(entry.status)
-
-      const selectedPath = selectedNovelFile?.path
-      if (selectedPath && (
-        entry.writes.some(write => write.filePath === selectedPath)
-        || entry.deletes.some(deleted => deleted.filePath === selectedPath)
-      )) {
-        await reloadSelectedNovelDocument()
-      }
-      if (novelWorkspaceRoot) {
-        void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
-      }
-
-      toast.success(t('writing.review.undone', 'Review action undone'))
-      return true
-    } catch (error) {
-      novelReviewUndoStackRef.current.push(entry)
-      toast.error(t('writing.review.undoFailed', 'Failed to undo review action'), {
-        description: error instanceof Error ? error.message : String(error),
-      })
-      return true
-    }
-  }, [
-    isCurrentNovelDocumentDirty,
-    novelWorkspaceRoot,
-    persistNovelChangeReviewStatus,
-    refreshNovelWorkspaceFilesAfterMutation,
     reloadSelectedNovelDocument,
-    selectedNovelFile?.path,
-    t,
+    selectedNovelDocumentPath,
   ])
-
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!isNovelReviewUndoShortcut(event)) return
-      if (novelReviewUndoStackRef.current.length === 0) return
-      if (isTextEditingTarget(event.target)) return
-
-      event.preventDefault()
-      event.stopPropagation()
-      event.stopImmediatePropagation()
-      void handleUndoNovelReviewAction()
-    }
-
-    window.addEventListener('keydown', handleKeyDown, true)
-    return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [handleUndoNovelReviewAction])
 
   const handleAskAiForNovelSelection = React.useCallback(async ({ selectedText, instruction }: NovelSelectionAiRequest) => {
     if (!selectedNovelFile || !effectiveSessionId) {
@@ -3036,170 +2797,6 @@ function AppShellContent({
     storage.set(storage.KEYS.viewFilters, viewFiltersMap, activeWorkspaceId)
   }, [viewFiltersMap, activeWorkspaceId])
 
-  const handleAcceptNovelFileChanges = React.useCallback(async (changes: FileChange[]) => {
-    const reviewableChanges = changes.filter(change => !change.error)
-    const filePath = reviewableChanges[0]?.filePath
-    if (!filePath || reviewableChanges.length === 0) {
-      toast.error(t('writing.review.acceptUnavailable', 'Cannot accept a failed change.'))
-      return
-    }
-    if (reviewableChanges.some(change => change.filePath !== filePath)) {
-      toast.error(t('writing.review.acceptUnavailable', 'Cannot accept changes from multiple files here.'))
-      return
-    }
-
-    if (selectedNovelFile?.path === filePath) {
-      const saved = await ensureNovelDocumentSaved()
-      if (!saved) return
-    }
-
-    let undoEntry: NovelReviewUndoEntry | undefined
-    try {
-      const currentContent = await window.electronAPI.readFile(filePath)
-      const rejected = buildRejectFileChangesOperation(reviewableChanges, currentContent)
-      if (rejected.ok) {
-        const undoStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
-        for (const change of reviewableChanges) {
-          undoStatus[getNovelReviewChangeKey(change)] = 'rejected'
-        }
-        undoEntry = {
-          status: undoStatus,
-          writes: rejected.operation === 'write' ? [{ filePath, content: rejected.content }] : [],
-          deletes: rejected.operation === 'delete' ? [{ filePath }] : [],
-        }
-      }
-    } catch (error) {
-      console.warn('[writing] Failed to capture accept undo entry:', error)
-    }
-
-    const nextStatus: NovelReviewStatusMap = { ...novelChangeReviewStatus }
-    for (const change of reviewableChanges) {
-      nextStatus[getNovelReviewChangeKey(change)] = 'accepted'
-    }
-    persistNovelChangeReviewStatus(nextStatus)
-    pushNovelReviewUndoEntry(undoEntry)
-    toast.success(t('writing.review.fileAccepted', 'File changes accepted'), undoEntry ? {
-      action: {
-        label: t('common.undo', 'Undo'),
-        onClick: () => { void handleUndoNovelReviewAction() },
-      },
-    } : undefined)
-  }, [
-    ensureNovelDocumentSaved,
-    handleUndoNovelReviewAction,
-    novelChangeReviewStatus,
-    persistNovelChangeReviewStatus,
-    pushNovelReviewUndoEntry,
-    selectedNovelFile?.path,
-    t,
-  ])
-
-  const handleRejectNovelFileChanges = React.useCallback(async (changes: FileChange[]) => {
-    const reviewableChanges = changes.filter(change => !change.error)
-    const filePath = reviewableChanges[0]?.filePath
-    if (!filePath || reviewableChanges.length === 0) {
-      toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject this change'))
-      return
-    }
-    if (reviewableChanges.some(change => change.filePath !== filePath)) {
-      toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject changes from multiple files here.'))
-      return
-    }
-
-    if (selectedNovelFile?.path === filePath) {
-      const saved = await ensureNovelDocumentSaved()
-      if (!saved) return
-    }
-
-    try {
-      const currentContent = await window.electronAPI.readFile(filePath)
-      const rejected = buildRejectFileChangesOperation(reviewableChanges, currentContent)
-      if (!rejected.ok) {
-        toast.error(t('writing.review.rejectUnavailable', 'Cannot safely reject this change'), {
-          description: rejected.reason,
-        })
-        return
-      }
-
-      const undoEntry: NovelReviewUndoEntry = {
-        status: novelChangeReviewStatus,
-        writes: [{ filePath, content: currentContent }],
-        deletes: [],
-      }
-      if (rejected.operation === 'write') {
-        await window.electronAPI.writeFile(filePath, rejected.content)
-      } else {
-        await window.electronAPI.deleteFile(filePath)
-      }
-      const nextStatus: NovelReviewStatusMap = {
-        ...novelChangeReviewStatus,
-      }
-      for (const change of reviewableChanges) {
-        nextStatus[getNovelReviewChangeKey(change)] = 'rejected'
-      }
-      persistNovelChangeReviewStatus(nextStatus)
-      pushNovelReviewUndoEntry(undoEntry)
-
-      if (selectedNovelFile?.path === filePath) {
-        await reloadSelectedNovelDocument()
-      }
-      if (novelWorkspaceRoot) {
-        void refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
-      }
-
-      toast.success(t('writing.review.fileRejected', 'File changes rejected'), {
-        action: {
-          label: t('common.undo', 'Undo'),
-          onClick: () => { void handleUndoNovelReviewAction() },
-        },
-      })
-    } catch (error) {
-      toast.error(t('writing.review.rejectFailed', 'Failed to reject this change'), {
-        description: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }, [
-    ensureNovelDocumentSaved,
-    handleUndoNovelReviewAction,
-    novelChangeReviewStatus,
-    novelWorkspaceRoot,
-    persistNovelChangeReviewStatus,
-    pushNovelReviewUndoEntry,
-    refreshNovelWorkspaceFilesAfterMutation,
-    reloadSelectedNovelDocument,
-    selectedNovelFile?.path,
-    t,
-  ])
-
-  const reviewableNovelFileChangeByKey = React.useMemo(
-    () => new Map(reviewableNovelFileChanges.map(change => [getNovelReviewChangeKey(change), change])),
-    [reviewableNovelFileChanges]
-  )
-  const resolveFileChangeReviewStatus = React.useCallback<NonNullable<AppShellContextType['resolveFileChangeReviewStatus']>>(
-    (sessionId, change) => {
-      if (sessionId !== effectiveSessionId) return undefined
-      const reviewableChange = reviewableNovelFileChangeByKey.get(getNovelReviewChangeKey(change))
-      if (!reviewableChange) return undefined
-      return getNovelReviewStatus(novelChangeReviewStatus, reviewableChange) ?? 'pending'
-    },
-    [effectiveSessionId, novelChangeReviewStatus, reviewableNovelFileChangeByKey]
-  )
-  const handleAcceptConversationFileChange = React.useCallback<NonNullable<AppShellContextType['onAcceptFileChange']>>(
-    (sessionId, change) => {
-      if (sessionId !== effectiveSessionId) return
-      const reviewableChange = reviewableNovelFileChangeByKey.get(getNovelReviewChangeKey(change))
-      if (reviewableChange) void handleAcceptNovelFileChanges([reviewableChange])
-    },
-    [effectiveSessionId, handleAcceptNovelFileChanges, reviewableNovelFileChangeByKey]
-  )
-  const handleRejectConversationFileChange = React.useCallback<NonNullable<AppShellContextType['onRejectFileChange']>>(
-    (sessionId, change) => {
-      if (sessionId !== effectiveSessionId) return
-      const reviewableChange = reviewableNovelFileChangeByKey.get(getNovelReviewChangeKey(change))
-      if (reviewableChange) void handleRejectNovelFileChanges([reviewableChange])
-    },
-    [effectiveSessionId, handleRejectNovelFileChanges, reviewableNovelFileChangeByKey]
-  )
   const handleOpenConversationFileChanges = React.useCallback<NonNullable<AppShellContextType['onOpenFileChanges']>>(
     (sessionId, changes) => {
       if (sessionId !== effectiveSessionId) return
@@ -3210,123 +2807,6 @@ function AppShellContent({
     },
     [effectiveSessionId]
   )
-  const handleRevertConversationFileChanges = React.useCallback<NonNullable<AppShellContextType['onRevertFileChanges']>>(
-    async (sessionId, changes) => {
-      if (sessionId !== effectiveSessionId) return
-      const reviewableChanges = changes.filter(change => !change.error)
-      const requestedPaths = [...new Set(reviewableChanges.map(change => change.filePath))]
-      if (requestedPaths.length === 0) return
-
-      if (selectedNovelFile?.path && requestedPaths.includes(selectedNovelFile.path)) {
-        const saved = await ensureNovelDocumentSaved()
-        if (!saved) return
-      }
-
-      try {
-        const snapshotMatches = snapshotNovelRevert?.sessionId === sessionId
-          && requestedPaths.length === snapshotNovelRevert.changePaths.length
-          && requestedPaths.every(path => snapshotNovelRevert.changePaths.includes(path))
-        const planned: Array<{
-          plan: FileRevertPlan
-          current: FileState
-          operation: ReturnType<typeof buildRevertOperation>
-        }> = []
-
-        if (snapshotMatches && snapshotNovelRevert) {
-          for (const plan of snapshotNovelRevert.plans) {
-            const current = await readCurrentFileState(plan.filePath)
-            const operation = buildRevertOperation(plan, current)
-            if (!operation.ok) {
-              throw new Error(t(
-                'writing.review.revertConflict',
-                '文件已被后续编辑，无法安全撤回本轮修改。'
-              ))
-            }
-            planned.push({ plan, current, operation })
-          }
-        } else {
-          const changesByPath = new Map<string, FileChange[]>()
-          for (const change of reviewableChanges) {
-            changesByPath.set(change.filePath, [
-              ...(changesByPath.get(change.filePath) ?? []),
-              change,
-            ])
-          }
-          for (const [filePath, fileChanges] of changesByPath) {
-            const current = await window.electronAPI.readFile(filePath)
-            const rejected = buildRejectFileChangesOperation(fileChanges, current)
-            if (!rejected.ok) throw new Error(rejected.reason)
-            const plan = buildSnapshotRevertPlan({
-              filePath,
-              baseContent: rejected.operation === 'delete' ? null : rejected.content,
-              headContent: current,
-            })
-            planned.push({ plan, current, operation: buildRevertOperation(plan, current) })
-          }
-        }
-
-        const undoEntry: NovelReviewUndoEntry = {
-          status: novelChangeReviewStatus,
-          writes: planned.flatMap(({ plan, current }) => (
-            current == null ? [] : [{ filePath: plan.filePath, content: current }]
-          )),
-          deletes: planned.flatMap(({ plan, current }) => (
-            current == null ? [{ filePath: plan.filePath }] : []
-          )),
-        }
-        for (const { plan, operation } of planned) {
-          if (!operation.ok || operation.operation === 'noop') continue
-          if (operation.operation === 'write') {
-            await window.electronAPI.writeFile(plan.filePath, operation.content)
-          } else {
-            await window.electronAPI.deleteFile(plan.filePath)
-          }
-        }
-
-        const revertedPaths = new Set(planned.map(({ plan }) => plan.filePath))
-        const nextStatus = { ...novelChangeReviewStatus }
-        for (const change of [...reviewableChanges, ...reviewableNovelFileChanges]) {
-          if (revertedPaths.has(change.filePath)) {
-            nextStatus[getNovelReviewChangeKey(change)] = 'rejected'
-          }
-        }
-        persistNovelChangeReviewStatus(nextStatus)
-        pushNovelReviewUndoEntry(undoEntry)
-
-        if (selectedNovelFile?.path && planned.some(({ plan, operation }) => plan.filePath === selectedNovelFile.path && operation.ok)) {
-          await reloadSelectedNovelDocument()
-        }
-        if (novelWorkspaceRoot) {
-          await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
-        }
-        toast.success(t('writing.review.turnReverted', '已撤回本轮文件修改'), {
-          action: {
-            label: t('common.undo', 'Undo'),
-            onClick: () => { void handleUndoNovelReviewAction() },
-          },
-        })
-      } catch (error) {
-        toast.error(t('writing.review.rejectFailed', 'Failed to reject this change'), {
-          description: error instanceof Error ? error.message : String(error),
-        })
-      }
-    },
-    [
-      effectiveSessionId,
-      ensureNovelDocumentSaved,
-      handleUndoNovelReviewAction,
-      novelChangeReviewStatus,
-      novelWorkspaceRoot,
-      persistNovelChangeReviewStatus,
-      pushNovelReviewUndoEntry,
-      refreshNovelWorkspaceFilesAfterMutation,
-      reviewableNovelFileChanges,
-      reloadSelectedNovelDocument,
-      selectedNovelFile?.path,
-      snapshotNovelRevert,
-      t,
-    ]
-  )
   const conversationWorkspace = useConversationWorkspace({
     sessionId: effectiveSessionId ?? undefined,
     active: activeWorkspaceId === FREE_CONVERSATION_WORKSPACE_ID && isSessionsNavigation(navState),
@@ -3334,25 +2814,17 @@ function AppShellContent({
     availableWidth: shellWidth - activityRailOffset - visibleSessionListWidth,
     onOpenFile: handleSelectNovelFileByPath,
   })
-  const appShellContextValueWithReview = React.useMemo<AppShellContextType>(() => ({
+  const appShellContextValueWithWorkspace = React.useMemo<AppShellContextType>(() => ({
     ...appShellContextValue,
     onOpenFile: conversationWorkspace.openFile,
     conversationFileRequest: conversationWorkspace.drawerRequest,
-    resolveFileChangeReviewStatus,
-    onAcceptFileChange: handleAcceptConversationFileChange,
-    onRejectFileChange: handleRejectConversationFileChange,
     onOpenFileChanges: canPresentConversationDiffInWorkspace ? handleOpenConversationFileChanges : undefined,
-    onRevertFileChanges: handleRevertConversationFileChanges,
   }), [
     appShellContextValue,
     conversationWorkspace.openFile,
     conversationWorkspace.drawerRequest,
     canPresentConversationDiffInWorkspace,
-    handleAcceptConversationFileChange,
     handleOpenConversationFileChanges,
-    handleRejectConversationFileChange,
-    handleRevertConversationFileChanges,
-    resolveFileChangeReviewStatus,
   ])
 
   // Handler for sources view (all sources)
@@ -3832,7 +3304,6 @@ function AppShellContent({
                       onAskAiForSelection={handleAskAiForNovelSelection}
                       onAddSelectionToChat={handleAddNovelSelectionToChat}
                       onSendSelectionToChat={handleSendNovelSelectionToChat}
-                      reviewChanges={selectedNovelPendingChanges}
                     />
                   ) : (
                     <TextDocumentSource
@@ -3923,12 +3394,6 @@ function AppShellContent({
       consolidated
       changes={conversationDiffReview.changes}
       onClose={() => setConversationDiffReview(null)}
-      reviewStatusByChangeId={Object.fromEntries(conversationDiffReview.changes.map(change => [
-        change.id,
-        resolveFileChangeReviewStatus(effectiveSessionId, change) ?? 'pending',
-      ]))}
-      onAcceptChange={change => handleAcceptConversationFileChange(effectiveSessionId, change)}
-      onRejectChange={change => handleRejectConversationFileChange(effectiveSessionId, change)}
     />
   ) : null
   const activeWritingDocumentSurface = conversationDiffSurface ?? writingDocumentSurface
@@ -3943,7 +3408,7 @@ function AppShellContent({
       && !showEmptyProjectSession,
   )
   return (
-    <AppShellProvider value={appShellContextValueWithReview}>
+    <AppShellProvider value={appShellContextValueWithWorkspace}>
       {/* === OUTER LAYOUT: Unified Panel Stack | Right Sidebar === */}
       <div
         ref={shellRef}

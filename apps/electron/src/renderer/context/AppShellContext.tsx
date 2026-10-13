@@ -40,7 +40,7 @@ import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOp
 import { sessionOptionsAtomFamily } from '../hooks/useSessionOptions'
 import { sessionAtomFamily } from '../atoms/sessions'
 import { pendingCredentialAtomFamily, pendingPermissionAtomFamily, pendingUserQuestionAtomFamily } from '../atoms/pending-requests'
-import type { FileChange, FileChangeReviewStatus } from '@craft-agent/ui'
+import type { FileChange } from '@craft-agent/ui'
 
 export interface AppShellContextType {
   // Data
@@ -136,12 +136,8 @@ export interface AppShellContextType {
   onOpenFile: (path: string) => void
   conversationFileRequest?: { sessionId: string; path: string }
   onOpenUrl: (url: string) => void
-  /** Resolve and update review state for file changes shown inside the active conversation. */
-  resolveFileChangeReviewStatus?: (sessionId: string, change: FileChange) => FileChangeReviewStatus | undefined
-  onAcceptFileChange?: (sessionId: string, change: FileChange) => void
-  onRejectFileChange?: (sessionId: string, change: FileChange) => void
+  /** Presents file changes from the active conversation inside the workspace, when the shell can. */
   onOpenFileChanges?: (sessionId: string, changes: FileChange[]) => void
-  onRevertFileChanges?: (sessionId: string, changes: FileChange[]) => Promise<void> | void
 
   // Workspace
   onSelectWorkspace: (id: string, openInNewWindow?: boolean) => void | Promise<void>
@@ -220,11 +216,7 @@ interface SessionInteractionActionsContextType {
   onRespondToPermission?: AppShellContextType['onRespondToPermission']
   onRespondToCredential?: AppShellContextType['onRespondToCredential']
   onRespondToUserQuestion?: AppShellContextType['onRespondToUserQuestion']
-  resolveFileChangeReviewStatus?: AppShellContextType['resolveFileChangeReviewStatus']
-  onAcceptFileChange?: AppShellContextType['onAcceptFileChange']
-  onRejectFileChange?: AppShellContextType['onRejectFileChange']
   onOpenFileChanges?: AppShellContextType['onOpenFileChanges']
-  onRevertFileChanges?: AppShellContextType['onRevertFileChanges']
 }
 
 const SessionInteractionActionsContext = createContext<SessionInteractionActionsContextType | null>(null)
@@ -340,11 +332,7 @@ export function AppShellProvider({
     onRespondToPermission: value.onRespondToPermission,
     onRespondToCredential: value.onRespondToCredential,
     onRespondToUserQuestion: value.onRespondToUserQuestion,
-    resolveFileChangeReviewStatus: value.resolveFileChangeReviewStatus,
-    onAcceptFileChange: value.onAcceptFileChange,
-    onRejectFileChange: value.onRejectFileChange,
     onOpenFileChanges: value.onOpenFileChanges,
-    onRevertFileChanges: value.onRevertFileChanges,
   }), [
     value.conversationFileRequest,
     value.onOpenFile,
@@ -353,11 +341,7 @@ export function AppShellProvider({
     value.onRespondToPermission,
     value.onRespondToCredential,
     value.onRespondToUserQuestion,
-    value.resolveFileChangeReviewStatus,
-    value.onAcceptFileChange,
-    value.onRejectFileChange,
     value.onOpenFileChanges,
-    value.onRevertFileChanges,
   ])
 
   const sessionReadActions = React.useMemo<SessionReadActionsContextType>(() => ({

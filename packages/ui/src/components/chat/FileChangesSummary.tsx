@@ -1,9 +1,9 @@
-// input: File changes from one assistant turn and review actions
+// input: File changes from one assistant turn and an open callback
 // output: Compact expandable diff summary card
-// pos: Turn footer entry point into the right-side diff review workspace
+// pos: Turn footer entry point into the read-only diff viewer
 
 import * as React from 'react'
-import { ChevronDown, ChevronUp, Files, RotateCcw } from 'lucide-react'
+import { ChevronDown, ChevronUp, Files } from 'lucide-react'
 import { parseDiffFromFile, type FileContents } from '@pierre/diffs'
 import { useTranslation } from 'react-i18next'
 import { getDiffStats } from '../code-viewer/ShikiDiffViewer'
@@ -46,16 +46,12 @@ export function summarizeFileChanges(changes: FileChange[]): FileSummary[] {
 export interface FileChangesSummaryProps {
   changes: FileChange[]
   onOpen: () => void
-  onRevert?: () => void
-  reverting?: boolean
   className?: string
 }
 
 export function FileChangesSummary({
   changes,
   onOpen,
-  onRevert,
-  reverting = false,
   className,
 }: FileChangesSummaryProps) {
   const { t } = useTranslation()
@@ -97,19 +93,6 @@ export function FileChangesSummary({
             </span>
           </span>
         </button>
-        {onRevert ? (
-          <button
-            type="button"
-            onClick={onRevert}
-            disabled={reverting}
-            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            {reverting
-              ? t('chat.fileChanges.reverting', '撤回中…')
-              : t('common.revert', '撤回')}
-          </button>
-        ) : null}
         <button
           type="button"
           onClick={onOpen}

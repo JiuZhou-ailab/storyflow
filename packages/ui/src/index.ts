@@ -205,7 +205,6 @@ export {
   type CodePreviewOverlayProps,
   type MultiDiffPreviewOverlayProps,
   type FileChange,
-  type FileChangeReviewStatus,
   type DiffViewerSettings,
   type TerminalPreviewOverlayProps,
   type GenericOverlayProps,

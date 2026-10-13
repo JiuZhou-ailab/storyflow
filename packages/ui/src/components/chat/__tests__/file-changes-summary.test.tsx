@@ -18,7 +18,6 @@ await testI18n.init({
       translation: {
         'chat.fileChanges.editedFiles': '已编辑 {{count}} 个文件',
         'chat.fileChanges.review': '审核',
-        'common.revert': '撤回',
       },
     },
   },
@@ -42,16 +41,15 @@ const changes = [
 ]
 
 describe('FileChangesSummary', () => {
-  it('summarizes files and renders review and revert actions', () => {
+  it('summarizes files and renders the review action', () => {
     expect(summarizeFileChanges(changes)).toHaveLength(2)
 
     const html = renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
-        <FileChangesSummary changes={changes} onOpen={() => {}} onRevert={() => {}} />
+        <FileChangesSummary changes={changes} onOpen={() => {}} />
       </I18nextProvider>
     )
     expect(html).toContain('已编辑 2 个文件')
-    expect(html).toContain('撤回')
     expect(html).toContain('审核')
     expect(html).toContain('/project/one.ts')
   })

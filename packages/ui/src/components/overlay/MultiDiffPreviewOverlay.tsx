@@ -1,6 +1,6 @@
-// input: Edit/Write file changes, review callbacks, theme mode, and Shiki theme context
+// input: Edit/Write file changes, theme mode, and Shiki theme context
 // output: Multi-file diff preview overlay with readable app-aware syntax colors
-// pos: User-facing review surface for generated file changes
+// pos: Read-only viewer for file changes made by agent tool calls
 
 /**
  * MultiDiffPreviewOverlay - Overlay for multiple file changes (Edit/Write tools)
@@ -19,7 +19,7 @@
 
 import * as React from 'react'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import { Check, PencilLine, FilePlus, RotateCcw, X } from 'lucide-react'
+import { PencilLine, FilePlus, X } from 'lucide-react'
 import { parseDiffFromFile, type FileContents } from '@pierre/diffs'
 import { ShikiDiffViewer, getDiffStats } from '../code-viewer/ShikiDiffViewer'
 import { UnifiedDiffViewer, getUnifiedDiffStats } from '../code-viewer/UnifiedDiffViewer'
@@ -65,8 +65,6 @@ export interface DiffViewerSettings {
   disableBackground: boolean
 }
 
-export type FileChangeReviewStatus = 'pending' | 'accepted' | 'rejected'
-
 export interface MultiDiffPreviewOverlayProps {
   /** Whether the overlay is visible */
   isOpen: boolean
@@ -86,12 +84,6 @@ export interface MultiDiffPreviewOverlayProps {
   diffViewerSettings?: Partial<DiffViewerSettings>
   /** Callback when diff viewer settings change (to persist to preferences) */
   onDiffViewerSettingsChange?: (settings: DiffViewerSettings) => void
-  /** Optional per-change review status for product surfaces that gate changes through review. */
-  reviewStatusByChangeId?: Record<string, FileChangeReviewStatus>
-  /** Optional accept callback. When omitted, the overlay remains a read-only diff viewer. */
-  onAcceptChange?: (change: FileChange) => void
-  /** Optional reject callback. When omitted, the overlay remains a read-only diff viewer. */
-  onRejectChange?: (change: FileChange) => void
 }
 
 // ============================================
@@ -165,9 +157,6 @@ export function MultiDiffPreviewOverlay({
   embedded,
   diffViewerSettings,
   onDiffViewerSettingsChange,
-  reviewStatusByChangeId,
-  onAcceptChange,
-  onRejectChange,
 }: MultiDiffPreviewOverlayProps) {
   const { onOpenFileExternal } = usePlatform()
   const shikiTheme = useShikiTheme() ?? undefined
@@ -358,16 +347,6 @@ export function MultiDiffPreviewOverlay({
                     className="rounded-xl overflow-hidden bg-background shadow-minimal"
                     style={{ minHeight: change.error ? undefined : 200, borderRadius: 12 }}
                   >
-                    {!change.error
-                      && (onAcceptChange || onRejectChange)
-                      && (!reviewStatusByChangeId || reviewStatusByChangeId[change.id]) ? (
-                      <ReviewActionBar
-                        change={change}
-                        status={reviewStatusByChangeId?.[change.id] ?? 'pending'}
-                        onAcceptChange={onAcceptChange}
-                        onRejectChange={onRejectChange}
-                      />
-                    ) : null}
                     {change.error ? (
                       // Errored change — tinted error banner
                       <div className="px-4 py-4">
@@ -422,56 +401,5 @@ export function MultiDiffPreviewOverlay({
         </div>
       </div>
     </PreviewOverlay>
-  )
-}
-
-function ReviewActionBar({
-  change,
-  status,
-  onAcceptChange,
-  onRejectChange,
-}: {
-  change: FileChange
-  status: FileChangeReviewStatus
-  onAcceptChange?: (change: FileChange) => void
-  onRejectChange?: (change: FileChange) => void
-}) {
-  const settled = status !== 'pending'
-  const statusLabel = status === 'accepted'
-    ? 'Accepted'
-    : status === 'rejected'
-      ? 'Rejected'
-      : 'Pending review'
-
-  return (
-    <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border/60 bg-foreground/[0.025] px-3 py-2">
-      <div className="min-w-0 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground/75">{statusLabel}</span>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        {onRejectChange ? (
-          <button
-            type="button"
-            disabled={settled}
-            onClick={() => onRejectChange(change)}
-            className="inline-flex h-7 items-center gap-1.5 rounded-[6px] border border-border/70 bg-background px-2 text-xs text-foreground transition-colors hover:bg-foreground/[0.04] disabled:pointer-events-none disabled:opacity-50"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Reject
-          </button>
-        ) : null}
-        {onAcceptChange ? (
-          <button
-            type="button"
-            disabled={settled}
-            onClick={() => onAcceptChange(change)}
-            className="inline-flex h-7 items-center gap-1.5 rounded-[6px] bg-foreground px-2 text-xs text-background transition-colors hover:bg-foreground/90 disabled:pointer-events-none disabled:opacity-50"
-          >
-            <Check className="h-3.5 w-3.5" />
-            Accept
-          </button>
-        ) : null}
-      </div>
-    </div>
   )
 }

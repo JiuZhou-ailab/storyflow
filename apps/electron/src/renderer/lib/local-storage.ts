@@ -42,8 +42,7 @@ export const KEYS = {
   // Session files panel state
   sessionFilesExpandedFolders: 'session-files-expanded', // Expanded folders in session files tree (keyed by sessionId)
 
-  // Writing workspace review state (workspace-root-scoped via suffix)
-  novelChangeReviewStatus: 'novel-change-review-status',
+  // Writing workspace state (workspace-root-scoped via suffix)
   workspaceVersionKnownCommit: 'workspace-version-known-commit',
   novelWorkspaceCatalogOrder: 'novel-workspace-catalog-order',
   novelWorkspaceSidebarItemOrders: 'novel-workspace-sidebar-item-orders',

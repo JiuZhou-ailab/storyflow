@@ -87,11 +87,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onRespondToPermission,
     onRespondToCredential,
     onRespondToUserQuestion,
-    resolveFileChangeReviewStatus,
-    onAcceptFileChange,
-    onRejectFileChange,
     onOpenFileChanges,
-    onRevertFileChanges,
   } = useSessionInteractionActions()
   const {
     labels,
@@ -631,20 +627,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             }}
             onOpenFile={handleOpenFile}
             onOpenUrl={handleOpenUrl}
-            resolveFileChangeReviewStatus={resolveFileChangeReviewStatus
-              ? change => resolveFileChangeReviewStatus(sessionId, change)
-              : undefined}
-            onAcceptFileChange={onAcceptFileChange
-              ? change => onAcceptFileChange(sessionId, change)
-              : undefined}
-            onRejectFileChange={onRejectFileChange
-              ? change => onRejectFileChange(sessionId, change)
-              : undefined}
             onOpenFileChanges={onOpenFileChanges
               ? changes => onOpenFileChanges(sessionId, changes)
-              : undefined}
-            onRevertFileChanges={onRevertFileChanges
-              ? changes => onRevertFileChanges(sessionId, changes)
               : undefined}
             currentModel={effectiveModel}
             onModelChange={handleModelChange}

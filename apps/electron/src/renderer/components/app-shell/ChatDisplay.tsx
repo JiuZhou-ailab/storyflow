@@ -31,7 +31,6 @@ import {
   DocumentFormattedMarkdownOverlay,
   type ActivityItem,
   type FileChange,
-  type FileChangeReviewStatus,
   type DiffViewerSettings,
 } from "@craft-agent/ui"
 import { useFocusZone } from "@/hooks/keyboard"
@@ -130,12 +129,8 @@ interface ChatDisplayProps {
   ) => void
   onOpenFile: (path: string) => void
   onOpenUrl: (url: string) => void
-  /** Review integration for file changes surfaced by this conversation. */
-  resolveFileChangeReviewStatus?: (change: FileChange) => FileChangeReviewStatus | undefined
-  onAcceptFileChange?: (change: FileChange) => void
-  onRejectFileChange?: (change: FileChange) => void
+  /** Presents this conversation's file changes in the host workspace instead of the fullscreen overlay. */
   onOpenFileChanges?: (changes: FileChange[]) => void
-  onRevertFileChanges?: (changes: FileChange[]) => Promise<void> | void
   // Model selection
   currentModel: string
   onModelChange: (model: string, connection?: string) => void
@@ -578,11 +573,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   onSendMessage,
   onOpenFile,
   onOpenUrl,
-  resolveFileChangeReviewStatus,
-  onAcceptFileChange,
-  onRejectFileChange,
   onOpenFileChanges,
-  onRevertFileChanges,
   currentModel,
   onModelChange,
   onConnectionChange,
@@ -1180,17 +1171,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Overlay state - controls which overlay is shown (if any)
   const [overlayState, setOverlayState] = useState<OverlayState>(null)
-  const [revertingTurnKey, setRevertingTurnKey] = useState<string | null>(null)
-  const overlayReviewStatusByChangeId = useMemo(() => {
-    if (overlayState?.type !== 'multi-diff' || !resolveFileChangeReviewStatus) return undefined
-
-    return Object.fromEntries(
-      overlayState.changes.flatMap((change) => {
-        const status = resolveFileChangeReviewStatus(change)
-        return status ? [[change.id, status]] : []
-      })
-    )
-  }, [overlayState, resolveFileChangeReviewStatus])
   const fileChangeBasePath = workingDirectory || sessionFolderPath
   const collectTurnFileChanges = useCallback(
     (activities: ActivityItem[]) => collectFileChangesFromActivities(activities, { basePath: fileChangeBasePath }),
@@ -2190,7 +2170,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         footer={turnFileChanges.length > 0 ? (
                           <FileChangesSummary
                             changes={turnFileChanges}
-                            reverting={revertingTurnKey === turnKey}
                             onOpen={() => {
                               if (onOpenFileChanges) {
                                 onOpenFileChanges(turnFileChanges)
@@ -2202,14 +2181,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                                 consolidated: true,
                               })
                             }}
-                            onRevert={onRevertFileChanges ? async () => {
-                              setRevertingTurnKey(turnKey)
-                              try {
-                                await onRevertFileChanges(turnFileChanges)
-                              } finally {
-                                setRevertingTurnKey(null)
-                              }
-                            } : undefined}
                           />
                         ) : undefined}
                       />
@@ -2330,9 +2301,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           theme={isDark ? 'dark' : 'light'}
           diffViewerSettings={diffViewerSettings}
           onDiffViewerSettingsChange={handleDiffViewerSettingsChange}
-          reviewStatusByChangeId={overlayReviewStatusByChangeId}
-          onAcceptChange={onAcceptFileChange}
-          onRejectChange={onRejectFileChange}
         />
       )}
 
