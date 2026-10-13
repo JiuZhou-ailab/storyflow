@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/electron",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "Electron desktop app for Storyflow",
   "main": "dist/main.cjs",
   "private": true,
