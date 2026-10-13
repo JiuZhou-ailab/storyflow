@@ -230,6 +230,8 @@ export function ActivityRail({
     Math.max(ACTIVITY_RAIL_MIN_WIDTH, width ?? uncontrolledWidth),
   )
   const latestWidthRef = React.useRef(resolvedWidth)
+  const projectRefreshGenerations = React.useRef(new Map<string, number>())
+  const [failedProjectIds, setFailedProjectIds] = React.useState<Set<string>>(() => new Set())
   const refreshGenerationRef = React.useRef(0)
   const activeRefreshGenerationRef = React.useRef(0)
   const canCreateProjects = typeof onAddLocalProject === 'function'
@@ -320,6 +322,8 @@ export function ActivityRail({
   }, [setFreeSessionMetas])
 
   const refreshProjectSessionMetas = React.useCallback(async (workspaceId: string) => {
+    const generation = (projectRefreshGenerations.current.get(workspaceId) ?? 0) + 1
+    projectRefreshGenerations.current.set(workspaceId, generation)
     setLoadingProjectIds((prev) => {
       const next = new Set(prev)
       next.add(workspaceId)
@@ -327,20 +331,29 @@ export function ActivityRail({
     })
     try {
       const sessions = await window.electronAPI.listSessionsByWorkspace(workspaceId)
+      if (projectRefreshGenerations.current.get(workspaceId) !== generation) return
+      setFailedProjectIds(previous => {
+        const next = new Set(previous)
+        next.delete(workspaceId)
+        return next
+      })
       const metas = sessions
         .map(extractSessionMeta)
         .filter((meta) => !meta.hidden && meta.isArchived !== true && hasSessionHistoryContent(meta))
         .sort((left, right) => (right.lastMessageAt ?? right.createdAt ?? 0) - (left.lastMessageAt ?? left.createdAt ?? 0))
       setProjectSessionMetas((prev) => ({ ...prev, [workspaceId]: metas }))
     } catch (error) {
+      if (projectRefreshGenerations.current.get(workspaceId) !== generation) return
       console.warn('[activity-sidebar] Failed to load project conversations:', workspaceId, error)
-      setProjectSessionMetas((prev) => ({ ...prev, [workspaceId]: [] }))
+      setFailedProjectIds(previous => new Set(previous).add(workspaceId))
     } finally {
-      setLoadingProjectIds((prev) => {
-        const next = new Set(prev)
-        next.delete(workspaceId)
-        return next
-      })
+      if (projectRefreshGenerations.current.get(workspaceId) === generation) {
+        setLoadingProjectIds((prev) => {
+          const next = new Set(prev)
+          next.delete(workspaceId)
+          return next
+        })
+      }
     }
   }, [setProjectSessionMetas])
 
@@ -742,6 +755,8 @@ export function ActivityRail({
                           onToggleExpanded={() => toggleProjectExpanded(workspace.id)}
                           sessions={workspaceSessions.filter(meta => !meta.isPinned)}
                           loadingSessions={loadingProjectIds.has(workspace.id)}
+                          sessionsFailed={failedProjectIds.has(workspace.id)}
+                          onRetrySessions={() => { void refreshProjectSessionMetas(workspace.id) }}
                           activeSessionId={runtimeWorkspaceId === workspace.id && selectedWorkspaceId === workspace.id ? selectedProjectSessionId : null}
                           onSelectSession={onSelectSession && rootAvailable
                             ? (sessionId) => { void onSelectSession(sessionId, workspace.id) }

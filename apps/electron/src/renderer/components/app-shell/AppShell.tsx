@@ -3747,6 +3747,14 @@ function AppShellContent({
     return onDeleteSession(sessionId, skipConfirmation, workspaceId)
   }, [session.selected, setSession, onDeleteSession, activeWorkspaceId])
 
+  const activityRailSessionActions = React.useMemo(() => ({
+    onRename: onRenameSession,
+    onPin: onPinSession,
+    onUnpin: onUnpinSession,
+    onArchive: onArchiveSession,
+    onDelete: async (sessionId: string, workspaceId: string) => { await handleDeleteSession(sessionId, undefined, workspaceId) },
+  }), [onRenameSession, onPinSession, onUnpinSession, onArchiveSession, handleDeleteSession])
+
   const mentionFiles = React.useMemo<MentionFileReference[]>(() => {
     return novelWorkspaceFiles.map(file => ({
       path: file.path,
@@ -4778,13 +4786,7 @@ function AppShellContent({
                 onSignOut={contextValue.clientAuthState?.user ? contextValue.onClientSignOut : undefined}
                 profile={profile}
                 onOpenWhatsNew={handleWhatsNewClick}
-                sessionActions={{
-                  onRename: onRenameSession,
-                  onPin: onPinSession,
-                  onUnpin: onUnpinSession,
-                  onArchive: onArchiveSession,
-                  onDelete: async (sessionId, workspaceId) => { await handleDeleteSession(sessionId, undefined, workspaceId) },
-                }}
+                sessionActions={activityRailSessionActions}
                 whatsNew={{
                   unseen: hasUnseenReleaseNotes,
                 }}
@@ -5677,7 +5679,7 @@ function AppShellContent({
               disabled={workspaceCreatingEntry}
               autoFocus
               onKeyDown={(event) => {
-                if (event.key === 'Enter') {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
                   event.preventDefault()
                   void handleSubmitWorkspaceCreateEntry()
                 }

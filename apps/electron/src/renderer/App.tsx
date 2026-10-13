@@ -1,10 +1,11 @@
 import { DocumentLeaveDialog } from './components/files/DocumentLeaveDialog'
 import { requestDocumentLeave } from './components/files/text-document-state'
 // input: Electron preload API, persisted app/workspace/session state, and renderer navigation events
-// output: Top-level renderer state orchestration, account settings data, and AppShell context wiring
+// output: Top-level renderer state orchestration, retryable startup/project entry, account settings data, and AppShell context wiring
 // pos: Root renderer application component
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { Button } from '@/components/ui/button'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/hooks/useTheme'
 import type { ThemeOverrides } from '@config/theme'
@@ -354,11 +355,16 @@ function AppContent() {
   // Session hydration is background state. It must never gate project rendering.
   const [sessionsLoaded, setSessionsLoaded] = useState(false)
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null)
+  const [startupError, setStartupError] = useState<string | null>(null)
+  const [startupAttempt, setStartupAttempt] = useState(0)
+  const [openingWorkspace, setOpeningWorkspace] = useState<{ id: string; route?: Route } | null>(null)
+  const [workspaceOpenError, setWorkspaceOpenError] = useState<string | null>(null)
   const [splashExiting, setSplashExiting] = useState(false)
   const [splashHidden, setSplashHidden] = useState(false)
   const lastLoadedSessionsWorkspaceRef = useRef<string | null>(null)
   const workspaceSwitchInFlightRef = useRef<string | null>(null)
   const workspaceSelectionGenerationRef = useRef(0)
+  const workspaceOpenTargetRef = useRef<{ id: string; route?: Route } | null>(null)
 
   // Notifications enabled state (from app settings)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
@@ -614,6 +620,7 @@ function AppContent() {
       if (selectionGeneration !== workspaceSelectionGenerationRef.current) return []
       console.error('[App] Failed to load sessions:', err)
       const transportState = await window.electronAPI.getTransportConnectionState().catch(() => null)
+      if (selectionGeneration !== workspaceSelectionGenerationRef.current) return []
 
       if (shouldTreatSessionLoadFailureAsTransportFallback(transportState)) {
         console.error('[App] Treating session load failure as transport fallback:', transportState)
@@ -724,7 +731,9 @@ function AppContent() {
   const loadClientAuthState = useCallback(async (): Promise<ClientAuthState | null> => {
     if (!window.electronAPI?.getClientAuthState) return null
     try {
-      const nextState = await window.electronAPI.getClientAuthState()
+      const nextState = await withTimeout(
+        window.electronAPI.getClientAuthState(), STARTUP_RPC_TIMEOUT_MS, 'getClientAuthState',
+      )
       setClientAuthState(nextState)
       return nextState
     } catch (error) {
@@ -741,12 +750,15 @@ function AppContent() {
     const initialize = async () => {
       performance.mark('storyflow.startup-rpc:start')
       try {
-        // Get this window's workspace ID (passed via URL query param from main process)
-        const wsId = await withTimeout(
-          window.electronAPI.getWindowWorkspace(),
-          STARTUP_RPC_TIMEOUT_MS,
-          'getWindowWorkspace'
-        )
+        setStartupError(null)
+        // Authentication does not determine the initial workspace surface.
+        void loadClientAuthState().then(() => performance.mark('storyflow.startup-rpc:client-auth'))
+        const [wsId, ws] = await Promise.all([
+          withTimeout(window.electronAPI.getWindowWorkspace(), STARTUP_RPC_TIMEOUT_MS, 'getWindowWorkspace'),
+          withTimeout(window.electronAPI.getWorkspaces(), STARTUP_RPC_TIMEOUT_MS, 'getWorkspaces'),
+        ])
+        setWorkspaces(ws)
+        performance.mark('storyflow.startup-rpc:workspaces')
         performance.mark('storyflow.startup-rpc:workspace')
         let initialRuntimeWorkspace: Workspace | null = null
         if (wsId) {
@@ -762,39 +774,23 @@ function AppContent() {
           setActiveProjectId(initialRuntimeWorkspace.id)
         }
 
-        await loadClientAuthState()
-        performance.mark('storyflow.startup-rpc:client-auth')
-
-        const ws = await withTimeout(
-          window.electronAPI.getWorkspaces(),
-          STARTUP_RPC_TIMEOUT_MS,
-          'getWorkspaces'
-        )
-        performance.mark('storyflow.startup-rpc:workspaces')
-        setWorkspaces(ws)
-
         if (!initialRuntimeWorkspace) {
           const startupWorkspaceId = selectStartupWorkspaceId(ws)
           if (startupWorkspaceId) {
-            try {
-              initialRuntimeWorkspace = await withTimeout(
-                window.electronAPI.resolveRuntimeWorkspace(startupWorkspaceId),
+            initialRuntimeWorkspace = await withTimeout(
+              window.electronAPI.resolveRuntimeWorkspace(startupWorkspaceId),
+              STARTUP_RPC_TIMEOUT_MS,
+              'resolveStartupWorkspace'
+            )
+            if (initialRuntimeWorkspace) {
+              await withTimeout(
+                window.electronAPI.switchWorkspace(startupWorkspaceId),
                 STARTUP_RPC_TIMEOUT_MS,
-                'resolveStartupWorkspace'
+                'switchStartupWorkspace'
               )
-              if (initialRuntimeWorkspace) {
-                await withTimeout(
-                  window.electronAPI.switchWorkspace(startupWorkspaceId),
-                  STARTUP_RPC_TIMEOUT_MS,
-                  'switchStartupWorkspace'
-                )
-                setRuntimeWorkspace(initialRuntimeWorkspace)
-                setWindowWorkspaceId(initialRuntimeWorkspace.id)
-                setActiveProjectId(initialRuntimeWorkspace.id)
-              }
-            } catch (error) {
-              console.warn('[App] Failed to restore startup project:', error)
-              initialRuntimeWorkspace = null
+              setRuntimeWorkspace(initialRuntimeWorkspace)
+              setWindowWorkspaceId(initialRuntimeWorkspace.id)
+              setActiveProjectId(initialRuntimeWorkspace.id)
             }
           }
         }
@@ -806,12 +802,13 @@ function AppContent() {
         performance.mark('storyflow.startup-rpc:state-selected')
       } catch (error) {
         console.error('Failed to initialize app state:', error)
+        setStartupError(formatSessionLoadFailure(error))
         setAppState('project-hub')
       }
     }
 
     initialize()
-  }, [loadClientAuthState, setRuntimeWorkspace])
+  }, [loadClientAuthState, setRuntimeWorkspace, startupAttempt])
 
   // Session selection state
   const [sessionSelection, setSession] = useSession()
@@ -1915,49 +1912,56 @@ function AppContent() {
     workspaceId: string,
     landingRoute?: Route,
   ) => {
-    if (!await requestDocumentLeave()) return
-    const nextWorkspace = await withTimeout(
-      window.electronAPI.resolveRuntimeWorkspace(workspaceId),
-      WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
-      'resolveRuntimeWorkspace'
-    )
-    if (!nextWorkspace) throw new Error(`Workspace not found: ${workspaceId}`)
-
-    if (workspaceId === windowWorkspaceId) {
-      setRuntimeWorkspace(nextWorkspace)
-      if (workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) setActiveProjectId(workspaceId)
-      if (landingRoute) setPendingReadyRoute(landingRoute)
-      setAppState('ready')
-      return
-    }
-
     const selectionGeneration = ++workspaceSelectionGenerationRef.current
-    workspaceSwitchInFlightRef.current = workspaceId
-
-    setRuntimeWorkspace(nextWorkspace)
-    setWindowWorkspaceId(workspaceId)
-    if (workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) setActiveProjectId(workspaceId)
-
-    setSessionsLoaded(false)
-    setSessionLoadError(null)
-    setSession({ selected: null })
-    setPendingPermissions(new Map())
-    setPendingCredentials(new Map())
-    setPendingUserQuestions(new Map())
-    setSessionOptions(new Map())
-    sessionDraftsRef.current.clear()
-    store.set(sourcesAtom, [])
-    store.set(skillsAtom, [])
-    store.set(sessionMetadataReadyAtom, false)
-    store.set(sessionMetaMapAtom, new Map())
-    store.set(sessionIdsAtom, [])
-
+    workspaceOpenTargetRef.current = { id: workspaceId, route: landingRoute }
+    setOpeningWorkspace(workspaceOpenTargetRef.current)
+    setWorkspaceOpenError(null)
+    setStartupError(null)
     try {
+      const canLeave = await requestDocumentLeave()
+      if (selectionGeneration !== workspaceSelectionGenerationRef.current || !canLeave) return
+      const nextWorkspace = await withTimeout(
+        window.electronAPI.resolveRuntimeWorkspace(workspaceId),
+        WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
+        'resolveRuntimeWorkspace'
+      )
+      if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
+      if (!nextWorkspace) throw new Error(`Workspace not found: ${workspaceId}`)
+
+      if (workspaceId === windowWorkspaceId && lastLoadedSessionsWorkspaceRef.current === workspaceId) {
+        setRuntimeWorkspace(nextWorkspace)
+        if (workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) setActiveProjectId(workspaceId)
+        if (landingRoute) setPendingReadyRoute(landingRoute)
+        setAppState('ready')
+        return
+      }
+
+      workspaceSwitchInFlightRef.current = workspaceId
+
+      setRuntimeWorkspace(nextWorkspace)
+      setWindowWorkspaceId(workspaceId)
+      if (workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) setActiveProjectId(workspaceId)
+
+      setSessionsLoaded(false)
+      setSessionLoadError(null)
+      setSession({ selected: null })
+      setPendingPermissions(new Map())
+      setPendingCredentials(new Map())
+      setPendingUserQuestions(new Map())
+      setSessionOptions(new Map())
+      sessionDraftsRef.current.clear()
+      store.set(sourcesAtom, [])
+      store.set(skillsAtom, [])
+      store.set(sessionMetadataReadyAtom, false)
+      store.set(sessionMetaMapAtom, new Map())
+      store.set(sessionIdsAtom, [])
+
       await withTimeout(
         window.electronAPI.switchWorkspace(workspaceId),
         WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
         'switchWorkspace'
       )
+      if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
       await loadSessionsFromServer(workspaceId, selectionGeneration)
       if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
       if (pendingCreatedWorkspaceRef.current?.id === workspaceId) {
@@ -1968,12 +1972,13 @@ function AppContent() {
     } catch (error) {
       if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
       console.error('[App] Failed to activate runtime workspace:', error)
+      setWorkspaceOpenError(formatSessionLoadFailure(error))
       setSessionLoadError(formatSessionLoadFailure(error))
       store.set(sessionMetadataReadyAtom, true)
       setSessionsLoaded(true)
-      lastLoadedSessionsWorkspaceRef.current = workspaceId
     } finally {
-      if (workspaceSwitchInFlightRef.current === workspaceId) {
+      if (selectionGeneration === workspaceSelectionGenerationRef.current) {
+        setOpeningWorkspace(null)
         workspaceSwitchInFlightRef.current = null
       }
     }
@@ -2556,6 +2561,22 @@ function AppContent() {
             onSignOut={clientAuthState?.user ? handleClientSignOut : undefined}
           >
             <div className="flex h-full min-h-0 flex-col items-center justify-center bg-[radial-gradient(ellipse_at_50%_30%,color-mix(in_oklab,var(--foreground)_4%,transparent),transparent_55%)] px-6 py-12">
+              {openingWorkspace ? <p role="status" className="mb-4 text-sm text-muted-foreground">{t('workspace.opening')}</p> : null}
+              {startupError || workspaceOpenError ? (
+                <div role="alert" className="mb-4 max-w-lg rounded-lg border border-destructive/30 p-4 text-sm">
+                  <p>{t(startupError ? 'workspace.startupFailed' : 'workspace.openFailed')}</p>
+                  <p className="mt-1 text-muted-foreground">{startupError ?? workspaceOpenError}</p>
+                  <Button variant="outline" className="mt-3" disabled={!!openingWorkspace} onClick={() => {
+                    if (startupError) {
+                      setAppState('loading')
+                      setStartupAttempt(attempt => attempt + 1)
+                    } else if (workspaceOpenTargetRef.current) {
+                      const target = workspaceOpenTargetRef.current
+                      void activateRuntimeWorkspace(target.id, target.route)
+                    }
+                  }}>{t('common.retry')}</Button>
+                </div>
+              ) : null}
               <p className="text-[14px] font-medium text-foreground/80">
                 {hasActiveProjects ? '从左侧展开项目并选择对话' : '还没有项目'}
               </p>

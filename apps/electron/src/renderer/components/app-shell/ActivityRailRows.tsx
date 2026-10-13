@@ -1,5 +1,5 @@
 // input: Ordered session/workspace metadata, project disclosure state, runtime indicators, and row callbacks
-// output: Session/project rows (with unavailable-reason hover and shared dropdown/right-click actions) and conversation-creation feedback with retry
+// output: Session/project rows, retryable list errors, shared context actions, and conversation creation/deletion feedback
 // pos: Visual primitives for ActivityRail; owns row grouping, interaction affordances, and context actions
 
 import * as React from 'react'
@@ -13,6 +13,7 @@ import {
   FolderOpen,
   Loader2,
   MoreHorizontal,
+  MinusCircle,
   Pencil,
   Pin,
   PinOff,
@@ -62,6 +63,14 @@ export async function createConversationWithFeedback(create: () => Promise<void>
   }
 }
 
+export async function deleteConversationWithFeedback(remove: () => void | Promise<void>, t: TFunction): Promise<void> {
+  try {
+    await remove()
+  } catch {
+    toast.error(t('sessions.delete.failed'))
+  }
+}
+
 export interface ActivityRailSessionActions {
   onRename: (sessionId: string, name: string, workspaceId: string) => void | Promise<void>
   onArchive: (sessionId: string, workspaceId: string) => void | Promise<void>
@@ -97,6 +106,7 @@ export function RecentConversationRow({
   nested?: boolean
   dragHandlers?: ActivityRailSessionDragHandlers
 }) {
+  const { t } = useTranslation()
   const hasPendingPrompt = useAtomValue(hasPendingPromptAtomFamily(meta.id))
   const runtimeStatus = deriveSessionRuntimeStatus({
     isProcessing: meta.isProcessing,
@@ -237,7 +247,7 @@ export function RecentConversationRow({
         <StyledContextMenuSeparator />
         <StyledContextMenuItem
           variant="destructive"
-          onSelect={() => sessionActions.onDelete(meta.id, meta.workspaceId)}
+          onSelect={() => { void deleteConversationWithFeedback(() => sessionActions.onDelete(meta.id, meta.workspaceId), t) }}
         >
           <Trash2 className="h-3.5 w-3.5" />
           删除
@@ -383,6 +393,8 @@ export function ProjectFolderRow({
   onToggleExpanded,
   sessions,
   loadingSessions = false,
+  sessionsFailed = false,
+  onRetrySessions,
   activeSessionId = null,
   onSelectSession,
   onCreateConversation,
@@ -408,6 +420,8 @@ export function ProjectFolderRow({
   onToggleExpanded?: () => void
   sessions?: SessionMeta[]
   loadingSessions?: boolean
+  sessionsFailed?: boolean
+  onRetrySessions?: () => void
   activeSessionId?: string | null
   onSelectSession?: (sessionId: string) => void
   onCreateConversation?: () => void | Promise<void>
@@ -496,9 +510,9 @@ export function ProjectFolderRow({
               ))}
               {onRemove ? <StyledDropdownMenuSeparator /> : null}
               {onRemove ? (
-                <StyledDropdownMenuItem variant="destructive" onClick={onRemove}>
-                  <Trash2 className="size-3.5" />
-                  <span>移除</span>
+                <StyledDropdownMenuItem onClick={onRemove}>
+                  <MinusCircle className="size-3.5" />
+                  <span>{t('workspace.removeFromList')}</span>
                 </StyledDropdownMenuItem>
               ) : null}
             </StyledDropdownMenuContent>
@@ -532,9 +546,9 @@ export function ProjectFolderRow({
             ))}
             {onRemove ? <StyledContextMenuSeparator /> : null}
             {onRemove ? (
-              <StyledContextMenuItem variant="destructive" onSelect={onRemove}>
-                <Trash2 className="h-3.5 w-3.5" />
-                移除
+              <StyledContextMenuItem onSelect={onRemove}>
+                <MinusCircle className="h-3.5 w-3.5" />
+                {t('workspace.removeFromList')}
               </StyledContextMenuItem>
             ) : null}
           </StyledContextMenuContent>
@@ -542,7 +556,12 @@ export function ProjectFolderRow({
       ) : rowContent}
       {expandable && expanded ? (
         <div className="mt-0.5 space-y-0.5" data-testid="activity-project-conversations">
-          {loadingSessions && !sessions ? (
+          {sessionsFailed ? (
+            <div role="alert" className="px-3 py-2 text-xs text-muted-foreground">
+              <p>{t('sessions.load.failed')}</p>
+              <button type="button" disabled={loadingSessions} onClick={onRetrySessions} className="mt-1 rounded underline focus-visible:ring-1 focus-visible:ring-ring">{t('common.retry')}</button>
+            </div>
+          ) : loadingSessions && !sessions ? (
             <div className="sr-only" role="status">正在加载对话…</div>
           ) : (
             <ActivityRailSessionList
