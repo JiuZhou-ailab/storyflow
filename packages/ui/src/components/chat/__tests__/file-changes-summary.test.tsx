@@ -17,7 +17,7 @@ await testI18n.init({
     'zh-Hans': {
       translation: {
         'chat.fileChanges.editedFiles': '已编辑 {{count}} 个文件',
-        'chat.fileChanges.review': '审核',
+        'chat.fileChanges.review': '查看',
       },
     },
   },
@@ -50,7 +50,7 @@ describe('FileChangesSummary', () => {
       </I18nextProvider>
     )
     expect(html).toContain('已编辑 2 个文件')
-    expect(html).toContain('审核')
+    expect(html).toContain('查看')
     expect(html).toContain('/project/one.ts')
   })
 })

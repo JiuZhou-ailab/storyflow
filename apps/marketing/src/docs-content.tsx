@@ -190,7 +190,7 @@ export const docsChapters = [
   },
   {
     path: "/docs/review-changes/",
-    title: "4. 修改与审阅",
+    title: "4. 修改与对照",
     group: "开始使用",
     anchors: ["review-changes", "review-changes-title"],
     Content: () => (<>
@@ -201,20 +201,15 @@ export const docsChapters = [
             <ol className="docs-steps">
               <li>在输入框输入 <code>@</code>，搜索 <code>第01章.md</code>，点击匹配的文件，把这份正文带入当前任务。</li>
               <li>从正文复制一句你想修改的原文，替换下面的“粘贴原句”，再把整条指令粘贴到输入框发送。</li>
-              <li>写入完成后，点击这轮回复下方的文件改动摘要，打开对应文件的审阅。</li>
+              <li>写入完成后，点击这轮回复下方的文件改动摘要，打开对应文件的改动对照。</li>
             </ol>
             <PromptExample title="只修改一句" text={practicePrompts.revision} />
-            <p>审阅里会显示新增和删除的文字。先检查是否只动了指定句子，再决定保留还是撤回。</p>
-            <ul className="docs-inline-list">
-              <li><strong>Accept（接受）：</strong>保留这次改动。</li>
-              <li><strong>Reject（拒绝）：</strong>尝试撤回这次改动。遇到冲突提示时，先打开文件核对，不要反复点击。</li>
-              <li><strong>方向还不对：</strong>在对话里指出问题，例如“这句太夸张，改得克制一些”。</li>
-            </ul>
-            <p className="docs-note">助手的改动已经写入文件，审阅用来决定是否保留。如果你只想先看建议，在发送前选择“只读探索”，确认后再切回“询问运行”。</p>
+            <p>对照里会显示新增和删除的文字。检查是否只动了指定句子；方向还不对，就在对话里指出问题，例如“这句太夸张，改得克制一些”。</p>
+            <p className="docs-note">助手的改动已经写入文件，对照用来确认改了什么。需要可回溯的历史时，用你自己的 Git 或同步盘管理项目文件夹。如果你只想先看建议，在发送前选择“只读探索”，确认后再切回“询问运行”。</p>
             <p className="docs-checkpoint"><strong>完成标志</strong>回到 <code>第01章.md</code>，能找到自己决定保留的句子，并确认其他段落没有被误改。</p>
           </div>
           <div className="docs-tour">
-            <ProductTour steps={["review"]} label="文件改动审阅示意" detail />
+            <ProductTour steps={["review"]} label="文件改动对照示意" detail />
           </div>
         </section>
     </>),
@@ -231,15 +226,14 @@ export const docsChapters = [
             <h2 id="save-return-title">确认已保存，再打开一次</h2>
             <ol className="docs-steps">
               <li>打开正文，看文档工具栏左侧的状态。项目里的正文会自动保存，显示“已保存”即表示修改已经写入文件。</li>
-              <li>点击工具栏里的“恢复副本”，列表按时间列出每次保存前的内容。连续输入只记一份，每个文件最多保留 50 份。</li>
               <li>关闭文档标签，再从项目目录打开 <code>第01章.md</code>，确认刚才的修改还在。</li>
               <li>下次启动 Storyflow，点左侧“黑洞直播”项目，再打开文件继续写。需要延续讨论时，展开项目，选择原来的对话。</li>
             </ol>
-            <p className="docs-note">恢复副本只供查看，不会改动文件。需要找回旧内容时，从“保存前版本”里复制需要的段落，粘贴回正文。想保留一份独立的稿子，用“另存为”。</p>
-            <p className="docs-checkpoint"><strong>完成标志</strong>重新打开的文件仍有修改后的内容，“恢复副本”里也能看到修改前的内容。你已经完成了一次写作、修改和留存。</p>
+            <p className="docs-note">如果文件在你编辑时被助手或其他程序改过，文档栏会提示冲突，并让你选择“保留我的版本”或“使用磁盘版本”，不会静默覆盖任何一方。助手下一轮也会知道你改过哪些文件，先重读再修改。</p>
+            <p className="docs-checkpoint"><strong>完成标志</strong>重新打开的文件仍有修改后的内容。你已经完成了一次写作、修改和保存。</p>
           </div>
           <div className="docs-tour">
-            <ProductTour steps={["history"]} label="保存版本的位置示意" detail />
+            <ProductTour steps={["history"]} label="自动保存状态示意" detail />
           </div>
         </section>
     </>),
@@ -280,8 +274,8 @@ export const docsChapters = [
             <p>确认当前在“黑洞直播”项目中，并且运行模式是“询问运行”。如果还在“只读探索”，先切换模式；如果操作在等待确认，先核对并处理确认请求。</p>
             <PromptExample title="把已有结果保存到文件" text={practicePrompts.save} />
             <p>随后点击回复中的文件链接。如果文件在其他位置，要求助手说明实际保存路径，再与所选项目文件夹核对。</p>
-            <h3 id="help-review">找不到改动摘要或恢复副本</h3>
-            <p>先确认这轮任务确实修改了一个文件。如果只是回复建议，按第 4 步明确要求写入。“恢复副本”在打开文档后的工具栏里，不在聊天发送按钮旁边。界面较窄时，先把应用窗口放大。</p>
+            <h3 id="help-review">找不到改动摘要</h3>
+            <p>先确认这轮任务确实修改了一个文件。如果只是回复建议，按第 4 步明确要求写入。改动摘要在这轮回复下方。界面较窄时，先把应用窗口放大。</p>
             <h3 id="help-project">重开后找不到项目或正文</h3>
             <p>先在左侧展开“项目”，再选择原来的项目。如果移动了电脑上的作品文件夹，在项目菜单中重新关联实际位置。不要为了找回文件重复创建同名空文件夹。</p>
             <h3 id="tutorial-contact">还是卡住了</h3>

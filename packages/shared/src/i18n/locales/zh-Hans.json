@@ -159,7 +159,7 @@
   "chat.failedToStopSharing": "无法停止共享",
   "chat.fileChanges.collapse": "收起",
   "chat.fileChanges.editedFiles": "已编辑 {{count}} 个文件",
-  "chat.fileChanges.review": "审核",
+  "chat.fileChanges.review": "查看",
   "chat.fileChanges.showMore": "再显示 {{count}} 个文件",
   "chat.filesCount_few": "{{count}} 个文件",
   "chat.filesCount_many": "{{count}} 个文件",

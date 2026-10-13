@@ -144,7 +144,7 @@ const edits = [
   {
     id: "a2",
     type: "assistant",
-    content: "已把解释改成可观察的动作。比较修改前后的句子，再决定是否保留。",
+    content: "已把解释改成可观察的动作。比较修改前后的句子，方向不对可以继续调整。",
     turnId: "turn-hook",
     timestamp: Date.now() - 1000,
   },
@@ -155,7 +155,7 @@ writeFileSync(
     JSON.stringify({
       ...h,
       id: reviewId,
-      name: "第一章：审阅悬念改写",
+      name: "第一章：悬念改写",
       workingDirectory: ws.rootPath,
       messageCount: edits.length,
       lastFinalMessageId: "a2",
@@ -228,17 +228,10 @@ try {
     app,
     `[...document.querySelectorAll('a')].find(a=>a.textContent==='第01章.md').click()`,
   );
-  const recoveryButton = `[...document.querySelectorAll('button')].find(b=>b.textContent==='恢复副本')`;
-  await waitFor(app, recoveryButton);
-  // Two saves through the document RPC leave one recovery copy and the sample text unchanged.
-  await evalOn(
-    app,
-    `(async()=>{const target={path:${JSON.stringify(join(directory, "第01章.md"))}};const original=await window.electronAPI.readTextDocument(target);const saved=await window.electronAPI.saveTextDocument({...target,version:original.version,content:original.content+'\\n'});await window.electronAPI.saveTextDocument({...target,version:saved.version,content:original.content})})()`,
+  await shot(
+    "history",
+    `[...document.querySelectorAll('[role=status]')].some(e=>e.textContent==='已保存') && document.querySelector('.ProseMirror')?.textContent.includes('第一章')`,
   );
-  await evalOn(app, `${recoveryButton}.click()`);
-  await waitFor(app, `document.querySelector('button.block')`);
-  await evalOn(app, `document.querySelector('button.block').click()`);
-  await shot("history", `document.body.textContent.includes('保存前版本')`);
   await go("skills/skill/chapter-review");
   await shot("skills", `document.body.textContent.includes('检查顺序')`);
   await go("sources/local/source/story-notes");
@@ -307,7 +300,7 @@ try {
   );
   await shot(
     "review",
-    `document.body.textContent.includes('Accept') && document.body.textContent.includes('Reject')`,
+    `document.querySelector('diffs-container')`,
   );
   writeFileSync(
     join(output, "provenance.json"),

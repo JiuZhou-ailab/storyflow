@@ -14,7 +14,7 @@ import { InteractiveDemo } from "./InteractiveDemo";
 const assets = {
   dataResults: captureUrl("sources"),
   skills: captureUrl("skills"),
-  versionHistory: captureUrl("history"),
+  autosave: captureUrl("history"),
 };
 
 const docsPath = "/docs/";
@@ -39,7 +39,7 @@ const faqs = [
   {
     question: "Agent 会直接改我的正文吗？",
     answer:
-      "会，但只有在允许写入的执行模式中才会操作。修改会写入项目文件，同时保留差异审阅和版本恢复；你可以接受、拒绝或继续调整。",
+      "会，但只有在允许写入的执行模式中才会操作。修改会直接写入项目文件，并在回复下方列出具体增删；方向不对可以继续调整。需要历史版本时，用你自己的 Git 或同步盘。",
   },
   {
     question: "大纲、人物、设定能一起管理吗？",
@@ -143,7 +143,7 @@ function Header({
               理解产品
             </a>
             <a href="/#review" data-storyflow-page-link="true">
-              改动审阅
+              改动对照
             </a>
             <a href="/#skills" data-storyflow-page-link="true">
               Skills
@@ -382,14 +382,14 @@ function LandingPage() {
       <FeatureBand
         id="review"
         title="先探索，再执行"
-        body="先讨论方向，再让 Agent 修改文件。查看具体增删，决定接受还是拒绝。"
+        body="先讨论方向，再让 Agent 修改文件。查看具体增删，再在对话里继续调整。"
         href="/docs/#review-changes"
-        linkLabel="了解改动审阅 →"
+        linkLabel="了解改动对照 →"
         reverse
         media={
           <ProductTour
             steps={["review", "history"]}
-            label="改动审阅实拍"
+            label="改动对照实拍"
             annotated={false}
           />
         }
@@ -464,18 +464,18 @@ function LandingPage() {
               />
             </article>
             <article className="info-card">
-              <h3>改错了也能找回</h3>
-              <p>正文自动保存，每次保存前的内容都留一份本地恢复副本，随时回看、复制回正文。</p>
+              <h3>你的修改不会被覆盖</h3>
+              <p>正文自动保存。你和助手同时改了一份文件时，由你选择保留哪一版；助手下一轮会先重读你改过的文件。</p>
               <a
                 className="text-arrow"
-                href="/docs/#review-changes"
+                href="/docs/#save-return"
                 data-storyflow-page-link="true"
               >
-                了解恢复副本 ↗
+                了解自动保存 ↗
               </a>
               <ProductCapture
-                src={assets.versionHistory}
-                alt="文档栏中的本地恢复副本列表"
+                src={assets.autosave}
+                alt="文档栏中的自动保存状态"
               />
             </article>
           </div>
@@ -662,7 +662,7 @@ export function App({ releaseNotes = [] }: { releaseNotes?: ReleaseNote[] }) {
               理解产品
             </a>
             <a href="/#review" data-storyflow-page-link="true">
-              改动审阅
+              改动对照
             </a>
             <a href="/docs/install/#install" data-storyflow-page-link="true">
               下载桌面版

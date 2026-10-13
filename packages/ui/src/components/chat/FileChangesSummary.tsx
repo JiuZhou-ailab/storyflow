@@ -98,7 +98,7 @@ export function FileChangesSummary({
           onClick={onOpen}
           className="h-8 rounded-lg border border-border/60 px-3 text-xs font-medium hover:bg-muted"
         >
-          {t('chat.fileChanges.review', '审核')}
+          {t('chat.fileChanges.review', '查看')}
         </button>
       </div>
       <div className="border-t border-border/50 px-3 py-2">
