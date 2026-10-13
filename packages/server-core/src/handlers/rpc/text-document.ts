@@ -1,5 +1,5 @@
 // input: Authenticated runtime context, file identity and versioned text operations
-// output: Lossless text reads, conflict-checked saves and persistent recovery copies
+// output: Lossless text reads, conflict-checked saves and bounded persistent recovery copies
 // pos: Interactive editor filesystem boundary; legacy file writes remain unchanged
 import { access, lstat, mkdir, open, readFile, readdir, realpath, rename, unlink, link } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -103,6 +103,39 @@ async function durableFile(path: string, bytes: Buffer, mode = 0o600) {
   try { await file.writeFile(bytes); await file.sync() } finally { await file.close() }
 }
 
+/** Newest first; ids are the record file names. */
+async function recoveryRecords(folder: string): Promise<Array<{ id: string; createdAt: number }>> {
+  let names: string[]
+  try { names = await readdir(folder) } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error }
+  return (await Promise.all(names.filter(name => /^[\da-f-]{36}\.json$/.test(name)).map(async name => ({ id: name.slice(0, -5), createdAt: (await lstat(join(folder, name))).mtimeMs })))).sort((a, b) => b.createdAt - a.createdAt)
+}
+
+// Autosave writes every idle pause, so an unbroken chain of saves shares one copy
+// (earliest before, latest submitted) and each file keeps a bounded history.
+const RECOVERY_MERGE_MS = 30 * 60_000
+const RECOVERY_MAX_RECORDS = 50
+
+async function writeRecovery(folder: string, before: string, submitted: string, mergeable: boolean) {
+  const [latest] = await recoveryRecords(folder)
+  let previous: { file: string; createdAt: number; before: string } | undefined
+  if (mergeable && latest) {
+    const file = join(folder, `${latest.id}.json`)
+    try {
+      const data = JSON.parse(await readFile(file, 'utf8'))
+      // Merge only when nothing else wrote the file since that copy; otherwise its content is history.
+      if (data.submitted === before && typeof data.before === 'string' && Date.now() - data.createdAt < RECOVERY_MERGE_MS) {
+        previous = { file, createdAt: data.createdAt, before: data.before }
+      }
+    } catch { /* unreadable copy stays as is; start a new one */ }
+  }
+  await durableFile(join(folder, `${randomUUID()}.json`), Buffer.from(JSON.stringify({ createdAt: previous?.createdAt ?? Date.now(), before: previous?.before ?? before, submitted })))
+  // The merged copy is durable before the one it replaces is removed.
+  const kept = (await recoveryRecords(folder)).map(record => join(folder, `${record.id}.json`)).filter(file => file !== previous?.file)
+  const stale = kept.slice(RECOVERY_MAX_RECORDS)
+  if (previous) stale.push(previous.file)
+  await Promise.all(stale.map(file => unlink(file).catch(error => { if (error.code !== 'ENOENT') throw error })))
+}
+
 export function registerTextDocumentHandlers(server: RpcServer, deps: HandlerDeps) {
   server.handle(RPC_CHANNELS.file.READ_DOCUMENT, (ctx, target: TextDocumentTarget) => scope(ctx, deps, target, async (path, _, readOnly) => {
     const bytes = await bytesAt(path)
@@ -131,8 +164,7 @@ export function registerTextDocumentHandlers(server: RpcServer, deps: HandlerDep
       const records = join(recoveryRoot, hash(path))
       await rejectSymlinks(dirname(recoveryRoot), records)
       await mkdir(records, { recursive: true, mode: 0o700 })
-      const id = randomUUID()
-      await durableFile(join(records, `${id}.json`), Buffer.from(JSON.stringify({ createdAt: Date.now(), before: before.toString('utf8'), submitted: submitted.toString('utf8') })))
+      await writeRecovery(records, before.toString('utf8'), submitted.toString('utf8'), !request.destination)
       const temp = join(dirname(destination), `.storyflow-${randomUUID()}.tmp`)
       try {
         await durableFile(temp, submitted, missing ? 0o600 : (await lstat(path)).mode & 0o777)
@@ -155,9 +187,7 @@ export function registerTextDocumentHandlers(server: RpcServer, deps: HandlerDep
     if (readOnly) return []
     const folder = join(root, hash(path))
     await rejectSymlinks(dirname(root), folder)
-    let names: string[]
-    try { names = await readdir(folder) } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error }
-    return (await Promise.all(names.filter(name => /^[\da-f-]{36}\.json$/.test(name)).map(async name => ({ id: name.slice(0, -5), createdAt: (await lstat(join(folder, name))).mtimeMs })))).sort((a, b) => b.createdAt - a.createdAt)
+    return recoveryRecords(folder)
   }))
   server.handle(RPC_CHANNELS.file.READ_DOCUMENT_RECOVERY, (ctx, target: TextDocumentTarget & { id: string }) => scope(ctx, deps, target, async (path, root, readOnly) => {
     if (readOnly || !/^[\da-f-]{36}$/.test(target.id)) throw new Error('Invalid recovery identity')

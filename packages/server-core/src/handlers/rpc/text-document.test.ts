@@ -100,3 +100,50 @@ test('conversation editing cannot write originals, sibling sessions or symlinks,
     expect((await save(ctx, { ...target, version: initial.version, content: 'retained', format: initial.format, destination: join(session, 'work', 'after-delete.txt') })).status).toBe('saved')
   } finally { await rm(root, { recursive: true, force: true }) }
 })
+
+test('autosave bursts share one recovery copy and each file keeps a bounded history', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'text-recovery-'))
+  try {
+    const { readdir, utimes } = await import('node:fs/promises')
+    const handlers = new Map<string, HandlerFn>()
+    const server = { handle: (key: string, fn: HandlerFn) => handlers.set(key, fn) } as unknown as RpcServer
+    const deps = {
+      resolveRuntimeWorkspaceById: () => ({ id: 'project', rootPath: root }),
+      sessionManager: { withProjectLifecycle: async (_: string, fn: () => Promise<unknown>) => fn() },
+      platform: { logger: { info() {}, debug() {}, error() {}, warn() {} } },
+    } as unknown as HandlerDeps
+    registerFilesHandlers(server, deps)
+    const ctx = { workspaceId: 'project', clientId: 'test', webContentsId: null } as RequestContext
+    const path = join(root, 'chapter.md')
+    await writeFile(path, 'v0')
+    const read = handlers.get('file:readDocument')!
+    const save = handlers.get('file:saveDocument')!
+    const list = () => handlers.get('file:listDocumentRecovery')!(ctx, { path })
+    let version = (await read(ctx, { path })).version
+    for (const content of ['v1', 'v2', 'v3']) version = (await save(ctx, { path, version, content })).version
+    const records = await list()
+    expect(records.length).toBe(1)
+    const merged = await handlers.get('file:readDocumentRecovery')!(ctx, { path, id: records[0].id })
+    expect(merged).toMatchObject({ before: 'v0', submitted: 'v3' })
+
+    // An outside write breaks the chain: its content must survive as the next copy's "before".
+    await writeFile(path, 'outside')
+    version = (await read(ctx, { path })).version
+    version = (await save(ctx, { path, version, content: 'v4' })).version
+    expect((await list()).length).toBe(2)
+
+    const recoveryRoot = join(root, '.craft-agent', 'text-recovery')
+    const folder = join(recoveryRoot, (await readdir(recoveryRoot))[0]!)
+    const old = new Date(Date.now() - 86_400_000)
+    for (let i = 0; i < 60; i += 1) {
+      const id = `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+      await writeFile(join(folder, `${id}.json`), JSON.stringify({ createdAt: old.getTime(), before: `old${i}`, submitted: `old${i}` }))
+      await utimes(join(folder, `${id}.json`), old, old)
+    }
+    await save(ctx, { path, version, content: 'v5' })
+    const bounded = await list()
+    expect(bounded.length).toBe(50)
+    const newest = await handlers.get('file:readDocumentRecovery')!(ctx, { path, id: bounded[0].id })
+    expect(newest.submitted).toBe('v5')
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
