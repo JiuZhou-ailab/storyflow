@@ -1,5 +1,5 @@
 // input: RPC context, startup-migrated and native desktop file grants, and workspace file queries
-// output: File RPC handlers with local desktop attachment authorization
+// output: File RPC handlers with local desktop attachment authorization and opt-in file-list truncation metadata
 // pos: Server-side filesystem boundary for renderer and remote clients
 
 import { readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promises'
@@ -14,6 +14,7 @@ import {
   type FileSearchBatchRequest,
   type FileSearchBatchResult,
   type FileSearchOptions,
+  type WorkspaceFileListResult,
   type StoreAttachmentResult,
 } from '@craft-agent/shared/protocol'
 import { readFileAttachment, perf } from '@craft-agent/shared/utils'
@@ -887,7 +888,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   // Purpose-built workspace listing. Passing no roots lists the real project tree
   // (files plus directories); named roots preserve the legacy file-only fallback.
-  server.handle(RPC_CHANNELS.fs.LIST_FILES, async (ctx, basePath: string, rootPaths: string[]): Promise<FileSearchEntry[]> => {
+  server.handle(RPC_CHANNELS.fs.LIST_FILES, async (ctx, basePath: string, rootPaths: string[], options?: { includeMetadata?: boolean }): Promise<FileSearchEntry[] | WorkspaceFileListResult> => {
     const safeRootPaths = Array.isArray(rootPaths) ? rootPaths.slice(0, FILE_LIST_MAX_ROOTS) : []
     deps.platform.logger.debug('[FS_LIST_FILES] called:', basePath, safeRootPaths.length)
 
@@ -898,9 +899,12 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
     })
 
     try {
-      const results = await collectWorkspaceFileList(safeBasePath, safeRootPaths)
+      // One extra entry distinguishes a full catalog of exactly 5000 from a truncated one.
+      const results = await collectWorkspaceFileList(safeBasePath, safeRootPaths, FILE_LIST_MAX_ENTRIES + (options?.includeMetadata === true ? 1 : 0))
+      const truncated = results.length > FILE_LIST_MAX_ENTRIES
+      if (truncated) results.length = FILE_LIST_MAX_ENTRIES
       listSpan.setMetadata('resultCount', results.length)
-      return results
+      return options?.includeMetadata === true ? { entries: results, truncated } : results
     } finally {
       listSpan.end()
     }

@@ -1,5 +1,5 @@
 import { requestDocumentLeave } from '../files/text-document-state'
-// input: Workspace/session state, navigation state, collapsible rail chrome, file-open intent, and shell callbacks
+// input: Workspace/session state, useWritingWorkspaceState file actions, navigation, rail chrome, and shell callbacks
 // output: Responsive shell with project writing panels, compact project editor, and Free Conversation file docks
 // pos: Top-level renderer layout coordinator for workspace navigation
 
@@ -51,7 +51,6 @@ import { buildWhatsNewAnnouncementCopy, getWhatsNewStartupAction } from "./whats
 import { cn } from "@/lib/utils"
 import { getFileManagerName, isMac } from "@/lib/platform"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { RenameDialog } from "@/components/ui/rename-dialog"
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
 import type { MentionFileReference } from "@/components/ui/mention-menu"
@@ -81,26 +80,21 @@ import { useConversationWorkspace } from "../right-sidebar/ConversationFilesPane
 import { NovelVersionHistoryDialog } from "@/components/writing/NovelVersionHistoryDialog"
 import { formatNovelWorkspaceFileTitle } from "@/components/writing/novel-file-display"
 import type {
-  WorkspaceFileTreeHandle,
   WorkspaceFileTreeMenuAction,
   WorkspaceFileTreeNode,
 } from "@/components/workspace/WorkspaceFileTree"
+import { useWritingWorkspaceState } from "@/components/workspace/useWritingWorkspaceState"
+import { WorkspaceCreateEntryDialog } from "@/components/workspace/WorkspaceCreateEntryDialog"
 import { WorkspaceEmptyState } from "@/components/workspace/WorkspaceEmptyState"
 import { WorkspaceProjectSidebar } from "@/components/workspace/WorkspaceProjectSidebar"
 import {
   useWorkspaceProjectSurface,
-  type WorkspaceCreateEntryTarget,
 } from "@/components/workspace/useWorkspaceProjectSurface"
 import { revealWorkspaceFile } from "@/components/workspace/workspace-file-actions"
 import {
   advanceWorkspaceCatalogRevision,
-  getDefaultWritingExpandedIds,
   getWorkspaceFileOpenTarget,
-  isSameOrChildWorkspacePath,
   readWorkspaceCatalogRevision,
-  reduceWorkspaceStateAfterDeletion,
-  resolveWorkspaceCreateRelativePath,
-  resolveWorkspaceImportRelativePath,
   type WorkspaceCreateEntryKind,
 } from "@/components/workspace/workspace-file-tree-model"
 import { useSession } from "@/hooks/useSession"
@@ -205,9 +199,7 @@ import {
   getNovelWorkspaceCandidateRoots,
   areNovelWorkspaceFilesEqual,
   closeNovelDocumentTab,
-  filterNovelDocumentTabs,
   isNovelWorkspaceFilePathInRoot,
-  mapNovelDocumentTabs,
   mapNativeWorkspaceCatalog,
   mapSearchResultsToNovelWorkspaceFiles,
   NOVEL_WORKSPACE_DETECTION_QUERIES,
@@ -215,7 +207,6 @@ import {
   shouldUseEmptyProjectStarterLayout,
   type NovelDocumentOpenMode,
   type NovelDocumentTabsState,
-  type NativeWorkspaceCatalog,
   type NovelWorkspaceFile,
 } from "@/lib/writing-workspace"
 import type { FileChange } from "@craft-agent/ui"
@@ -318,28 +309,6 @@ const DEFAULT_DOCUMENT_DOCK_WIDTH_RATIO = 0.34
 const NOVEL_AUTO_VERSION_CHAR_THRESHOLD = 100
 const NOVEL_AUTO_VERSION_INTERVAL_MS = 5 * 60 * 1000
 const NOVEL_WORKSPACE_BRIEF_CHANGE_LIMIT = 20
-function joinWorkspacePath(rootPath: string, relativePath: string): string {
-  const root = rootPath.replace(/[\\/]+$/, '')
-  const relative = relativePath.replace(/^[\\/]+/, '')
-  return relative ? `${root}/${relative}` : root
-}
-
-function normalizeWorkspacePath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+$/, '')
-}
-
-function getWorkspaceRelativePathKey(path: string): string {
-  return normalizeWorkspacePath(path).replace(/^\/+/, '').toLocaleLowerCase()
-}
-
-function remapWorkspacePath(path: string, sourcePath: string, destinationPath: string): string {
-  const normalizedPath = normalizeWorkspacePath(path)
-  const normalizedSource = normalizeWorkspacePath(sourcePath)
-  if (normalizedPath === normalizedSource) return destinationPath
-  if (!normalizedPath.startsWith(`${normalizedSource}/`)) return path
-  return `${normalizeWorkspacePath(destinationPath)}${normalizedPath.slice(normalizedSource.length)}`
-}
-
 function getKnownWorkspaceCommit(rootPath: string, sessionId: string): string | undefined {
   const commits = storage.get<Record<string, string>>(storage.KEYS.workspaceVersionKnownCommit, {}, rootPath)
   return commits[sessionId]
@@ -481,25 +450,13 @@ async function searchNovelWorkspaceFiles(
   )
 }
 
+type NativeWorkspaceCatalog = ReturnType<typeof mapNativeWorkspaceCatalog> & { truncated?: boolean }
+
 /** Sidebar is the real project folder: list disk, skip noise dirs server-side, no catalog filter. */
 async function loadNovelWorkspaceFileTree(rootPath: string): Promise<NativeWorkspaceCatalog> {
-  const results = await window.electronAPI.listWorkspaceFiles(rootPath, [])
-  return mapNativeWorkspaceCatalog(results)
-}
-
-function getParentRelativePath(relativePath: string): string {
-  const segments = relativePath.split('/')
-  segments.pop()
-  return segments.join('/')
-}
-
-function getMarkdownTitleFromRelativePath(relativePath: string): string {
-  const fileName = relativePath.split('/').pop() ?? ''
-  return fileName.replace(/\.[^/.]+$/, '').replace(/-/g, ' ').trim()
-}
-
-function shouldCreateMarkdownStarter(relativePath: string): boolean {
-  return relativePath.toLowerCase().endsWith('.md')
+  const results = await window.electronAPI.listWorkspaceFiles(rootPath, [], { includeMetadata: true })
+  if (Array.isArray(results)) return mapNativeWorkspaceCatalog(results)
+  return { ...mapNativeWorkspaceCatalog(results.entries), truncated: results.truncated }
 }
 
 function getContentChangeSize(previous: string, next: string): number {
@@ -1235,24 +1192,6 @@ function AppShellContent({
   // Cmd+F opens the global search surface; the sidebar menu still owns local list search.
   useAction('app.search', () => setGlobalSearchOpen(true))
 
-  // Unified sidebar keyboard navigation state. Expansion uses one positive,
-  // workspace-scoped set so persisted state and rendered state cannot diverge.
-  const [expandedFolders, setExpandedFolders] = React.useState<Set<string>>(() => {
-    const persistedExpandedFolders = activeWorkspaceId
-      ? storage.get<string[] | null>(storage.KEYS.expandedFolders, null, activeWorkspaceId)
-      : null
-    return new Set(persistedExpandedFolders ?? (activeWorkspaceId ? getDefaultWritingExpandedIds(activeWorkspaceId) : []))
-  })
-  const workspaceFileTreeRef = React.useRef<WorkspaceFileTreeHandle>(null)
-  const handleWorkspaceTreeExpandedChange = React.useCallback((id: string, expanded: boolean) => {
-    setExpandedFolders(prev => {
-      if (prev.has(id) === expanded) return prev
-      const next = new Set(prev)
-      if (expanded) next.add(id)
-      else next.delete(id)
-      return next
-    })
-  }, [])
   // Sources state (workspace-scoped)
   const [sources, setSources] = React.useState<LoadedSource[]>([])
   // Sync sources to atom for NavigationContext auto-selection
@@ -1339,10 +1278,6 @@ function AppShellContent({
     if (previousWorkspaceId !== activeWorkspaceId) {
       const newViewFilters = storage.get<ViewFiltersMap>(storage.KEYS.viewFilters, {}, activeWorkspaceId)
       setViewFiltersMap(newViewFilters)
-
-      const persistedExpandedFolders = storage.get<string[] | null>(storage.KEYS.expandedFolders, null, activeWorkspaceId)
-      setExpandedFolders(new Set(persistedExpandedFolders ?? getDefaultWritingExpandedIds(activeWorkspaceId)))
-
     }
 
     previousWorkspaceRef.current = activeWorkspaceId
@@ -1910,7 +1845,9 @@ function AppShellContent({
   const [novelWorkspaceRoot, setNovelWorkspaceRoot] = React.useState<string | null>(null)
   const [novelWorkspaceFiles, setNovelWorkspaceFiles] = React.useState<NovelWorkspaceFile[]>([])
   const [novelWorkspaceDirectories, setNovelWorkspaceDirectories] = React.useState<string[]>([])
+  const [novelWorkspaceTruncated, setNovelWorkspaceTruncated] = React.useState(false)
   const setNovelWorkspaceCatalogIfChanged = React.useCallback((catalog: NativeWorkspaceCatalog) => {
+    setNovelWorkspaceTruncated(catalog.truncated === true)
     setNovelWorkspaceFiles((previous) => areNovelWorkspaceFilesEqual(previous, catalog.files) ? previous : catalog.files)
     setNovelWorkspaceDirectories((previous) => (
       previous.length === catalog.directories.length
@@ -1930,9 +1867,6 @@ function AppShellContent({
   const ensureNovelDocumentSavedRef = React.useRef<() => Promise<boolean>>(async () => true)
   const latestNovelFileChangesSignatureRef = React.useRef('')
   latestNovelFileChangesSignatureRef.current = latestNovelFileChangesSignature
-  const [workspaceCreateEntryTarget, setWorkspaceCreateEntryTarget] = React.useState<WorkspaceCreateEntryTarget | null>(null)
-  const [workspaceCreateEntryValue, setWorkspaceCreateEntryValue] = React.useState('')
-  const [workspaceCreatingEntry, setWorkspaceCreatingEntry] = React.useState(false)
   const [novelProjectRenameOpen, setNovelProjectRenameOpen] = React.useState(false)
   const [novelProjectRenameValue, setNovelProjectRenameValue] = React.useState('')
 
@@ -2071,161 +2005,12 @@ function AppShellContent({
     })
   }, [invalidateNovelWorkspaceCatalogRequests, refreshNovelWorkspaceFiles])
 
-  const openWorkspaceCreateEntryDialog = React.useCallback((target: WorkspaceCreateEntryTarget) => {
-    setWorkspaceCreateEntryTarget(target)
-    setWorkspaceCreateEntryValue('')
-  }, [])
-
-  const expandWorkspaceTreeDirectory = React.useCallback((relativePath: string) => {
-    const id = relativePath
-      ? `writing:folder:${relativePath}`
-      : `writing:project:${activeWorkspaceId}`
-    setExpandedFolders(previous => {
-      if (previous.has(id)) return previous
-      const next = new Set(previous)
-      next.add(id)
-      return next
-    })
-    requestAnimationFrame(() => workspaceFileTreeRef.current?.open(id))
-  }, [activeWorkspaceId])
-
-  const handleSubmitWorkspaceCreateEntry = React.useCallback(async () => {
-    if (!novelWorkspaceRoot || !workspaceCreateEntryTarget) return
-
-    const relativePath = resolveWorkspaceCreateRelativePath(
-      workspaceCreateEntryTarget.parentRelativePath,
-      workspaceCreateEntryValue,
-      workspaceCreateEntryTarget.kind,
-    )
-    if (!relativePath) {
-      toast.error(workspaceCreateEntryTarget.kind === 'file'
-        ? t('writing.createFile.invalidName', '请输入有效文件名')
-        : t('writing.createFolder.invalidName', '请输入有效文件夹名称'))
-      return
-    }
-    const relativePathKey = getWorkspaceRelativePathKey(relativePath)
-    const entryExists = novelWorkspaceFiles.some(file => getWorkspaceRelativePathKey(file.relativePath) === relativePathKey)
-      || novelWorkspaceDirectories.some(directory => getWorkspaceRelativePathKey(directory) === relativePathKey)
-    if (entryExists) {
-      toast.error(workspaceCreateEntryTarget.kind === 'file'
-        ? t('writing.createFile.exists', '文件已存在')
-        : t('writing.createFolder.exists', '同名文件或文件夹已存在'))
-      return
-    }
-
-    const targetPath = joinWorkspacePath(novelWorkspaceRoot, relativePath)
-    if (workspaceCreateEntryTarget.kind === 'file' && !await ensureNovelDocumentSavedRef.current()) return
-    setWorkspaceCreatingEntry(true)
-    try {
-      if (workspaceCreateEntryTarget.kind === 'directory') {
-        await window.electronAPI.createDirectory(targetPath)
-      } else {
-        const parentRelativePath = getParentRelativePath(relativePath)
-        const parentPath = joinWorkspacePath(novelWorkspaceRoot, parentRelativePath)
-        const title = getMarkdownTitleFromRelativePath(relativePath)
-        const initialContent = shouldCreateMarkdownStarter(relativePath) && title ? `# ${title}\n\n` : ''
-        await window.electronAPI.createDirectory(parentPath)
-        await window.electronAPI.writeFile(targetPath, initialContent)
-      }
-      await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
-      expandWorkspaceTreeDirectory(workspaceCreateEntryTarget.parentRelativePath)
-      if (workspaceCreateEntryTarget.kind === 'file') {
-        setNovelDocumentTabs(current => openNovelDocumentTab(current, novelWorkspaceRoot, targetPath))
-        navigate(routes.view.writing())
-      }
-      setWorkspaceCreateEntryTarget(null)
-      setWorkspaceCreateEntryValue('')
-    } catch (error) {
-      console.error('[AppShell] Failed to create workspace entry:', error)
-      toast.error(workspaceCreateEntryTarget.kind === 'file'
-        ? t('writing.createFile.failed', '创建文件失败')
-        : t('writing.createFolder.failed', '创建文件夹失败'))
-    } finally {
-      setWorkspaceCreatingEntry(false)
-    }
-  }, [
-    expandWorkspaceTreeDirectory,
-    novelWorkspaceDirectories,
-    novelWorkspaceFiles,
-    novelWorkspaceRoot,
-    refreshNovelWorkspaceFilesAfterMutation,
-    t,
-    workspaceCreateEntryTarget,
-    workspaceCreateEntryValue,
-  ])
-
   const handleSubmitNovelProjectRename = React.useCallback(() => {
     const nextName = novelProjectRenameValue.trim()
     if (!activeProjectId || !onRenameProject || !nextName) return
     setNovelProjectRenameOpen(false)
     void onRenameProject(activeProjectId, nextName)
   }, [activeProjectId, novelProjectRenameValue, onRenameProject])
-
-  const handleImportNovelFiles = React.useCallback(async (parentRelativePath: string) => {
-    if (!novelWorkspaceRoot) return
-
-    const sourcePaths = await window.electronAPI.openFileDialog()
-    if (sourcePaths.length === 0) return
-    if (!await ensureNovelDocumentSavedRef.current()) return
-
-    let importedCount = 0
-    let skippedCount = 0
-    let lastImportedPath: string | null = null
-    const reservedRelativePathKeys = new Set([
-      ...novelWorkspaceFiles.map(file => getWorkspaceRelativePathKey(file.relativePath)),
-      ...novelWorkspaceDirectories.map(getWorkspaceRelativePathKey),
-    ])
-
-    for (const sourcePath of sourcePaths) {
-      const relativePath = resolveWorkspaceImportRelativePath(parentRelativePath, sourcePath)
-      const relativePathKey = relativePath ? getWorkspaceRelativePathKey(relativePath) : null
-      if (!relativePath || !relativePathKey || reservedRelativePathKeys.has(relativePathKey)) {
-        skippedCount += 1
-        continue
-      }
-
-      try {
-        const attachment = await window.electronAPI.readUserAttachment(sourcePath)
-        if (!attachment || attachment.text === undefined) {
-          skippedCount += 1
-          continue
-        }
-
-        const targetPath = joinWorkspacePath(novelWorkspaceRoot, relativePath)
-        const parentRelativePath = getParentRelativePath(relativePath)
-        const parentPath = joinWorkspacePath(novelWorkspaceRoot, parentRelativePath)
-
-        await window.electronAPI.createDirectory(parentPath)
-        await window.electronAPI.writeFile(targetPath, attachment.text)
-        importedCount += 1
-        reservedRelativePathKeys.add(relativePathKey)
-        lastImportedPath = targetPath
-      } catch (error) {
-        console.error('[AppShell] Failed to import writing file:', error)
-        skippedCount += 1
-      }
-    }
-
-    if (importedCount > 0) {
-      await refreshNovelWorkspaceFilesAfterMutation(novelWorkspaceRoot)
-      expandWorkspaceTreeDirectory(parentRelativePath)
-      if (lastImportedPath) {
-        setNovelDocumentTabs(current => openNovelDocumentTab(current, novelWorkspaceRoot, lastImportedPath))
-        navigate(routes.view.writing())
-      }
-      toast.success(t('writing.importFile.success', '已导入文件'))
-    }
-    if (skippedCount > 0) {
-      toast.error(t('writing.importFile.skipped', '部分文件未导入，仅支持不重名的 md/txt 文件'))
-    }
-  }, [
-    expandWorkspaceTreeDirectory,
-    novelWorkspaceDirectories,
-    novelWorkspaceFiles,
-    novelWorkspaceRoot,
-    refreshNovelWorkspaceFilesAfterMutation,
-    t,
-  ])
 
   React.useEffect(() => {
     if (novelWorkspaceCandidateRoots.length === 0) {
@@ -2234,6 +2019,7 @@ function AppShellContent({
       setNovelWorkspaceRoot(null)
       setNovelWorkspaceFiles([])
       setNovelWorkspaceDirectories([])
+      setNovelWorkspaceTruncated(false)
       return
     }
 
@@ -2246,6 +2032,7 @@ function AppShellContent({
       setNovelWorkspaceRoot(null)
       setNovelWorkspaceFiles([])
       setNovelWorkspaceDirectories([])
+      setNovelWorkspaceTruncated(false)
     }
 
     if (!rightWorkspaceVisible) {
@@ -2317,6 +2104,7 @@ function AppShellContent({
       setNovelWorkspaceRoot(null)
       setNovelWorkspaceFiles([])
       setNovelWorkspaceDirectories([])
+      setNovelWorkspaceTruncated(false)
       setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
       setNovelWorkspaceDetecting(false)
     }
@@ -2718,161 +2506,18 @@ function AppShellContent({
     novelDocumentContent !== savedNovelDocumentContent
     || novelDocumentChangeVersion !== savedNovelDocumentChangeVersion
   )
-  const handleMoveNovelWorkspaceEntry = React.useCallback(async (
-    entry: WorkspaceFileTreeNode,
-    destinationDirectory: WorkspaceFileTreeNode,
-    newName?: string,
-  ) => {
-    if (!novelWorkspaceRoot || entry.type === 'root' || destinationDirectory.type === 'file') return
-    if (isSameOrChildWorkspacePath(selectedNovelFilePath, entry.path) && isCurrentNovelDocumentDirty()) {
-      toast.error(t('writing.moveFile.unsaved', '当前文件有未保存修改，请先保存后再移动或重命名'))
-      return
-    }
-
-    try {
-      const result = await window.electronAPI.moveWorkspaceEntry({
-        sourcePath: entry.path,
-        destinationDirectoryPath: destinationDirectory.path,
-        newName,
-      })
-      if (result.sourcePath === result.destinationPath) return
-
-      const destinationName = newName ?? entry.name
-      const destinationRelativePath = destinationDirectory.relativePath
-        ? `${destinationDirectory.relativePath}/${destinationName}`
-        : destinationName
-
-      invalidateNovelWorkspaceCatalogRequests(novelWorkspaceRoot)
-      setNovelWorkspaceFiles(previous => previous.map(file => (
-        isSameOrChildWorkspacePath(file.path, result.sourcePath)
-          ? {
-              ...file,
-              path: remapWorkspacePath(file.path, result.sourcePath, result.destinationPath),
-              relativePath: remapWorkspacePath(file.relativePath, entry.relativePath, destinationRelativePath),
-            }
-          : file
-      )))
-      if (entry.type === 'directory') {
-        setNovelWorkspaceDirectories(previous => previous.map(directory => (
-          isSameOrChildWorkspacePath(directory, entry.relativePath)
-            ? remapWorkspacePath(directory, entry.relativePath, destinationRelativePath)
-            : directory
-        )))
-        const sourceFolderId = `writing:folder:${entry.relativePath}`
-        const destinationFolderId = `writing:folder:${destinationRelativePath}`
-        setExpandedFolders(previous => {
-          let changed = false
-          const next = new Set<string>()
-          for (const id of previous) {
-            if (id === sourceFolderId || id.startsWith(`${sourceFolderId}/`)) {
-              next.add(`${destinationFolderId}${id.slice(sourceFolderId.length)}`)
-              changed = true
-            } else {
-              next.add(id)
-            }
-          }
-          return changed ? next : previous
-        })
-      }
-      setNovelDocumentTabs(current => mapNovelDocumentTabs(
-        current,
-        path => isSameOrChildWorkspacePath(path, result.sourcePath)
-          ? remapWorkspacePath(path, result.sourcePath, result.destinationPath)
-          : path,
-      ))
-
-      toast.success(newName
-        ? t('writing.renameFile.success', '已重命名')
-        : t('writing.moveFile.success', '已移动'))
-    } catch (error) {
-      console.error('[AppShell] Failed to move workspace entry:', error)
-      toast.error(newName
-        ? t('writing.renameFile.failed', '重命名失败')
-        : t('writing.moveFile.failed', '移动失败'), {
-        description: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }, [
-    invalidateNovelWorkspaceCatalogRequests,
-    isCurrentNovelDocumentDirty,
-    novelWorkspaceRoot,
-    selectedNovelFilePath,
-    t,
-  ])
-
-  const handleRenameNovelWorkspaceEntry = React.useCallback((entry: WorkspaceFileTreeNode, newName: string) => {
-    if (!novelWorkspaceRoot) return
-    const parentRelativePath = getParentRelativePath(entry.relativePath)
-    const destinationDirectory: WorkspaceFileTreeNode = {
-      id: parentRelativePath ? `writing:folder:${parentRelativePath}` : `writing:project:${activeWorkspaceId}`,
-      name: '',
-      path: joinWorkspacePath(novelWorkspaceRoot, parentRelativePath),
-      relativePath: parentRelativePath,
-      type: parentRelativePath ? 'directory' : 'root',
-      fileCount: 0,
-      children: [],
-    }
-    return handleMoveNovelWorkspaceEntry(entry, destinationDirectory, newName)
-  }, [activeWorkspaceId, handleMoveNovelWorkspaceEntry, novelWorkspaceRoot])
-
-  const handleDeleteNovelWorkspaceEntry = React.useCallback(async (entry: WorkspaceFileTreeNode) => {
-    if (!novelWorkspaceRoot || entry.type === 'root') return
-    if (isSameOrChildWorkspacePath(selectedNovelFilePath, entry.path) && isCurrentNovelDocumentDirty()) {
-      toast.error(t('writing.deleteFile.unsaved', '当前文件有未保存修改，请先保存或切换文件'))
-      return
-    }
-
-    const confirmed = window.confirm(t(
-      entry.type === 'directory' ? 'writing.deleteFolder.confirm' : 'writing.deleteFile.confirm',
-      entry.type === 'directory'
-        ? '删除文件夹「{{name}}」及其中全部内容？此操作无法撤销。'
-        : '删除「{{name}}」？此操作无法撤销。',
-      { name: entry.name },
-    ))
-    if (!confirmed) return
-
-    try {
-      await window.electronAPI.deleteWorkspaceEntry({
-        path: entry.path,
-        recursive: entry.type === 'directory',
-      })
-      const nextState = reduceWorkspaceStateAfterDeletion({
-        files: novelWorkspaceFiles,
-        directories: novelWorkspaceDirectories,
-        expandedIds: expandedFolders,
-        selectedPath: selectedNovelFilePath,
-        entry: {
-          path: entry.path,
-          relativePath: entry.relativePath,
-          type: entry.type,
-        },
-      })
-
-      invalidateNovelWorkspaceCatalogRequests(novelWorkspaceRoot)
-      setNovelWorkspaceFiles(nextState.files)
-      setNovelWorkspaceDirectories(nextState.directories)
-      setExpandedFolders(nextState.expandedIds)
-      setNovelDocumentTabs(current => filterNovelDocumentTabs(
-        current,
-        path => !isSameOrChildWorkspacePath(path, entry.path),
-      ))
-      toast.success(t('writing.deleteFile.success', '已删除'))
-    } catch (error) {
-      console.error('[AppShell] Failed to delete workspace entry:', error)
-      toast.error(t('writing.deleteFile.failed', '删除失败'), {
-        description: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }, [
-    invalidateNovelWorkspaceCatalogRequests,
-    isCurrentNovelDocumentDirty,
-    expandedFolders,
-    novelWorkspaceDirectories,
-    novelWorkspaceFiles,
-    novelWorkspaceRoot,
-    selectedNovelFilePath,
-    t,
-  ])
+  const {
+    expandedFolders, workspaceFileTreeRef, handleWorkspaceTreeExpandedChange,
+    workspaceCreateEntryTarget, setWorkspaceCreateEntryTarget,
+    workspaceCreateEntryValue, setWorkspaceCreateEntryValue, workspaceCreatingEntry,
+    openWorkspaceCreateEntryDialog, handleSubmitWorkspaceCreateEntry, handleImportNovelFiles,
+    handleMoveNovelWorkspaceEntry, handleRenameNovelWorkspaceEntry, handleDeleteNovelWorkspaceEntry,
+  } = useWritingWorkspaceState({
+    activeWorkspaceId, novelWorkspaceRoot, novelWorkspaceFiles, novelWorkspaceDirectories,
+    setNovelWorkspaceFiles, setNovelWorkspaceDirectories, setNovelDocumentTabs,
+    selectedNovelFilePath, isCurrentNovelDocumentDirty, ensureNovelDocumentSavedRef,
+    invalidateNovelWorkspaceCatalogRequests, refreshNovelWorkspaceFilesAfterMutation,
+  })
 
   const refreshNovelVersions = React.useCallback(async () => {
     if (!novelWorkspaceRoot) {
@@ -3811,12 +3456,6 @@ function AppShellContent({
     onReplayAutomation: handleReplayAutomation,
   }), [contextValue, handleDeleteSession, handleNovelWorkspaceSendMessage, sources, skills, mentionFiles, activeSessionWorkingDirectory, openingProjectState, handleWorkspaceOpeningCommand, displayLabelConfigs, handleSessionLabelsChange, enabledModes, sessionStatuses, handleSessionSourcesChange, isAutoCompact, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
-  // Persist expanded folders to localStorage (workspace-scoped)
-  React.useEffect(() => {
-    if (!activeWorkspaceId) return
-    storage.set(storage.KEYS.expandedFolders, [...expandedFolders], activeWorkspaceId)
-  }, [expandedFolders, activeWorkspaceId])
-
   // Persist sidebar visibility to localStorage
   React.useEffect(() => {
     storage.set(storage.KEYS.sidebarVisible, isSidebarVisible)
@@ -4572,6 +4211,7 @@ function AppShellContent({
           rootPath: novelWorkspaceRoot,
           files: novelWorkspaceFiles,
           directories: novelWorkspaceDirectories,
+          truncated: novelWorkspaceTruncated,
           selectedPath: selectedNovelFile?.path,
           expandedIds: expandedFolders,
           labels: workspaceFileTreeLabels,
@@ -5657,55 +5297,17 @@ function AppShellContent({
         onRestore={handleRestoreNovelVersion}
       />
 
-      <Dialog
-        open={!!workspaceCreateEntryTarget}
+      <WorkspaceCreateEntryDialog
+        target={workspaceCreateEntryTarget}
+        value={workspaceCreateEntryValue}
         busy={workspaceCreatingEntry}
-        onOpenChange={(open) => {
-          if (!open) {
-            setWorkspaceCreateEntryTarget(null)
-            setWorkspaceCreateEntryValue('')
-          }
+        onValueChange={setWorkspaceCreateEntryValue}
+        onClose={() => {
+          setWorkspaceCreateEntryTarget(null)
+          setWorkspaceCreateEntryValue('')
         }}
-      >
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>{workspaceCreateEntryTarget?.title}</DialogTitle>
-          </DialogHeader>
-          <div className="py-3">
-            <Input
-              value={workspaceCreateEntryValue}
-              onChange={(event) => setWorkspaceCreateEntryValue(event.target.value)}
-              placeholder={workspaceCreateEntryTarget?.placeholder}
-              disabled={workspaceCreatingEntry}
-              autoFocus
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
-                  event.preventDefault()
-                  void handleSubmitWorkspaceCreateEntry()
-                }
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              disabled={workspaceCreatingEntry}
-              onClick={() => {
-                setWorkspaceCreateEntryTarget(null)
-                setWorkspaceCreateEntryValue('')
-              }}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              disabled={workspaceCreatingEntry || !workspaceCreateEntryValue.trim()}
-              onClick={() => void handleSubmitWorkspaceCreateEntry()}
-            >
-              {t('common.create', '创建')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onSubmit={handleSubmitWorkspaceCreateEntry}
+      />
 
       <RenameDialog
         open={novelProjectRenameOpen}

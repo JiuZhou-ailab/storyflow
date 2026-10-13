@@ -157,9 +157,10 @@ it('uses neutral project removal actions in both menus', () => {
   expect(rows.match(/t\('workspace.removeFromList'\)/g)).toHaveLength(2)
 })
 it('ignores IME confirmation, but submits deliberate Enter', () => {
-  const fragment = shell.slice(shell.indexOf('value={workspaceCreateEntryValue}'))
+  const dialog = readFileSync(new URL('../../workspace/WorkspaceCreateEntryDialog.tsx', import.meta.url), 'utf8')
+  const fragment = dialog.slice(dialog.indexOf('value={value}'))
   const body = fragment.match(/onKeyDown=\{\(event\) => \{([\s\S]*?)\n              \}\}/)![1]!
-  const submit = mock(), handler = new Function('event', 'handleSubmitWorkspaceCreateEntry', body)
+  const submit = mock(), handler = new Function('event', 'onSubmit', body)
   for (const nativeEvent of [{ isComposing: true, keyCode: 13 }, { isComposing: false, keyCode: 229 }]) {
     const preventDefault = mock(); handler({ key: 'Enter', nativeEvent, preventDefault }, submit)
     expect(preventDefault).not.toHaveBeenCalled()

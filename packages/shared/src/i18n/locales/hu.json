@@ -631,6 +631,7 @@
   "fileViewer.errorLoading": "Hiba a fájl betöltésekor",
   "fileViewer.externalPreviewHint": "Ez a fájl itt nem tekinthető meg.",
   "fileViewer.filterFiles": "Filter files…",
+  "fileViewer.listTruncated": "Csak az első 5000 bejegyzés látható; a mappalista nem teljes.",
   "fileViewer.loadingContent": "Tartalom betöltése...",
   "fileViewer.noFileSelected": "Nincs kiválasztott fájl",
   "fileViewer.writingMode": "Writing mode",

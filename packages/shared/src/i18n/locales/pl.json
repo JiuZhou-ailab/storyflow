@@ -631,6 +631,7 @@
   "fileViewer.errorLoading": "Błąd ładowania pliku",
   "fileViewer.externalPreviewHint": "Nie można wyświetlić podglądu tego pliku tutaj.",
   "fileViewer.filterFiles": "Filter files…",
+  "fileViewer.listTruncated": "Wyświetlono tylko pierwsze 5000 elementów; lista folderów jest niepełna.",
   "fileViewer.loadingContent": "Ładowanie zawartości...",
   "fileViewer.noFileSelected": "Nie wybrano pliku",
   "fileViewer.writingMode": "Writing mode",

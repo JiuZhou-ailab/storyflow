@@ -467,6 +467,12 @@ export interface FileSearchResult {
   relativePath: string
 }
 
+/** Opt-in file-list metadata; legacy callers continue receiving FileSearchResult[]. */
+export interface WorkspaceFileListResult {
+  entries: FileSearchResult[]
+  truncated?: boolean
+}
+
 export interface FileSearchOptions {
   mode?: 'fuzzy' | 'path'
   includeDescendants?: boolean

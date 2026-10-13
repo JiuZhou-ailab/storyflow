@@ -631,6 +631,7 @@
   "fileViewer.errorLoading": "加载文件出错",
   "fileViewer.externalPreviewHint": "暂不支持在此预览该文件。",
   "fileViewer.filterFiles": "筛选文件…",
+  "fileViewer.listTruncated": "仅显示前 5000 项，目录列表不完整。",
   "fileViewer.loadingContent": "正在加载内容...",
   "fileViewer.noFileSelected": "未选择文件",
   "fileViewer.writingMode": "写作模式",

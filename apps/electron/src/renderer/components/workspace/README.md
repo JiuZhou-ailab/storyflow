@@ -8,8 +8,10 @@
 - `WorkspaceFileHeaderActions.tsx`：项目和自由对话共用的刷新、系统打开及文件定位按钮；调用方提供刷新动作和保存前置检查，附件可隐藏系统打开。
 - `WorkspaceEmptyState.tsx`：在共享文件标签栏下提供不写入磁盘的创建、导入与 Skills 开始页。
 - `WorkspaceProjectSidebar.tsx`：随侧栏模块装载真实项目文件树，避免目录数据就绪后再串行等待模块，并呈现空白项目提示。
-- `WorkspaceFileTree.tsx`：受控、带文件名筛选的虚拟化文件树；浏览器使用原生 Tab 出入；仅在提供相应回调时启用拖动、重命名和删除。
+- `WorkspaceFileTree.tsx`：受控、带文件名筛选的虚拟化文件树，展示服务端目录截断提示；浏览器使用原生 Tab 出入；仅在提供相应回调时启用拖动、重命名和删除。
 - `WorkspaceFileTreeRow.tsx`：文件树可见行、右键菜单和行内编辑。
+- `useWritingWorkspaceState.ts`：文件树展开状态的持久化及新建、导入、移动、重命名、删除操作；目录读取和文档缓冲仍由 AppShell 组合。
+- `WorkspaceCreateEntryDialog.tsx`：新建文件/文件夹的受控展示和输入法提交保护。
 - `useWorkspaceProjectSurface.ts`：冷启动状态与创建、导入、Skills 命令的编排边界。
 - `workspace-file-actions.ts`：文件级本地系统操作的可测试应用边界。
 - `workspace-file-tree-model.ts`：原生文件快照到稳定层级节点的纯投影。

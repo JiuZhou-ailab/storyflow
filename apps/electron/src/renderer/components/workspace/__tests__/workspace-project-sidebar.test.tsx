@@ -66,3 +66,22 @@ describe('WorkspaceProjectSidebar', () => {
     expect(html).not.toContain('正在加载项目目录...')
   })
 })
+
+it('shows the truncation notice only for incomplete file catalogs', () => {
+  const render = (truncated?: boolean) => renderToStaticMarkup(
+    <TooltipProvider>
+      <WorkspaceProjectSidebar
+        sidebarRef={React.createRef<HTMLDivElement>()}
+        treeRef={React.createRef<WorkspaceFileTreeHandle>()}
+        focused={false}
+        loadingLabel="Loading"
+        emptyHint="Empty"
+        treeProps={{ ...treeProps, truncated }}
+        onFocus={() => {}}
+      />
+    </TooltipProvider>,
+  )
+  expect(render(true)).toContain('role="status"')
+  expect(render(false)).not.toContain('role="status"')
+  expect(render()).not.toContain('role="status"')
+})

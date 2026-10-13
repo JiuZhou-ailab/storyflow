@@ -631,6 +631,7 @@
   "fileViewer.errorLoading": "Fehler beim Laden der Datei",
   "fileViewer.externalPreviewHint": "Für diese Datei ist keine Vorschau verfügbar.",
   "fileViewer.filterFiles": "Filter files…",
+  "fileViewer.listTruncated": "Nur die ersten 5.000 Einträge werden angezeigt; die Ordnerliste ist unvollständig.",
   "fileViewer.loadingContent": "Inhalt wird geladen...",
   "fileViewer.noFileSelected": "Keine Datei ausgewählt",
   "fileViewer.writingMode": "Writing mode",

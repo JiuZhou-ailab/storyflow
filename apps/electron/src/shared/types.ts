@@ -285,6 +285,7 @@ import type {
   ShareResult,
   RefreshTitleResult,
   FileSearchResult,
+  WorkspaceFileListResult,
   FileSearchBatchRequest,
   FileSearchBatchResult,
   FileSearchOptions,
@@ -474,6 +475,8 @@ export interface ElectronAPI {
   searchFiles(basePath: string, query: string, options?: FileSearchOptions): Promise<FileSearchResult[]>
   searchFilesBatch(basePath: string, requests: FileSearchBatchRequest[]): Promise<FileSearchBatchResult[]>
   listWorkspaceFiles(basePath: string, rootPaths: string[]): Promise<FileSearchResult[]>
+  // Older servers and the local demo may still return the legacy array.
+  listWorkspaceFiles(basePath: string, rootPaths: string[], options: { includeMetadata: true }): Promise<WorkspaceFileListResult | FileSearchResult[]>
 
   // Server filesystem browsing (remote mode)
   listServerDirectory(dirPath: string): Promise<DirectoryListingResult>

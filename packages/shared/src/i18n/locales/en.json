@@ -631,6 +631,7 @@
   "fileViewer.errorLoading": "Error loading file",
   "fileViewer.externalPreviewHint": "This file cannot be previewed here.",
   "fileViewer.filterFiles": "Filter files…",
+  "fileViewer.listTruncated": "Only the first 5,000 entries are shown; this folder list is incomplete.",
   "fileViewer.loadingContent": "Loading content...",
   "fileViewer.noFileSelected": "No file selected",
   "fileViewer.writingMode": "Writing mode",

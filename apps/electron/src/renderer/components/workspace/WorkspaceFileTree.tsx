@@ -1,5 +1,5 @@
 // input: Controlled catalog, selection/expansion state, renderer host kind, and file-open/mutation capabilities
-// output: Virtualized tree with native browser Tab traversal, single-click replacement and double-click tab opening
+// output: File tree with truncation feedback, native Tab traversal, single-click replacement and double-click tab opening
 // pos: Workspace file navigation boundary and React Arborist state adapter
 
 import * as React from 'react'
@@ -48,6 +48,7 @@ export interface WorkspaceFileTreeProps {
   rootPath: string
   files: readonly NovelWorkspaceFile[]
   directories: readonly string[]
+  truncated?: boolean
   selectedPath?: string | null
   expandedIds: ReadonlySet<string>
   labels: WorkspaceFileTreeLabels
@@ -104,6 +105,7 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     rootPath,
     files,
     directories,
+    truncated = false,
     selectedPath,
     expandedIds,
     labels,
@@ -148,9 +150,10 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
       () => countVisibleRows(root, expandedIds),
       [expandedIds, root],
     )
+    const truncationNoticeHeight = truncated ? 32 : 0
     const treeHeight = fitContent
       ? Math.max(ROW_HEIGHT, visibleRowCount * ROW_HEIGHT)
-      : measuredHeight
+      : Math.max(1, measuredHeight - truncationNoticeHeight)
     const selectionId = selectedPath ? `writing:file:${selectedPath}` : undefined
     const initialOpenState = React.useMemo(() => {
       const state: Record<string, boolean> = {}
@@ -312,8 +315,11 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
         className={fitContent
           ? 'w-full overflow-hidden px-2 py-1 [&_[role=tree]>div]:!overflow-hidden'
           : 'h-full min-h-0 w-full overflow-hidden px-2 py-1'}
-        style={fitContent ? { height: treeHeight + TREE_VERTICAL_PADDING + (filter === undefined ? 40 : 0) } : undefined}
+        style={fitContent ? { height: treeHeight + TREE_VERTICAL_PADDING + (filter === undefined ? 40 : 0) + truncationNoticeHeight } : undefined}
       >
+        {truncated && <p role="status" className="flex h-8 items-center px-2 text-xs text-muted-foreground" title={t('fileViewer.listTruncated')}>
+          <span className="truncate">{t('fileViewer.listTruncated')}</span>
+        </p>}
         <WorkspaceFileTreeRowContext.Provider value={rowContext}>
           {filter === undefined && <input aria-label={t('fileViewer.filterFiles')} placeholder={t('fileViewer.filterFiles')}
             value={search} onChange={event => setSearch(event.target.value)}

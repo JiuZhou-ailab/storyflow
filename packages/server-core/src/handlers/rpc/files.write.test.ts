@@ -320,6 +320,29 @@ describe('file write RPC registration', () => {
     }
   })
 
+  it('reports truncation only above the entry limit and preserves legacy array responses', async () => {
+    const { listWorkspaceFiles, ctx } = createFileHarness()
+    const root = await mkdtemp(join(tmpdir(), 'craft-file-list-limit-'))
+    try {
+      for (let offset = 0; offset < 5000; offset += 100) {
+        await Promise.all(Array.from({ length: 100 }, (_, index) => writeFile(join(root, `${offset + index}.txt`), '')))
+      }
+      const complete = await listWorkspaceFiles(ctx, root, [], { includeMetadata: true })
+      expect(complete.entries).toHaveLength(5000)
+      expect(complete.truncated).toBe(false)
+
+      await writeFile(join(root, 'overflow.txt'), '')
+      const limited = JSON.parse(JSON.stringify(await listWorkspaceFiles(ctx, root, [], { includeMetadata: true })))
+      expect(limited.entries).toHaveLength(5000)
+      expect(limited.truncated).toBe(true)
+      const legacy = await listWorkspaceFiles(ctx, root, [])
+      expect(Array.isArray(legacy)).toBe(true)
+      expect(legacy).toHaveLength(5000)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('creates missing parent directories before writing text files', async () => {
     const { writeFile, ctx } = createFileHarness()
     const root = await mkdtemp(join(tmpdir(), 'craft-file-write-'))

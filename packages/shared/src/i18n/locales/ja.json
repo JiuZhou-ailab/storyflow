@@ -631,6 +631,7 @@
   "fileViewer.errorLoading": "ファイルの読み込みエラー",
   "fileViewer.externalPreviewHint": "このファイルはここではプレビューできません。",
   "fileViewer.filterFiles": "Filter files…",
+  "fileViewer.listTruncated": "最初の5,000件のみ表示しています。フォルダー一覧は完全ではありません。",
   "fileViewer.loadingContent": "コンテンツを読み込み中...",
   "fileViewer.noFileSelected": "ファイルが選択されていません",
   "fileViewer.writingMode": "Writing mode",
