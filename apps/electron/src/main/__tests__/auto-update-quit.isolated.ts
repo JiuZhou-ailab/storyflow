@@ -8,6 +8,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+// Linux CI runners lack a SUID chrome-sandbox; this test covers the quit lifecycle, not the OS sandbox.
+const LINUX_CI_SANDBOX_ARGS = process.platform === 'linux' ? ['--no-sandbox'] : []
+
 it.each([false, true])('installs on native app.exit after document approval (cleanup stalls: %s)', (stalls) => {
   const directory = mkdtempSync(join(tmpdir(), 'storyflow-native-quit-'))
   try {
@@ -61,7 +64,7 @@ it.each([false, true])('installs on native app.exit after document approval (cle
     `)
     const env = { ...process.env }
     delete env.ELECTRON_RUN_AS_NODE
-    const result = spawnSync(require('electron') as string, [script, `--user-data-dir=${directory}/profile`], {
+    const result = spawnSync(require('electron') as string, [...LINUX_CI_SANDBOX_ARGS, script, `--user-data-dir=${directory}/profile`], {
       env, encoding: 'utf8', timeout: 15_000,
     })
     expect({ status: result.status, error: result.error, stderr: result.stderr }).toMatchObject({ status: 0, error: undefined })
