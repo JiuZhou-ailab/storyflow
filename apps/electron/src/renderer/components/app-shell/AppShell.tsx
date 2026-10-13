@@ -3091,59 +3091,6 @@ function AppShellContent({
     return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [handleUndoNovelReviewAction])
 
-  const [dismissedNovelReviewDotKeys, setDismissedNovelReviewDotKeys] = React.useState<Set<string>>(() => new Set())
-  const pendingNovelReviewDotKeysByPath = React.useMemo(() => {
-    const keysByPath = new Map<string, string[]>()
-
-    for (const change of reviewableNovelFileChanges) {
-      if (change.error) continue
-      const changeKey = getNovelReviewChangeKey(change)
-      if (novelChangeReviewStatus[changeKey]) continue
-
-      const keys = keysByPath.get(change.filePath) ?? []
-      keys.push(changeKey)
-      keysByPath.set(change.filePath, keys)
-    }
-
-    return keysByPath
-  }, [novelChangeReviewStatus, reviewableNovelFileChanges])
-
-  React.useEffect(() => {
-    const pendingKeys = new Set<string>()
-    for (const keys of pendingNovelReviewDotKeysByPath.values()) {
-      for (const key of keys) pendingKeys.add(key)
-    }
-
-    setDismissedNovelReviewDotKeys((current) => {
-      let changed = false
-      const next = new Set<string>()
-      for (const key of current) {
-        if (pendingKeys.has(key)) {
-          next.add(key)
-        } else {
-          changed = true
-        }
-      }
-      return changed ? next : current
-    })
-  }, [pendingNovelReviewDotKeysByPath])
-
-  const hasNovelReviewDot = React.useCallback((filePath: string): boolean => {
-    const keys = pendingNovelReviewDotKeysByPath.get(filePath)
-    return !!keys?.some(key => !dismissedNovelReviewDotKeys.has(key))
-  }, [dismissedNovelReviewDotKeys, pendingNovelReviewDotKeysByPath])
-
-  const handleDismissNovelReviewDot = React.useCallback((filePath: string) => {
-    const keys = pendingNovelReviewDotKeysByPath.get(filePath)
-    if (!keys || keys.length === 0) return
-
-    setDismissedNovelReviewDotKeys((current) => {
-      const next = new Set(current)
-      for (const key of keys) next.add(key)
-      return next
-    })
-  }, [pendingNovelReviewDotKeysByPath])
-
   const handleAskAiForNovelSelection = React.useCallback(async ({ selectedText, instruction }: NovelSelectionAiRequest) => {
     if (!selectedNovelFile || !effectiveSessionId) {
       throw new Error('No active writing document or session')
@@ -4047,7 +3994,6 @@ function AppShellContent({
   const workspaceFileTreeLabels = React.useMemo(() => ({
     rename: t('writing.renameFile.title', '重命名'),
     delete: t('writing.deleteFile.title', '删除'),
-    reviewChanged: t('writing.review.changedFile', 'Changed file'),
   }), [t])
 
   const hasPrimarySidebar = showNovelWorkspaceSidebar || showNovelWorkspacePending || showNovelWorkspaceUnavailable
@@ -4221,8 +4167,6 @@ function AppShellContent({
           onRenameEntry: handleRenameNovelWorkspaceEntry,
           onDeleteEntry: handleDeleteNovelWorkspaceEntry,
           getMenuActions: getNovelWorkspaceTreeMenuActions,
-          hasReviewDot: hasNovelReviewDot,
-          onDismissReviewDot: handleDismissNovelReviewDot,
         }}
       />
       </>

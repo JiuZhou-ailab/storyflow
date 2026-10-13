@@ -1956,7 +1956,6 @@
   "writing.review.acceptUnavailable": "No se puede aceptar un cambio fallido.",
   "writing.review.accepted": "Cambio aceptado",
   "writing.review.acceptedAll": "Todos los cambios aceptados",
-  "writing.review.changedFile": "Archivo modificado",
   "writing.review.fileAccepted": "Cambios del archivo aceptados",
   "writing.review.fileProgress": "{{current}} / {{total}} archivos con cambios",
   "writing.review.fileRejected": "Cambios del archivo rechazados",

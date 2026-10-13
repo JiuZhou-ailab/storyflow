@@ -1956,7 +1956,6 @@
   "writing.review.acceptUnavailable": "无法接受失败的变更。",
   "writing.review.accepted": "已接受变更",
   "writing.review.acceptedAll": "已接受全部变更",
-  "writing.review.changedFile": "有改动的文件",
   "writing.review.fileAccepted": "已接受文件改动",
   "writing.review.fileProgress": "{{current}} / {{total}} 个有变更的文件",
   "writing.review.fileRejected": "已拒绝文件改动",

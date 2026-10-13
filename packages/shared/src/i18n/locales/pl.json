@@ -1958,7 +1958,6 @@
   "writing.review.acceptUnavailable": "Nie można zaakceptować nieudanej zmiany.",
   "writing.review.accepted": "Zmiana zaakceptowana",
   "writing.review.acceptedAll": "Wszystkie zmiany zaakceptowane",
-  "writing.review.changedFile": "Zmieniony plik",
   "writing.review.fileAccepted": "Zmiany w pliku zaakceptowane",
   "writing.review.fileProgress": "{{current}} / {{total}} plików ze zmianami",
   "writing.review.fileRejected": "Zmiany w pliku odrzucone",

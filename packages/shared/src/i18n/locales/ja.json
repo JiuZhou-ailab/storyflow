@@ -1956,7 +1956,6 @@
   "writing.review.acceptUnavailable": "失敗した変更は承認できません。",
   "writing.review.accepted": "変更を承認しました",
   "writing.review.acceptedAll": "すべての変更を承認しました",
-  "writing.review.changedFile": "変更されたファイル",
   "writing.review.fileAccepted": "ファイルの変更を承認しました",
   "writing.review.fileProgress": "{{current}} / {{total}} 件の変更ありファイル",
   "writing.review.fileRejected": "ファイルの変更を拒否しました",

@@ -38,7 +38,6 @@ export interface WorkspaceFileTreeMenuAction {
 export interface WorkspaceFileTreeLabels {
   rename: string
   delete: string
-  reviewChanged?: string
 }
 
 export interface WorkspaceFileTreeRowContextValue {
@@ -47,8 +46,6 @@ export interface WorkspaceFileTreeRowContextValue {
   getMenuActions?: (entry: WorkspaceFileTreeNode) => readonly WorkspaceFileTreeMenuAction[]
   onDelete?: (entry: WorkspaceFileTreeNode) => void
   canRename?: boolean
-  hasReviewDot?: (path: string) => boolean
-  onDismissReviewDot?: (path: string) => void
 }
 
 export const WorkspaceFileTreeRowContext = React.createContext<WorkspaceFileTreeRowContextValue | null>(null)
@@ -155,7 +152,6 @@ export function WorkspaceFileTreeRow({
   if (!context) throw new Error('WorkspaceFileTreeRow must be rendered inside WorkspaceFileTreeRowContext')
 
   const entry = node.data
-  const reviewChanged = entry.type === 'file' && context.hasReviewDot?.(entry.path)
   const active = entry.type === 'file' && entry.path === context.selectedPath
   const row = (
     <div
@@ -190,22 +186,6 @@ export function WorkspaceFileTreeRow({
       >
         <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', node.isOpen && 'rotate-90')} />
       </button>
-      {reviewChanged ? (
-        <button
-          type="button"
-          tabIndex={-1}
-          title={context.labels.reviewChanged}
-          aria-label={context.labels.reviewChanged}
-          className="flex h-3.5 w-3.5 shrink-0 items-center justify-center"
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            context.onDismissReviewDot?.(entry.path)
-          }}
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 ring-2 ring-background" />
-        </button>
-      ) : null}
       <span className="flex h-4 w-4 shrink-0 items-center justify-center text-foreground/70">
         <EntryIcon entry={entry} />
       </span>

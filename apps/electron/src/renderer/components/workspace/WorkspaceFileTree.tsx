@@ -58,8 +58,6 @@ export interface WorkspaceFileTreeProps {
   onRenameEntry?: (entry: WorkspaceFileTreeNode, newName: string) => void | Promise<void>
   onDeleteEntry?: (entry: WorkspaceFileTreeNode) => void
   getMenuActions?: (entry: WorkspaceFileTreeNode) => readonly WorkspaceFileTreeMenuAction[]
-  hasReviewDot?: (path: string) => boolean
-  onDismissReviewDot?: (path: string) => void
   onError?: (error: unknown) => void
   /** Grow to the visible rows so an ancestor can own the only scrollbar. */
   filter?: string
@@ -115,8 +113,6 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
     onRenameEntry,
     onDeleteEntry,
     getMenuActions,
-    hasReviewDot,
-    onDismissReviewDot,
     onError,
     filter,
     fitContent = false,
@@ -284,9 +280,7 @@ export const WorkspaceFileTree = React.forwardRef<WorkspaceFileTreeHandle, Works
       getMenuActions,
       onDelete: onDeleteEntry,
       canRename: !!onRenameEntry,
-      hasReviewDot,
-      onDismissReviewDot,
-    }), [selectedPath, getMenuActions, hasReviewDot, labels, onDeleteEntry, onRenameEntry, onDismissReviewDot])
+    }), [selectedPath, getMenuActions, labels, onDeleteEntry, onRenameEntry])
 
     React.useImperativeHandle(forwardedRef, () => ({
       focusSelected() {

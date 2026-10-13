@@ -1956,7 +1956,6 @@
   "writing.review.acceptUnavailable": "Sikertelen változtatás nem fogadható el.",
   "writing.review.accepted": "Változtatás elfogadva",
   "writing.review.acceptedAll": "Minden változtatás elfogadva",
-  "writing.review.changedFile": "Módosított fájl",
   "writing.review.fileAccepted": "Fájlmódosítások elfogadva",
   "writing.review.fileProgress": "{{current}} / {{total}} módosított fájl",
   "writing.review.fileRejected": "Fájlmódosítások elutasítva",
