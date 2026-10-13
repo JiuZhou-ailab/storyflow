@@ -364,6 +364,7 @@ function AppContent() {
   const lastLoadedSessionsWorkspaceRef = useRef<string | null>(null)
   const workspaceSwitchInFlightRef = useRef<string | null>(null)
   const workspaceSelectionGenerationRef = useRef(0)
+  const workspaceActivationRequestRef = useRef(0)
   const workspaceOpenTargetRef = useRef<{ id: string; route?: Route } | null>(null)
 
   // Notifications enabled state (from app settings)
@@ -1912,14 +1913,17 @@ function AppContent() {
     workspaceId: string,
     landingRoute?: Route,
   ) => {
-    const selectionGeneration = ++workspaceSelectionGenerationRef.current
-    workspaceOpenTargetRef.current = { id: workspaceId, route: landingRoute }
-    setOpeningWorkspace(workspaceOpenTargetRef.current)
-    setWorkspaceOpenError(null)
-    setStartupError(null)
+    const activationRequest = ++workspaceActivationRequestRef.current
+    let selectionGeneration: number | undefined
     try {
       const canLeave = await requestDocumentLeave()
-      if (selectionGeneration !== workspaceSelectionGenerationRef.current || !canLeave) return
+      if (activationRequest !== workspaceActivationRequestRef.current || !canLeave) return
+      // Only confirmed selections invalidate hydration; pending prompts still keep the latest intent.
+      selectionGeneration = ++workspaceSelectionGenerationRef.current
+      workspaceOpenTargetRef.current = { id: workspaceId, route: landingRoute }
+      setOpeningWorkspace(workspaceOpenTargetRef.current)
+      setWorkspaceOpenError(null)
+      setStartupError(null)
       const nextWorkspace = await withTimeout(
         window.electronAPI.resolveRuntimeWorkspace(workspaceId),
         WORKSPACE_SWITCH_RPC_TIMEOUT_MS,
@@ -1970,9 +1974,12 @@ function AppContent() {
       if (landingRoute) setPendingReadyRoute(landingRoute)
       setAppState('ready')
     } catch (error) {
-      if (selectionGeneration !== workspaceSelectionGenerationRef.current) return
+      if (selectionGeneration === undefined
+        ? activationRequest !== workspaceActivationRequestRef.current
+        : selectionGeneration !== workspaceSelectionGenerationRef.current) return
       console.error('[App] Failed to activate runtime workspace:', error)
       setWorkspaceOpenError(formatSessionLoadFailure(error))
+      if (selectionGeneration === undefined) return
       setSessionLoadError(formatSessionLoadFailure(error))
       store.set(sessionMetadataReadyAtom, true)
       setSessionsLoaded(true)

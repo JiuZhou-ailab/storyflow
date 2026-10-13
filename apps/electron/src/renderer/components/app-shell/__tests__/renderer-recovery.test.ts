@@ -40,8 +40,9 @@ function activation(api: Record<string, unknown> = {}) {
   const switched = mock(async (_id: string) => {})
   const context = {
     window: { electronAPI: { resolveRuntimeWorkspace: async (id: string) => ({ id }), switchWorkspace: switched, ...api } },
-    workspaceSelectionGenerationRef: { current: 0 }, workspaceOpenTargetRef: { current: null },
-    workspaceSwitchInFlightRef: { current: null }, lastLoadedSessionsWorkspaceRef: { current: null },
+    workspaceActivationRequestRef: { current: 0 },
+    workspaceSelectionGenerationRef: { current: 0 }, workspaceOpenTargetRef: { current: null as { id: string; route?: string } | null },
+    workspaceSwitchInFlightRef: { current: null as string | null }, lastLoadedSessionsWorkspaceRef: { current: null },
     pendingCreatedWorkspaceRef: { current: null }, sessionDraftsRef: { current: new Map() },
     setOpeningWorkspace: opening.set, setWorkspaceOpenError: error.set, setStartupError() {},
     requestDocumentLeave: async () => true, withTimeout: (promise: Promise<any>) => promise,
@@ -56,6 +57,83 @@ function activation(api: Record<string, unknown> = {}) {
 }
 
 describe('project activation recovery', () => {
+  it('finishes the original session load after cancelling a switch', async () => {
+    const sessions = deferred<any[]>(), leave = deferred<boolean>(), h = activation()
+    const loaded = cell(false), hydrated = cell<any[]>([]), startupError = cell<string | null>('previous startup error')
+    const context = {
+      ...h.context,
+      requestDocumentLeave: mock().mockResolvedValueOnce(true).mockImplementation(() => leave.promise),
+      setSessionsLoaded: loaded.set, setStartupError: startupError.set,
+    }
+    const load = callback(app, 'loadSessionsFromServer', {
+      ...context,
+      window: { electronAPI: { getSessions: () => sessions.promise } },
+      store: { get: () => new Map(), set() {} }, sessionOptionsAtom: '', SESSION_RPC_TIMEOUT_MS: 5000,
+      shouldAutoCreateBaseSession: () => false, initializeSessions: hydrated.set,
+      initializeSessionOptionsMap: () => new Map(), initialSessionId: null,
+    })
+    const activate = callback(app, 'activateRuntimeWorkspace', { ...context, loadSessionsFromServer: load })
+    const a = activate('a'); await tick()
+    h.error.set('previous open error'); startupError.set('previous startup error')
+    const b = activate('b'); await tick()
+    leave.resolve(false); await b
+    sessions.resolve([{ id: 'a-session', permissionModeVersion: 1 }]); await a
+    expect(loaded.get()).toBe(true)
+    expect(hydrated.get()).toEqual([{ id: 'a-session', permissionModeVersion: 1 }])
+    expect(h.context.workspaceSelectionGenerationRef.current).toBe(1)
+    expect(h.context.workspaceOpenTargetRef.current).toEqual({ id: 'a', route: undefined })
+    expect(h.error.get()).toBe('previous open error')
+    expect(startupError.get()).toBe('previous startup error')
+    expect(h.opening.get()).toBeNull()
+    expect(h.context.workspaceSwitchInFlightRef.current).toBeNull()
+    expect(h.switched.mock.calls).toEqual([['a']])
+  })
+  it('keeps the active loading target and errors while leave confirmation is pending or cancelled', async () => {
+    const first = deferred(), leave = deferred<boolean>(), h = activation({ switchWorkspace: () => first.promise })
+    const requestLeave = mock().mockResolvedValueOnce(true).mockImplementation(() => leave.promise)
+    const activate = callback(app, 'activateRuntimeWorkspace', { ...h.context, requestDocumentLeave: requestLeave })
+    const a = activate('a'); await tick()
+    h.error.set('existing error')
+    const b = activate('b'); await tick()
+    expect(h.opening.get().id).toBe('a')
+    expect(h.error.get()).toBe('existing error')
+    leave.resolve(false); await b
+    expect(h.opening.get().id).toBe('a')
+    expect(h.context.workspaceSwitchInFlightRef.current).toBe('a')
+    expect(h.error.get()).toBe('existing error')
+    first.resolve(undefined); await a
+    expect(h.load.mock.calls.map(call => call[0])).toEqual(['a'])
+    expect(h.opening.get()).toBeNull()
+  })
+
+  it('ignores an older leave confirmation that resolves after a newer selection', async () => {
+    const leave = deferred<boolean>(), h = activation()
+    const requestLeave = mock().mockImplementationOnce(() => leave.promise).mockResolvedValue(true)
+    const activate = callback(app, 'activateRuntimeWorkspace', { ...h.context, requestDocumentLeave: requestLeave })
+    const a = activate('a')
+    await activate('b')
+    leave.resolve(true); await a
+    expect(h.runtime.get().id).toBe('b')
+    expect(h.context.workspaceSelectionGenerationRef.current).toBe(1)
+    expect(h.switched.mock.calls).toEqual([['b']])
+  })
+  it('contains leave failures without marking the active load complete or clearing its target', async () => {
+    const first = deferred(), h = activation({ switchWorkspace: () => first.promise })
+    const loaded = cell(false)
+    const requestLeave = mock().mockResolvedValueOnce(true).mockRejectedValue(new Error('leave failed'))
+    const activate = callback(app, 'activateRuntimeWorkspace', {
+      ...h.context, requestDocumentLeave: requestLeave, setSessionsLoaded: loaded.set,
+    })
+    const a = activate('a'); await tick()
+    await activate('b')
+    expect(h.error.get()).toContain('leave failed')
+    expect(loaded.get()).toBe(false)
+    expect(h.opening.get().id).toBe('a')
+    expect(h.context.workspaceSwitchInFlightRef.current).toBe('a')
+    expect(h.context.workspaceSelectionGenerationRef.current).toBe(1)
+    first.resolve(undefined); await a
+    expect(h.load.mock.calls.map(call => call[0])).toEqual(['a'])
+  })
   it('discards an older resolution even when it finishes last', async () => {
     const first = deferred(), second = deferred()
     const h = activation({ resolveRuntimeWorkspace: (id: string) => id === 'a' ? first.promise : second.promise })
