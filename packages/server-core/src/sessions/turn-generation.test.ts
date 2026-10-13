@@ -119,13 +119,13 @@ it('restores deferred writes across an invalidation epoch and resumes queued wor
   // A later shutdown/invalidation owner still owes this same live object's write.
   managed.runtimeEpoch = 2
   const claim = { sessions: [managed], runtimeEpochs: new Map([[managed.id, 2]]), workspace: managed.workspace, rootKeys: [], token: Symbol() }
-  internal.restoreProjectInvalidation(claim)
+  internal.projectLifecycle.restoreProjectInvalidation(claim)
   await manager.flushSession(managed.id)
   expect(readFileSync(getSessionFilePath(root, managed.id), 'utf8')).toContain('completed during exclusive operation')
   const replayed = gate()
   installChat(async function* () { try { yield { type: 'complete' } } finally { replayed.resolve() } })
   managed.messages.push({ id: 'queued', role: 'user', content: 'queued request', isQueued: true, timestamp: 2 })
-  internal.releaseProjectTransition(claim)
+  internal.projectLifecycle.releaseProjectTransition(claim)
   await replayed.promise
   expect(managed.messages.find(message => message.id === 'queued')?.isQueued).toBeFalsy()
 })

@@ -1,4 +1,4 @@
-// input: Workspace sessions, Pi product projections, persistence stores, and Host services
+// input: Workspace sessions, Pi product projections, persistence stores, Project lifecycle coordinator, and Host services
 // output: Generation-owned atomic sends with stable interruption/freshness policies and transient facts, projected Pi events, commands, and drained Host teardown
 // pos: Storyflow Product Host session boundary; Pi owns Agent turn execution
 
@@ -37,7 +37,6 @@ import {
 } from '@craft-agent/shared/config'
 import { toWorkspaceInfo, type ActiveSessionInfo, type RemoteServerConnectionInput, type SessionProcessingStatus } from '@craft-agent/core/types'
 import {
-  canonicalizeProjectRoot,
   resolveProjectOwnedPath,
   isFreeConversationWorkspaceId,
   commitWorkspaceRootRelink,
@@ -46,7 +45,6 @@ import {
   listSessionWorkspaces,
   loadWorkspaceConfig,
   migrateLegacyLocalProjectDirectoryIdentity,
-  prepareWorkspaceRootRelink,
   rebaseWorkspaceDefaultWorkingDirectory,
   rebasePathWithinProjectRoot,
   registerLocalProject as registerStoredLocalProject,
@@ -148,6 +146,7 @@ import { buildServersFromSources } from './source-bridge'
 import { SessionPersistence } from './persistence'
 import { AgentRuntimeLease } from './agent-runtime-lease'
 import { AgentRuntime } from './agent-runtime'
+import { ProjectLifecycleCoordinator, ProjectLifecycleTransitionError, type ProjectTransitionClaim, type ProjectInvalidationClaim, type WorkspaceRelinkClaim } from './project-lifecycle-coordinator'
 
 export { AGENT_FLAGS } from './agent-runtime'
 
@@ -184,24 +183,6 @@ interface SessionDeletionClaim {
   workspaceRootPath: string
   runtimeEpoch: number
 }
-
-interface ProjectTransitionClaim {
-  token: symbol
-  workspace: Workspace
-  rootKeys: string[]
-  operationsDrained: Promise<void>
-}
-
-interface ProjectInvalidationClaim extends ProjectTransitionClaim {
-  sessions: ManagedSession[]
-  runtimeEpochs: Map<string, number>
-}
-
-interface WorkspaceRelinkClaim extends ProjectInvalidationClaim {
-  plan: ReturnType<typeof prepareWorkspaceRootRelink>
-}
-
-class ProjectLifecycleTransitionError extends Error {}
 
 /**
  * Refresh expired OAuth / renew-endpoint tokens for the given sources.
@@ -342,7 +323,7 @@ export class SessionManager implements ISessionManager {
       const workspaces = listSessionWorkspaces()
       for (const workspace of workspaces) {
         try {
-          await this.withProjectLifecycleLock(workspace.id, async () => {
+          await this.projectLifecycle.withProjectLifecycleLock(workspace.id, async () => {
             const current = resolveRuntimeWorkspaceById(workspace.id)
             if (current) this.setupConfigWatcher(current.rootPath, current.id)
           })
@@ -360,14 +341,21 @@ export class SessionManager implements ISessionManager {
   private configWatchers: Map<string, ConfigWatcher> = new Map()
   // Automation systems for workspace event automations - one per workspace (includes scheduler, diffing, and handlers)
   private automationSystems: Map<string, AutomationSystem> = new Map()
-  /** Serializes Project identity changes with every operation that creates durable Sessions. */
-  private projectLifecycleTails = new Map<string, Promise<void>>()
-  /** Logical ownership spans the lock-free runtime-drain phase of remove/relink. */
-  private projectLifecycleTransitions = new Map<string, symbol>()
-  private projectRootLifecycleTransitions = new Map<string, symbol>()
-  /** Accepted lock-free Project work that transitions must drain before commit. */
-  private projectOperationCounts = new Map<string, number>()
-  private projectOperationDrainWaiters = new Map<string, Set<() => void>>()
+  private projectLifecycle = new ProjectLifecycleCoordinator({
+    getStoredWorkspace: id => loadStoredConfig()?.workspaces.find(workspace => workspace.id === id),
+    resolveWorkspace: id => resolveRuntimeWorkspaceById(id),
+    sessions: () => this.sessions,
+    isShuttingDown: () => this.shuttingDown,
+    drainSession: (managed, reason) => this.withAgentRuntimeLock(managed, async () => {
+      if (reason) await this.disposeManagedAgentRuntime(managed, reason)
+    }, true),
+    getActiveSessionCount: id => this.getActiveSessionCount(id),
+    setupConfigWatcher: (root, id) => this.setupConfigWatcher(root, id),
+    removeWorkspaceLocked: claim => this.removeWorkspaceLocked(claim),
+    rebindWorkspaceRootLocked: claim => this.rebindWorkspaceRootLocked(claim),
+    enqueueInvalidationSnapshot: managed => this.persistence.enqueueInvalidationSnapshot(managed, true),
+    recoverQueuedMessages: managed => this.persistence.recoverOrphanedQueuedMessages(managed),
+  })
   // Pending credential request resolvers (keyed by requestId)
   private pendingCredentialResolvers: Map<string, (response: import('@craft-agent/shared/protocol').CredentialResponse) => void> = new Map()
   // Permission request metadata tracking (keyed by requestId)
@@ -507,310 +495,31 @@ export class SessionManager implements ISessionManager {
     })
   }
 
-  private async withLifecycleLockKey<T>(
-    key: string,
-    work: () => Promise<T>,
-  ): Promise<T> {
-    const previous = this.projectLifecycleTails.get(key) ?? Promise.resolve()
-    let release!: () => void
-    const current = new Promise<void>(resolve => { release = resolve })
-    const tail = previous.then(() => current)
-    this.projectLifecycleTails.set(key, tail)
-    await previous
-
-    try {
-      return await work()
-    } finally {
-      release()
-      if (this.projectLifecycleTails.get(key) === tail) {
-        this.projectLifecycleTails.delete(key)
-      }
-    }
-  }
-
-  private async withLifecycleRootKeys<T>(
-    keys: readonly string[],
-    work: () => Promise<T>,
-  ): Promise<T> {
-    const orderedKeys = [...new Set(keys)].sort()
-    const acquire = (index: number): Promise<T> => (
-      index === orderedKeys.length
-        ? work()
-        : this.withLifecycleLockKey(orderedKeys[index], () => acquire(index + 1))
-    )
-    return acquire(0)
-  }
-
-  private projectRootLifecycleKey(rootPath: string): string {
-    const canonicalRoot = canonicalizeProjectRoot(rootPath, true)
-    return `root:${process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot}`
-  }
-
-  private assertProjectLifecycleAvailable(
-    projectId: string | undefined,
-    rootKeys: readonly string[],
-    token?: symbol,
-  ): void {
-    if (this.shuttingDown) throw new Error('Host is shutting down')
-    const projectOwner = projectId
-      ? this.projectLifecycleTransitions.get(projectId)
-      : undefined
-    if (projectOwner && projectOwner !== token) {
-      throw new ProjectLifecycleTransitionError(`Project ${projectId} is being removed or relinked; retry this operation.`)
-    }
-    const busyRoot = rootKeys.find(key => {
-      const owner = this.projectRootLifecycleTransitions.get(key)
-      return owner && owner !== token
-    })
-    if (busyRoot) {
-      throw new ProjectLifecycleTransitionError('The selected Project directory is being removed or relinked; retry this operation.')
-    }
-  }
-
-  private async withProjectLifecycleLock<T>(
-    workspaceId: string,
-    work: () => Promise<T>,
-    transitionToken?: symbol,
-  ): Promise<T> {
-    if (isFreeConversationWorkspaceId(workspaceId)) {
-      this.assertProjectLifecycleAvailable(workspaceId, [], transitionToken)
-      return work()
-    }
-
-    const projectKey = `project:${workspaceId}`
-    const workspace = loadStoredConfig()?.workspaces.find(candidate => candidate.id === workspaceId)
-    const rootKey = workspace && !workspace.remoteServer
-      ? this.projectRootLifecycleKey(workspace.rootPath)
-      : undefined
-    this.assertProjectLifecycleAvailable(workspaceId, rootKey ? [rootKey] : [], transitionToken)
-    let retry = false
-    let outcome: { value: T } | undefined
-    await this.withLifecycleRootKeys(
-      rootKey ? [rootKey] : [],
-      () => this.withLifecycleLockKey(projectKey, async () => {
-        const current = loadStoredConfig()?.workspaces.find(candidate => candidate.id === workspaceId)
-        const currentRootKey = current && !current.remoteServer
-          ? this.projectRootLifecycleKey(current.rootPath)
-          : undefined
-        if (currentRootKey !== rootKey) {
-          retry = true
-          return
-        }
-        this.assertProjectLifecycleAvailable(workspaceId, rootKey ? [rootKey] : [], transitionToken)
-        outcome = { value: await work() }
-      }),
-    )
-    if (retry) return this.withProjectLifecycleLock(workspaceId, work, transitionToken)
-    return outcome!.value
-  }
-
-  private async withWorkspaceRootRelinkLock<T>(
-    projectId: string,
-    targetRoot: string,
-    work: () => Promise<T>,
-    transitionToken?: symbol,
-  ): Promise<T> {
-    const projectKey = `project:${projectId}`
-    const targetKey = this.projectRootLifecycleKey(targetRoot)
-    const workspace = loadStoredConfig()?.workspaces.find(candidate => candidate.id === projectId)
-    const previousRootKey = workspace && !workspace.remoteServer
-      ? this.projectRootLifecycleKey(workspace.rootPath)
-      : undefined
-    this.assertProjectLifecycleAvailable(
-      projectId,
-      previousRootKey ? [previousRootKey, targetKey] : [targetKey],
-      transitionToken,
-    )
-
-    let retry = false
-    let outcome: { value: T } | undefined
-    await this.withLifecycleRootKeys(
-      previousRootKey ? [previousRootKey, targetKey] : [targetKey],
-      () => this.withLifecycleLockKey(projectKey, async () => {
-        const current = loadStoredConfig()?.workspaces.find(candidate => candidate.id === projectId)
-        const currentRootKey = current && !current.remoteServer
-          ? this.projectRootLifecycleKey(current.rootPath)
-          : undefined
-        if (currentRootKey !== previousRootKey) {
-          retry = true
-          return
-        }
-        this.assertProjectLifecycleAvailable(
-          projectId,
-          previousRootKey ? [previousRootKey, targetKey] : [targetKey],
-          transitionToken,
-        )
-        outcome = { value: await work() }
-      }),
-    )
-    if (retry) return this.withWorkspaceRootRelinkLock(projectId, targetRoot, work, transitionToken)
-    return outcome!.value
-  }
-
-  private beginProjectInvalidation(
-    workspace: Workspace,
-    sessions: ManagedSession[],
-    rootKeys: string[],
-  ): ProjectInvalidationClaim {
-    const busySession = sessions.find(managed => managed.runtimeState)
-    if (busySession) {
-      throw new Error(`Session ${busySession.id} is already being changed; retry the Project operation.`)
-    }
-
-    const transition = this.beginProjectTransition(workspace, rootKeys)
-    const runtimeEpochs = new Map<string, number>()
-    for (const managed of sessions) {
-      managed.runtimeState = 'invalidating'
-      managed.runtimeEpoch = (managed.runtimeEpoch ?? 0) + 1
-      runtimeEpochs.set(managed.id, managed.runtimeEpoch)
-    }
-    return { ...transition, sessions, runtimeEpochs }
-  }
-
-  private beginProjectTransition(workspace: Workspace, rootKeys: string[]): ProjectTransitionClaim {
-    const token = Symbol(workspace.id)
-    this.projectLifecycleTransitions.set(workspace.id, token)
-    for (const rootKey of rootKeys) this.projectRootLifecycleTransitions.set(rootKey, token)
-    return {
-      token,
-      workspace,
-      rootKeys,
-      operationsDrained: this.waitForProjectOperations(workspace.id),
-    }
-  }
-
-  private retainProjectOperation(projectId: string): () => void {
-    this.projectOperationCounts.set(projectId, (this.projectOperationCounts.get(projectId) ?? 0) + 1)
-    let retained = true
-    return () => {
-      if (!retained) return
-      retained = false
-      const remaining = (this.projectOperationCounts.get(projectId) ?? 1) - 1
-      if (remaining > 0) {
-        this.projectOperationCounts.set(projectId, remaining)
-        return
-      }
-      this.projectOperationCounts.delete(projectId)
-      const waiters = this.projectOperationDrainWaiters.get(projectId)
-      this.projectOperationDrainWaiters.delete(projectId)
-      for (const resolve of waiters ?? []) resolve()
-    }
-  }
-
-  private waitForProjectOperations(projectId: string): Promise<void> {
-    if ((this.projectOperationCounts.get(projectId) ?? 0) === 0) return Promise.resolve()
-    return new Promise(resolve => {
-      const waiters = this.projectOperationDrainWaiters.get(projectId) ?? new Set<() => void>()
-      waiters.add(resolve)
-      this.projectOperationDrainWaiters.set(projectId, waiters)
-    })
-  }
-
-  private ownsProjectInvalidation(claim: ProjectInvalidationClaim, managed: ManagedSession): boolean {
-    return this.sessions.get(managed.id) === managed
-      && managed.runtimeState === 'invalidating'
-      && managed.runtimeEpoch === claim.runtimeEpochs.get(managed.id)
-  }
-
-  private restoreProjectInvalidation(claim: ProjectInvalidationClaim): void {
-    for (const managed of claim.sessions) {
-      if (this.ownsProjectInvalidation(claim, managed)) {
-        this.persistence.enqueueInvalidationSnapshot(managed, true)
-        managed.runtimeState = undefined
-      }
-    }
-  }
-
-  private releaseProjectTransition(claim: ProjectTransitionClaim | ProjectInvalidationClaim): void {
-    if (this.projectLifecycleTransitions.get(claim.workspace.id) === claim.token) {
-      this.projectLifecycleTransitions.delete(claim.workspace.id)
-    }
-    for (const rootKey of claim.rootKeys) {
-      if (this.projectRootLifecycleTransitions.get(rootKey) === claim.token) {
-        this.projectRootLifecycleTransitions.delete(rootKey)
-      }
-    }
-    if (!('sessions' in claim)) return
-    for (const managed of claim.sessions) {
-      if (this.sessions.get(managed.id) === managed && !managed.runtimeState && !this.shuttingDown) {
-        this.persistence.recoverOrphanedQueuedMessages(managed)
-      }
-    }
-  }
-
   async withProjectLifecycle<T>(
     projectId: string,
     work: (workspace: Workspace) => Promise<T>,
   ): Promise<T> {
-    const resolved = resolveRuntimeWorkspaceById(projectId)
-    if (!resolved) throw new Error(`Project not found: ${projectId}`)
-    const canonicalProjectId = resolved.id
-    return this.withProjectLifecycleLock(canonicalProjectId, async () => {
-      const workspace = resolveRuntimeWorkspaceById(canonicalProjectId)
-      if (!workspace) throw new Error(`Project not found: ${projectId}`)
-      return work(workspace)
-    })
+    return this.projectLifecycle.withProjectLifecycle(projectId, work)
   }
 
   async withProjectOperation<T>(
     projectId: string,
     work: (workspace: Workspace) => Promise<T>,
   ): Promise<T> {
-    const resolved = resolveRuntimeWorkspaceById(projectId)
-    if (!resolved) throw new Error(`Project not found: ${projectId}`)
-    const canonicalProjectId = resolved.id
-    const lease = await this.withProjectLifecycleLock(canonicalProjectId, async () => {
-      const workspace = resolveRuntimeWorkspaceById(canonicalProjectId)
-      if (!workspace) throw new Error(`Project not found: ${projectId}`)
-      return {
-        workspace,
-        release: this.retainProjectOperation(canonicalProjectId),
-      }
-    })
-    try {
-      return await work(lease.workspace)
-    } finally {
-      lease.release()
-    }
+    return this.projectLifecycle.withProjectOperation(projectId, work)
   }
 
   async withProjectExclusiveOperation<T>(
     projectId: string,
     work: (workspace: Workspace) => Promise<T>,
   ): Promise<T> {
-    const resolved = resolveRuntimeWorkspaceById(projectId)
-    if (!resolved) throw new Error(`Project not found: ${projectId}`)
-    const canonicalProjectId = resolved.id
-    const transition = await this.withProjectLifecycleLock(canonicalProjectId, async () => {
-      const workspace = resolveRuntimeWorkspaceById(canonicalProjectId)
-      if (!workspace) throw new Error(`Project not found: ${projectId}`)
-      const sessions = [...this.sessions.values()]
-        .filter(managed => managed.workspace.id === canonicalProjectId)
-      return this.beginProjectInvalidation(
-        workspace,
-        sessions,
-        workspace.remoteServer ? [] : [this.projectRootLifecycleKey(workspace.rootPath)],
-      )
-    })
-    try {
-      await transition.operationsDrained
-      for (const managed of transition.sessions) {
-        await this.withAgentRuntimeLock(managed, async () => {}, true)
-      }
-      return await work(transition.workspace)
-    } finally {
-      try {
-        this.restoreProjectInvalidation(transition)
-      } finally {
-        this.releaseProjectTransition(transition)
-      }
-    }
+    return this.projectLifecycle.withProjectExclusiveOperation(projectId, work)
   }
 
   async reconcileProjectSourceGrants(projectId: string): Promise<void> {
     let shouldReconcile = false
     try {
-      await this.withProjectLifecycleLock(projectId, async () => {
+      await this.projectLifecycle.withProjectLifecycleLock(projectId, async () => {
         const hostWorkspace = loadStoredConfig()?.workspaces.find(candidate => candidate.id === projectId)
         if (!hostWorkspace || hostWorkspace.remoteServer) return
         for (const managed of this.sessions.values()) {
@@ -1591,12 +1300,12 @@ export class SessionManager implements ISessionManager {
     rootPath: string,
     remoteServer?: RemoteServerConnectionInput,
   ): Promise<Workspace> {
-    const rootKey = this.projectRootLifecycleKey(rootPath)
-    this.assertProjectLifecycleAvailable(undefined, [rootKey])
-    return this.withLifecycleLockKey(rootKey, async () => {
-      this.assertProjectLifecycleAvailable(undefined, [rootKey])
+    const rootKey = this.projectLifecycle.projectRootLifecycleKey(rootPath)
+    this.projectLifecycle.assertProjectLifecycleAvailable(undefined, [rootKey])
+    return this.projectLifecycle.withLifecycleLockKey(rootKey, async () => {
+      this.projectLifecycle.assertProjectLifecycleAvailable(undefined, [rootKey])
       const existing = loadStoredConfig()?.workspaces.find(candidate => (
-        this.projectRootLifecycleKey(candidate.rootPath) === rootKey
+        this.projectLifecycle.projectRootLifecycleKey(candidate.rootPath) === rootKey
       ))
       if (remoteServer && existing) {
         if (existing.remoteServer) {
@@ -1605,8 +1314,8 @@ export class SessionManager implements ISessionManager {
         throw new Error('An existing local Project cannot be converted into a remote Project.')
       }
       let workspace = registerStoredLocalProject(name, rootPath)
-      return this.withLifecycleLockKey(`project:${workspace.id}`, async () => {
-        this.assertProjectLifecycleAvailable(workspace.id, [rootKey])
+      return this.projectLifecycle.withLifecycleLockKey(`project:${workspace.id}`, async () => {
+        this.projectLifecycle.assertProjectLifecycleAvailable(workspace.id, [rootKey])
         if (!workspace.remoteServer && workspace.grantedWorkingDirectoryRoots === undefined) {
           await migrateLegacyLocalProjectDirectoryIdentity(workspace.id)
           workspace = getWorkspaces().find(candidate => candidate.id === workspace.id) ?? workspace
@@ -1623,7 +1332,7 @@ export class SessionManager implements ISessionManager {
   }
 
   async activateProject(projectId: string): Promise<Workspace> {
-    return this.withProjectLifecycleLock(projectId, async () => {
+    return this.projectLifecycle.withProjectLifecycleLock(projectId, async () => {
       const workspace = resolveRuntimeWorkspaceById(projectId)
       if (!workspace) throw new Error(`Project not found: ${projectId}`)
       this.setupConfigWatcher(workspace.rootPath, workspace.id)
@@ -1635,7 +1344,7 @@ export class SessionManager implements ISessionManager {
     projectId: string,
     remoteServer: RemoteServerConnectionInput,
   ): Promise<void> {
-    return this.withProjectLifecycleLock(
+    return this.projectLifecycle.withProjectLifecycleLock(
       projectId,
       () => this.updateRemoteProjectLocked(projectId, remoteServer),
     )
@@ -1653,53 +1362,12 @@ export class SessionManager implements ISessionManager {
   }
 
   async removeWorkspace(projectId: string): Promise<boolean> {
-    const claim = await this.withProjectLifecycleLock(projectId, async () => {
-      const workspace = getWorkspaces().find(candidate => candidate.id === projectId)
-      if (!workspace) return false
-      if (this.getActiveSessionCount(projectId) > 0) {
-        throw new Error('Stop all running sessions before removing this Project.')
-      }
-      const sessions = [...this.sessions.values()]
-        .filter(managed => managed.workspace.id === projectId)
-      const rootKeys = workspace.remoteServer
-        ? []
-        : [this.projectRootLifecycleKey(workspace.rootPath)]
-      return this.beginProjectInvalidation(workspace, sessions, rootKeys)
-    })
-    if (!claim) return false
-
-    try {
-      await claim.operationsDrained
-      // A Pi turn may call spawn_session, so runtime drain must never retain
-      // the Project/root locks. The logical transition makes that call fail fast.
-      for (const managed of claim.sessions) {
-        await this.withAgentRuntimeLock(
-          managed,
-          () => this.disposeManagedAgentRuntime(managed, 'workspace removal'),
-          true,
-        )
-      }
-      return await this.withProjectLifecycleLock(
-        projectId,
-        () => this.removeWorkspaceLocked(claim),
-        claim.token,
-      )
-    } catch (error) {
-      this.restoreProjectInvalidation(claim)
-      try {
-        this.setupConfigWatcher(claim.workspace.rootPath, projectId)
-      } catch (watcherError) {
-        getSessionLog().error('Failed to restore Project watcher after removal error:', watcherError)
-      }
-      throw error
-    } finally {
-      this.releaseProjectTransition(claim)
-    }
+    return this.projectLifecycle.removeWorkspace(projectId)
   }
 
   private async removeWorkspaceLocked(claim: ProjectInvalidationClaim): Promise<boolean> {
     const { workspace, sessions } = claim
-    if (sessions.some(managed => !this.ownsProjectInvalidation(claim, managed))) {
+    if (sessions.some(managed => !this.projectLifecycle.ownsProjectInvalidation(claim, managed))) {
       throw new Error(`Project ${workspace.id} removal was superseded`)
     }
 
@@ -1744,65 +1412,12 @@ export class SessionManager implements ISessionManager {
   }
 
   async rebindWorkspaceRoot(projectId: string, currentRoot: string): Promise<Workspace> {
-    const claim = await this.withWorkspaceRootRelinkLock(
-      projectId,
-      currentRoot,
-      async () => {
-        if (this.getActiveSessionCount(projectId) > 0) {
-          throw new Error('Stop all running sessions before relinking this Project.')
-        }
-        const sessions = [...this.sessions.values()]
-          .filter(managed => managed.workspace.id === projectId)
-        const plan = prepareWorkspaceRootRelink(
-          projectId,
-          currentRoot,
-          sessions.map(managed => managed.id),
-        )
-        const invalidation = this.beginProjectInvalidation(
-          plan.workspace,
-          sessions,
-          [
-            this.projectRootLifecycleKey(plan.previousRoot),
-            this.projectRootLifecycleKey(plan.currentRoot),
-          ],
-        )
-        return { ...invalidation, plan }
-      },
-    )
-
-    let updated: Workspace
-    try {
-      await claim.operationsDrained
-      for (const managed of claim.sessions) {
-        await this.withAgentRuntimeLock(
-          managed,
-          () => this.disposeManagedAgentRuntime(managed, 'workspace root relink'),
-          true,
-        )
-      }
-      updated = await this.withWorkspaceRootRelinkLock(
-        projectId,
-        currentRoot,
-        () => this.rebindWorkspaceRootLocked(claim),
-        claim.token,
-      )
-    } catch (error) {
-      this.restoreProjectInvalidation(claim)
-      try {
-        this.setupConfigWatcher(claim.plan.previousRoot, projectId)
-      } catch (watcherError) {
-        getSessionLog().error('Failed to restore Project watcher after relink error:', watcherError)
-      }
-      throw error
-    } finally {
-      this.releaseProjectTransition(claim)
-    }
-    return updated
+    return this.projectLifecycle.rebindWorkspaceRoot(projectId, currentRoot)
   }
 
   private async rebindWorkspaceRootLocked(claim: WorkspaceRelinkClaim): Promise<Workspace> {
     const { plan, sessions: reboundSessions } = claim
-    if (reboundSessions.some(managed => !this.ownsProjectInvalidation(claim, managed))) {
+    if (reboundSessions.some(managed => !this.projectLifecycle.ownsProjectInvalidation(claim, managed))) {
       throw new Error(`Project ${plan.projectId} relink was superseded`)
     }
     const projectId = plan.projectId
@@ -1867,7 +1482,7 @@ export class SessionManager implements ISessionManager {
     for (const managed of reboundSessions) {
       const rebound = staged.get(managed.id)!
       Object.assign(managed, rebound, { workspace: updated })
-      if (this.ownsProjectInvalidation(claim, managed)) {
+      if (this.projectLifecycle.ownsProjectInvalidation(claim, managed)) {
         managed.runtimeState = undefined
       }
     }
@@ -1889,7 +1504,7 @@ export class SessionManager implements ISessionManager {
     key: 'permissionMode' | 'enabledSourceSlugs' | 'localMcpEnabled' | 'automationsEnabled',
     value: unknown,
   ): Promise<void> {
-    const { runtimeDispose, projectTransition } = await this.withProjectLifecycleLock(
+    const { runtimeDispose, projectTransition } = await this.projectLifecycle.withProjectLifecycleLock(
       projectId,
       async () => this.updateProjectHostSettingLocked(projectId, key, value),
     )
@@ -1913,7 +1528,7 @@ export class SessionManager implements ISessionManager {
           }
         }))
     } finally {
-      if (projectTransition) this.releaseProjectTransition(projectTransition)
+      if (projectTransition) this.projectLifecycle.releaseProjectTransition(projectTransition)
     }
   }
 
@@ -1972,7 +1587,7 @@ export class SessionManager implements ISessionManager {
       const nextRefs = hostWorkspace.defaultEnabledSourceRefs ?? []
       return {
         projectTransition: previousSourceRefs.some(ref => !nextRefs.includes(ref))
-          ? this.beginProjectTransition(workspace, [this.projectRootLifecycleKey(workspace.rootPath)])
+          ? this.projectLifecycle.beginProjectTransition(workspace, [this.projectLifecycle.projectRootLifecycleKey(workspace.rootPath)])
           : undefined,
       }
     }
@@ -1984,7 +1599,7 @@ export class SessionManager implements ISessionManager {
       }
       return {
         projectTransition: previousLocalMcpEnabled && value === false
-          ? this.beginProjectTransition(workspace, [this.projectRootLifecycleKey(workspace.rootPath)])
+          ? this.projectLifecycle.beginProjectTransition(workspace, [this.projectLifecycle.projectRootLifecycleKey(workspace.rootPath)])
           : undefined,
       }
     }
@@ -2000,9 +1615,9 @@ export class SessionManager implements ISessionManager {
     const automationSystem = this.automationSystems.get(workspace.rootPath)
     this.automationSystems.delete(workspace.rootPath)
     const projectTransition = previousAutomationsEnabled || automationSystem
-      ? this.beginProjectTransition(
+      ? this.projectLifecycle.beginProjectTransition(
           workspace,
-          [this.projectRootLifecycleKey(workspace.rootPath)],
+          [this.projectLifecycle.projectRootLifecycleKey(workspace.rootPath)],
         )
       : undefined
     const runtimeDispose = automationSystem?.dispose()
@@ -2105,14 +1720,14 @@ export class SessionManager implements ISessionManager {
    */
   async reloadSessions(workspaceId?: string): Promise<void> {
     if (workspaceId) {
-      await this.withProjectLifecycleLock(
+      await this.projectLifecycle.withProjectLifecycleLock(
         workspaceId,
         () => this.persistence.loadSessionsFromDisk(workspaceId),
       )
       return
     }
     for (const workspace of getWorkspaces()) {
-      await this.withProjectLifecycleLock(
+      await this.projectLifecycle.withProjectLifecycleLock(
         workspace.id,
         () => this.persistence.loadSessionsFromDisk(workspace.id),
       )
@@ -2305,7 +1920,7 @@ export class SessionManager implements ISessionManager {
 
   async createSession(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
     try {
-      return await this.withProjectLifecycleLock(
+      return await this.projectLifecycle.withProjectLifecycleLock(
         workspaceId,
         () => this.createSessionLocked(workspaceId, options),
       )
@@ -3428,7 +3043,7 @@ export class SessionManager implements ISessionManager {
     }
     if (managed.runtimeState === 'deleting') return false
 
-    const claim = await this.withProjectLifecycleLock(
+    const claim = await this.projectLifecycle.withProjectLifecycleLock(
       managed.workspace.id,
       () => this.deleteSessionLocked(sessionId, onlyIfEmpty),
     )
@@ -3468,7 +3083,7 @@ export class SessionManager implements ISessionManager {
       sessionPersistenceQueue.cancel(sessionId)
       await sessionPersistenceQueue.flush(sessionId)
 
-      await this.withProjectLifecycleLock(projectId, async () => {
+      await this.projectLifecycle.withProjectLifecycleLock(projectId, async () => {
         if (!ownsDeletion()) throw new Error(`Session ${sessionId} deletion was superseded`)
         if (
           !isFreeConversationWorkspaceId(projectId)
@@ -5601,7 +5216,7 @@ export class SessionManager implements ISessionManager {
 
     // Revalidate the Host grant atomically with Session creation. Mention and
     // label resolution may have yielded while automations or Sources changed.
-    const session = await this.withProjectLifecycleLock(workspaceId, async () => {
+    const session = await this.projectLifecycle.withProjectLifecycleLock(workspaceId, async () => {
       const currentWorkspace = resolveRuntimeWorkspaceById(workspaceId)
       if (!currentWorkspace || currentWorkspace.rootPath !== workspaceRootPath) {
         throw new Error(`Automation workspace mismatch: ${workspaceId}`)
@@ -5717,7 +5332,7 @@ export class SessionManager implements ISessionManager {
     workspaceId: string,
     payload: RemoteSessionTransferPayload,
   ): Promise<{ sessionId: string }> {
-    return this.withProjectLifecycleLock(
+    return this.projectLifecycle.withProjectLifecycleLock(
       workspaceId,
       () => this.exportImport.importRemoteSessionTransfer(workspaceId, payload),
     )
@@ -5739,7 +5354,7 @@ export class SessionManager implements ISessionManager {
     bundle: SessionBundle,
     mode: DispatchMode,
   ): Promise<{ sessionId: string; warnings?: string[] }> {
-    return this.withProjectLifecycleLock(
+    return this.projectLifecycle.withProjectLifecycleLock(
       workspaceId,
       () => this.exportImport.importSession(workspaceId, bundle, mode),
     )

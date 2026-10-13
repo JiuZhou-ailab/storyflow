@@ -1,6 +1,6 @@
 # Sessions
 
-`SessionManager.ts` is the Product Host session Facade: it implements `ISessionManager` (handlers/session-manager-interface.ts) as one-line delegates, and keeps only the cross-cutting orchestration that changes for reasons of its own — sendMessage/processEvent projection, rewind, Project transition/operation draining, configWatcher/automations glue, session create/delete, permission/question responders.
+`SessionManager.ts` is the Product Host session Facade: it implements `ISessionManager` (handlers/session-manager-interface.ts) as one-line delegates, and keeps only the cross-cutting orchestration that changes for reasons of its own — sendMessage/processEvent projection, rewind, configWatcher/automations glue, session create/delete, permission/question responders.
 
 Modules by reason-of-change (all flat in this directory):
 
@@ -15,6 +15,7 @@ Modules by reason-of-change (all flat in this directory):
 | `export-import.ts` | Session export/import incl. remote transfer payloads |
 | `persistence.ts` | Boot/init gate, disk load, debounced persist queue, lazy message load, idle release |
 | `session-init.bench.ts` | Local fresh-process restoration benchmark and FS/JSON/build/yield diagnostics for the 6000-Session fixture |
+| `project-lifecycle-coordinator.ts` | Project/root locks and transition ownership, accepted-operation draining, epoch-owned invalidation restore, post-release queue recovery, and remove/relink orchestration; commit/storage and observer hooks remain on the Facade |
 | `agent-runtime-lease.ts` | Per-session send-admission gates, runtime mutex, and shared-subprocess lease counting |
 | `isolated-test-runner.ts` | Shared Bun subprocess + marked JSON parsing for lifecycle tests |
 | `agent-runtime.ts` | Pi subprocess lifecycle: getOrCreateAgentLocked, runtime refresh, three eligible idle runtimes, credential rotation, confirmed disposal; AGENT_FLAGS |

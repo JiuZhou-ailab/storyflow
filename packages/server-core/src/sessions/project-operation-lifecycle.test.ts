@@ -610,8 +610,8 @@ it('persists a turn completed during exclusive work and resumes its queued messa
         },
       };
       manager.getOrCreateAgentLocked = async () => agent;
-      const begin = manager.beginProjectInvalidation.bind(manager);
-      manager.beginProjectInvalidation = (...args) => { const claim = begin(...args); invalidated.resolve(); return claim; };
+      const begin = manager.projectLifecycle.beginProjectInvalidation.bind(manager.projectLifecycle);
+      manager.projectLifecycle.beginProjectInvalidation = (...args) => { const claim = begin(...args); invalidated.resolve(); return claim; };
       const first = manager.sendMessage(managed.id, 'first');
       await started.promise;
       await manager.sendMessage(managed.id, 'second');
