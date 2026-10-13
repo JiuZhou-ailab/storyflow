@@ -783,9 +783,13 @@ function getElementText(node: ASTNode): string | null {
  * Used to determine whether to use PowerShell or bash validation.
  */
 export function looksLikePowerShell(command: string): boolean {
+  // Single-quoted text is literal in both shells, so it is never shell syntax
+  // (e.g. awk '{print $1 | cmd}').
+  const unquoted = command.replace(/'[^']*'/g, "''");
   const psPatterns = [
-    // Cmdlet pattern: Verb-Noun
-    /\b(Get|Set|New|Remove|Add|Clear|Write|Read|Out|ConvertTo|ConvertFrom|Test|Select|Where|ForEach|Sort|Group|Measure|Compare|Format|Export|Import|Start|Stop|Invoke|Enable|Disable|Register|Unregister|Update|Find|Install|Uninstall|Save|Publish|Push|Pop)-\w+/i,
+    // Cmdlet pattern: Verb-Noun in command position, so arguments such as
+    // `git remote get-url` or `--set-upstream-to` stay on the bash path.
+    /(?:^|[|;&(){}=])\s*(Get|Set|New|Remove|Add|Clear|Write|Read|Out|ConvertTo|ConvertFrom|Test|Select|Where|ForEach|Sort|Group|Measure|Compare|Format|Export|Import|Start|Stop|Invoke|Enable|Disable|Register|Unregister|Update|Find|Install|Uninstall|Save|Publish|Push|Pop)-\w+/i,
 
     // PowerShell variables in pipeline
     /\$\w+\s*\|/,
@@ -804,7 +808,7 @@ export function looksLikePowerShell(command: string): boolean {
     /\b(gci|gcm|gps|gsv|gjb)\b/i,
   ];
 
-  return psPatterns.some(p => p.test(command));
+  return psPatterns.some(p => p.test(unquoted));
 }
 
 // ============================================================

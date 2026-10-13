@@ -1710,6 +1710,21 @@ describe('looksLikePowerShell', () => {
       expect(looksLikePowerShell('ls && pwd')).toBe(false);
       expect(looksLikePowerShell('git status || git log')).toBe(false);
     });
+
+    it('should not treat Verb-Noun arguments or single-quoted programs as PowerShell', () => {
+      expect(looksLikePowerShell('git remote get-url origin')).toBe(false);
+      expect(looksLikePowerShell('git -C dir remote set-url origin url')).toBe(false);
+      expect(looksLikePowerShell('git -C dir branch --set-upstream-to=main')).toBe(false);
+      expect(looksLikePowerShell("awk '{print $1 | cmd}' f")).toBe(false);
+    });
+
+    it('should still detect cmdlets in command position', () => {
+      expect(looksLikePowerShell('ls; Set-Content x y')).toBe(true);
+      expect(looksLikePowerShell('cat f | Out-File y')).toBe(true);
+      expect(looksLikePowerShell('$x = Get-Content f')).toBe(true);
+      expect(looksLikePowerShell('echo (Set-Content x y)')).toBe(true);
+      expect(looksLikePowerShell('ls && Remove-Item x')).toBe(true);
+    });
   });
 
   describe('edge cases', () => {

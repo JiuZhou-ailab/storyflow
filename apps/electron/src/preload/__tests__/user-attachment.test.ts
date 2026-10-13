@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { build } from 'esbuild'
 
+// Linux CI runners lack a SUID chrome-sandbox; this test covers renderer boundaries, not the OS sandbox.
+const LINUX_CI_SANDBOX_ARGS = process.platform === 'linux' ? ['--no-sandbox'] : []
+
 it('registers only real OS files across Electron context isolation', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'preload-file-'))
   try {
@@ -16,6 +19,7 @@ it('registers only real OS files across Electron context isolation', async () =>
     await build({
       stdin: { resolveDir: import.meta.dir, contents: `import { contextBridge } from 'electron';
 import { getUserAttachmentPath } from ${JSON.stringify(join(import.meta.dir, '../user-attachment.ts'))};
+
 contextBridge.exposeInMainWorld('attachment', { getPath: getUserAttachmentPath });` },
       bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outfile: preload,
     })
@@ -42,7 +46,7 @@ app.whenReady().then(async () => {
     // Other suites mock electron globally; resolve its binary in a fresh Bun process.
     const binary = Bun.spawnSync([process.execPath, '-e', "process.stdout.write(require('electron'))"])
     expect(binary.exitCode, binary.stderr.toString()).toBe(0)
-    const child = Bun.spawn([binary.stdout.toString(), script], { env, stdout: 'pipe', stderr: 'pipe' })
+    const child = Bun.spawn([binary.stdout.toString(), ...LINUX_CI_SANDBOX_ARGS, script], { env, stdout: 'pipe', stderr: 'pipe' })
     const timer = setTimeout(() => child.kill(), 20_000)
     const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
     clearTimeout(timer)

@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { build } from 'esbuild'
 
+// Linux CI runners lack a SUID chrome-sandbox; this test covers renderer boundaries, not the OS sandbox.
+const LINUX_CI_SANDBOX_ARGS = process.platform === 'linux' ? ['--no-sandbox'] : []
+
 it('removes active SVG content and preserves renderable currentColor geometry', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'icon-security-'))
   try {
@@ -50,7 +53,7 @@ app.whenReady().then(async () => {
 }).catch(error => { console.error(error); app.exit(1); });`)
     const env = { ...process.env }
     delete env.ELECTRON_RUN_AS_NODE
-    const child = Bun.spawn([require('electron') as string, script], { env, stdout: 'pipe', stderr: 'pipe' })
+    const child = Bun.spawn([require('electron') as string, ...LINUX_CI_SANDBOX_ARGS, script], { env, stdout: 'pipe', stderr: 'pipe' })
     const timer = setTimeout(() => child.kill(), 20_000)
     const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
     clearTimeout(timer)
