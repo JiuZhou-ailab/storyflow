@@ -60,8 +60,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Test marketing downloads
-        run: bun test apps/marketing/src/__tests__/downloads.test.ts
+      - name: Test marketing downloads and demo host
+        run: bun test apps/marketing/src/__tests__/downloads.test.ts apps/webui/src/demo/adapter.test.ts
 
       - name: Build marketing site
         run: bun run marketing:build

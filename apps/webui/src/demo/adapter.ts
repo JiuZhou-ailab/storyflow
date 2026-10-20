@@ -2,6 +2,7 @@
 // output: Isolated in-memory files, sessions and deterministic writing events
 // pos: The only demo replacement for the Product Host; no network/runtime fallback
 import type { ElectronAPI, Session, SessionEvent, LlmConnectionWithStatus, FileSearchResult } from '../../../electron/src/shared/types'
+import type { TextDocumentTarget } from '@craft-agent/shared/protocol'
 import { workspace, initialFiles, initialSession, scenarios, type ScenarioId } from './fixture'
 
 export function createDemoAdapter(notice: (message: string) => void) {
@@ -25,6 +26,12 @@ export function createDemoAdapter(notice: (message: string) => void) {
     if (content === undefined) throw new Error('示例文件不存在或不在当前项目中。')
     return content
   }
+  const readDocument = (target: TextDocumentTarget) => {
+    if (target.sessionId) throw new Error('示例项目文件不使用对话身份。')
+    return read(target.path)
+  }
+  // The in-memory fixtures use LF; content itself is a collision-free version token.
+  const version = (content: string) => `demo:${content}`
   const getSession = (id: string) => {
     const session = sessions.get(id)
     if (!session) throw new Error('示例对话不存在。')
@@ -65,6 +72,17 @@ export function createDemoAdapter(notice: (message: string) => void) {
     getAllDrafts: async () => copy(drafts), takeDraftsRecovery: async () => null, setDraft: async (id, draft) => { drafts[id] = copy(draft) },
     readFile: async (path) => read(path),
     writeFile: async (path, content) => { read(path); files.set(path, content) },
+    readTextDocument: async (target) => {
+      const content = readDocument(target)
+      return { content, version: version(content), format: { bom: false, crlf: false }, readOnly: false }
+    },
+    saveTextDocument: async (request) => {
+      const current = readDocument(request)
+      if (typeof request.content !== 'string' || typeof request.version !== 'string' || request.content.includes('\r')) throw new Error('无效的示例文本保存请求。')
+      if (request.version !== version(current)) return { status: 'conflict' }
+      files.set(request.path, request.content)
+      return { status: 'saved', version: version(request.content) }
+    },
     listWorkspaceFiles: async (root) => listFiles(root),
     searchFiles: async (root, query) => listFiles(root).filter(file => file.relativePath.includes(query)),
     searchFilesBatch: async (root, requests) => requests.map(({ query }) => ({ query, results: listFiles(root).filter(file => file.relativePath.includes(query)) })),
@@ -124,7 +142,7 @@ export function createDemoAdapter(notice: (message: string) => void) {
           }
           const text = alreadyApplied
             ? '示例任务已完成。此示例已体验，未重复修改正文。重置体验可重新运行。'
-            : '示例任务已完成。打开 [第01章.md](第01章.md)，查看这次改动，再决定接受或拒绝。'
+            : '示例任务已完成。打开 [第01章.md](第01章.md)，查看这次改动。'
           session.messages.push({ id: `${turnId}-result`, role: 'assistant', content: text, turnId, timestamp: Date.now() })
           emit({ type: 'text_complete', sessionId: id, text, turnId })
         }

@@ -27,10 +27,11 @@ and accessible file links/project-file dialog on phones. A screenshot tour canno
 satisfy this check. The separate `/demo/` entry must also load directly.
 
 1. At 1440 and 390px, open all three files, edit the chapter, switch away and back,
-   execute both scenarios, inspect the actual diff, accept and safely reject changes.
-2. Keep unrelated manual edits when rejecting. Change the same target text and
-   verify a conflict preserves the file. Unsupported/edited requests retain drafts.
-3. Reset during a task and after review; wait past the old callback, then check a
+   execute both scenarios, inspect the actual diff and verify automatic saving.
+2. Repeat scenarios without duplicating output or losing manual edits. Versioned
+   save conflicts are covered by `apps/webui/src/demo/adapter.test.ts` (also run before
+   deployment). Unsupported/edited requests retain drafts.
+3. Reset during a task and after viewing changes; wait past the old callback, then check a
    clean project. Refresh and a second iframe instance must also start clean.
 4. Capture requests plus attempted fetch/WebSocket/EventSource/XHR/beacon calls.
    Only published static assets are allowed, including when loading fails. Check

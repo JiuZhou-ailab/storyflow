@@ -77,7 +77,7 @@ async function reset() {
   await auditNetwork();
   const before = await page.evaluate(() => document.querySelector('iframe').contentWindow.performance.timeOrigin);
   await page.click('#demo-reset');
-  await page.waitForFunction(before => { const w = document.querySelector('iframe').contentWindow; return w.performance.timeOrigin !== before && document.getElementById('demo-notice')?.textContent.includes('点击第01章'); }, before, { timeout: 15000 });
+  await page.waitForFunction(before => { const w = document.querySelector('iframe').contentWindow; return w.performance.timeOrigin !== before && document.getElementById('demo-notice')?.textContent.replace(/\s/g, '').includes('点击第01章'); }, before, { timeout: 15000 });
 }
 async function openChapter() { await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelectorAll('ul a[href="%E7%AC%AC01%E7%AB%A0.md"]').length === 1); await page.focus(chapterLink); await page.keyboard.press('Enter'); await waitEditor('第一章 · 黑洞直播'); }
 async function backToChat(width) {
@@ -162,14 +162,12 @@ for (const width of [1440, 390]) {
   await waitEditor('这行是读者的手动修改。');
   await backToChat(width);
   await scenario('continue');
-  await page.click('loc=role:button[name="审核"]');
-  await waitText('Pending review');
-  await page.click('loc=role:button[name="Reject"]');
-  await waitText('Rejected');
+  await page.click('loc=role:button[name="查看"]');
+  await page.waitForSelector('button[aria-label="关闭"]');
   await page.focus('button[aria-label="关闭"]');
   await page.keyboard.press('Enter');
   await openChapter();
-  assert.ok(!(await editor()).includes('头像换成了他的房间'));
+  await waitEditor('头像换成了他的房间');
   assert.ok((await editor()).includes('这行是读者的手动修改。'));
   await backToChat(width);
   await reset();
@@ -177,15 +175,10 @@ for (const width of [1440, 390]) {
   assert.ok(!(await editor()).includes('读者的手动修改'));
   await backToChat(width);
   await scenario('rewrite');
-  await page.click('loc=role:button[name="审核"]');
-  await page.click('loc=role:button[name="Accept"]');
-  await waitText('Accepted');
-  await page.focus('button[aria-label="关闭"]');
-  await page.keyboard.press('Enter');
   await openChapter();
-  assert.ok((await editor()).includes('螺丝便自己转了半圈'));
+  await waitEditor('螺丝便自己转了半圈');
   await backToChat(width);
-  console.log(`PASS: ${width}px edits, switches files, runs both scenarios, rejects safely, accepts and resets`);
+  console.log(`PASS: ${width}px edits, switches files, runs both scenarios, views changes, autosaves and resets`);
 }
 // Scenarios compose in either order and replay without duplicate edits.
 for (const width of [1440, 390]) {
@@ -226,7 +219,7 @@ await openChapter();
 assert.ok(!(await editor()).includes('头像换成了他的房间'));
 console.log('PASS: unsupported free text keeps its draft and does not mutate the file');
 await auditNetwork();
-// A second submit cannot duplicate the running edit; later unrelated edits survive rejection.
+// A second submit cannot duplicate the running edit; replay preserves later manual edits.
 await fresh();
 await page.click('button[data-scenario="continue"]');
 await page.press('[role="textbox"]', 'Enter');
@@ -238,39 +231,17 @@ assert.equal((await editor()).split('头像换成了他的房间').length, 2);
 await append('这行是在任务完成后写的。');
 await page.click('[role="treeitem"]:has-text("人物.md")');
 await waitEditor('科学主播');
-await page.click('loc=role:button[name="审核"]');
-await page.click('loc=role:button[name="Reject"]');
-await waitText('Rejected');
-await page.focus('button[aria-label="关闭"]');
-await page.keyboard.press('Enter');
 await openChapter();
 assert.ok((await editor()).includes('这行是在任务完成后写的。'));
-assert.ok(!(await editor()).includes('头像换成了他的房间'));
-const rejectedContent = await editor();
+assert.ok((await editor()).includes('头像换成了他的房间'));
+const savedContent = await editor();
 const completedBeforeReplay = await page.evaluate(() => document.querySelector('iframe').contentDocument.body.innerText.split('示例任务已完成').length);
 await scenario('continue');
 await page.waitForFunction(count => document.querySelector('iframe').contentDocument.body.innerText.split('示例任务已完成').length > count, completedBeforeReplay);
 await waitText('重置体验可重新运行');
 await openChapter();
-assert.equal(await editor(), rejectedContent, 'Repeating a rejected example must not reapply it');
-console.log('PASS: blank/edited input does not execute; repeated submit stays single; rejection preserves later edits and replay does not reapply');
-
-// Reject an overlapping edit without overwriting the visitor's current text.
-await fresh();
-await scenario('rewrite');
-await openChapter();
-await page.fill('.tiptap', '第一章 · 黑洞直播\n\n苏白写下了不同的决定。');
-await page.click('[role="treeitem"]:has-text("人物.md")');
-await waitEditor('科学主播');
-await page.click('loc=role:button[name="审核"]');
-await page.click('loc=role:button[name="Reject"]');
-await waitText('无法');
-await page.focus('button[aria-label="关闭"]');
-  await page.keyboard.press('Enter');
-await openChapter();
-assert.ok((await editor()).includes('苏白写下了不同的决定。'));
-assert.ok(!(await editor()).includes('螺丝便自己转了半圈'));
-console.log('PASS: overlapping manual edit blocks rejection without data loss');
+assert.equal(await editor(), savedContent, 'Repeating an example must preserve the current document');
+console.log('PASS: blank/edited input does not execute; repeated submit stays single; autosave preserves later edits and replay does not reapply');
 
 await fresh();
 await page.evaluate(() => localStorage.setItem('storyflow-demo-qa-sentinel', 'parent-only'));
@@ -359,11 +330,9 @@ console.log('PASS: keyboard enters and exits iframe');
 await page.cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
 await fresh();
 await scenario('rewrite');
-await page.focus('loc=role:button[name="审核"]');
+await page.focus('loc=role:button[name="查看"]');
 await page.keyboard.press('Enter');
-await page.waitForSelector('loc=role:button[name="Accept"]');
-await page.click('loc=role:button[name="Accept"]');
-await waitText('Accepted');
+await page.waitForSelector('button[aria-label="关闭"]');
 await page.cdp('Emulation.setEmulatedMedia', { features: [] });
 await auditNetwork();
 console.log('PASS: four viewport widths, reduced motion and static-only request/connection audit');

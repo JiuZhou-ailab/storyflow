@@ -8,13 +8,13 @@ login/server discovery/WebSocket bootstrap.
   the renderer. Desktop startup opens the fixture through its normal visible file
   link; readiness waits for an editable document. These DOM references remain local
   to the demo and are exercised by the production browser check.
-- `adapter.ts` owns the sample files, conversation, snapshots and synthetic task
+- `adapter.ts` owns the sample files, versioned text reads/saves, conversation and synthetic task
   events. Unknown host calls fail visibly. No model/runtime/network fallback exists.
 - `fixture.ts` defines the authored 黑洞直播 content and the two explicit scenarios.
   Selected scenario plus unchanged input is required; matching a keyword never runs
   a task. Continuation appends independently of the rewrite, which targets one unique
   current passage. Each scenario runs once per experience; repeating it completes
-  without another edit, including after rejection or later manual edits. Reset starts
+  without another edit, including after later manual edits. Reset starts
   a fresh experience. Both orders preserve manual changes; conflicting rewrites stop.
 - `main.tsx` composes real renderer providers and reports a crashed surface to the
   parent. `styles.css` gives the product its complete iframe viewport; navigation,
@@ -28,12 +28,12 @@ report their limit instead of hiding entire sections of the product UI. A scenar
 selected from an auxiliary page returns to the example conversation and explicitly
 asks the visitor to select it again once the input is mounted.
 
-Real product review semantics apply: task output is already written. Accept marks
-reviewed; Reject runs the renderer's current-content-aware reverse edit. Reload/reset
+Real product document semantics apply: task output is already written, manual edits
+autosave through the versioned text contract, and stale saves report a conflict. Reload/reset
 replaces the entire memory instance, cancels its pending timer and disconnects boot
 listeners. Parent storage and other iframe instances are never cleared or reused.
 
 `bun run --cwd apps/marketing build` emits `apps/marketing/dist/demo/`; the intermediate
 `apps/marketing/public/demo/` is ignored. Run `apps/marketing/qa-demo.mjs` with ego-browser
 against the production marketing preview. The agreed seam is the public browser,
-including actual document edits, review state, request attempts and reset behavior.
+including actual document edits, autosave state, request attempts and reset behavior.

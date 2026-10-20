@@ -4,10 +4,10 @@ Storyflow landing page and release-download metadata.
 
 The hero embeds a live Storyflow renderer in `/demo/`, following Memoh's interactive
 product-preview approach. Visitors open and edit the 黑洞直播 sample project, send
-two explicitly selected writing scenarios, and review or reset their changes.
+two explicitly selected writing scenarios, and view or reset their changes.
 The renderer uses a browser-memory ElectronAPI adapter; it never starts an Agent,
 logs in, connects to a model, or touches real files. Refresh/reset discards the
-instance, including drafts and review state. See `../webui/src/demo/README.md`.
+instance, including drafts and document state. See `../webui/src/demo/README.md`.
 
 `bun run dev` builds the demo before starting Vite. `bun run build` builds it again
 and copies its generated `public/demo/` assets into `dist/demo/`. Changes to the
