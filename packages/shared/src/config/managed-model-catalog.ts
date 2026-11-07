@@ -139,6 +139,27 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
     supportsImages: true,
     api: 'google-generative-ai',
   },
+  // Reuse the existing Gemini-family defaults (see getManagedDynamicModel).
+  // No verified per-model output budget: do not opt this model into fallback.
+  {
+    id: 'gemini-4-argon',
+    name: 'Gemini 4 Argon',
+    shortName: 'Gemini',
+    description: '',
+    provider: 'pi',
+    contextWindow: 1_000_000,
+    supportsThinking: true,
+    thinkingLevelMap: {
+      off: null,
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: null,
+      max: null,
+    },
+    supportsImages: true,
+    api: 'google-generative-ai',
+  },
   {
     id: 'gemini-3.1-pro-preview',
     name: 'Gemini 3.1 Pro Preview',
