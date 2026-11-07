@@ -169,6 +169,7 @@ describe('builtin LLM connection defaults', () => {
       ['storyflow-managed', ['gpt-5.5', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']],
       ['storyflow-managed-gemini', [
         'gemini-3.8-flash',
+        'gemini-4-argon',
         'gemini-3.1-pro-preview',
         'gemini-2.5-pro',
       ]],

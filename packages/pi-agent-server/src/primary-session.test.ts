@@ -133,3 +133,19 @@ test('an upgraded managed Gemini conversation requests only its authorized repla
   }, model => protocolCompletion('google-generative-ai', model), undefined,
   { api: 'google-generative-ai', models: ['gemini-3.8-flash'] });
 });
+
+test('selecting Gemini 4 Argon preserves its exact ID through a native Pi request', async () => {
+  await fixture(async f => {
+    const model = resolveModelForConnection('gemini-4-argon', {
+      slug: 'storyflow-managed-gemini', name: 'Gemini', providerType: 'pi_compat', authType: 'api_key_with_endpoint',
+      models: ['gemini-3.8-flash', 'gemini-4-argon'], createdAt: 1,
+    });
+    expect(model).toBe('gemini-4-argon');
+    expect(f.session.model?.id).toBe(model);
+    await f.session.prompt('hello');
+    expect(f.session.getLastAssistantText()).toBe('OK');
+    expect(f.requests.length).toBeGreaterThan(0);
+    expect(f.requests.every(request => request.model === model)).toBe(true);
+  }, model => protocolCompletion('google-generative-ai', model), undefined,
+  { api: 'google-generative-ai', models: ['gemini-4-argon'] });
+});
