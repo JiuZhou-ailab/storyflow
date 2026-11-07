@@ -70,7 +70,7 @@ describe('model thinking levels', () => {
   it('exposes supported Gemini thinking levels without offering invalid 3.8 minimal mode', () => {
     const geminiConnection = connection('pi_compat', cloneManagedModelCatalog('google-generative-ai'))
 
-    for (const modelId of ['gemini-3.8-flash']) {
+    for (const modelId of ['gemini-3.8-flash', 'gemini-4-argon']) {
       expect(modelSupportsThinking(geminiConnection, modelId)).toBe(true)
       expect(modelSupportsThinkingLevel(geminiConnection, modelId, 'off')).toBe(false)
       expect(modelSupportsThinkingLevel(geminiConnection, modelId, 'medium')).toBe(true)
