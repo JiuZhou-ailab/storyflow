@@ -13,3 +13,7 @@ Specs 和 tickets 使用 `JiuZhou-ailab/storyflow` 的 GitHub Issues，通过 `g
 ### Domain docs
 
 沿用现有 multi-context 布局及共享 ADR，不新建平行领域文档。见 [domain docs](docs/agents/domain.md)。
+
+### Release
+
+发版门禁、安装包验收、发布确认与撤回命令见 [发版与撤回操作手册](docs/release.md)。
