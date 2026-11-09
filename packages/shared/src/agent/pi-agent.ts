@@ -56,11 +56,41 @@ import { type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
 // PiAgent Implementation
 // ============================================================
 
+import { EventQueue } from './backend/event-queue.ts';
 import { PiAgentToolHost } from './pi-agent-tool-host.ts';
 export { PI_BACKEND_SESSION_TOOL_NAMES } from './pi-agent-transport.ts';
 
 /** Storyflow Product Host projection over the single Pi AgentSession runtime. */
 export class PiAgent extends PiAgentToolHost {
+  private cancelTimer?: ReturnType<typeof setTimeout>;
+  private cancellationRecovery?: Promise<void>;
+  private cancelledPromptId?: string;
+
+  // A failed/stuck cancellation invalidates this transport, never Pi settlement.
+  // New prompts wait for confirmed process exit before reopening its transcript.
+  protected expireCancellation(id: string): void {
+    if (this.activePromptId !== id || this.cancelledPromptId !== id) return;
+    this.activePromptId = null;
+    this.eventQueue.complete();
+    this.cancellationRecovery = this.killSubprocessGracefully(500);
+    // Retain rejection for the next explicit chat while avoiding an unhandled one.
+    void this.cancellationRecovery.catch(() => {});
+  }
+
+  protected override handleAbortFailure(id: string, error: string): void {
+    super.handleAbortFailure(id, error);
+    this.expireCancellation(id);
+  }
+
+  private requestCancellation(): void {
+    const id = this.activePromptId;
+    if (id && this.cancelledPromptId !== id) {
+      this.cancelledPromptId = id;
+      this.cancelTimer = setTimeout(() => this.expireCancellation(id), 2_000);
+    }
+    if (!this.send({ type: 'abort', ...(id ? { id } : {}) }) && id) this.expireCancellation(id);
+  }
+
   getCurrentTurnUsage(): TurnUsage | undefined {
     return this.adapter.getTurnUsageSnapshot();
   }
@@ -75,10 +105,17 @@ export class PiAgent extends PiAgentToolHost {
     options?: ChatOptions
   ): AsyncGenerator<AgentEvent> {
     let message = messageParam;
+    // Never reuse a queue with a consumer still draining a cancelled turn.
+    if (this.cancellationRecovery) {
+      await this.cancellationRecovery;
+      this.cancellationRecovery = undefined;
+    }
     // Reset state for new turn
     this._isProcessing = true;
     this.abortReason = undefined;
-    this.eventQueue.reset();
+    this.eventQueue = new EventQueue();
+    const turnQueue = this.eventQueue;
+    this.cancelledPromptId = undefined;
     this.adapter.startTurn();
 
     // Fire UserPromptSubmit hook event (fire-and-forget)
@@ -214,8 +251,9 @@ export class PiAgent extends PiAgentToolHost {
       });
 
       // Yield the Pi-owned turn until its native settlement event closes the queue.
-      for await (const event of this.eventQueue.drain()) {
-        yield event;
+      for await (const event of turnQueue.drain()) {
+        yield event.type === 'complete' && this.cancelledPromptId
+          ? { ...event, status: 'cancelled' } : event;
       }
     } catch (error) {
       if (error instanceof Error && error.message.includes('abort')) {
@@ -239,6 +277,8 @@ export class PiAgent extends PiAgentToolHost {
 
       yield { type: 'complete' };
     } finally {
+      if (this.cancelTimer) clearTimeout(this.cancelTimer);
+      this.cancelTimer = undefined;
       this._isProcessing = false;
     }
   }
@@ -382,7 +422,7 @@ export class PiAgent extends PiAgentToolHost {
     this.pendingPermissions.clear();
 
     // Send abort to subprocess
-    this.send({ type: 'abort' });
+    this.requestCancellation();
     // Keep draining until Pi's agent_settled (or a correlated preflight
     // result). Closing here lets the next chat consume the old settlement.
 
@@ -409,7 +449,7 @@ export class PiAgent extends PiAgentToolHost {
     }
 
     // For other reasons, send abort to subprocess
-    this.send({ type: 'abort' });
+    this.requestCancellation();
   }
 
   /**
@@ -469,6 +509,8 @@ export class PiAgent extends PiAgentToolHost {
   }
 
   destroy(): void {
+    if (this.cancelTimer) clearTimeout(this.cancelTimer);
+    this.cancelTimer = undefined;
     // Unregister session-scoped tool callbacks
     if (this.config.session?.id) {
       unregisterSessionScopedToolCallbacks(this.config.session.id);

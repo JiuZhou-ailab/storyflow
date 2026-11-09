@@ -239,17 +239,17 @@ async function runMiniCompletion(prompt: string): Promise<string | null> {
 // Event Handling
 // ============================================================
 
-function handleSessionEvent(event: AgentSessionEvent): void {
+function handleSessionEvent(event: AgentSessionEvent, promptId?: string): void {
   const promptAttemptState = currentPromptAttemptState;
   const routedEvents = promptAttemptState
     ? routePromptAttemptEvent(event, promptAttemptState)
     : [event];
   for (const routedEvent of routedEvents) {
-    forwardSessionEvent(routedEvent);
+    forwardSessionEvent(routedEvent, promptId);
   }
 }
 
-function forwardSessionEvent(event: AgentSessionEvent): void {
+function forwardSessionEvent(event: AgentSessionEvent, promptId?: string): void {
   if (event.type === 'message_start' && event.message.role === 'assistant' && pendingProductRewindBoundary && piSession) {
     const boundary = createProductRewindBoundary(
       piSession.sessionManager.getBranch(),
@@ -282,7 +282,7 @@ function forwardSessionEvent(event: AgentSessionEvent): void {
   }
 
   // Forward all events to main process
-  send({ type: 'event', event: forwardedEvent });
+  send({ type: 'event', promptId, event: forwardedEvent });
 }
 
 // ============================================================
@@ -422,7 +422,7 @@ export async function handlePrompt(msg: Extract<PiInboundMessage, { type: 'promp
       }
       const forward = () => {
         if (event.type === 'agent_settled') sawAgentSettled = true;
-        handleSessionEvent(event);
+        handleSessionEvent(event, msg.id);
       };
 
       // Pi persists assistant messages immediately after notifying subscribers.
@@ -523,17 +523,16 @@ async function abortActiveSubagentSessions(): Promise<void> {
   );
 }
 
-export async function handleAbort(): Promise<void> {
+export async function handleAbort(id?: string, abortSessions = [
+  ...(piSession ? [piSession] : []), ...activeSubagentSessions,
+]): Promise<void> {
   queryCancellationEpoch++;
-  const sessions = [
-    ...(piSession ? [piSession] : []),
-    ...activeSubagentSessions,
-  ];
   const results = await Promise.allSettled(
-    sessions.map(session => session.abort()),
+    abortSessions.map(session => session.abort()),
   );
   for (const result of results) {
     if (result.status === 'rejected') {
+      if (id) send({ type: 'abort_result', id, error: String(result.reason) });
       debugLog(
         `Abort failed: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
       );
@@ -843,7 +842,7 @@ async function processMessage(msg: PiInboundMessage): Promise<void> {
       break;
 
     case 'abort':
-      await handleAbort();
+      await handleAbort(msg.id);
       break;
 
     case 'llm_query':

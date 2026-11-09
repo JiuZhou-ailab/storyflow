@@ -157,3 +157,25 @@ it('flushes a deferred write when shutdown acquires a newer runtime epoch', asyn
   expect(managed.runtimeEpoch).toBe(2)
   expect(readFileSync(getSessionFilePath(root, managed.id), 'utf8')).toContain('durable on shutdown')
 })
+
+for (const userStop of [true, false]) {
+  it(`projects cancelled mini turns as interrupted (user stop: ${userStop})`, async () => {
+    const started = gate(), finish = gate()
+    managed.systemPromptPreset = 'mini'
+    installChat(async function* () {
+      started.resolve(); await finish.promise
+      yield { type: 'text_complete', text: 'partial response' }
+      yield { type: 'complete', status: userStop ? 'completed' : 'cancelled' }
+    })
+    const pending = manager.sendMessage(managed.id, 'request')
+    await started.promise
+    if (userStop) await manager.cancelProcessing(managed.id)
+    finish.resolve()
+    await pending
+    expect(managed.isProcessing).toBe(false)
+    expect(managed.sessionStatus).not.toBe('done')
+    expect(managed.hasUnread).toBeFalsy()
+    expect(events.filter(event => event.type === 'interrupted')).toHaveLength(1)
+    expect(events.filter(event => event.type === 'complete')).toHaveLength(0)
+  })
+}

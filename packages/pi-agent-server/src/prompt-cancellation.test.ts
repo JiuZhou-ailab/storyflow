@@ -41,3 +41,14 @@ for (const phase of ['creation', 'reload', 'compaction'] as const) {
     } finally { stdout.mockRestore() }
   })
 }
+
+it('reports a rejected native abort with its prompt correlation', async () => {
+  const output: string[] = []
+  const stdout = spyOn(process.stdout, 'write').mockImplementation((chunk: any) => { output.push(String(chunk)); return true })
+  try {
+    await handleAbort('cancelled-turn', [{ abort: async () => { throw new Error('native abort rejected') } }] as never)
+    const results = output.flatMap(line => line.trim().split('\n')).map(line => JSON.parse(line))
+    expect(results).toContainEqual({ type: 'abort_result', id: 'cancelled-turn', error: 'Error: native abort rejected' })
+    expect(results.some(result => result.type === 'event')).toBe(false)
+  } finally { stdout.mockRestore() }
+})

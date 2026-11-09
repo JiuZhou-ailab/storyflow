@@ -3769,6 +3769,13 @@ export class SessionManager implements ISessionManager {
             return
           }
 
+          if (managed.stopRequested || event.status === 'cancelled') {
+            await this.onProcessingStopped(sessionId, 'interrupted', myGeneration)
+            sendSpan.mark('chat.interrupted')
+            sendSpan.end()
+            return
+          }
+
           getSessionLog().info('Chat completed via complete event')
 
           // Check if we got an assistant response in this turn
@@ -4103,6 +4110,7 @@ export class SessionManager implements ISessionManager {
 
       // Keep admission queued until cleanup and the next dispatch are decided together.
       // 1. Cleanup state
+      const stopAlreadyNotified = managed.stopRequested
       managed.stopRequested = false  // Reset for next turn
 
       const turnStartFinalMessageId = managed.turnStartFinalMessageId
@@ -4177,7 +4185,9 @@ export class SessionManager implements ISessionManager {
         }
 
         // No queue - emit complete to UI (include tokenUsage and hasUnread for state updates)
-        this.sendEvent({
+        if (reason === 'interrupted') {
+          if (!stopAlreadyNotified) this.sendEvent({ type: 'interrupted', sessionId }, managed.workspace.id)
+        } else this.sendEvent({
           type: 'complete',
           sessionId,
           tokenUsage: managed.tokenUsage,

@@ -376,7 +376,7 @@ export abstract class PiAgentTransport extends PiAgentHost {
 
     this.subprocess = child;
 
-    this.stopReadingStdout = readJsonLines(child.stdout!, (line) => this.handleLine(line));
+    this.stopReadingStdout = readJsonLines(child.stdout!, (line) => { if (generation === this.subprocessGeneration) this.handleLine(line); });
 
     // Always capture stderr into a bounded ring buffer so callers (e.g. the
     // connection-test timeout path) can surface it on failure.
@@ -739,7 +739,12 @@ export abstract class PiAgentTransport extends PiAgentHost {
         this.subprocessReadyResolve?.();
         break;
 
+      case 'abort_result':
+        this.handleAbortFailure(msg.id, msg.error);
+        break;
+
       case 'event':
+        if (msg.promptId !== undefined && msg.promptId !== this.activePromptId) break;
         // Pi SDK event -- forward through PiEventAdapter
         this.handleSubprocessEvent(msg.event as Record<string, unknown>);
         break;
@@ -939,6 +944,10 @@ export abstract class PiAgentTransport extends PiAgentHost {
   /**
    * Forward a Pi SDK event from the subprocess through the event adapter.
    */
+  protected handleAbortFailure(_id: string, error: string): void {
+    this.debug(`Pi abort failed: ${error}`);
+  }
+
   protected handleSubprocessEvent(event: Record<string, unknown>): void {
     // The subprocess sends Pi SDK AgentSessionEvent objects serialized as JSON.
     // Feed them through PiEventAdapter to derive Product Host events.

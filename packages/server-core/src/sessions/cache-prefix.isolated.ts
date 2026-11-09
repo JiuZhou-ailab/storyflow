@@ -145,8 +145,11 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
     const second = await run('second');
     const abortedRun = run('abort');
     await Promise.race([heldRequest, abortedRun.then(() => { throw new Error('Abort fixture settled before its held request'); })]);
+    const stopEventsStart = events.length;
     await manager.cancelProcessing(sessionId);
     const aborted = await abortedRun;
+    expect(events.slice(stopEventsStart).filter((event: any) => event.type === 'interrupted')).toHaveLength(1);
+    expect(events.slice(stopEventsStart).some((event: any) => event.type === 'complete')).toBe(false);
     const resumed = await run('resumed');
     const following = await run('following');
     const steeredRun = run('steer');

@@ -59,7 +59,7 @@ describe('PiAgent subprocess error handling', () => {
       ;(agent as any).ensureSubprocess = async () => {}
       let promptSent!: () => void
       const sent = new Promise<void>(resolve => { promptSent = resolve })
-      ;(agent as any).send = (message: { type: string }) => { if (message.type === 'prompt') promptSent() }
+      ;(agent as any).send = (message: { type: string }) => { if (message.type === 'prompt') promptSent(); return true }
       const iterator = agent.chat('cancel me')
       let finished = false
       const pending = iterator.next().then(result => { finished = true; return result })
@@ -79,7 +79,8 @@ describe('PiAgent subprocess error handling', () => {
         expect(finished).toBe(false)
         expect(agent.isIdle()).toBe(false)
         event('agent_settled')
-        await pending
+        const settled = await pending
+        expect(settled.value).toMatchObject({ type: 'complete', status: 'cancelled' })
         await iterator.return(undefined)
         expect(agent.isProcessing()).toBe(false)
         expect(agent.isIdle()).toBe(true)
@@ -401,4 +402,75 @@ describe('PiAgent subprocess error handling', () => {
 
     agent.destroy()
   })
+})
+
+for (const failure of ['missing settlement', 'abort rejected', 'write failed'] as const) {
+  it(`bounds cancellation and isolates recovery after ${failure}`, async () => {
+    const agent = new PiAgent(createConfig()) as any
+    agent.ensureSubprocess = async () => {}
+    let sent!: (id: string) => void
+    let promptSent = new Promise<string>(resolve => { sent = resolve })
+    agent.send = (message: any) => {
+      if (message.type === 'prompt') sent(message.id)
+      return !(failure === 'write failed' && message.type === 'abort')
+    }
+    let releaseExit!: () => void
+    let retirements = 0
+    agent.killSubprocessGracefully = () => {
+      retirements++
+      return new Promise<void>(resolve => { releaseExit = resolve })
+    }
+    const first = agent.chat('cancelled')
+    const firstPending = first.next()
+    const oldId = await promptSent
+    agent.forceAbort(AbortReason.UserStop)
+    if (failure === 'missing settlement') agent.expireCancellation(oldId) // fire deadline deterministically
+    if (failure === 'abort rejected') agent.handleLine(JSON.stringify({ type: 'abort_result', id: oldId, error: 'rejected' }))
+    await firstPending
+    await first.return(undefined)
+    expect(retirements).toBe(1)
+    promptSent = new Promise<string>(resolve => { sent = resolve })
+    const next = agent.chat('resume')
+    let finished = false
+    const pending = next.next().then((value: unknown) => { finished = true; return value })
+    await new Promise(resolve => setImmediate(resolve))
+    expect(agent.activePromptId).toBeNull() // no transcript reopened before confirmed exit
+    releaseExit()
+    const nextId = await promptSent
+    agent.handleLine(JSON.stringify({ type: 'event', promptId: oldId, event: { type: 'agent_settled' } }))
+    agent.handleLine(JSON.stringify({ type: 'prompt_result', id: oldId, status: 'failed' }))
+    agent.handleLine(JSON.stringify({ type: 'abort_result', id: oldId, error: 'late rejection' }))
+    await new Promise(resolve => setImmediate(resolve))
+    expect(finished).toBe(false)
+    expect(agent.activePromptId).toBe(nextId)
+    agent.handleLine(JSON.stringify({ type: 'event', promptId: nextId, event: { type: 'agent_settled' } }))
+    await pending
+    await next.return(undefined)
+    expect(agent.isIdle()).toBe(true)
+    agent.destroy()
+  })
+}
+
+it('does not reopen the transcript when cancellation cannot terminate the child', async () => {
+  const agent = new PiAgent(createConfig()) as any
+  agent.ensureSubprocess = async () => {}
+  let resolvePrompt!: (id: string) => void
+  const sent = new Promise<string>(resolve => { resolvePrompt = resolve })
+  let prompts = 0
+  agent.send = (message: any) => {
+    if (message.type === 'prompt') { prompts++; resolvePrompt(message.id) }
+    return true
+  }
+  agent.killSubprocessGracefully = async () => { throw new Error('stop timed out after SIGKILL') }
+  const chat = agent.chat('cancel')
+  const pending = chat.next()
+  const id = await sent
+  agent.forceAbort(AbortReason.UserStop)
+  agent.expireCancellation(id)
+  await pending
+  await chat.return(undefined)
+  const next = agent.chat('resume')
+  await expect(next.next()).rejects.toThrow('stop timed out after SIGKILL')
+  expect(prompts).toBe(1)
+  agent.destroy()
 })

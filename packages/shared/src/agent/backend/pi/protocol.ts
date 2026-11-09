@@ -123,7 +123,7 @@ export type PiInboundMessage =
       input?: Record<string, unknown>;
       reason?: string;
     }
-  | { type: 'abort' }
+  | { type: 'abort'; id?: string }
   | { type: 'llm_query'; id: string; request: LLMQueryRequest }
   | { type: 'ensure_session_ready'; id: string }
   | { type: 'set_model'; model: string }
@@ -155,7 +155,8 @@ export type PiOutboundAgentEvent = AgentSessionEvent | EnrichedAssistantMessageE
 
 export type PiOutboundMessage =
   | { type: 'ready'; sessionId: string | null }
-  | { type: 'event'; event: PiOutboundAgentEvent }
+  | { type: 'event'; promptId?: string; event: PiOutboundAgentEvent }
+  | { type: 'abort_result'; id: string; error: string }
   | { type: 'prompt_result'; id: string; status: 'completed_without_agent' | 'failed' }
   | {
       type: 'pre_tool_use_request';
