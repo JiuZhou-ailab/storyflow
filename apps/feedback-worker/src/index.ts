@@ -55,7 +55,7 @@ interface UploadedAttachment {
 }
 
 const DEFAULT_REPOSITORY = 'JiuZhou-ailab/storyflow'
-const DEFAULT_LABELS = ['feedback', 'ai-triage']
+const DEFAULT_LABELS = ['feedback', 'needs-triage']
 const MAX_TITLE_LENGTH = 200
 const MAX_MESSAGE_LENGTH = 12_000
 const MAX_ATTACHMENTS = 5

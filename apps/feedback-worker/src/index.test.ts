@@ -37,7 +37,7 @@ function makeEnv(overrides: Partial<Env> = {}): Env {
     FEEDBACK_GITHUB_TOKEN: 'github-token',
     FEEDBACK_RATE_LIMITER: { limit: async () => ({ success: true }) },
     GITHUB_REPOSITORY: 'JiuZhou-ailab/storyflow',
-    FEEDBACK_GITHUB_LABELS: 'feedback,ai-triage',
+    FEEDBACK_GITHUB_LABELS: 'feedback,needs-triage',
     ...overrides,
   }
 }
@@ -99,7 +99,7 @@ describe('feedback worker', () => {
     expect(githubRequest?.headers.get('authorization')).toBe('Bearer github-token')
     const issueBody = await githubRequest?.json() as Record<string, unknown>
     expect(issueBody.title).toBe('[Feedback] Cannot export chapter')
-    expect(issueBody.labels).toEqual(['feedback', 'ai-triage'])
+    expect(issueBody.labels).toEqual(['feedback', 'needs-triage'])
     expect(issueBody.body).toContain('Export fails after selecting PDF.')
     expect(issueBody.body).toContain(`![Screen-Shot-2026-05-28.png (image/png, ${pngBytes.length} bytes)](https://feedback-assets.example.com/${assetKey})`)
   })

@@ -8,7 +8,7 @@ routes = [
 
 [vars]
 GITHUB_REPOSITORY = "JiuZhou-ailab/storyflow"
-FEEDBACK_GITHUB_LABELS = "feedback,ai-triage"
+FEEDBACK_GITHUB_LABELS = "feedback,needs-triage"
 
 [[r2_buckets]]
 binding = "FEEDBACK_ASSETS"

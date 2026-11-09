@@ -7,7 +7,7 @@ Flow:
 1. The Electron feedback dialog sends title, details, contact email, app context, and pasted screenshots to `STORYFLOW_FEEDBACK_ENDPOINT`.
 2. `apps/feedback-worker` validates the payload and uploads screenshots to the `FEEDBACK_ASSETS` R2 bucket when the binding is configured.
 3. The Worker creates a GitHub issue in `GITHUB_REPOSITORY` with `FEEDBACK_GITHUB_TOKEN`.
-4. Labels such as `feedback` and `ai-triage` can trigger the later Codex GitHub bot workflow.
+4. The issue is labeled `feedback` (source) and `needs-triage` (state). From there it follows the normal issue flow: a maintainer with write access fills in the acceptance criteria and adds `ready-for-agent` to start agent development.
 
 Production defaults:
 
