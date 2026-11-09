@@ -4,7 +4,7 @@
 
 ## Conventions
 
-- 创建：`gh issue create --repo JiuZhou-ailab/storyflow --title "标题" --body-file <正文文件> --label needs-triage`（类型标签另加）。创建时不打 `ready-for-agent`：它一打上就会触发 agent 开发，只由有写权限的人确认验收标准后手动打。
+- 创建：`gh issue create --repo JiuZhou-ailab/storyflow --title "标题" --body-file <正文文件> --label needs-triage`（类型标签另加）。要直接开发就改打 `ready-for-agent`：打上即开始 agent 开发（人或 agent 都可以打）。
 - 读取：`gh issue view <number> --repo JiuZhou-ailab/storyflow --json number,title,body,labels,comments,state,url`。
 - 列表：`gh issue list --repo JiuZhou-ailab/storyflow --state open --json number,title,body,labels,url`，按任务需要添加筛选。
 - 评论：`gh issue comment <number> --repo JiuZhou-ailab/storyflow --body-file <正文文件>`。
