@@ -53,25 +53,44 @@ describe('PiAgent subprocess error handling', () => {
     } finally { agent.destroy() }
   })
 
-  it('stays busy after host abort until Pi reports native settlement', async () => {
-    const agent = new PiAgent(createConfig())
-    ;(agent as any).ensureSubprocess = async () => {}
-    let promptSent!: () => void
-    const sent = new Promise<void>(resolve => { promptSent = resolve })
-    ;(agent as any).send = (message: { type: string }) => { if (message.type === 'prompt') promptSent() }
-    const iterator = agent.chat('cancel me')
-    const pending = iterator.next()
-    await sent
-    agent.forceAbort(AbortReason.UserStop)
-    await pending
-    expect(agent.isProcessing()).toBe(false)
-    expect(agent.isIdle()).toBe(false)
-    ;(agent as any).handleLine(JSON.stringify({ type: 'event', event: { type: 'agent_end' } }))
-    expect(agent.isIdle()).toBe(false)
-    ;(agent as any).handleLine(JSON.stringify({ type: 'event', event: { type: 'agent_settled' } }))
-    expect(agent.isIdle()).toBe(true)
-    agent.destroy()
-  })
+  for (const stop of ['abort', 'forceAbort'] as const) {
+    it(`keeps the cancelled chat open until native settlement after ${stop}`, async () => {
+      const agent = new PiAgent(createConfig())
+      ;(agent as any).ensureSubprocess = async () => {}
+      let promptSent!: () => void
+      const sent = new Promise<void>(resolve => { promptSent = resolve })
+      ;(agent as any).send = (message: { type: string }) => { if (message.type === 'prompt') promptSent() }
+      const iterator = agent.chat('cancel me')
+      let finished = false
+      const pending = iterator.next().then(result => { finished = true; return result })
+      const event = (type: string) => (agent as any).handleLine(JSON.stringify({ type: 'event', event: { type } }))
+      try {
+        await sent
+        if (stop === 'abort') await agent.abort()
+        else agent.forceAbort(AbortReason.UserStop)
+        // Hold Pi settlement across an event-loop turn: a completed Host queue
+        // would let SessionManager start the next prompt in this window.
+        await new Promise(resolve => setImmediate(resolve))
+        expect(finished).toBe(false)
+        expect(agent.isProcessing()).toBe(true)
+        expect(agent.isIdle()).toBe(false)
+        event('agent_end')
+        await new Promise(resolve => setImmediate(resolve))
+        expect(finished).toBe(false)
+        expect(agent.isIdle()).toBe(false)
+        event('agent_settled')
+        await pending
+        await iterator.return(undefined)
+        expect(agent.isProcessing()).toBe(false)
+        expect(agent.isIdle()).toBe(true)
+      } finally {
+        event('agent_settled')
+        await pending
+        await iterator.return(undefined)
+        agent.destroy()
+      }
+    })
+  }
 
   it('keeps transient context separate from the durable prompt message', async () => {
     const agent = new PiAgent(createConfig())

@@ -180,6 +180,7 @@ describe('model gateway worker', () => {
       'claude-sonnet-5',
       'claude-opus-5',
       'gemini-3.8-flash',
+      'gemini-4-argon',
       'gemini-3.1-pro-preview',
       'gemini-2.5-pro',
       'deepseek-v4-pro',
@@ -480,6 +481,26 @@ describe('model gateway worker', () => {
       'https://jzapi.duanju.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse',
     )
     expect(upstreamRequests[1]?.headers.get('x-goog-api-key')).toBe('server-only-newapi-key')
+  })
+
+  it('routes Gemini 4 Argon with the exact model ID and existing GenAI credentials', async () => {
+    const token = await signTestJwt(CURRENT_MODEL_SECRET)
+    for (const action of ['generateContent', 'streamGenerateContent?alt=sse']) {
+      let forwarded: Request | undefined
+      const response = await handleRequest(
+        new Request(`https://model.storyflow.example.com/v1beta/models/gemini-4-argon:${action}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hello' }] }] }),
+        }),
+        makeEnv(),
+        async request => { forwarded = request; return Response.json({ ok: true }) },
+      )
+      expect(response.status).toBe(200)
+      expect(forwarded?.url).toBe(`https://jzapi.duanju.com/v1beta/models/gemini-4-argon:${action}`)
+      expect(forwarded?.headers.get('x-goog-api-key')).toBe('server-only-newapi-key')
+      expect(await forwarded?.json()).toEqual({ contents: [{ role: 'user', parts: [{ text: 'hello' }] }] })
+    }
   })
 
   it('proxies only the approved native Gemini video route with isolated credentials', async () => {

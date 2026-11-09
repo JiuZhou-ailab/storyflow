@@ -145,6 +145,13 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
     const second = await run('second');
     const abortedRun = run('abort');
     await Promise.race([heldRequest, abortedRun.then(() => { throw new Error('Abort fixture settled before its held request'); })]);
+    // Delay delivery of native cancellation events so immediate resume cannot
+    // accidentally rely on the child winning the Host scheduling race.
+    const abortStream = (manager as unknown as { sessions: Map<string, { agent: {
+      subprocess: { stdout: Readable };
+    } }> }).sessions.get(sessionId)!.agent.subprocess.stdout;
+    abortStream.pause();
+    setTimeout(() => abortStream.resume(), 50).unref();
     await manager.cancelProcessing(sessionId);
     const aborted = await abortedRun;
     const resumed = await run('resumed');
