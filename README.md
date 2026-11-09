@@ -273,7 +273,7 @@ bun run electron:dist:dev:win
 
 根打包脚本会调用 `apps/electron/scripts` 下的平台构建脚本，确保内置 `uv`、Bun、SDK binary、ripgrep 和辅助子进程等运行时资源在 `electron-builder` 执行前完成 staging。不要直接从仓库根目录运行裸 `electron-builder` 命令作为 release 路径。
 
-完整本地发布门禁：
+本地发布预检（正式发版门禁及撤回步骤见 [发版手册](docs/release.md)）：
 
 ```bash
 bun run release -- --platform=darwin --arch=arm64
