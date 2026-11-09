@@ -429,6 +429,7 @@ for (const failure of ['missing settlement', 'abort rejected', 'write failed'] a
     await firstPending
     await first.return(undefined)
     expect(retirements).toBe(1)
+    expect(agent.isIdle()).toBe(false)
     promptSent = new Promise<string>(resolve => { sent = resolve })
     const next = agent.chat('resume')
     let finished = false

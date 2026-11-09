@@ -74,7 +74,10 @@ export class PiAgent extends PiAgentToolHost {
     this.eventQueue.complete();
     this.cancellationRecovery = this.killSubprocessGracefully(500);
     // Retain rejection for the next explicit chat while avoiding an unhandled one.
-    void this.cancellationRecovery.catch(() => {});
+    const recovery = this.cancellationRecovery;
+    void recovery.then(() => {
+      if (this.cancellationRecovery === recovery) this.cancellationRecovery = undefined;
+    }, () => {});
   }
 
   protected override handleAbortFailure(id: string, error: string): void {
@@ -404,7 +407,7 @@ export class PiAgent extends PiAgentToolHost {
 
   /** Native operations must all finish before Host idle eviction may close Pi. */
   isIdle(): boolean {
-    return !this._isProcessing && !this.activePromptId && !this.pendingPermissions.size
+    return !this.cancellationRecovery && !this._isProcessing && !this.activePromptId && !this.pendingPermissions.size
       && !this.pendingLlmQueries.size && !this.pendingEnsureSessionReady.size
       && !this.pendingCompactions.size && !this.pendingRewindUserMessages.size
       && !this.pendingRuntimeConfigUpdates.size && !this.pendingCredentialUpdates.size;
