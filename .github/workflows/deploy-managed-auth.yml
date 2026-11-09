@@ -242,19 +242,10 @@ jobs:
             -H "Authorization: Bearer $MODEL_ACCESS_TOKEN" \
             https://storyflow-model.zjding.com/v1/models)"
           test "$status" = 200
-          MODEL_CATALOG_RESPONSE_PATH="$RUNNER_TEMP/model-catalog-response.json" bun --eval '
-            const body = await Bun.file(process.env.MODEL_CATALOG_RESPONSE_PATH).json();
-            if (!Array.isArray(body.data) || body.data.length === 0) process.exit(1);
-            const available = new Set(body.data.flatMap((model) =>
-              model && typeof model === "object" && typeof model.id === "string" ? [model.id] : []
-            ));
-            for (const model of ["gemini-3.8-flash"]) {
-              if (!available.has(model)) {
-                console.error(`Missing managed release model: ${model}`);
-                process.exit(1);
-              }
-            }
-          '
+          # This canary requires the full approved catalog. Restricted account catalogs
+          # remain authoritative in the client; never use this gate to fill them in.
+          MODEL_CATALOG_RESPONSE_PATH="$RUNNER_TEMP/model-catalog-response.json" \
+            bun run scripts/verify-managed-model-catalog.ts
 
           for model in gemini-3.8-flash; do
             response_path="$RUNNER_TEMP/gemini-canary-$model.json"
