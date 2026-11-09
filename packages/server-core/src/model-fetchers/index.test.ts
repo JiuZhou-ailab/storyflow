@@ -424,7 +424,11 @@ it('does not resurrect retired Flash models from an older live gateway', () => {
 })
 
 // A deployed catalog upgrade must replace a stale single-model cache per protocol.
-for (const api of ['openai-responses', 'anthropic-messages', 'google-generative-ai']) {
+for (const [api, preferredId] of [
+  ['openai-responses', 'gpt-5.6-luna'],
+  ['anthropic-messages', 'claude-opus-5'],
+  ['google-generative-ai', 'gemini-4-argon'],
+] as const) {
   it(`restores the full approved ${api} catalog from a single-model cache`, () => {
     const configDir = setupManagedModelRefreshConfigDir()
     const output = runModelRefreshEval(configDir, `
@@ -433,7 +437,7 @@ for (const api of ['openai-responses', 'anthropic-messages', 'google-generative-
       const expected = MANAGED_MODEL_CATALOG.filter(m => m.api === '${api}');
       updateLlmConnection('storyflow-managed', {
         customEndpoint: { api: '${api}' },
-        models: [expected[0]], defaultModel: expected[0].id,
+        models: [expected.find(m => m.id === '${preferredId}')], defaultModel: '${preferredId}',
       });
       globalThis.fetch = async () => Response.json({ data: MANAGED_MODEL_CATALOG.map(m => ({
         id: m.id, name: m.name, short_name: m.shortName, description: m.description,
@@ -444,12 +448,13 @@ for (const api of ['openai-responses', 'anthropic-messages', 'google-generative-
       await service.refreshNow('storyflow-managed');
       const actual = getLlmConnection('storyflow-managed');
       console.log(JSON.stringify({ ids: actual.models.map(m => m.id),
-        expected: expected.map(m => m.id), preferred: actual.defaultModel, original: expected[0].id }));
+        expected: expected.map(m => m.id), preferred: actual.defaultModel, original: '${preferredId}' }));
     `)
     const result = JSON.parse(output)
     expect(result.ids).toEqual(result.expected)
     expect(result.ids.length).toBeGreaterThan(1)
-    expect(result.preferred).toBe(result.original)
+    expect(result.original).not.toBe(result.expected[0])
+    expect(result.preferred).toBe(preferredId)
     if (api === 'google-generative-ai') expect(result.ids).toContain('gemini-4-argon')
   })
 }
