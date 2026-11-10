@@ -225,11 +225,16 @@ export class PiModelRuntime {
       apiKey: this.resolveCustomEndpointApiKey(),
       api,
       authHeader: shouldUseCustomEndpointBearerAuthHeader(providerName),
-      models: modelIds.map(id => buildCustomEndpointModelDef(
+      models: modelIds.map(id => ({ ...buildCustomEndpointModelDef(
         id,
         { supportsImages: config?.customEndpoint?.supportsImages === true },
         this.customModelOverrides.get(id),
-      )),
+      ),
+        // The synthetic provider has no generated Anthropic metadata. Keep this
+        // managed model on Pi's native adaptive-thinking path.
+        ...(config?.managedConnection && api === 'anthropic-messages' && id === 'claude-opus-5-5'
+          ? { compat: { forceAdaptiveThinking: true } } : {}),
+      })),
     });
     this.debug(`Registered custom endpoint provider=${providerName}: ${baseUrl} with ${modelIds.length} model(s) [${modelIds.join(', ')}], api: ${api}`);
   }

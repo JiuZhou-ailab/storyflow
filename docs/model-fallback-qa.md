@@ -112,3 +112,65 @@ refresh the Luna/403/524/Worker CPU observation window and deployment version.
 Compare final generation completion, transport attempts per logical call, fallback
 recovery and header/first-content latency. Never equate HTTP 200 with completion,
 and never create paid probes merely to fill a production metric.
+
+## #72：收回线上目录 v2 与客户端协商
+
+恢复依据是 `recovery/model-gateway-4bbd696a` 分支提交
+`b37e418db4f58e5c2cc3ad5ca2fa362b73efdc1c` 的原始 Worker 存档；文件为 multipart
+下载内容，SHA256 为 `7f4b32211f87d73606afa8e81e8613aedd15b3fffcdca6c4562492fd540215b6`。
+共享目录恢复该版本的模型元数据、六项退役规则和 v2 发现协商。历史模型的协议归属仍保留，
+用于保持存档中的旧会话请求兼容；退役模型不会进入目录或新客户端的内置种子。
+main 已有的当前权限检查与上游错误规范化继续适用。
+
+0.26.2 最终批准阵容（每系列两项）：发起人已由监督方
+[书面确认](https://github.com/JiuZhou-ailab/storyflow/pull/80#issuecomment-6757562544)，
+八项均在 [CI run 42743325242](https://github.com/JiuZhou-ailab/storyflow/actions/runs/42743325242)
+完成原生协议真实生成调用；此 run 使用 `deploy=false`，未部署生产。
+
+| 系列 | 已发布 0.26.0 / 0.26.1 | 新客户端（拟随 0.26.2 发布） |
+| --- | --- | --- |
+| GPT | `gpt-5.6-sol` | `gpt-6.1-sol`、`gpt-5.6-sol` |
+| Claude | `claude-sonnet-5` | `claude-sonnet-5`、`claude-opus-5-5` |
+| Gemini | `gemini-3.8-flash` | `gemini-3.8-flash`、`gemini-4-argon` |
+| DeepSeek | `deepseek-v4-pro`、`deepseek-v4-flash` | 同左 |
+
+以上集合还要与账号当前授权取交集。存档中的动态 `gemini-3.6-*` 非退役模型发现规则仍然保留，
+若上游返回此类 ID，也必须通过逐模型门禁；上表不是完整上游清单。
+按发起人决定，Terra/Luna/Haiku 不进入 0.26.2；待给出上游 ID 后另行更新 gateway，
+不恢复已退役 ID。监督方已[确认该决定满足本 PR 的最终阵容要求](https://github.com/JiuZhou-ailab/storyflow/pull/80#issuecomment-6757742218)。
+
+根因：gateway 在认证目录中先去掉退役项，再把三个 `minimumCatalogVersion: 2` 模型仅返回给
+`x-storyflow-model-catalog-version: 2` 客户端。旧桌面没有该请求头，服务端返回的 GPT/Claude
+各只剩一个，Gemini 4 也不可见。客户端按连接协议接收账号目录，不通过内置目录补全；系列菜单
+没有被证明是这次截断的原因。单独重部署旧 main 会撤掉线上 v2，而单独加请求头也不足以验证
+新模型调用：Pi 的 Gemini 4 原生思考格式和 Claude Opus 5.5 自适应思考元数据需同步支持。
+
+新客户端在托管目录请求中协商 v2；自定义供应商不参与此协商。当前 Pi 0.87.1 已具备 Responses
+工具 call/item ID 的原生回放能力，通过 loopback HTTP 回归验证，不添加消息历史清洗器。
+对退役的既有模型首选仅选择同系列、账号目录已有的替代项；Claude Opus 5 优先使用
+`claude-opus-5-5`，没有时使用已有的 `claude-sonnet-5`，兼容升级刷新前的旧缓存、离线使用及
+只授权 Sonnet 的账号。二者都没有时失败，
+不添加模型、不覆盖自定义连接。有效空目录、失败缓存和首选保留沿用既有刷新语义。
+
+生产操作与门禁：
+
+1. 本 PR 不修改 workflow，不部署生产、不发布客户端。App 不具备 Actions dispatch / workflows 写权限。
+2. 监督方已在 PR 分支触发 `deploy-managed-auth.yml`，`deploy=false`、
+   `verify_skills_market_auth=false`。现有 workflow 已将 broker 响应写到
+   `$RUNNER_TEMP/token-response.json`；`verify-managed-model-catalog.ts` 用进程内 capability
+   重新请求 v2 目录，验证完整元数据与旧客户端目录，再使用与桌面相同的 `PiModelRuntime`
+   对目录中的**每一项**进行原生生成调用。只接受真实文本，失败/中断/空输出均阻止通过。
+   该脚本不记录 token、请求正文或上游错误正文；每项只打印 ID、协议和结果。
+3. 门禁支持 `MODEL_ACCESS_TOKEN_RESPONSE_PATH` 显式指定临时 broker 响应路径；默认路径严格对应
+   现有 workflow 的同目录文件约定。不要把 capability 文件保存到 PR、artifact 或仓库。
+4. 八项真实调用与最终阵容确认已有上述独立证据。Claude 退役选择修复不改变目录、模型元数据或
+   CI 原生调用路径，复用该 run；本地 loopback 回归仍只证明各自的兼容分支，不代替线上调用。
+   后续任何阵容/协议变更仍须重新逐项验证。
+5. PR 合并后由监督方执行 `deploy=true`；不要回滚到没有 v2 的旧 main gateway。
+   发起人用已安装的 0.26.0/0.26.1 验证旧目录未变，再用新客户端验证完整系列菜单、模型选择、
+   请求路由、旧配置升级及重启。[本轮评审已确认](https://github.com/JiuZhou-ailab/storyflow/pull/80#pullrequestreview-5836127201)
+   实机菜单复核留在部署之后，不要求本轮返工补 UI 截图。
+
+本改动不把线上目录无条件复制到客户端，不绕过账号授权，也不引入新的远程目录服务。
+新客户端已有的响应解析会保存服务端元数据和未知模型 ID，因此不妨碍 #73；需要新增原生协议能力
+时仍须通过版本协商保护旧客户端。

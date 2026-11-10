@@ -11,8 +11,8 @@ import { normalizeUpstreamError } from '../../../apps/model-gateway-worker/src/u
 
 const protocols = [
   ['openai-completions', ['deepseek-v4-flash', 'deepseek-v4-pro']],
-  ['openai-responses', ['gpt-5.6-sol', 'gpt-5.5']],
-  ['anthropic-messages', ['claude-sonnet-5', 'claude-opus-5']],
+  ['openai-responses', ['gpt-5.6-sol', 'gpt-6.1-sol']],
+  ['anthropic-messages', ['claude-sonnet-5', 'claude-opus-5-5']],
   ['google-generative-ai', ['gemini-3.8-flash', 'gemini-3.7-flash']],
 ] as const;
 

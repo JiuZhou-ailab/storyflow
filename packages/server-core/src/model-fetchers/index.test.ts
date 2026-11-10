@@ -59,8 +59,8 @@ function setupManagedModelRefreshConfigDir() {
         customEndpoint: { api: 'openai-responses' },
         models: [
           {
-            id: 'gpt-5.5',
-            name: 'GPT-5.5',
+            id: 'gpt-6.1-sol',
+            name: 'GPT-6.1 Sol',
             shortName: 'GPT',
             description: '',
             provider: 'pi',
@@ -140,7 +140,7 @@ describe('ModelRefreshService credentials', () => {
     const configDir = setupManagedModelRefreshConfigDir()
     const output = runModelRefreshEval(configDir, `
       globalThis.fetch = async () => Response.json({ data: [{
-        id: 'gpt-5.5', name: 'GPT', short_name: 'GPT', description: '', provider: 'pi',
+        id: 'gpt-6.1-sol', name: 'GPT', short_name: 'GPT', description: '', provider: 'pi',
         context_window: 262144, supports_thinking: true, supports_images: true, api: 'openai-responses',
         fallback_capabilities: { maxOutputTokens: 'unverified', tools: true, structuredOutput: 'prompt' }
       }] });
@@ -150,7 +150,7 @@ describe('ModelRefreshService credentials', () => {
       console.log(JSON.stringify(getLlmConnection('storyflow-managed')));
     `)
     const connection = JSON.parse(output)
-    expect(connection.models.map((model: { id: string }) => model.id)).toEqual(['gpt-5.5', 'gpt-5.6-sol', 'retired-model'])
+    expect(connection.models.map((model: { id: string }) => model.id)).toEqual(['gpt-6.1-sol', 'gpt-5.6-sol', 'retired-model'])
     expect(connection.defaultModel).toBe('retired-model')
   })
   for (const otherFamily of [false, true]) it(`persists an authoritative empty catalog (other family: ${otherFamily}) across builtin seeding`, () => {
@@ -190,7 +190,7 @@ describe('ModelRefreshService credentials', () => {
           markOldStarted();
           return oldResponse;
         }
-        return Response.json({ data: [{ id: 'gpt-5.5', name: 'GPT', short_name: 'GPT', description: '', provider: 'pi', context_window: 262144, supports_thinking: true, supports_images: true, api: 'openai-responses' }] });
+        return Response.json({ data: [{ id: 'gpt-6.1-sol', name: 'GPT', short_name: 'GPT', description: '', provider: 'pi', context_window: 262144, supports_thinking: true, supports_images: true, api: 'openai-responses' }] });
       };
       const service = initModelRefreshService(async () => ({ apiKey: token }));
       service.startAll();
@@ -205,7 +205,7 @@ describe('ModelRefreshService credentials', () => {
       service.stopAll();
       console.log(JSON.stringify(getLlmConnection('storyflow-managed').models.map(model => model.id)));
     `)
-    expect(JSON.parse(output)).toEqual(['gpt-5.5'])
+    expect(JSON.parse(output)).toEqual(['gpt-6.1-sol'])
   })
 
   it('reconciles the managed connection to the authenticated gateway catalog', () => {
@@ -216,6 +216,7 @@ describe('ModelRefreshService credentials', () => {
         if (String(input) !== 'https://model.example.com/v1/models') {
           throw new Error('unexpected URL: ' + String(input));
         }
+        if (new Headers(init?.headers).get('x-storyflow-model-catalog-version') !== '2') throw new Error('missing v2 negotiation');
         if (new Headers(init?.headers).get('authorization') !== 'Bearer managed-token') {
           throw new Error('missing managed token');
         }
@@ -223,8 +224,8 @@ describe('ModelRefreshService credentials', () => {
           object: 'list',
           data: [
             {
-              id: 'gpt-5.5',
-              name: 'GPT-5.5',
+              id: 'gpt-6.1-sol',
+              name: 'GPT-6.1 Sol',
               short_name: 'GPT',
               description: '',
               provider: 'pi',
@@ -268,11 +269,11 @@ describe('ModelRefreshService credentials', () => {
     `)
 
     const connection = JSON.parse(output)
-    expect(connection.defaultModel).toBe('gpt-5.5')
+    expect(connection.defaultModel).toBe('gpt-6.1-sol')
     expect(connection.models).toEqual([
       {
-        id: 'gpt-5.5',
-        name: 'GPT-5.5',
+        id: 'gpt-6.1-sol',
+        name: 'GPT-6.1 Sol',
         shortName: 'GPT',
         description: '',
         provider: 'pi',
@@ -425,8 +426,8 @@ it('does not resurrect retired Flash models from an older live gateway', () => {
 
 // A deployed catalog upgrade must replace a stale single-model cache per protocol.
 for (const [api, preferredId] of [
-  ['openai-responses', 'gpt-5.6-luna'],
-  ['anthropic-messages', 'claude-opus-5'],
+  ['openai-responses', 'gpt-5.6-sol'],
+  ['anthropic-messages', 'claude-opus-5-5'],
   ['google-generative-ai', 'gemini-4-argon'],
 ] as const) {
   it(`restores the full approved ${api} catalog from a single-model cache`, () => {

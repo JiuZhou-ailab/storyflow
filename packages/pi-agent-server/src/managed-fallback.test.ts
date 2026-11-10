@@ -373,8 +373,8 @@ for (const partial of ["text", "reasoning", "tool", "empty"] as const)
   });
 
 for (const [api, models] of [
-  ["openai-responses", ["gpt-5.6-luna", "gpt-5.6-sol"]],
-  ["anthropic-messages", ["claude-sonnet-5", "claude-opus-5"]],
+  ["openai-responses", ["gpt-6.1-sol", "gpt-5.6-sol"]],
+  ["anthropic-messages", ["claude-sonnet-5", "claude-opus-5-5"]],
   ["google-generative-ai", ["gemini-3.8-flash", "gemini-3.7-flash"]],
 ] as const) {
   test(`${api} uses native protocol and only available same-family fallback`, async () => {
@@ -636,8 +636,8 @@ test("Google native retry honors gateway Retry-After metadata when its SDK omits
 
 for (const [api, models] of [
   ["openai-completions", ["deepseek-v4-flash", "deepseek-v4-pro"]],
-  ["openai-responses", ["gpt-5.6-sol", "gpt-5.5"]],
-  ["anthropic-messages", ["claude-sonnet-5", "claude-opus-5"]],
+  ["openai-responses", ["gpt-5.6-sol", "gpt-6.1-sol"]],
+  ["anthropic-messages", ["claude-sonnet-5", "claude-opus-5-5"]],
   ["google-generative-ai", ["gemini-3.8-flash", "gemini-3.7-flash"]],
 ] as const)
   test(`${api} never reports an empty HTTP 200 stream as completed`, async () => {

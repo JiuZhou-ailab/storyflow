@@ -7,10 +7,36 @@ import type { CustomEndpointApi } from './llm-connections.ts';
 
 export interface ManagedModelDefinition extends ModelDefinition {
   api: CustomEndpointApi;
+  minimumCatalogVersion?: number;
 }
 
+export const MANAGED_MODEL_CATALOG_VERSION = '2';
+
+// Recovered from deployed Worker 4bbd696a (recovery/model-gateway-4bbd696a).
 // Capability evidence and alias caveats: docs/model-fallback-qa.md (2026-09-16).
-export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
+const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
+  {
+    id: 'gpt-6.1-sol',
+    minimumCatalogVersion: 2,
+    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
+    name: 'GPT-6.1 Sol',
+    shortName: 'GPT',
+    description: '',
+    provider: 'pi',
+    contextWindow: 1_050_000,
+    supportsThinking: true,
+    thinkingLevelMap: {
+      off: null,
+      minimal: null,
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+      max: 'max',
+    },
+    supportsImages: true,
+    api: 'openai-responses',
+  },
   {
     id: 'gpt-5.5',
     fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
@@ -108,6 +134,28 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
     api: 'anthropic-messages',
   },
   {
+    id: 'claude-opus-5-5',
+    minimumCatalogVersion: 2,
+    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
+    name: 'Claude Opus 5.5',
+    shortName: 'Claude',
+    description: '',
+    provider: 'anthropic',
+    contextWindow: 1_000_000,
+    supportsThinking: true,
+    thinkingLevelMap: {
+      off: null,
+      minimal: null,
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+      max: 'max',
+    },
+    supportsImages: true,
+    api: 'anthropic-messages',
+  },
+  {
     id: 'claude-opus-5',
     fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
     name: 'Claude Opus 5',
@@ -139,18 +187,19 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
     supportsImages: true,
     api: 'google-generative-ai',
   },
-  // Reuse the existing Gemini-family defaults (see getManagedDynamicModel).
-  // No verified per-model output budget: do not opt this model into fallback.
   {
     id: 'gemini-4-argon',
+    minimumCatalogVersion: 2,
+    fallbackCapabilities: { maxOutputTokens: 65_536, tools: true, structuredOutput: 'prompt' },
     name: 'Gemini 4 Argon',
     shortName: 'Gemini',
     description: '',
     provider: 'pi',
-    contextWindow: 1_000_000,
+    contextWindow: 1_048_576,
     supportsThinking: true,
     thinkingLevelMap: {
       off: null,
+      minimal: null,
       low: 'low',
       medium: 'medium',
       high: 'high',
@@ -221,8 +270,29 @@ export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = [
   },
 ];
 
+// Retain historical protocol ownership for old stored sessions, as deployed.
+// Retired entries never reappear in discovery or new desktop bootstrap catalogs.
+export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = DEPLOYED_MANAGED_MODEL_DEFINITIONS
+  .filter(model => !isRetiredManagedModel(model.id));
+
+/** Compatible replacement candidates still require an account-authorized catalog entry. */
+export function getRetiredManagedModelReplacement(id: string, availableModelIds: Iterable<string> = []): string | undefined {
+  if (!isRetiredManagedModel(id)) return undefined;
+  if (id.startsWith('gpt-')) return 'gpt-5.6-sol';
+  if (id.startsWith('claude-')) {
+    const available = new Set(availableModelIds);
+    // Old desktop caches and Sonnet-only accounts do not contain the v2 Opus ID.
+    // The caller still checks availability and fails closed when neither exists.
+    return ['claude-opus-5-5', 'claude-sonnet-5'].find(model => available.has(model)) ?? 'claude-opus-5-5';
+  }
+  return 'gemini-3.8-flash';
+}
+
 export function isRetiredManagedModel(id: string): boolean {
-  return /^gemini-(?:3\.[567]|2\.5)-flash$/i.test(id);
+  return /^gemini-(?:3\.[567]|2\.5)-flash$/i.test(id) || [
+    'gpt-5.5', 'gpt-5.6-terra', 'gpt-5.6-luna', 'claude-opus-5',
+    'gemini-3.1-pro-preview', 'gemini-2.5-pro',
+  ].includes(id);
 }
 
 /** Retire local product entries without adding models to an account-scoped catalog. */
@@ -266,7 +336,7 @@ export function getManagedDynamicModel(id: string): ManagedModelDefinition | nul
 }
 
 export function mergeManagedModelCatalog(upstreamModelIds: Iterable<string>): ManagedModelDefinition[] {
-  const catalog = MANAGED_MODEL_CATALOG.map(model => ({ ...model }));
+  const catalog = MANAGED_MODEL_CATALOG.filter(model => !isRetiredManagedModel(model.id)).map(model => ({ ...model }));
   const knownIds = new Set(catalog.map(model => model.id));
 
   for (const id of upstreamModelIds) {
@@ -281,13 +351,13 @@ export function mergeManagedModelCatalog(upstreamModelIds: Iterable<string>): Ma
 }
 
 export function isManagedModelAllowed(id: string, api: CustomEndpointApi): boolean {
-  return MANAGED_MODEL_CATALOG.some(model => model.id === id && model.api === api)
+  return DEPLOYED_MANAGED_MODEL_DEFINITIONS.some(model => model.id === id && model.api === api)
     || getManagedDynamicModel(id)?.api === api;
 }
 
 export function cloneManagedModelCatalog(api?: CustomEndpointApi): ModelDefinition[] {
   return MANAGED_MODEL_CATALOG
-    .filter(model => !api || model.api === api)
+    .filter(model => !isRetiredManagedModel(model.id) && (!api || model.api === api))
     .map(({ api: _api, ...model }) => ({
       ...model,
       ...(model.fallbackCapabilities ? { fallbackCapabilities: { ...model.fallbackCapabilities } } : {}),
@@ -301,8 +371,8 @@ export function cloneManagedModelCatalog(api?: CustomEndpointApi): ModelDefiniti
  * Discovery alone never qualifies a new model or extends these families.
  */
 export const MANAGED_FALLBACK_FAMILIES = [
-  ['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+  ['gpt-6.1-sol', 'gpt-5.6-sol'],
   ['deepseek-v4-flash', 'deepseek-v4-pro'],
-  ['claude-sonnet-5', 'claude-opus-5'],
-  ['gemini-3.8-flash'],
+  ['claude-sonnet-5', 'claude-opus-5-5'],
+  ['gemini-3.8-flash', 'gemini-4-argon'],
 ] as const;

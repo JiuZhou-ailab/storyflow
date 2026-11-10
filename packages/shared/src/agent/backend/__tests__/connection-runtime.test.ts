@@ -295,3 +295,51 @@ describe('retired managed Gemini selections', () => {
     });
   }
 });
+
+// The v2 retirement policy must not redirect GPT/Claude sessions into Gemini.
+describe('retired managed v2 selections', () => {
+  for (const [oldId, replacement, slug] of [
+    ['gpt-5.5', 'gpt-5.6-sol', 'storyflow-managed'],
+    ['gpt-5.6-terra', 'gpt-5.6-sol', 'storyflow-managed'],
+    ['gpt-5.6-luna', 'gpt-5.6-sol', 'storyflow-managed'],
+    ['claude-opus-5', 'claude-opus-5-5', 'storyflow-managed-anthropic'],
+    ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'storyflow-managed-gemini'],
+    ['gemini-2.5-pro', 'gemini-3.8-flash', 'storyflow-managed-gemini'],
+  ]) it(`replaces ${oldId} only when ${replacement} is authorized`, () => {
+    const connection = { slug, models: [replacement] } as LlmConnection
+    expect(resolveModelForConnection(oldId, connection)).toBe(replacement!)
+    expect(() => resolveModelForConnection(oldId, { ...connection, models: [] })).toThrow('not available for this account')
+    expect(resolveModelForConnection(oldId, { ...connection, slug: 'custom' })).toBe(oldId!)
+  })
+})
+
+
+describe('retired Claude selection after upgrade or restricted refresh', () => {
+  const managed = (models: LlmConnection['models']) => ({
+    slug: 'storyflow-managed-anthropic', name: 'Claude', providerType: 'pi_compat',
+    authType: 'api_key_with_endpoint', customEndpoint: { api: 'anthropic-messages' }, models, createdAt: 1,
+  }) as LlmConnection;
+
+  it('resumes an Opus 5 session with the legacy Sonnet-only cache before refresh', () => {
+    const cached = managed([{ id: 'claude-sonnet-5', name: 'Claude Sonnet 5', shortName: 'Claude', description: '', contextWindow: 1_000_000, provider: 'anthropic' }]);
+    expect(resolveModelForConnection('claude-opus-5', cached)).toBe('claude-sonnet-5');
+    expect(resolveModelForConnection('pi/claude-opus-5', cached)).toBe('claude-sonnet-5');
+    expect(resolveModelForConnection(undefined, { ...cached, defaultModel: 'claude-opus-5' })).toBe('claude-sonnet-5');
+  });
+
+  it('uses Sonnet for a Sonnet-only account without restoring unauthorized Opus', () => {
+    const restricted = managed(['claude-sonnet-5']);
+    const other = { ...restricted, slug: 'storyflow-managed', models: ['gpt-5.6-sol'] };
+    expect(resolveManagedModelConnection(other, 'claude-opus-5', [other, restricted])).toBe(restricted);
+    expect(resolveModelForConnection('claude-opus-5', restricted)).toBe('claude-sonnet-5');
+    expect(restricted.models).toEqual(['claude-sonnet-5']);
+  });
+
+  it('prefers authorized Opus 5.5, and fails closed if neither Claude replacement exists', () => {
+    expect(resolveModelForConnection('claude-opus-5', managed(['claude-sonnet-5', 'claude-opus-5-5']))).toBe('claude-opus-5-5');
+    for (const models of [[], ['claude-opus-5'], ['gpt-5.6-sol']]) {
+      expect(() => resolveModelForConnection('claude-opus-5', managed(models))).toThrow('not available for this account');
+    }
+    expect(resolveModelForConnection('claude-opus-5', { ...managed(['claude-sonnet-5']), slug: 'custom-anthropic' })).toBe('claude-opus-5');
+  });
+});
