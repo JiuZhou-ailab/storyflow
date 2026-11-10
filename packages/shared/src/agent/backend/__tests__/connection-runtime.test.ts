@@ -312,3 +312,34 @@ describe('retired managed v2 selections', () => {
     expect(resolveModelForConnection(oldId, { ...connection, slug: 'custom' })).toBe(oldId!)
   })
 })
+
+
+describe('retired Claude selection after upgrade or restricted refresh', () => {
+  const managed = (models: LlmConnection['models']) => ({
+    slug: 'storyflow-managed-anthropic', name: 'Claude', providerType: 'pi_compat',
+    authType: 'api_key_with_endpoint', customEndpoint: { api: 'anthropic-messages' }, models, createdAt: 1,
+  }) as LlmConnection;
+
+  it('resumes an Opus 5 session with the legacy Sonnet-only cache before refresh', () => {
+    const cached = managed([{ id: 'claude-sonnet-5', name: 'Claude Sonnet 5', shortName: 'Claude', description: '', contextWindow: 1_000_000, provider: 'anthropic' }]);
+    expect(resolveModelForConnection('claude-opus-5', cached)).toBe('claude-sonnet-5');
+    expect(resolveModelForConnection('pi/claude-opus-5', cached)).toBe('claude-sonnet-5');
+    expect(resolveModelForConnection(undefined, { ...cached, defaultModel: 'claude-opus-5' })).toBe('claude-sonnet-5');
+  });
+
+  it('uses Sonnet for a Sonnet-only account without restoring unauthorized Opus', () => {
+    const restricted = managed(['claude-sonnet-5']);
+    const other = { ...restricted, slug: 'storyflow-managed', models: ['gpt-5.6-sol'] };
+    expect(resolveManagedModelConnection(other, 'claude-opus-5', [other, restricted])).toBe(restricted);
+    expect(resolveModelForConnection('claude-opus-5', restricted)).toBe('claude-sonnet-5');
+    expect(restricted.models).toEqual(['claude-sonnet-5']);
+  });
+
+  it('prefers authorized Opus 5.5, and fails closed if neither Claude replacement exists', () => {
+    expect(resolveModelForConnection('claude-opus-5', managed(['claude-sonnet-5', 'claude-opus-5-5']))).toBe('claude-opus-5-5');
+    for (const models of [[], ['claude-opus-5'], ['gpt-5.6-sol']]) {
+      expect(() => resolveModelForConnection('claude-opus-5', managed(models))).toThrow('not available for this account');
+    }
+    expect(resolveModelForConnection('claude-opus-5', { ...managed(['claude-sonnet-5']), slug: 'custom-anthropic' })).toBe('claude-opus-5');
+  });
+});

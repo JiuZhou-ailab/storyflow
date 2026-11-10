@@ -272,14 +272,19 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
 
 // Retain historical protocol ownership for old stored sessions, as deployed.
 // Retired entries never reappear in discovery or new desktop bootstrap catalogs.
-export const MANAGED_MODEL_CATALOG = DEPLOYED_MANAGED_MODEL_DEFINITIONS
+export const MANAGED_MODEL_CATALOG: readonly ManagedModelDefinition[] = DEPLOYED_MANAGED_MODEL_DEFINITIONS
   .filter(model => !isRetiredManagedModel(model.id));
 
 /** Compatible replacement candidates still require an account-authorized catalog entry. */
-export function getRetiredManagedModelReplacement(id: string): string | undefined {
+export function getRetiredManagedModelReplacement(id: string, availableModelIds: Iterable<string> = []): string | undefined {
   if (!isRetiredManagedModel(id)) return undefined;
   if (id.startsWith('gpt-')) return 'gpt-5.6-sol';
-  if (id.startsWith('claude-')) return 'claude-opus-5-5';
+  if (id.startsWith('claude-')) {
+    const available = new Set(availableModelIds);
+    // Old desktop caches and Sonnet-only accounts do not contain the v2 Opus ID.
+    // The caller still checks availability and fails closed when neither exists.
+    return ['claude-opus-5-5', 'claude-sonnet-5'].find(model => available.has(model)) ?? 'claude-opus-5-5';
+  }
   return 'gemini-3.8-flash';
 }
 

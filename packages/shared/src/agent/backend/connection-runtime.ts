@@ -138,7 +138,9 @@ export function resolveManagedModelConnection(
     return connection;
   }
 
-  const selectedModel = getRetiredManagedModelReplacement(managedModel.replace(/^pi\//, '')) ?? managedModel;
+  const availableModelIds = connections.filter(candidate => isManagedLlmConnectionSlug(candidate.slug))
+    .flatMap(candidate => candidate.models?.map(model => typeof model === 'string' ? model : model.id) ?? []);
+  const selectedModel = getRetiredManagedModelReplacement(managedModel.replace(/^pi\//, ''), availableModelIds) ?? managedModel;
   const hasModel = (candidate: LlmConnection) =>
     candidate.models?.some(model => (typeof model === 'string' ? model : model.id) === selectedModel);
 
@@ -300,7 +302,8 @@ export function resolveModelForConnection(
   connection: LlmConnection | null
 ): string {
   const selectedModel = managedModel || connection?.defaultModel || '';
-  const replacement = getRetiredManagedModelReplacement(selectedModel.replace(/^pi\//, ''));
+  const availableModelIds = connection?.models?.map(model => typeof model === 'string' ? model : model.id) ?? [];
+  const replacement = getRetiredManagedModelReplacement(selectedModel.replace(/^pi\//, ''), availableModelIds);
   if (connection && isManagedLlmConnectionSlug(connection.slug) && replacement) {
     if (!connection.models?.some(model => (typeof model === 'string' ? model : model.id) === replacement)) {
       throw new Error(`The replacement ${replacement.startsWith('gemini-') ? 'Gemini model' : 'model ' + replacement} is not available for this account`);
