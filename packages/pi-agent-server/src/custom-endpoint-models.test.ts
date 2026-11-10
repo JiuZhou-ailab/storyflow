@@ -121,7 +121,8 @@ describe('buildCustomEndpointModelDef', () => {
       })
       expect(model.reasoning).toBe(true)
       expect(clampThinkingLevel(model as never, 'medium')).toBe('medium')
-      expect(clampThinkingLevel(model as never, 'off')).toBe('minimal')
+      // Recovered v2 Argon explicitly disables minimal; 3.8 keeps its prior default.
+      expect(clampThinkingLevel(model as never, 'off')).toBe(modelId === 'gemini-4-argon' ? 'low' : 'minimal')
     }
   })
 })
