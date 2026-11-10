@@ -211,3 +211,14 @@ diff --git a/dist/utils/retry.js b/dist/utils/retry.js
      // OpenCode Go/free-tier limits returned as 429 JSON error types by OpenCode's
      // Zen API. These are subscription/account limits, not transient throttles.
      "GoUsageLimitError",
+diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
+--- a/dist/api/google-shared.js
++++ b/dist/api/google-shared.js
+@@ -40,6 +40,7 @@
+     // Match Gemini 3 Pro/Flash IDs with or without a minor version, such as
+     // gemini-3-flash-preview, gemini-3.1-pro-preview, and gemini-3.8-flash.
+     /gemini-3(?:\.\d+)?-(?:pro|flash)/.test(id) ||
++        id === "gemini-4-argon" ||
+         id === "gemini-flash-latest" ||
+         id === "gemini-flash-lite-latest" ||
+         // Match both hosted Gemma 4 naming forms: gemma-4-* and gemma4-*.

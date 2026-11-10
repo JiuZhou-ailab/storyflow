@@ -21,9 +21,9 @@ describe('deployed managed catalog release gate', () => {
   })
   test('rejects truncated GPT and Claude families', () => {
     const body = catalog()
-    body.data = body.data.filter(model => !['gpt-5.6-terra', 'gpt-5.6-luna', 'claude-opus-5'].includes(model.id))
-    expect(() => verifyManagedModelCatalog(body)).toThrow('gpt-5.6-terra')
-    expect(() => verifyManagedModelCatalog(body)).toThrow('claude-opus-5')
+    body.data = body.data.filter(model => !['gpt-6.1-sol', 'claude-opus-5-5'].includes(model.id))
+    expect(() => verifyManagedModelCatalog(body)).toThrow('gpt-6.1-sol')
+    expect(() => verifyManagedModelCatalog(body)).toThrow('claude-opus-5-5')
   })
   test('rejects empty, malformed, duplicate and protocol-incompatible catalogs', () => {
     for (const body of [{}, { data: [] }, { data: [null] }]) {
@@ -82,7 +82,6 @@ test('accepts reordered capability keys and valid extra models without optional 
   first.thinking_level_map = Object.fromEntries(Object.entries(first.thinking_level_map as object).reverse())
   first.fallback_capabilities = Object.fromEntries(Object.entries(first.fallback_capabilities as object).reverse())
   const argon = body.data.find(model => model.id === 'gemini-4-argon')!
-  delete argon.fallback_capabilities
   const extra: Record<string, unknown> = { ...argon, id: 'gemini-future' }
   delete extra.thinking_level_map
   body.data.push(extra)

@@ -42,3 +42,13 @@ before testing; stale package-local node_modules must not shadow the root versio
 The extension layer never edits error text, request bodies, raw history or SSE to
 control retries. Native retry context edits and cancel/settlement behavior remain
 owned by Pi.
+
+## Managed catalog v2 (#72)
+
+Pi 0.87.1's Google `usesGoogleThinkingLevel` does not recognize
+`gemini-4-argon`. The additional exact-ID hunk keeps this model on the native
+`thinkingLevel` path instead of sending a token `thinkingBudget`. Remove it when
+an unpatched supported Pi recognizes that ID and the v2 native-wire tests pass.
+Managed Claude Opus 5.5 is registered through Pi's public
+`compat.forceAdaptiveThinking` metadata. Responses replay/item ID projection
+remains Pi-owned; no gateway or product history sanitizer is added.

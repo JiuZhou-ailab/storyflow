@@ -142,7 +142,7 @@ describe('builtin LLM connection defaults', () => {
       {
         name: 'GPT (Responses)',
         baseUrl: 'https://storyflow-model.zjding.com/v1',
-        defaultModel: 'gpt-5.6-luna',
+        defaultModel: 'gpt-5.6-sol',
         customEndpoint: { api: 'openai-responses' },
       },
       {
@@ -166,14 +166,12 @@ describe('builtin LLM connection defaults', () => {
       connection.models?.map(model => typeof model === 'string' ? model : model.id),
     ])).toEqual([
       ['storyflow-managed-deepseek', ['deepseek-v4-pro', 'deepseek-v4-flash']],
-      ['storyflow-managed', ['gpt-5.5', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']],
+      ['storyflow-managed', ['gpt-6.1-sol', 'gpt-5.6-sol']],
       ['storyflow-managed-gemini', [
         'gemini-3.8-flash',
         'gemini-4-argon',
-        'gemini-3.1-pro-preview',
-        'gemini-2.5-pro',
       ]],
-      ['storyflow-managed-anthropic', ['claude-sonnet-5', 'claude-opus-5']],
+      ['storyflow-managed-anthropic', ['claude-sonnet-5', 'claude-opus-5-5']],
     ])
     expect(config.defaultLlmConnection).toBe('storyflow-managed')
   })
@@ -199,9 +197,9 @@ describe('builtin LLM connection defaults', () => {
     expect(models).toEqual(cloneManagedModelCatalog('openai-responses'))
     expect(models?.every(model => typeof model !== 'string')).toBe(true)
     expect(models?.map(model => typeof model === 'string' ? model : model.name))
-      .toEqual(['GPT-5.5', 'GPT-5.6 Sol', 'GPT-5.6 Terra', 'GPT-5.6 Luna'])
+      .toEqual(['GPT-6.1 Sol', 'GPT-5.6 Sol'])
     expect(models?.map(model => typeof model === 'string' ? model : model.shortName))
-      .toEqual(['GPT', 'GPT', 'GPT', 'GPT'])
+      .toEqual(['GPT', 'GPT'])
   })
 
   it('preserves the previously selected DeepSeek family when splitting the managed connection', () => {

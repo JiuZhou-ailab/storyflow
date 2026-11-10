@@ -295,3 +295,20 @@ describe('retired managed Gemini selections', () => {
     });
   }
 });
+
+// The v2 retirement policy must not redirect GPT/Claude sessions into Gemini.
+describe('retired managed v2 selections', () => {
+  for (const [oldId, replacement, slug] of [
+    ['gpt-5.5', 'gpt-5.6-sol', 'storyflow-managed'],
+    ['gpt-5.6-terra', 'gpt-5.6-sol', 'storyflow-managed'],
+    ['gpt-5.6-luna', 'gpt-5.6-sol', 'storyflow-managed'],
+    ['claude-opus-5', 'claude-opus-5-5', 'storyflow-managed-anthropic'],
+    ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'storyflow-managed-gemini'],
+    ['gemini-2.5-pro', 'gemini-3.8-flash', 'storyflow-managed-gemini'],
+  ]) it(`replaces ${oldId} only when ${replacement} is authorized`, () => {
+    const connection = { slug, models: [replacement] } as LlmConnection
+    expect(resolveModelForConnection(oldId, connection)).toBe(replacement!)
+    expect(() => resolveModelForConnection(oldId, { ...connection, models: [] })).toThrow('not available for this account')
+    expect(resolveModelForConnection(oldId, { ...connection, slug: 'custom' })).toBe(oldId!)
+  })
+})

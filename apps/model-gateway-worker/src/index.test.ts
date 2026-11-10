@@ -75,7 +75,7 @@ describe('model gateway worker', () => {
     const readinessRequests: Request[] = []
     const fetchStub = async (request: Request) => {
       readinessRequests.push(request)
-      return Response.json({ data: [{ id: 'gpt-5.5' }] })
+      return Response.json({ data: [{ id: 'gpt-5.6-sol' }] })
     }
     const ready = await handleRequest(
       new Request('https://model.storyflow.example.com/ready'),
@@ -170,50 +170,43 @@ describe('model gateway worker', () => {
     expect(catalog.status).toBe(200)
     const catalogBody = await catalog.json() as { object: string; data: Array<Record<string, unknown>> }
     expect(catalogBody.object).toBe('list')
-    expect(catalogBody.data.find(model => model.id === 'gpt-5.5')?.fallback_capabilities)
+    expect(catalogBody.data.find(model => model.id === 'gpt-5.6-sol')?.fallback_capabilities)
       .toEqual({ maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' })
     expect(catalogBody.data.map(model => model.id)).toEqual([
-      'gpt-5.5',
-      'gpt-5.6-sol',
-      'gpt-5.6-terra',
-      'gpt-5.6-luna',
-      'claude-sonnet-5',
-      'claude-opus-5',
-      'gemini-3.8-flash',
-      'gemini-4-argon',
-      'gemini-3.1-pro-preview',
-      'gemini-2.5-pro',
-      'deepseek-v4-pro',
-      'deepseek-v4-flash',
-      'gemini-3.6-pro-preview',
+      'gpt-5.6-sol', 'claude-sonnet-5', 'gemini-3.8-flash',
+      'deepseek-v4-pro', 'deepseek-v4-flash', 'gemini-3.6-pro-preview',
     ])
-    expect(catalogBody.data.find(model => model.id === 'gpt-5.5')).toMatchObject({
-      short_name: 'GPT',
-      context_window: 262_144,
-      supports_thinking: true,
-      thinking_level_map: { max: null },
-      supports_images: true,
+    expect(catalogBody.data.find(model => model.id === 'gpt-5.6-sol')).toMatchObject({
+      short_name: 'GPT', context_window: 262_144, api: 'openai-responses',
     })
-    expect(catalogBody.data.find(model => model.id === 'claude-opus-5')).toMatchObject({
-      short_name: 'Claude',
-      api: 'anthropic-messages',
-    })
-    expect(catalogBody.data.find(model => model.id === 'gemini-3.6-flash')).toBeUndefined()
     expect(catalogBody.data.find(model => model.id === 'deepseek-v4-flash')?.name).toBe('DeepSeek V4.1 Flash')
     expect(catalogBody.data.find(model => model.id === 'gemini-3.8-flash')).toMatchObject({
-      name: 'Gemini 3.8 Flash',
-      supports_thinking: true,
+      name: 'Gemini 3.8 Flash', supports_thinking: true,
       thinking_level_map: { off: null, medium: 'medium', xhigh: null },
-    })
-    expect(catalogBody.data.find(model => model.id === 'gemini-3.1-pro-preview')).toMatchObject({
-      name: 'Gemini 3.1 Pro Preview',
-      short_name: 'Gemini',
-      api: 'google-generative-ai',
     })
     expect(wrongChatMethod.status).toBe(405)
     expect(wrongChatMethod.headers.get('allow')).toBe('POST')
     expect(wrongCatalogMethod.status).toBe(405)
     expect(wrongCatalogMethod.headers.get('allow')).toBe('GET')
+  })
+
+  it('negotiates v2 without exposing retired IDs or changing legacy desktop visibility', async () => {
+    const token = await signTestJwt(CURRENT_MODEL_SECRET)
+    const get = async (version?: string) => {
+      const response = await handleRequest(new Request('https://model.storyflow.example.com/v1/models', {
+        headers: { Authorization: `Bearer ${token}`, ...(version ? { 'x-storyflow-model-catalog-version': version } : {}) },
+      }), makeEnv(), async () => Response.json({ data: [] }))
+      expect(response.status).toBe(200)
+      return (await response.json() as { data: Array<{ id: string }> }).data.map(model => model.id)
+    }
+    const legacy = ['gpt-5.6-sol', 'claude-sonnet-5', 'gemini-3.8-flash', 'deepseek-v4-pro', 'deepseek-v4-flash']
+    expect(await get()).toEqual(legacy)
+    expect(await get('1')).toEqual(legacy)
+    expect(await get('99')).toEqual(legacy)
+    expect(await get('2')).toEqual([
+      'gpt-6.1-sol', 'gpt-5.6-sol', 'claude-sonnet-5', 'claude-opus-5-5',
+      'gemini-3.8-flash', 'gemini-4-argon', 'deepseek-v4-pro', 'deepseek-v4-flash',
+    ])
   })
 
   it('rejects missing or invalid model access tokens before calling NewAPI', async () => {
@@ -297,7 +290,7 @@ describe('model gateway worker', () => {
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ model: 'gpt-5.5', input: [] }),
+        body: JSON.stringify({ model: 'gpt-5.6-sol', input: [] }),
       },
     )
 
@@ -320,7 +313,7 @@ describe('model gateway worker', () => {
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ model: 'gpt-5.5', input: [] }),
+        body: JSON.stringify({ model: 'gpt-5.6-sol', input: [] }),
       },
     )
     const fetchStub = async () => Response.json({ ok: true })
@@ -371,7 +364,7 @@ describe('model gateway worker', () => {
             Cookie: 'must-not-forward=1',
             'X-Untrusted-Header': 'must-not-forward',
           },
-          body: JSON.stringify({ model: 'gpt-5.5', input: [], stream: true }),
+          body: JSON.stringify({ model: 'gpt-5.6-sol', input: [], stream: true }),
         }),
         makeEnv(),
         async (request) => {
@@ -596,7 +589,7 @@ describe('model gateway worker', () => {
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ model: 'gpt-5.5', input: [] }),
+        body: JSON.stringify({ model: 'gpt-5.6-sol', input: [] }),
       },
     )
 
@@ -622,7 +615,7 @@ describe('model gateway worker', () => {
       new Request('https://model.storyflow.example.com/v1/responses', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ model: 'gpt-5.5', input: [] }),
+        body: JSON.stringify({ model: 'gpt-5.6-sol', input: [] }),
       }),
       makeEnv(),
       async () => Response.json(
@@ -654,7 +647,7 @@ describe('model gateway worker', () => {
             'x-storyflow-model-call-id': 'not-a-uuid',
             'x-storyflow-attempt': '999',
           },
-          body: JSON.stringify({ model: 'gpt-5.5', input: [] }),
+          body: JSON.stringify({ model: 'gpt-5.6-sol', input: [] }),
         }),
         makeEnv(),
         async () => new Response(null, {
@@ -745,7 +738,7 @@ describe('model gateway worker', () => {
             'x-storyflow-attempt': '1',
           },
           body: JSON.stringify({
-            model: 'gpt-5.5',
+            model: 'gpt-5.6-sol',
             input: [{ role: 'user', content: 'private prompt content' }],
           }),
         }),
@@ -766,7 +759,7 @@ describe('model gateway worker', () => {
         user_name: '飞书用户',
         model_call_id: '4f4666b0-d5b8-4d5b-9c87-9c58f829f9d4',
         attempt: 1,
-        model: 'gpt-5.5',
+        model: 'gpt-5.6-sol',
         api: 'openai-responses',
         duration_ms: expect.any(Number),
       })

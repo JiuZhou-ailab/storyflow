@@ -29,7 +29,7 @@ import {
   isCompatProvider,
   getModelsForProviderType,
 } from '@craft-agent/shared/config'
-import { applyManagedModelPolicy } from '@craft-agent/shared/config/managed-model-catalog'
+import { applyManagedModelPolicy, MANAGED_MODEL_CATALOG_VERSION } from '@craft-agent/shared/config/managed-model-catalog'
 import { MODEL_FETCHERS } from './registry'
 import { handlerLog } from './runtime'
 
@@ -59,6 +59,7 @@ async function fetchManagedModelCatalog(
   const response = await fetch(new URL('/v1/models', connection.baseUrl), {
     headers: {
       Accept: 'application/json',
+      'x-storyflow-model-catalog-version': MANAGED_MODEL_CATALOG_VERSION,
       Authorization: `Bearer ${credentials.apiKey}`,
     },
   })

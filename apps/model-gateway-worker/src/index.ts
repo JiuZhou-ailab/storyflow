@@ -7,6 +7,7 @@ import { decodeProtectedHeader, jwtVerify, type JWTPayload } from 'jose'
 import {
   isManagedModelAllowed,
   MANAGED_MODEL_CATALOG,
+  MANAGED_MODEL_CATALOG_VERSION,
   mergeManagedModelCatalog,
 } from '@craft-agent/shared/config/managed-model-catalog'
 import type { CustomEndpointApi } from '@craft-agent/shared/config'
@@ -176,7 +177,10 @@ export async function handleRequest(
     const catalog = await resolveManagedModelCatalog(upstreamBaseUrl, newApiKey, fetchImpl)
     return Response.json({
       object: 'list',
-      data: catalog.filter(model => !policy || policy.models === null || policy.models.includes(model.id)).map(model => ({
+      // Preserve the deployed v2 opt-in for older desktop protocol support.
+      data: catalog.filter(model => !model.minimumCatalogVersion
+        || request.headers.get('x-storyflow-model-catalog-version') === MANAGED_MODEL_CATALOG_VERSION)
+        .filter(model => !policy || policy.models === null || policy.models.includes(model.id)).map(model => ({
         id: model.id,
         name: model.name,
         short_name: model.shortName,

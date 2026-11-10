@@ -72,7 +72,7 @@ describe('managed auth flow', () => {
           Authorization: `Bearer ${tokens.modelAccessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ model: 'gpt-5.5', input: [] }),
+        body: JSON.stringify({ model: 'gpt-5.6-sol', input: [] }),
       }),
       gatewayEnv,
       async (request) => {
@@ -87,7 +87,7 @@ describe('managed auth flow', () => {
           Authorization: `Bearer ${tokens.appSessionToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ model: 'gpt-5.5', input: [] }),
+        body: JSON.stringify({ model: 'gpt-5.6-sol', input: [] }),
       }),
       gatewayEnv,
     )

@@ -2,7 +2,7 @@
 // output: A release gate rejecting missing models and incompatible protocol metadata
 // pos: Shared check for deployed gateway/client catalog compatibility
 import { isDeepStrictEqual } from 'node:util'
-import { MANAGED_MODEL_CATALOG } from '../packages/shared/src/config/managed-model-catalog'
+import { MANAGED_MODEL_CATALOG, MANAGED_MODEL_CATALOG_VERSION, type ManagedModelDefinition } from '../packages/shared/src/config/managed-model-catalog'
 
 const THINKING_LEVEL_KEYS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 const MODEL_APIS = new Set(['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai'])
@@ -38,7 +38,7 @@ function validateDesktopModel(entry: unknown): asserts entry is Record<string, u
   }
 }
 
-export function verifyManagedModelCatalog(body: unknown): void {
+export function verifyManagedModelCatalog(body: unknown, expectedModels: readonly ManagedModelDefinition[] = MANAGED_MODEL_CATALOG): void {
   if (!body || typeof body !== 'object' || !Array.isArray((body as { data?: unknown }).data)) {
     throw new Error('Invalid managed model catalog')
   }
@@ -51,7 +51,7 @@ export function verifyManagedModelCatalog(body: unknown): void {
     byId.set(model.id, model)
   }
   const failures: string[] = []
-  for (const expected of MANAGED_MODEL_CATALOG) {
+  for (const expected of expectedModels) {
     const actual = byId.get(expected.id)
     if (!actual) {
       failures.push(`Missing managed release model: ${expected.id}`)
@@ -75,6 +75,13 @@ export function verifyManagedModelCatalog(body: unknown): void {
 if (import.meta.main) {
   const path = process.env.MODEL_CATALOG_RESPONSE_PATH
   if (!path) throw new Error('MODEL_CATALOG_RESPONSE_PATH is required')
-  verifyManagedModelCatalog(await Bun.file(path).json())
-  console.log(`Verified ${MANAGED_MODEL_CATALOG.length} managed release models and protocol metadata`)
+  // The existing workflow already writes the broker response beside the catalog.
+  // Re-fetch with the same desktop v2 negotiation rather than weakening the old gate.
+  const { dirname, join } = await import('node:path')
+  const tokenPath = process.env.MODEL_ACCESS_TOKEN_RESPONSE_PATH ?? join(dirname(path), 'token-response.json')
+  const { modelAccessToken } = await Bun.file(tokenPath).json()
+  if (typeof modelAccessToken !== 'string' || !modelAccessToken) throw new Error('Missing canary model capability')
+  const { verifyManagedModelsLive } = await import('./verify-managed-models-live')
+  await verifyManagedModelsLive(modelAccessToken)
+  console.log(`Verified managed catalog v${MANAGED_MODEL_CATALOG_VERSION} and all native model calls`)
 }
