@@ -383,7 +383,8 @@ export class PiAgent extends PiAgentToolHost {
 
     // Send abort to subprocess
     this.send({ type: 'abort' });
-    this.eventQueue.complete();
+    // Keep draining until Pi's agent_settled (or a correlated preflight
+    // result). Closing here lets the next chat consume the old settlement.
 
   }
 
@@ -393,7 +394,6 @@ export class PiAgent extends PiAgentToolHost {
     this.emitAutomationEvent('Stop', { hook_event_name: 'Stop' });
 
     this.abortReason = reason;
-    this._isProcessing = false;
 
     // Reject all pending permissions
     for (const [, pending] of this.pendingPermissions) {
@@ -401,11 +401,10 @@ export class PiAgent extends PiAgentToolHost {
     }
     this.pendingPermissions.clear();
 
-    // Signal turn complete to wake up any waiting consumers
-    this.eventQueue.complete();
-
     // For PlanSubmitted and AuthRequest, just interrupt the turn
     if (reason === AbortReason.PlanSubmitted || reason === AbortReason.AuthRequest) {
+      this._isProcessing = false;
+      this.eventQueue.complete();
       return;
     }
 
