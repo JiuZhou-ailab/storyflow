@@ -425,7 +425,10 @@ async function resolveManagedModelCatalog(
   try {
     const response = await fetchImpl(new Request(
       new URL('/v1/models', upstreamBaseUrl),
-      { headers: { authorization: `Bearer ${newApiKey}` } },
+      {
+        headers: { authorization: `Bearer ${newApiKey}` },
+        signal: AbortSignal.timeout(5_000),
+      },
     ))
     if (!response.ok) return [...MANAGED_MODEL_CATALOG]
 

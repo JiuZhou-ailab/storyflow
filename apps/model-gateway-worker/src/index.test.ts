@@ -4,6 +4,7 @@
 
 import { describe, expect, it, spyOn } from 'bun:test'
 import { handleRequest } from './index'
+import { MANAGED_MODEL_CATALOG } from '@craft-agent/shared/config/managed-model-catalog'
 
 const CURRENT_MODEL_KEY_ID = 'model-access-2026-07'
 const CURRENT_MODEL_SECRET = 'broker-signing-secret'
@@ -189,6 +190,31 @@ describe('model gateway worker', () => {
     expect(wrongCatalogMethod.status).toBe(405)
     expect(wrongCatalogMethod.headers.get('allow')).toBe('GET')
   })
+
+  it('falls back to the built-in catalog when the upstream catalog times out after five seconds', async () => {
+    const token = await signTestJwt(CURRENT_MODEL_SECRET)
+    await Promise.all([undefined, '2'].map(async (version) => {
+      let upstreamSignal: AbortSignal | undefined
+      const startedAt = performance.now()
+      const response = await handleRequest(new Request('https://model.storyflow.example.com/v1/models', {
+        headers: { Authorization: `Bearer ${token}`, ...(version ? { 'x-storyflow-model-catalog-version': version } : {}) },
+      }), makeEnv(), async (request) => {
+        upstreamSignal = request.signal
+        return new Promise<Response>((_resolve, reject) => {
+          request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true })
+        })
+      })
+      expect(performance.now() - startedAt).toBeGreaterThanOrEqual(4_900)
+      expect(upstreamSignal?.aborted).toBe(true)
+      expect(upstreamSignal?.reason.name).toBe('TimeoutError')
+      expect(response.status).toBe(200)
+      const body = await response.json() as { object: string; data: Array<{ id: string }> }
+      expect(body.object).toBe('list')
+      expect(body.data.map(model => model.id)).toEqual(
+        MANAGED_MODEL_CATALOG.filter(model => !model.minimumCatalogVersion || version === '2').map(model => model.id),
+      )
+    }))
+  }, 10_000)
 
   it('negotiates v2 without exposing retired IDs or changing legacy desktop visibility', async () => {
     const token = await signTestJwt(CURRENT_MODEL_SECRET)
