@@ -16,6 +16,7 @@ New-Item -ItemType Directory -Force $root, $startupProfile, $config, $EvidenceDi
 $env:CRAFT_CONFIG_DIR = $config
 $env:CRAFT_CLIENT_AUTH_REQUIRED = 'false'
 $env:CRAFT_DEBUG = '1'
+$env:CRAFT_DISABLE_AUTO_UPDATE = '1'
 $configPath = Join-Path $config 'config.json'
 '{"workspaces":[],"activeWorkspaceId":null,"activeSessionId":null,"startupPreservationMarker":"keep-this-value"}' | Set-Content -Encoding utf8 $configPath
 $exe = Join-Path $installDir 'Storyflow.exe'
@@ -36,6 +37,22 @@ function Install-Version([string]$path) {
   if ($installerProcess.ExitCode -ne 0) { throw "Installer failed: $($installerProcess.ExitCode)" }
   if (!(Test-Path $exe)) { throw 'Installed executable missing' }
   Stop-TestApp # NSIS may auto-launch; the shortcut is the entry under test.
+  $script:installedExeHash = (Get-FileHash $exe -Algorithm SHA256).Hash
+  $script:installedAsarHash = (Get-FileHash (Join-Path $installDir 'resources/app.asar') -Algorithm SHA256).Hash
+  # Older upgrade baselines predate CRAFT_DISABLE_AUTO_UPDATE. Keep their feed
+  # offline too, so this startup gate never depends on the current live release.
+  @"
+provider: generic
+url: http://127.0.0.1:9/startup-gate
+updaterCacheDirName: storyflow-startup-gate
+"@ | Set-Content -Encoding utf8 (Join-Path $installDir 'resources/app-update.yml')
+}
+
+function Assert-TestPackage {
+  if ((Get-FileHash $exe -Algorithm SHA256).Hash -ne $script:installedExeHash -or
+      (Get-FileHash (Join-Path $installDir 'resources/app.asar') -Algorithm SHA256).Hash -ne $script:installedAsarHash) {
+    throw 'Installed package was replaced during startup acceptance'
+  }
 }
 
 function Quit-TestApp {
@@ -46,6 +63,7 @@ function Quit-TestApp {
     if ((Get-Date) -gt $deadline) { throw 'Normal application quit did not complete' }
     Start-Sleep -Milliseconds 100
   }
+  Assert-TestPackage
 }
 
 function Get-TestAppProcesses {
@@ -66,6 +84,12 @@ function Launch-Shortcut([string]$scenario, [switch]$Duplicate) {
   $link = $wsh.CreateShortcut($shortcut.FullName)
   $link.Arguments = "--user-data-dir=`"$startupProfile`" --remote-debugging-port=0"
   $link.Save()
+  $previousEndpoint = $script:startupCdpEndpoint
+  if (!$Duplicate) {
+    # The old file survives a crash. Only the new owner may publish this endpoint.
+    Remove-Item (Join-Path $startupProfile 'DevToolsActivePort') -Force -ErrorAction SilentlyContinue
+    $script:startupCdpEndpoint = $null
+  }
   $launched = Start-Process $shortcut.FullName -PassThru
   if ($Duplicate) {
     # The existing page is already ready. Wait for the new process to hand off
@@ -80,6 +104,10 @@ function Launch-Shortcut([string]$scenario, [switch]$Duplicate) {
   $startupResult = & bun e2e/core/installed-startup.ts @probeArgs | Tee-Object -FilePath (Join-Path $EvidenceDirectory "$scenario.json")
   if ($LASTEXITCODE -ne 0) { throw "Application page failed in $scenario" }
   $script:startupCdpEndpoint = ($startupResult | ConvertFrom-Json).endpoint
+  if (!$Duplicate -and $previousEndpoint -and $script:startupCdpEndpoint -eq $previousEndpoint) {
+    throw 'New application process reused the previous CDP endpoint'
+  }
+  Assert-TestPackage
   $stored = Get-Content $configPath -Raw | ConvertFrom-Json
   if ($stored.startupPreservationMarker -ne 'keep-this-value') { throw 'Host configuration was reset' }
   # The main window is created hidden and shown on ready-to-show, while the page
@@ -99,7 +127,7 @@ function Launch-Shortcut([string]$scenario, [switch]$Duplicate) {
     throw "Expected one visible application owner, got $($owners.Count)"
   }
   if ($Duplicate -and $owners[0].Id -ne $existingOwners[0].Id) { throw 'Second launch replaced the existing owner' }
-  @{ scenario = $scenario; ownerPid = $owners[0].Id; launchedPid = $launched.Id; duplicate = [bool]$Duplicate } |
+  @{ scenario = $scenario; ownerPid = $owners[0].Id; launchedPid = $launched.Id; duplicate = [bool]$Duplicate; executableSha256 = $script:installedExeHash; appAsarSha256 = $script:installedAsarHash } |
     ConvertTo-Json -Compress | Set-Content (Join-Path $EvidenceDirectory "$scenario-process.json")
 }
 
@@ -127,5 +155,8 @@ try {
   Launch-Shortcut 'upgraded-restart'
 } finally {
   Stop-TestApp
-  if (Test-Path (Join-Path $startupProfile 'logs')) { Copy-Item (Join-Path $startupProfile 'logs') $EvidenceDirectory -Recurse -Force }
+  foreach ($profileName in @('profile', 'upgrade-profile')) {
+    $logs = Join-Path $root "$profileName/logs"
+    if (Test-Path $logs) { Copy-Item $logs (Join-Path $EvidenceDirectory "$profileName-logs") -Recurse -Force }
+  }
 }

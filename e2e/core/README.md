@@ -51,3 +51,8 @@ Local verification (macOS arm64, 2026-09-23): `text-workspace.ts`, `conversation
 Re-verified 2026-10-14 after the writing view and source view were unified into one draft per file; the explicit writing-mode action no longer exists.
 
 Release QA still needs Windows/Linux replacement and exit checks, a real system IME session, native quit/update-cancel interaction, and the input/memory performance budget. Those are not implied by the macOS CDP checks. External writers do not join the editor lock; recovery retains observed before/submitted versions, not every external intermediate write.
+
+
+Startup acceptance disables the update plane with `CRAFT_DISABLE_AUTO_UPDATE=1` in the shared launcher and installed-shortcut runner. Normal launches and dedicated updater tests keep their default update behavior. The Windows runner also redirects the installed feed to an unavailable loopback address for upgrade baselines that predate this switch, and checks the executable and app.asar SHA-256 after startup and normal quit. NSIS upgrade remains an explicit installer operation. Each new process clears `DevToolsActivePort` before launch; only duplicate-launch probes reuse the verified original owner's endpoint.
+
+`bun run e2e:core` writes `stage.json`, `failure.json` on failure, and streamed stdout/stderr for each launch under `startup-evidence/core/` (override with `CRAFT_E2E_EVIDENCE_DIR`). Logs survive launch failures and fixture cleanup. CDP protocol errors, disconnects, and command timeouts include the command method. The Windows workflow uploads this directory with the other startup evidence even if core E2E fails.
