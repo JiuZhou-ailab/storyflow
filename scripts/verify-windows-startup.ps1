@@ -48,8 +48,16 @@ function Quit-TestApp {
   }
 }
 
+function Get-TestAppProcesses {
+  @(Get-Process -Name Storyflow -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe })
+}
+
+function Get-VisibleOwners {
+  @(Get-TestAppProcesses | Where-Object { $_.MainWindowHandle -ne 0 })
+}
+
 function Launch-Shortcut([string]$scenario, [switch]$Duplicate) {
-  $existingOwners = @(Get-Process -Name Storyflow -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe -and $_.MainWindowHandle -ne 0 })
+  $existingOwners = @(Get-VisibleOwners)
   if ($Duplicate -and $existingOwners.Count -ne 1) { throw 'Duplicate launch requires one existing visible owner' }
   $wsh = New-Object -ComObject WScript.Shell
   $shortcut = Get-ChildItem -Path ([Environment]::GetFolderPath('Desktop')), ([Environment]::GetFolderPath('Programs')) -Filter '*.lnk' -Recurse |
@@ -74,8 +82,22 @@ function Launch-Shortcut([string]$scenario, [switch]$Duplicate) {
   $script:startupCdpEndpoint = ($startupResult | ConvertFrom-Json).endpoint
   $stored = Get-Content $configPath -Raw | ConvertFrom-Json
   if ($stored.startupPreservationMarker -ne 'keep-this-value') { throw 'Host configuration was reset' }
-  $owners = @(Get-Process -Name Storyflow | Where-Object { $_.Path -eq $exe -and $_.MainWindowHandle -ne 0 })
-  if ($owners.Count -ne 1) { throw "Expected one visible application owner, got $($owners.Count)" }
+  # The main window is created hidden and shown on ready-to-show, while the page
+  # probe above already reports visible. Wait for the native window instead of
+  # sampling once (#85); a window that never appears still fails after the deadline.
+  $deadline = (Get-Date).AddSeconds(15)
+  do {
+    $owners = @(Get-VisibleOwners)
+    if ($owners.Count -eq 1) { break }
+    Start-Sleep -Milliseconds 200
+  } while ((Get-Date) -lt $deadline)
+  if ($owners.Count -ne 1) {
+    $snapshot = @(Get-TestAppProcesses | ForEach-Object {
+      @{ pid = $_.Id; windowHandle = [int64]$_.MainWindowHandle; windowTitle = $_.MainWindowTitle; responding = $_.Responding }
+    })
+    ConvertTo-Json -InputObject $snapshot -Compress | Set-Content (Join-Path $EvidenceDirectory "$scenario-window-failure.json")
+    throw "Expected one visible application owner, got $($owners.Count)"
+  }
   if ($Duplicate -and $owners[0].Id -ne $existingOwners[0].Id) { throw 'Second launch replaced the existing owner' }
   @{ scenario = $scenario; ownerPid = $owners[0].Id; launchedPid = $launched.Id; duplicate = [bool]$Duplicate } |
     ConvertTo-Json -Compress | Set-Content (Join-Path $EvidenceDirectory "$scenario-process.json")
