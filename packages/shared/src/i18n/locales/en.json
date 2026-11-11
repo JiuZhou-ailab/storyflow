@@ -601,6 +601,8 @@
   "editor.searchLanguages": "Search languages...",
   "editor.strikethrough": "Strikethrough",
   "errors.chatGptOAuthNotAvailable": "ChatGPT OAuth is not available in the web UI. Use the desktop app or set up an API key instead.",
+  "errors.encryptedReasoningInvalid": "The model service could not validate this conversation's saved reasoning, and the automatic recovery also failed. Start a new session or switch to another model to continue.",
+  "errors.encryptedReasoningInvalidTitle": "Conversation context expired",
   "errors.failedToLoadSession": "Failed to load session",
   "errors.failedToLoadSessions": "Failed to load sessions",
   "errors.failedToLoadSessionsDesc": "Storyflow could connect, but loading the session list failed. This is not being treated as an empty workspace to avoid hiding a real bug or data problem.",

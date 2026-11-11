@@ -18,6 +18,7 @@ The release artifact is a Bun compiled binary so Pi's native virtual-module load
 - `src/product-rewind.ts` — Durable Pi user-entry to Storyflow transcript-cut mapping.
 - `src/tool-hooks.ts` — Pi-native permission and result hooks.
 - `src/provider-hooks.ts` — Stable Model Call / transport-attempt correlation and native stream diagnostics; retry remains Pi-owned.
+- `src/encrypted-reasoning-recovery.ts` — Temporary compensation for pooled Responses upstreams: on `invalid_encrypted_content`, omits the failed attempt via an append-only context edit and resends once with earlier Responses history projected as cross-model history (spec #62); `src/prompt-retry.ts` hides the intermediate failure.
 - `src/managed-fallback.ts` — Session-scoped managed model selection within native retry budgets; cooldown survives resource reload and resets with connection/credential generation.
 - `src/gemini-thought-signature-compat.test.ts` — Pins Pi's Gemini 3 cross-provider tool-history compatibility contract.
 - `src/network-proxy.ts` — Transport-only proxy routing for the Bun subprocess.

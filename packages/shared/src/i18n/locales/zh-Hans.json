@@ -601,6 +601,8 @@
   "editor.searchLanguages": "搜索语言...",
   "editor.strikethrough": "删除线",
   "errors.chatGptOAuthNotAvailable": "Web UI 不支持 ChatGPT OAuth。请使用桌面应用或设置 API 密钥。",
+  "errors.encryptedReasoningInvalid": "模型服务无法校验这段会话保存的推理内容，自动恢复也没有成功。请新建会话或切换到其他模型后继续。",
+  "errors.encryptedReasoningInvalidTitle": "会话上下文已失效",
   "errors.failedToLoadSession": "无法加载会话",
   "errors.failedToLoadSessions": "无法加载会话列表",
   "errors.failedToLoadSessionsDesc": "故事流已连接，但加载会话列表失败。为避免隐藏真实错误或数据问题，此处不视为空 Workspace。",

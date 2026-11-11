@@ -69,6 +69,18 @@ describe('parseError', () => {
     expect(parsed.actions.some(action => action.action === 'retry')).toBe(false)
   })
 
+  it('maps an unrecovered encrypted-reasoning rejection to a non-retryable new-session hint', () => {
+    const raw = 'custom-endpoint API error (400): {"message":"The encrypted conversation context could not be validated","code":"invalid_encrypted_content","upstream_status":400,"scope":"upstream_request","retryable":false}'
+    const parsed = parseError(new Error(raw))
+
+    expect(parsed.code).toBe('invalid_request')
+    expect(parsed.title).toBe('Conversation context expired')
+    expect(parsed.message).toContain('new session')
+    expect(parsed.canRetry).toBe(false)
+    expect(parsed.actions.some(action => action.action === 'retry')).toBe(false)
+    expect(parsed.originalError).toBe(raw)
+  })
+
   it('maps provider overloads to a retryable service error', () => {
     const parsed = parseError(new Error('Provider is overloaded'))
 
