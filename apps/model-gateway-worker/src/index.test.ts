@@ -820,4 +820,53 @@ describe('model gateway worker', () => {
       errorSpy.mockRestore()
     }
   })
+
+  it('logs invalid encrypted reasoning as a permanent upstream code without the error body', async () => {
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      const token = await signTestJwt(CURRENT_MODEL_SECRET, {
+        sub: 'feishu:ou_debug',
+        user_name: '飞书用户',
+      })
+      const response = await handleRequest(
+        new Request('https://model.storyflow.example.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-5.6-sol',
+            input: [{ role: 'user', content: 'private prompt content' }],
+          }),
+        }),
+        makeEnv(),
+        async () => Response.json(
+          { error: { message: 'ENCRYPTED CONTEXT DETAIL', code: 'invalid_encrypted_content' } },
+          { status: 400 },
+        ),
+      )
+
+      expect(response.status).toBe(400)
+      expect(response.headers.get('x-should-retry')).toBe('false')
+      expect(await response.json()).toMatchObject({
+        upstream_code: 'invalid_encrypted_content',
+        scope: 'upstream_request',
+        retryable: false,
+      })
+      expect(errorSpy).toHaveBeenCalledTimes(1)
+      expect(errorSpy.mock.calls[0]?.[0]).toMatchObject({
+        stage: 'upstream',
+        upstream_status: 400,
+        upstream_code: 'invalid_encrypted_content',
+        retryable: false,
+      })
+      const logged = JSON.stringify(errorSpy.mock.calls[0]?.[0])
+      expect(logged).not.toContain('ENCRYPTED CONTEXT DETAIL')
+      expect(logged).not.toContain('private prompt content')
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
 })

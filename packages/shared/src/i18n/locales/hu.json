@@ -601,6 +601,8 @@
   "editor.searchLanguages": "Nyelvek keresése...",
   "editor.strikethrough": "Áthúzott",
   "errors.chatGptOAuthNotAvailable": "A ChatGPT OAuth nem érhető el a webes felületen. Használd az asztali alkalmazást vagy állíts be egy API kulcsot.",
+  "errors.encryptedReasoningInvalid": "A modellszolgáltatás nem tudta ellenőrizni a beszélgetés mentett érvelését, és az automatikus helyreállítás sem sikerült. Folytatáshoz indíts új munkamenetet, vagy válts másik modellre.",
+  "errors.encryptedReasoningInvalidTitle": "A beszélgetés kontextusa lejárt",
   "errors.failedToLoadSession": "A munkamenet betöltése sikertelen",
   "errors.failedToLoadSessions": "A munkamenetek betöltése sikertelen",
   "errors.failedToLoadSessionsDesc": "A Craft Agents kapcsolódott, de a munkamenetek listájának betöltése nem sikerült. Ez nem üres munkaterületként van kezelve, hogy ne rejtsen el egy valódi hibát vagy adatproblémát.",

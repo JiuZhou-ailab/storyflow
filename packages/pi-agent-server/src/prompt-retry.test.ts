@@ -45,4 +45,38 @@ describe('Pi prompt retry presentation', () => {
     expect(routePromptAttemptEvent(turnEnd, state)).toEqual([]);
     expect(routePromptAttemptEvent(agentEnd, state)).toEqual([failure, turnEnd, agentEnd]);
   });
+
+  const encryptedFailure = () => ({
+    type: 'message_end',
+    message: {
+      role: 'assistant',
+      api: 'openai-responses',
+      stopReason: 'error',
+      errorMessage: 'custom-endpoint API error (400): {"message":"bad","code":"invalid_encrypted_content","retryable":false}',
+    },
+  }) as any;
+
+  it('drops an encrypted-reasoning failure once the recovery run starts', () => {
+    const state = createPromptAttemptState();
+    const failure = encryptedFailure();
+    const agentEnd = { type: 'agent_end', willRetry: false } as any;
+    const agentStart = { type: 'agent_start' } as any;
+
+    expect(routePromptAttemptEvent(failure, state)).toEqual([]);
+    expect(routePromptAttemptEvent(agentEnd, state)).toEqual([]);
+    expect(routePromptAttemptEvent(agentStart, state)).toEqual([agentStart]);
+    const second = encryptedFailure();
+    expect(routePromptAttemptEvent(second, state)).toEqual([second]);
+  });
+
+  it('restores an encrypted-reasoning failure when the run settles without recovery', () => {
+    const state = createPromptAttemptState();
+    const failure = encryptedFailure();
+    const agentEnd = { type: 'agent_end', willRetry: false } as any;
+    const settled = { type: 'agent_settled' } as any;
+
+    expect(routePromptAttemptEvent(failure, state)).toEqual([]);
+    expect(routePromptAttemptEvent(agentEnd, state)).toEqual([]);
+    expect(routePromptAttemptEvent(settled, state)).toEqual([failure, agentEnd, settled]);
+  });
 });

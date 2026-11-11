@@ -601,6 +601,8 @@
   "editor.searchLanguages": "Buscar lenguajes...",
   "editor.strikethrough": "Tachado",
   "errors.chatGptOAuthNotAvailable": "ChatGPT OAuth no está disponible en la interfaz web. Usa la aplicación de escritorio o configura una clave API.",
+  "errors.encryptedReasoningInvalid": "El servicio del modelo no pudo validar el razonamiento guardado de esta conversación y la recuperación automática también falló. Inicia una nueva sesión o cambia a otro modelo para continuar.",
+  "errors.encryptedReasoningInvalidTitle": "El contexto de la conversación caducó",
   "errors.failedToLoadSession": "No se pudo cargar la sesión",
   "errors.failedToLoadSessions": "No se pudieron cargar las sesiones",
   "errors.failedToLoadSessionsDesc": "Craft Agents pudo conectarse, pero falló al cargar la lista de sesiones. No se trata como un Workspace vacío para evitar ocultar un error real o un problema de datos.",

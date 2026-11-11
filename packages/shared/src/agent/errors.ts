@@ -15,6 +15,7 @@
 
 import type { ErrorCode } from '@craft-agent/core/types';
 import { getProviderMetadata } from '../config/provider-metadata.ts';
+import { setupI18n } from '../i18n/index.ts';
 
 export type { ErrorCode };
 
@@ -355,8 +356,11 @@ export function parseError(
   // Detect error type from message/status
   let code: ErrorCode = 'unknown_error';
 
+  // Pi already attempted its one encrypted-reasoning recovery; resending this history cannot succeed.
+  if (lowerMessage.includes('invalid_encrypted_content')) {
+    code = 'invalid_request';
   // Check for OpenRouter data policy errors first (these contain "no endpoints" which could confuse other checks)
-  if (lowerMessage.includes('data policy') || lowerMessage.includes('privacy')) {
+  } else if (lowerMessage.includes('data policy') || lowerMessage.includes('privacy')) {
     code = 'data_policy_error';
   // Check for model-specific errors (OpenRouter, etc.)
   // Tool support errors must be checked BEFORE model errors since tool errors often contain "model"
@@ -468,6 +472,22 @@ export function parseError(
       ...definition,
       title: 'Stream Interrupted',
       message: 'The AI provider stream ended before the final stop event. This is usually transient; retry the message.',
+      originalError: errorMessage,
+      providerInfo,
+    };
+  }
+
+  if (code === 'invalid_request' && lowerMessage.includes('invalid_encrypted_content')) {
+    const i18n = setupI18n();
+    return {
+      code,
+      ...definition,
+      title: i18n.t('errors.encryptedReasoningInvalidTitle'),
+      message: i18n.t('errors.encryptedReasoningInvalid'),
+      actions: [
+        { key: 's', label: 'Change model or settings', command: '/settings', action: 'settings' },
+      ],
+      canRetry: false,
       originalError: errorMessage,
       providerInfo,
     };

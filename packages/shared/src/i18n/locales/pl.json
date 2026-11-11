@@ -601,6 +601,8 @@
   "editor.searchLanguages": "Szukaj języków...",
   "editor.strikethrough": "Przekreślenie",
   "errors.chatGptOAuthNotAvailable": "ChatGPT OAuth nie jest dostępne w interfejsie web. Użyj aplikacji desktopowej lub skonfiguruj klucz API.",
+  "errors.encryptedReasoningInvalid": "Usługa modelu nie mogła zweryfikować zapisanego rozumowania tej rozmowy, a automatyczne odzyskiwanie również się nie powiodło. Rozpocznij nową sesję lub przełącz się na inny model, aby kontynuować.",
+  "errors.encryptedReasoningInvalidTitle": "Kontekst rozmowy wygasł",
   "errors.failedToLoadSession": "Nie udało się załadować sesji",
   "errors.failedToLoadSessions": "Nie udało się załadować sesji",
   "errors.failedToLoadSessionsDesc": "Craft Agents nawiązał połączenie, ale ładowanie listy sesji nie powiodło się. Nie jest to traktowane jako pusty Workspace, aby uniknąć ukrycia prawdziwego błędu lub problemu z danymi.",

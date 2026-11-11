@@ -601,6 +601,8 @@
   "editor.searchLanguages": "言語を検索...",
   "editor.strikethrough": "取り消し線",
   "errors.chatGptOAuthNotAvailable": "Web UIではChatGPT OAuthを利用できません。デスクトップアプリを使用するか、APIキーを設定してください。",
+  "errors.encryptedReasoningInvalid": "モデルサービスがこの会話に保存された推論内容を検証できず、自動復旧も失敗しました。新しいセッションを開始するか、別のモデルに切り替えて続けてください。",
+  "errors.encryptedReasoningInvalidTitle": "会話コンテキストが無効になりました",
   "errors.failedToLoadSession": "セッションの読み込みに失敗しました",
   "errors.failedToLoadSessions": "セッション一覧の読み込みに失敗しました",
   "errors.failedToLoadSessionsDesc": "Craft Agentsは接続できましたが、セッション一覧の読み込みに失敗しました。実際のバグやデータの問題を隠さないよう、空のWorkspaceとして扱っていません。",

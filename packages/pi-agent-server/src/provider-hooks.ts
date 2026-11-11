@@ -1,5 +1,5 @@
 // input: Pi-native provider lifecycle events and Storyflow provider settings.
-// output: Provider headers, correlation, diagnostics, managed selection and disabled cache warming.
+// output: Provider headers, correlation, diagnostics, managed selection, encrypted-reasoning recovery and disabled cache warming.
 // pos: Narrow provider extension below session orchestration and above Pi transports.
 
 import type { InlineExtension } from '@earendil-works/pi-coding-agent';
@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { clearLastApiError, setStoredError } from '../../shared/src/provider-diagnostics.ts';
 
 import { createManagedFallback, type ManagedFallbackOptions } from './managed-fallback.ts';
+import { installEncryptedReasoningRecovery } from './encrypted-reasoning-recovery.ts';
 
 const CONTEXT_1M_BETA = 'context-1m-2025-08-07';
 
@@ -35,6 +36,9 @@ export function createProviderHooks(options: { enable1MContext: boolean; fallbac
         activeModelCall = undefined;
       });
       installFallback?.(pi);
+      installEncryptedReasoningRecovery(pi, {
+        diagnostic: data => log?.({ ...data, model_call_id: activeModelCall?.id, attempt: activeModelCall?.attempt }),
+      });
 
       pi.on('before_provider_headers', (event, context) => {
         activeModelCall = activeModelCall

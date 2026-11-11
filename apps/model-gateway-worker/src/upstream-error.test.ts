@@ -13,6 +13,7 @@ for (const [status, code, retryable] of [
   [502, "invalid_request_error", false],
   [403, "model_not_found", false],
   [400, "content_policy_violation", false],
+  [400, "invalid_encrypted_content", false],
   [429, "unknown", false],
 ] as const)
   test(`HTTP ${status} / ${code} retryable=${retryable}`, async () => {
@@ -47,5 +48,27 @@ test("unknown 403 is access denial without inventing a provider-key cause or log
     code: "upstream_auth_failed",
     scope: "upstream_access",
     retryable: false,
+  });
+});
+
+test("invalid encrypted reasoning is a safe, permanent request error that keeps its message", async () => {
+  const normalized = await normalizeUpstreamError(
+    Response.json(
+      { error: { message: "The encrypted content could not be verified", code: "invalid_encrypted_content" } },
+      { status: 400 },
+    ),
+  );
+  expect(normalized).toMatchObject({ code: "invalid_encrypted_content", retryable: false });
+  expect(normalized.response.status).toBe(400);
+  expect(normalized.response.headers.get("x-should-retry")).toBe("false");
+  expect(await normalized.response.json()).toMatchObject({
+    error: {
+      message: "The encrypted content could not be verified",
+      code: "invalid_encrypted_content",
+      upstream_code: "invalid_encrypted_content",
+      scope: "upstream_request",
+    },
+    scope: "upstream_request",
+    upstream_code: "invalid_encrypted_content",
   });
 });

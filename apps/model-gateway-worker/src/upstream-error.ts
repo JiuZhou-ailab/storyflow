@@ -9,6 +9,7 @@ const SAFE_CODES = new Set([
   "model_not_allowed",
   "content_policy_violation",
   "invalid_request_error",
+  "invalid_encrypted_content",
   "rate_limit_exceeded",
   "server_error",
   "overloaded_error",
@@ -21,6 +22,8 @@ const PERMANENT_CODES = new Set([
   "model_not_allowed",
   "content_policy_violation",
   "invalid_request_error",
+  // Reasoning ciphertext bound to another pooled account; resending the same history cannot succeed.
+  "invalid_encrypted_content",
 ]);
 
 export async function normalizeUpstreamError(

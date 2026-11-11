@@ -601,6 +601,8 @@
   "editor.searchLanguages": "Sprachen suchen...",
   "editor.strikethrough": "Durchgestrichen",
   "errors.chatGptOAuthNotAvailable": "ChatGPT OAuth ist in der Web-Oberfläche nicht verfügbar. Verwende die Desktop-App oder richte einen API-Schlüssel ein.",
+  "errors.encryptedReasoningInvalid": "Der Modelldienst konnte das gespeicherte Reasoning dieses Gesprächs nicht prüfen, und die automatische Wiederherstellung ist ebenfalls fehlgeschlagen. Starte eine neue Sitzung oder wechsle zu einem anderen Modell, um fortzufahren.",
+  "errors.encryptedReasoningInvalidTitle": "Gesprächskontext abgelaufen",
   "errors.failedToLoadSession": "Sitzung konnte nicht geladen werden",
   "errors.failedToLoadSessions": "Sitzungen konnten nicht geladen werden",
   "errors.failedToLoadSessionsDesc": "Craft Agents konnte eine Verbindung herstellen, aber das Laden der Sitzungsliste ist fehlgeschlagen. Dies wird nicht als leerer Workspace behandelt, um echte Fehler oder Datenprobleme nicht zu verbergen.",
