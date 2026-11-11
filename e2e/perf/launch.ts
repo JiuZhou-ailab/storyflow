@@ -3,7 +3,7 @@
 // pos: Shared launch/teardown/interaction boundary for the perf harness; owns no measurement policy itself
 
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { CdpClient, evaluate } from './cdp.ts'
@@ -42,6 +42,8 @@ export interface LaunchAppOptions {
   preserveServerLockState?: boolean
   /** Keep the same Electron profile across restart/upgrade acceptance. */
   userDataDir?: string
+  /** Persist process output even when launch fails before returning a handle. */
+  processLogPath?: string
 }
 
 /**
@@ -71,6 +73,10 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
   const userDataDir = options.userDataDir ?? mkdtempSync(join(fixtureDir, '.electron-userdata-'))
   mkdirSync(userDataDir, { recursive: true })
 
+  // A retained profile can contain a dead endpoint from the previous process.
+  rmSync(join(userDataDir, 'DevToolsActivePort'), { force: true })
+  if (options.processLogPath) mkdirSync(dirname(options.processLogPath), { recursive: true })
+
   const spawnedAt = Date.now()
   const proc = spawn(
     executablePath,
@@ -83,6 +89,7 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
         HOME: fixtureDir,
         ...(process.platform === 'win32' ? { USERPROFILE: fixtureDir } : {}),
         CRAFT_DEBUG: '1',
+        CRAFT_DISABLE_AUTO_UPDATE: '1',
         CRAFT_IS_PACKAGED: String(packaged),
         CRAFT_DISABLE_FILE_LOG: '1',
         // Perf fixture is synthetic and offline. Force-disable client auth so the shell
@@ -95,6 +102,7 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
   )
 
   const collect = (raw: string) => {
+    if (options.processLogPath) appendFileSync(options.processLogPath, raw)
     for (const line of raw.split('\n')) {
       const t = line.trim()
       if (!t) continue
@@ -109,92 +117,105 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
     }
   }
 
-  const browserWs = await new Promise<string>((resolveWs, rejectWs) => {
-    const timer = setTimeout(() => rejectWs(new Error('Timed out waiting for DevTools endpoint (60s)')), 60_000)
-    let buf = ''
-    proc.stderr?.on('data', (b: Buffer) => {
-      const s = b.toString()
-      collect(s)
-      buf += s
-      const m = buf.match(/DevTools listening on (ws:\/\/[^\s]+)/)
-      if (m) {
-        clearTimeout(timer)
-        resolveWs(m[1])
-      }
-    })
-    proc.stdout?.on('data', (b: Buffer) => collect(b.toString()))
-    proc.on('exit', (code) => {
-      clearTimeout(timer)
-      rejectWs(new Error(`Electron exited before DevTools endpoint (code ${code}).`))
-    })
-  })
-  const devtoolsReadyAt = Date.now()
-
-  const cdp = await CdpClient.connect(browserWs)
-  const cdpConnectedAt = Date.now()
-
-  // Flat-session auto-attach: track the current page target's session id. Navigation is
-  // same-page so this rarely changes, but re-enable domains on any fresh page attach.
-  let sid = ''
-  const enablePage = async (s: string) => {
-    await cdp.send('Runtime.enable', {}, s).catch(() => {})
-    await cdp.send('HeapProfiler.enable', {}, s).catch(() => {})
-    await cdp.send('Performance.enable', {}, s).catch(() => {})
-  }
-  cdp.on('Target.attachedToTarget', (p, _sid) => {
-    if (p.targetInfo?.type === 'page') {
-      sid = p.sessionId
-      void enablePage(sid)
-    }
-  })
-  await cdp.send('Target.setDiscoverTargets', { discover: true })
-  await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true })
-
-  // Wait for the first page session to be attached + domains enabled.
-  const deadline = Date.now() + 60_000
-  while (!sid && Date.now() < deadline) await sleep(100)
-  if (!sid) throw new Error('No page target attached over CDP within 60s')
-  await enablePage(sid)
-  const pageAttachedAt = Date.now()
-
-  const app: LaunchedApp = {
-    proc,
-    cdp,
-    get sid() {
-      return sid
-    },
-    perfLines,
-    processLines,
-    launchTimings: {
-      spawnedAt,
-      devtoolsReadyAt,
-      cdpConnectedAt,
-      pageAttachedAt,
-    },
-    async close() {
-      if (proc.exitCode === null && proc.signalCode === null) {
-        const exited = new Promise<void>((resolveExit) => proc.once('exit', () => resolveExit()))
-        await Promise.race([
-          callOn<void>(
-            app,
-            'async function () { await window.electronAPI.menuQuit() }',
-          ).catch(() => {}),
-          sleep(1_000),
-        ])
-        const graceful = await Promise.race([
-          exited.then(() => true),
-          sleep(5_000).then(() => false),
-        ])
-        if (!graceful && proc.exitCode === null && proc.signalCode === null) {
-          proc.kill('SIGKILL')
-          await Promise.race([exited, sleep(5_000)])
+  let cdp: CdpClient | undefined
+  try {
+    const browserWs = await new Promise<string>((resolveWs, rejectWs) => {
+      const timer = setTimeout(() => rejectWs(new Error('Timed out waiting for DevTools endpoint (60s)')), 60_000)
+      let buf = ''
+      proc.stderr?.on('data', (b: Buffer) => {
+        const s = b.toString()
+        collect(s)
+        buf += s
+        const m = buf.match(/DevTools listening on (ws:\/\/[^\s]+)/)
+        if (m) {
+          clearTimeout(timer)
+          resolveWs(m[1])
         }
+      })
+      proc.stdout?.on('data', (b: Buffer) => collect(b.toString()))
+      proc.once('error', error => {
+        clearTimeout(timer)
+        rejectWs(error)
+      })
+      proc.on('exit', (code) => {
+        clearTimeout(timer)
+        rejectWs(new Error(`Electron exited before DevTools endpoint (code ${code}).`))
+      })
+    })
+    const devtoolsReadyAt = Date.now()
+
+    cdp = await CdpClient.connect(browserWs)
+    const connectedCdp = cdp
+    const cdpConnectedAt = Date.now()
+
+    // Flat-session auto-attach: track the current page target's session id. Navigation is
+    // same-page so this rarely changes, but re-enable domains on any fresh page attach.
+    let sid = ''
+    const enablePage = async (s: string) => {
+      await connectedCdp.send('Runtime.enable', {}, s).catch(() => {})
+      await connectedCdp.send('HeapProfiler.enable', {}, s).catch(() => {})
+      await connectedCdp.send('Performance.enable', {}, s).catch(() => {})
+    }
+    connectedCdp.on('Target.attachedToTarget', (p, _sid) => {
+      if (p.targetInfo?.type === 'page') {
+        sid = p.sessionId
+        void enablePage(sid)
       }
-      cdp.close()
-      if (!options.userDataDir) rmSync(userDataDir, { recursive: true, force: true })
-    },
-  } as LaunchedApp
-  return app
+    })
+    await connectedCdp.send('Target.setDiscoverTargets', { discover: true })
+    await connectedCdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true })
+
+    // Wait for the first page session to be attached + domains enabled.
+    const deadline = Date.now() + 60_000
+    while (!sid && Date.now() < deadline) await sleep(100)
+    if (!sid) throw new Error('No page target attached over CDP within 60s')
+    await enablePage(sid)
+    const pageAttachedAt = Date.now()
+
+    const app: LaunchedApp = {
+      proc,
+      cdp,
+      get sid() {
+        return sid
+      },
+      perfLines,
+      processLines,
+      launchTimings: {
+        spawnedAt,
+        devtoolsReadyAt,
+        cdpConnectedAt,
+        pageAttachedAt,
+      },
+      async close() {
+        if (proc.exitCode === null && proc.signalCode === null) {
+          const exited = new Promise<void>((resolveExit) => proc.once('exit', () => resolveExit()))
+          await Promise.race([
+            callOn<void>(
+              app,
+              'async function () { await window.electronAPI.menuQuit() }',
+            ).catch(() => {}),
+            sleep(1_000),
+          ])
+          const graceful = await Promise.race([
+            exited.then(() => true),
+            sleep(5_000).then(() => false),
+          ])
+          if (!graceful && proc.exitCode === null && proc.signalCode === null) {
+            proc.kill('SIGKILL')
+            await Promise.race([exited, sleep(5_000)])
+          }
+        }
+        connectedCdp.close()
+        if (!options.userDataDir) rmSync(userDataDir, { recursive: true, force: true })
+      },
+    } as LaunchedApp
+    return app
+  } catch (error) {
+    if (options.processLogPath) appendFileSync(options.processLogPath, `\nLaunch failed: ${error instanceof Error ? error.stack : error}\n`)
+    cdp?.close()
+    proc.kill('SIGKILL')
+    throw error
+  }
 }
 
 // ---- Page-driving helpers ----------------------------------------------
@@ -229,7 +250,7 @@ export async function callOn<T = any>(
       app.sid,
     )
     if (result.exceptionDetails) {
-      throw new Error(`callFunctionOn failed: ${result.exceptionDetails.text ?? 'unknown'}`)
+      throw new Error(`CDP Runtime.callFunctionOn failed: ${result.exceptionDetails.text ?? 'unknown'}`)
     }
     return result.result?.value as T
   } finally {
@@ -252,12 +273,16 @@ export async function heapUsed(app: LaunchedApp): Promise<number> {
 export async function waitFor(app: LaunchedApp, boolExpr: string, timeoutMs = 30_000, label = boolExpr): Promise<number> {
   const t0 = Date.now()
   const deadline = t0 + timeoutMs
+  let lastError: unknown
   while (Date.now() < deadline) {
-    const ok = await evalOn<boolean>(app, `!!(${boolExpr})`).catch(() => false)
+    const ok = await evalOn<boolean>(app, `!!(${boolExpr})`).catch(error => {
+      lastError = error
+      return false
+    })
     if (ok) return Date.now() - t0
     await sleep(50)
   }
-  throw new Error(`waitFor timeout after ${timeoutMs}ms: ${label}`)
+  throw new Error(`waitFor timeout after ${timeoutMs}ms: ${label}${lastError ? `; last CDP error: ${lastError}` : ''}`)
 }
 
 export function countPerf(app: LaunchedApp, regex: RegExp): number {

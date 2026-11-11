@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { strict as assert } from 'node:assert'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import {
@@ -48,15 +48,27 @@ async function main(): Promise<void> {
   const fixture = createFixture()
   const model = startModelStub(fixture.targetFile)
   let app: LaunchedApp | undefined
+  const evidenceDir = resolve(process.env.CRAFT_E2E_EVIDENCE_DIR ?? 'startup-evidence/core')
+  mkdirSync(evidenceDir, { recursive: true })
+  for (const name of ['failure.json', 'initial-launch-main.log', 'restart-launch-main.log']) {
+    rmSync(join(evidenceDir, name), { force: true })
+  }
+  let stage = 'configure-fixture'
+  const setStage = (value: string) => {
+    stage = value
+    writeFileSync(join(evidenceDir, 'stage.json'), JSON.stringify({ stage, at: new Date().toISOString() }))
+  }
 
   try {
     configureAccountSmokeEnvironment()
     configureModel(fixture, model.url)
     seedIncompatibleV017ServerLock(fixture.configDir)
-    app = await launchApp(fixture.configDir, { ...launchOptions, preserveServerLockState: true, userDataDir: join(fixture.configDir, 'electron-profile') })
+    setStage('initial-launch')
+    app = await launchApp(fixture.configDir, { ...launchOptions, preserveServerLockState: true, userDataDir: join(fixture.configDir, 'electron-profile'), processLogPath: join(evidenceDir, `${stage}-main.log`) })
     assert.equal(lstatSync(join(fixture.configDir, '.server.lock')).isFile(), true)
     assert.equal(lstatSync(join(fixture.configDir, '.server.lease')).isDirectory(), true)
 
+    setStage('account-smoke')
     const auth = await callOn<{ required: boolean; configured: boolean; authenticated: boolean }>(
       app,
       'async function () { return await window.electronAPI.getClientAuthState() }',
@@ -67,8 +79,10 @@ async function main(): Promise<void> {
     await smokeAccountCenter(app)
     await smokeManagedLoginRedirect(app)
     await assertRootViewportCannotScroll(app)
+    setStage('skill-import')
     await smokeFreeConversationSkillImport(app)
 
+    setStage('workspace-migration')
     const workspace = await callOn<{ id: string; rootPath: string; directoryConfigId?: string } | undefined>(
       app,
       `async function (id) {
@@ -83,6 +97,7 @@ async function main(): Promise<void> {
     const userHeadBefore = git(fixture.workspaceRoot, 'rev-parse', 'HEAD')
     const userIndexBefore = git(fixture.workspaceRoot, 'diff', '--cached', '--binary')
 
+    setStage('create-session')
     const session = await callOn<{ id: string }>(
       app,
       `async function (workspaceId, rootPath, connection, model) {
@@ -107,6 +122,7 @@ async function main(): Promise<void> {
       })
     }`, [session.id])
 
+    setStage('agent-edit')
     await callOn<void>(
       app,
       `async function (sessionId) {
@@ -130,6 +146,7 @@ async function main(): Promise<void> {
     assert.equal(readFileSync(join(fixture.workspaceRoot, 'allow-all-proof.txt'), 'utf8'), 'Second tool executed\n')
     assert.equal(await evalOn<number>(app, 'window.__corePermissionRequests.length'), 1, 'the next Pi tool must execute without another prompt')
 
+    setStage('session-cleanup')
     const cleanup = await callOn<{ deleted: boolean }>(app,
       `async function (id) { return await window.electronAPI.sessionCommand(id, { type: 'deleteIfEmpty' }) }`,
       [session.id],
@@ -140,12 +157,16 @@ async function main(): Promise<void> {
     assert.equal(git(fixture.workspaceRoot, 'diff', '--cached', '--binary'), userIndexBefore)
     assert.match(git(fixture.workspaceRoot, 'status', '--short'), /M README\.md/)
 
+    setStage('normal-quit')
     await sleep(250)
     await app.close()
+    app = undefined
     assert.equal(existsSync(join(fixture.configDir, '.server.lock')), false)
     assert.equal(existsSync(join(fixture.configDir, '.server.lease')), false)
-    app = await launchApp(fixture.configDir, { ...launchOptions, preserveServerLockState: true, userDataDir: join(fixture.configDir, 'electron-profile') })
+    setStage('restart-launch')
+    app = await launchApp(fixture.configDir, { ...launchOptions, preserveServerLockState: true, userDataDir: join(fixture.configDir, 'electron-profile'), processLogPath: join(evidenceDir, `${stage}-main.log`) })
 
+    setStage('restart-recovery')
     const recovered = await callOn<Array<{ id: string }>>(
       app,
       'async function (workspaceId) { return await window.electronAPI.listSessionsByWorkspace(workspaceId) }',
@@ -157,7 +178,15 @@ async function main(): Promise<void> {
     assert.equal(recoveredMode.permissionMode, 'ask', 'Project restart must renew execute consent; Session files cannot grant capabilities')
     assert.equal(readFileSync(fixture.targetFile, 'utf8'), AGENT_EDIT)
 
+    setStage('passed')
     process.stdout.write('core Electron E2E: PASS\n')
+  } catch (error) {
+    writeFileSync(join(evidenceDir, 'failure.json'), JSON.stringify({
+      stage,
+      error: error instanceof Error ? { message: error.message, stack: error.stack } : String(error),
+      pid: app?.proc.pid,
+    }, null, 2))
+    throw error
   } finally {
     await app?.close().catch(() => {})
     model.stop()

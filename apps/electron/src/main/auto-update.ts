@@ -127,11 +127,14 @@ function broadcastDownloadProgress(progress: number): void {
 
 // ─── Configure electron-updater ───────────────────────────────────────────────
 
+// Startup acceptance must keep running the exact package built by the PR.
+const updatesDisabled = process.env.CRAFT_DISABLE_AUTO_UPDATE === '1'
+
 // Auto-download updates in the background after detection
-autoUpdater.autoDownload = true
+autoUpdater.autoDownload = !updatesDisabled
 
 // Install on app quit (if update is downloaded but user hasn't clicked "Restart")
-autoUpdater.autoInstallOnAppQuit = true
+autoUpdater.autoInstallOnAppQuit = !updatesDisabled
 
 // Use the logger for electron-updater internal logging
 autoUpdater.logger = {
@@ -423,6 +426,8 @@ function checkForExistingDownload(expectedUpdate?: ExpectedUpdateInfo): { exists
  * @param options.autoDownload - If false, only checks without downloading (for manual "Check Now")
  */
 export async function checkForUpdates(options: CheckOptions = {}): Promise<UpdateInfo> {
+  if (updatesDisabled) return getUpdateInfo()
+
   const { autoDownload = true } = options
 
   if (!app.isPackaged) {
@@ -492,6 +497,8 @@ export async function checkForUpdates(options: CheckOptions = {}): Promise<Updat
  * Then relaunches the app automatically.
  */
 export async function installUpdate(): Promise<void> {
+  if (updatesDisabled) throw new Error('Updates are disabled for this process')
+
   if (updateInfo.downloadState !== 'ready') {
     throw new Error('No update ready to install')
   }
@@ -552,6 +559,11 @@ export interface UpdateOnLaunchResult {
  * - Auto-downloads if update available
  */
 export async function checkForUpdatesOnLaunch(): Promise<UpdateOnLaunchResult> {
+  if (updatesDisabled) {
+    mainLog.info('[auto-update] Disabled for startup acceptance')
+    return { action: 'skipped', reason: 'disabled' }
+  }
+
   mainLog.info('[auto-update] Checking for updates on launch...')
 
   const info = await checkForUpdates({ autoDownload: true })

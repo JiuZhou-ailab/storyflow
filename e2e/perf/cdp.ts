@@ -13,6 +13,8 @@
  */
 
 interface Pending {
+  method: string
+  timer: ReturnType<typeof setTimeout>
   resolve: (v: any) => void
   reject: (e: Error) => void
 }
@@ -33,11 +35,19 @@ export class CdpClient {
 
   private open(url: string, timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`CDP ws connect timeout (${timeoutMs}ms)`)), timeoutMs)
+      const timer = setTimeout(() => {
+        this.close()
+        reject(new Error(`CDP connect ${url}: timeout (${timeoutMs}ms)`))
+      }, timeoutMs)
       this.ws = new WebSocket(url)
       this.ws.onopen = () => {
         clearTimeout(timer)
         resolve()
+      }
+      this.ws.onclose = () => {
+        clearTimeout(timer)
+        reject(new Error(`CDP connect ${url}: socket closed`))
+        this.rejectPending('socket closed')
       }
       this.ws.onerror = (e: any) => {
         clearTimeout(timer)
@@ -58,7 +68,8 @@ export class CdpClient {
       const p = this.pending.get(msg.id)
       if (!p) return
       this.pending.delete(msg.id)
-      if (msg.error) p.reject(new Error(`${msg.error.message} (${msg.error.code})`))
+      clearTimeout(p.timer)
+      if (msg.error) p.reject(new Error(`CDP ${p.method}: ${msg.error.message} (${msg.error.code})`))
       else p.resolve(msg.result)
       return
     }
@@ -74,8 +85,17 @@ export class CdpClient {
     const payload: Record<string, any> = { id, method, params }
     if (sessionId) payload.sessionId = sessionId
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      this.ws.send(JSON.stringify(payload))
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`CDP ${method}: timeout (30s)`))
+      }, 30_000)
+      this.pending.set(id, { resolve, reject, method, timer })
+      try { this.ws.send(JSON.stringify(payload)) }
+      catch (error) {
+        clearTimeout(timer)
+        this.pending.delete(id)
+        reject(new Error(`CDP ${method}: ${error}`))
+      }
     })
   }
 
@@ -88,7 +108,16 @@ export class CdpClient {
     this.handlers.get(method)?.delete(handler)
   }
 
+  private rejectPending(reason: string): void {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(new Error(`CDP ${pending.method}: ${reason}`))
+    }
+    this.pending.clear()
+  }
+
   close(): void {
+    this.rejectPending('client closed')
     try {
       this.ws.close()
     } catch {
@@ -105,7 +134,7 @@ export async function evaluate<T = any>(cdp: CdpClient, sessionId: string, expre
     sessionId
   )
   if (res.exceptionDetails) {
-    throw new Error(`evaluate failed: ${res.exceptionDetails.text ?? 'unknown'} — ${expression.slice(0, 80)}`)
+    throw new Error(`CDP Runtime.evaluate failed: ${res.exceptionDetails.text ?? 'unknown'} — ${expression.slice(0, 80)}`)
   }
   return res.result?.value as T
 }
