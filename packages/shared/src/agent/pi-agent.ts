@@ -385,7 +385,7 @@ export class PiAgent extends PiAgentToolHost {
     this.send({ type: 'abort' });
     // Keep draining until Pi's agent_settled (or a correlated preflight
     // result). Closing here lets the next chat consume the old settlement.
-
+    this.armAbortSettleDeadline();
   }
 
   forceAbort(reason: AbortReason): void {
@@ -410,6 +410,7 @@ export class PiAgent extends PiAgentToolHost {
 
     // For other reasons, send abort to subprocess
     this.send({ type: 'abort' });
+    this.armAbortSettleDeadline();
   }
 
   /**

@@ -1,5 +1,5 @@
-// input: PiAgent with controllable subprocess fixtures and injectable ready deadlines
-// output: Regression coverage for startup timeout, failure, cancellation, and generation isolation
+// input: PiAgent with controllable subprocess fixtures and injectable ready / abort-settle deadlines
+// output: Regression coverage for startup timeout, failure, cancellation, abort settlement, and generation isolation
 // pos: Lifecycle contract between the Pi transport and its child process
 
 import { afterAll, describe, expect, it } from 'bun:test';
@@ -47,6 +47,30 @@ process.on('SIGTERM', () => setTimeout(() => process.exit(0), 100));
 setInterval(() => {}, 1000);
 `);
 
+const emitSettled = `process.stdout.write(JSON.stringify({ type: 'event', event: { type: 'agent_settled' } }) + '\\n');`;
+
+// Reports ready, then runs `onMessage` for each inbound command and `onSigterm` when asked to stop.
+function turnServer(onSigterm: string, onMessage: string): string {
+  return `
+process.on('SIGTERM', () => { ${onSigterm} });
+process.stdout.write(JSON.stringify({ type: 'ready' }) + '\\n');
+let buffer = '';
+process.stdin.on('data', chunk => {
+  buffer += chunk;
+  let index;
+  while ((index = buffer.indexOf('\\n')) >= 0) {
+    const line = buffer.slice(0, index);
+    buffer = buffer.slice(index + 1);
+    if (!line.trim()) continue;
+    const msg = JSON.parse(line);
+    ${onMessage}
+  }
+});
+setInterval(() => {}, 1000);
+`;
+}
+const settlingServer = turnServer('process.exit(0);', `if (msg.type === 'prompt') { ${emitSettled} }`);
+
 afterAll(() => rmSync(fixtureDir, { recursive: true, force: true }));
 
 function createConfig(piServer: string): BackendConfig {
@@ -66,6 +90,113 @@ async function within<T>(promise: Promise<T>, ms: number): Promise<T | 'timeout'
     })]);
   } finally { clearTimeout(timer); }
 }
+
+/** Starts a chat and resolves once its prompt has reached the child. */
+async function startChat(agent: PiAgent, message: string) {
+  const send = (agent as any).send.bind(agent);
+  let promptSent!: () => void;
+  const sent = new Promise<void>(resolve => { promptSent = resolve; });
+  (agent as any).send = (cmd: { type: string }) => {
+    const delivered = send(cmd);
+    if (cmd.type === 'prompt') promptSent();
+    return delivered;
+  };
+  const finished = (async () => {
+    const events: Array<{ type: string }> = [];
+    for await (const event of agent.chat(message)) events.push(event);
+    return events;
+  })();
+  await sent;
+  return { finished, pid: (agent as any).subprocess.pid as number };
+}
+
+function isAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+async function waitUntilDead(pid: number, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (isAlive(pid) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+  return !isAlive(pid);
+}
+
+describe('Pi abort settlement deadline', () => {
+  const deadlines = { abortSettleTimeoutMs: 100, abortStopGraceMs: 300 };
+  const complete = expect.objectContaining({ type: 'complete' });
+  const exited = expect.objectContaining({ type: 'error', message: expect.stringMatching(/exited/i) });
+
+  it.each(['abort', 'forceAbort'] as const)('stops a child that never settles after %s and serves the next prompt', async (method) => {
+    const server = join(fixtureDir, `never-settles-${method}.js`);
+    writeFileSync(server, turnServer('process.exit(0);', ''));
+    const agent = new PiAgent(createConfig(server), deadlines);
+    try {
+      const stuck = await startChat(agent, 'cancel me');
+      if (method === 'abort') await agent.abort();
+      else agent.forceAbort(AbortReason.UserStop);
+      expect(await within(stuck.finished, 3_000)).toContainEqual(exited);
+      // The turn closes from the child's exit, so no process is left on the session.
+      expect(isAlive(stuck.pid)).toBe(false);
+      expect(agent.isIdle()).toBe(true);
+
+      writeFileSync(server, settlingServer);
+      const next = await startChat(agent, 'next');
+      expect(next.pid).not.toBe(stuck.pid);
+      expect(await within(next.finished, 3_000)).toContainEqual(complete);
+    } finally { agent.destroy(); }
+  });
+
+  it('kills a child that also ignores shutdown', async () => {
+    const server = join(fixtureDir, 'ignores-abort-and-shutdown.js');
+    writeFileSync(server, turnServer('', ''));
+    const agent = new PiAgent(createConfig(server), deadlines);
+    try {
+      const stuck = await startChat(agent, 'cancel me');
+      agent.forceAbort(AbortReason.UserStop);
+      expect(await within(stuck.finished, 3_000)).toContainEqual(exited);
+      expect(agent.isIdle()).toBe(true);
+      expect(await waitUntilDead(stuck.pid, 2_000)).toBe(true);
+
+      writeFileSync(server, settlingServer);
+      const next = await startChat(agent, 'next');
+      expect(await within(next.finished, 3_000)).toContainEqual(complete);
+    } finally { agent.destroy(); }
+  });
+
+  it('ignores a settlement emitted while the child is being stopped', async () => {
+    // Settles only once told to stop, then lingers: closing the turn on that
+    // settlement would hand the next prompt to a process about to exit.
+    const server = join(fixtureDir, 'settles-while-stopping.js');
+    writeFileSync(server, turnServer(`${emitSettled} setTimeout(() => process.exit(0), 150);`, ''));
+    const agent = new PiAgent(createConfig(server), { abortSettleTimeoutMs: 100, abortStopGraceMs: 2_000 });
+    try {
+      const stuck = await startChat(agent, 'cancel me');
+      agent.forceAbort(AbortReason.UserStop);
+      const events = await within(stuck.finished, 5_000);
+      expect(events).toContainEqual(exited);
+      expect(events).not.toContainEqual(complete);
+      expect(isAlive(stuck.pid)).toBe(false);
+
+      writeFileSync(server, settlingServer);
+      const next = await startChat(agent, 'next');
+      expect(next.pid).not.toBe(stuck.pid);
+      expect(await within(next.finished, 3_000)).toContainEqual(complete);
+    } finally { agent.destroy(); }
+  });
+
+  it('leaves a child that settles in time running', async () => {
+    const server = join(fixtureDir, 'settles-on-abort.js');
+    writeFileSync(server, turnServer('process.exit(0);', `if (msg.type === 'abort') { ${emitSettled} }`));
+    const agent = new PiAgent(createConfig(server), { abortSettleTimeoutMs: 500, abortStopGraceMs: 100 });
+    try {
+      const turn = await startChat(agent, 'cancel me');
+      agent.forceAbort(AbortReason.UserStop);
+      expect(await within(turn.finished, 3_000)).toContainEqual(complete);
+      await new Promise(resolve => setTimeout(resolve, 800));
+      expect(isAlive(turn.pid)).toBe(true);
+      expect((agent as any).subprocess?.pid).toBe(turn.pid);
+    } finally { agent.destroy(); }
+  });
+});
 
 describe('Pi subprocess lifecycle', () => {
   it('times out a silent child and starts a fresh child on the next query', async () => {
