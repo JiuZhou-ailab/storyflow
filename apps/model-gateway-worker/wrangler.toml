@@ -5,12 +5,13 @@ workers_dev = false
 
 # Pinned on purpose. Smart Placement re-picks the execution location on every
 # deploy; on 2026-11-11 it picked LAX, where 20-28% of requests to the upstream
-# origin never returned headers (520/524). Singapore is kept for latency, close to
-# the users and the origin; that day it stalled on ~0.5% of requests while LHR/AMS/CDG
-# had none. If stalls grow, move the region instead of returning to Smart Placement,
+# origin never returned headers (520/524). Stay in Asia for latency. Probes from
+# pinned Workers to the origin that day: Tokyo p50 0.31s / p99 2.3s, Hong Kong
+# 0.71s / 3.0s, Singapore 0.68s / 6.0s (Singapore also stalled on ~0.5% of live
+# requests). If stalls grow, move the region instead of returning to Smart Placement,
 # after comparing the upstream_ray colo suffix against upstream_status in Observability.
 [placement]
-region = "aws:ap-southeast-1"
+region = "aws:ap-northeast-1"
 
 routes = [
   { pattern = "storyflow-model.zjding.com", custom_domain = true },
