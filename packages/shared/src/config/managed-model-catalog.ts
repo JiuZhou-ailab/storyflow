@@ -12,13 +12,29 @@ export interface ManagedModelDefinition extends ModelDefinition {
 
 export const MANAGED_MODEL_CATALOG_VERSION = '2';
 
+/**
+ * Product policy (2026-11-11): declare 90% of each vendor-documented output ceiling, rounded down.
+ * Relay routes can enforce limits that differ from vendor docs, so declarations keep a margin
+ * instead of sitting on the documented maximum. Arguments stay the documented ceilings.
+ * Integer arithmetic keeps the result exact. Rationale: docs/model-fallback-qa.md.
+ */
+const OUTPUT_HEADROOM_PERCENT = 90;
+
+function withOutputHeadroom(documentedMaxOutputTokens: number): NonNullable<ModelDefinition['fallbackCapabilities']> {
+  return {
+    maxOutputTokens: Math.floor(documentedMaxOutputTokens * OUTPUT_HEADROOM_PERCENT / 100),
+    tools: true,
+    structuredOutput: 'prompt',
+  };
+}
+
 // Recovered from deployed Worker 4bbd696a (recovery/model-gateway-4bbd696a).
 // Capability evidence and alias caveats: docs/model-fallback-qa.md (2026-09-16).
 const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   {
     id: 'gpt-6.1-sol',
     minimumCatalogVersion: 2,
-    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(128_000),
     name: 'GPT-6.1 Sol',
     shortName: 'GPT',
     description: '',
@@ -39,7 +55,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gpt-5.5',
-    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(128_000),
     name: 'GPT-5.5',
     shortName: 'GPT',
     description: '',
@@ -60,7 +76,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gpt-5.6-sol',
-    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(128_000),
     name: 'GPT-5.6 Sol',
     shortName: 'GPT',
     description: '',
@@ -81,7 +97,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gpt-5.6-terra',
-    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(128_000),
     name: 'GPT-5.6 Terra',
     shortName: 'GPT',
     description: '',
@@ -102,7 +118,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gpt-5.6-luna',
-    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(128_000),
     name: 'GPT-5.6 Luna',
     shortName: 'GPT',
     description: '',
@@ -123,7 +139,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'claude-sonnet-5',
-    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(128_000),
     name: 'Claude Sonnet 5',
     shortName: 'Claude',
     description: '',
@@ -136,7 +152,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   {
     id: 'claude-opus-5-5',
     minimumCatalogVersion: 2,
-    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(128_000),
     name: 'Claude Opus 5.5',
     shortName: 'Claude',
     description: '',
@@ -157,7 +173,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'claude-opus-5',
-    fallbackCapabilities: { maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(128_000),
     name: 'Claude Opus 5',
     shortName: 'Claude',
     description: '',
@@ -169,7 +185,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'gemini-3.8-flash',
-    fallbackCapabilities: { maxOutputTokens: 65_536, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(65_536),
     name: 'Gemini 3.8 Flash',
     shortName: 'Gemini',
     description: '',
@@ -190,7 +206,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   {
     id: 'gemini-4-argon',
     minimumCatalogVersion: 2,
-    fallbackCapabilities: { maxOutputTokens: 65_536, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(65_536),
     name: 'Gemini 4 Argon',
     shortName: 'Gemini',
     description: '',
@@ -246,7 +262,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'deepseek-v4-pro',
-    fallbackCapabilities: { maxOutputTokens: 384_000, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(384_000),
     name: 'DeepSeek V4 Pro',
     shortName: 'DeepSeek',
     description: '',
@@ -258,7 +274,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
   },
   {
     id: 'deepseek-v4-flash',
-    fallbackCapabilities: { maxOutputTokens: 384_000, tools: true, structuredOutput: 'prompt' },
+    fallbackCapabilities: withOutputHeadroom(384_000),
     name: 'DeepSeek V4.1 Flash',
     shortName: 'DeepSeek',
     description: '',

@@ -13,7 +13,7 @@ not only synthetic fixture metadata.
 
 Capability evidence checked 2026-09-16 (output limits and function/tool calling):
 
-| Models | Declared output ceiling | Primary sources |
+| Models | Vendor-documented output ceiling | Primary sources |
 | --- | ---: | --- |
 | GPT-5.5, GPT-5.6 Sol/Terra/Luna | 128,000 | [5.5](https://developers.openai.com/api/docs/models/gpt-5.5), [Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol), [Terra](https://developers.openai.com/api/docs/models/compare), [Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) |
 | Claude Sonnet 5 / Opus 5 | 128,000 | [Sonnet](https://platform.claude.com/docs/en/models/sonnet-5/whats-new-sonnet-5), [Opus](https://platform.claude.com/docs/en/models/opus-5/whats-new-opus-5), [tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview) |
@@ -27,6 +27,14 @@ capability, not live NewAPI route availability or verified production health.
 A route that changes model identity/limits must update its declaration or be
 excluded. `structuredOutput: prompt` records Storyflow's existing prompt-based
 schema path; it does not enable native strict-schema mode.
+
+Since 2026-11-11, managed model output limits are declared at 90% of the
+vendor-documented ceilings, rounded down: 115,200 for GPT/Claude, 58,982 for
+Gemini, and 345,600 for DeepSeek. This is a product-policy margin, not a
+measured route limit: relay routes can enforce ceilings that differ from vendor
+documentation (Ark reports 393,216 for its DeepSeek route, which the previous
+384,000 declaration already satisfied), so declarations no longer sit on the
+documented maximum.
 
 Parent and subagent requests follow Pi's native model output capacity and
 remaining-context limits, including after fallback. Storyflow adds no global
