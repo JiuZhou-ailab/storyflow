@@ -1,5 +1,5 @@
-// input: Resolved runtime config, credentials, typed Pi JSONL messages, and an optional ready deadline
-// output: Bounded subprocess startup, correlated protocol results, and Pi event delivery
+// input: Resolved runtime config, credentials, typed Pi JSONL messages, and optional ready / abort-settle deadlines
+// output: Bounded subprocess startup and abort settlement, correlated protocol results, and Pi event delivery
 // pos: Policy-free Boundary Protocol beneath the Product Host projection
 
 import { i18n } from '../i18n/index.ts';
@@ -82,6 +82,16 @@ export const PI_BACKEND_SESSION_TOOL_NAMES = new Set<string>([
 ]);
 
 /**
+ * How long a cancelled turn waits for Pi's settlement before the child is treated
+ * as stuck (#78). A healthy Pi settles within milliseconds. Keep this above
+ * SessionManager's 5s stop timer: the exit error the stop produces then arrives
+ * after the UI turn is closed and is dropped instead of shown.
+ */
+const ABORT_SETTLE_TIMEOUT_MS = 10_000;
+/** Time a stuck child gets to shut down (dispose the session, stop its tools) before SIGKILL. */
+const ABORT_STOP_GRACE_MS = 2_000;
+
+/**
  * Backend implementation using the Pi coding agent SDK via subprocess.
  *
  * Spawns a pi-agent-server subprocess and communicates via JSONL protocol.
@@ -117,6 +127,8 @@ export abstract class PiAgentTransport extends PiAgentHost {
   protected abortReason?: AbortReason;
   protected queryCancellationEpoch = 0;
   protected activePromptId: string | null = null;
+  /** Prompt whose abort deadline is armed; repeated stops share that one deadline. */
+  private abortDeadlinePromptId: string | null = null;
   /** Host may reconsider eviction after a cancelled native turn finally settles. */
   onNativeTurnSettled?: () => void;
 
@@ -221,7 +233,10 @@ export abstract class PiAgentTransport extends PiAgentHost {
   // Constructor
   // ============================================================
 
-  constructor(config: BackendConfig, private readonly transportOptions: { readyTimeoutMs?: number } = {}) {
+  constructor(
+    config: BackendConfig,
+    private readonly transportOptions: { readyTimeoutMs?: number; abortSettleTimeoutMs?: number; abortStopGraceMs?: number } = {},
+  ) {
     const resolvedModel = config.model || '';
     const modelDef = getModelById(resolvedModel);
     super(config, resolvedModel);
@@ -691,6 +706,51 @@ export abstract class PiAgentTransport extends PiAgentHost {
       this.debug(`Failed to retrieve API key: ${error}`);
       return null;
     }
+  }
+
+  /**
+   * Bound the wait for Pi's settlement after an abort (#78).
+   *
+   * A cancelled turn stays open until Pi settles (#64), so a child that never
+   * settles would block every later prompt of the session. Past the deadline the
+   * child is stopped, and only its death closes the turn: a replacement must never
+   * share the session with a process that may still be writing it.
+   */
+  protected armAbortSettleDeadline(): void {
+    const child = this.subprocess;
+    const promptId = this.activePromptId;
+    if (!child || !promptId || this.abortDeadlinePromptId === promptId) return;
+    this.abortDeadlinePromptId = promptId;
+    const unsettled = () => this.subprocess === child && this.activePromptId === promptId;
+    const settleMs = this.transportOptions.abortSettleTimeoutMs ?? ABORT_SETTLE_TIMEOUT_MS;
+    const graceMs = this.transportOptions.abortStopGraceMs ?? ABORT_STOP_GRACE_MS;
+
+    const settleTimer = setTimeout(() => {
+      if (!unsettled()) return;
+      this.debug(`Pi did not settle within ${settleMs}ms of abort; stopping subprocess ${child.pid ?? '(unknown pid)'}`);
+      // Stop listening first. A settlement emitted while the child shuts down would
+      // close the turn early and hand the next prompt to a process about to exit.
+      this.stopReadingStdout?.();
+      this.stopReadingStdout = null;
+      try {
+        this.send({ type: 'shutdown' });
+      } catch {
+        // stdin may already be closed
+      }
+      child.kill('SIGTERM');
+
+      const killTimer = setTimeout(() => {
+        // A graceful exit already closed the turn through the child's exit handler.
+        if (!unsettled()) return;
+        this.debug(`Pi subprocess ${child.pid ?? '(unknown pid)'} ignored shutdown for ${graceMs}ms; sending SIGKILL`);
+        // Unlike the ready timeout, do not close the turn here: this child owns a
+        // live session, so the turn stays open until its real exit is reported.
+        // A process the OS cannot reap is not safe to replace either.
+        child.kill('SIGKILL');
+      }, graceMs);
+      killTimer.unref?.();
+    }, settleMs);
+    settleTimer.unref?.();
   }
 
   /**

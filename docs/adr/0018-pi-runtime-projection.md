@@ -77,6 +77,8 @@ Agent runtime。产品必须投影 Pi 的公共契约，而不是镜像 Pi 的�
   不得绕过 Pi 原生 retry、compaction 或 queued continuation 提前关闭请求。未启动 Agent 的
   Extension command 或 prompt preflight failure 使用相关 `prompt_result` 关闭 Host 请求，不能
   伪造 `agent_settled`。
+  取消后 Pi 在限定时间内仍未结算时，Host 同样不伪造 `agent_settled`，而是停止该子进程，
+  由进程退出关闭请求；子进程退出前不启动替代进程。
 - Storyflow 旧 Skills 目录暂作为显式兼容输入；旧 Extensions 不再扫描或执行。新 package
   安装、启停、更新和删除走 Pi package/settings 契约。兼容输入不成为新的写入目标。
 - 用户级 Pi Extensions 默认加载。项目级可执行 Extensions 必须经过明确的 Host 授权
