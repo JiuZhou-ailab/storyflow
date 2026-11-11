@@ -172,7 +172,13 @@ describe('model gateway worker', () => {
     const catalogBody = await catalog.json() as { object: string; data: Array<Record<string, unknown>> }
     expect(catalogBody.object).toBe('list')
     expect(catalogBody.data.find(model => model.id === 'gpt-5.6-sol')?.fallback_capabilities)
-      .toEqual({ maxOutputTokens: 128_000, tools: true, structuredOutput: 'prompt' })
+      .toEqual({ maxOutputTokens: 115_200, tools: true, structuredOutput: 'prompt' })
+    expect(catalogBody.data.find(model => model.id === 'claude-sonnet-5')?.fallback_capabilities)
+      .toEqual({ maxOutputTokens: 115_200, tools: true, structuredOutput: 'prompt' })
+    expect(catalogBody.data.find(model => model.id === 'gemini-3.8-flash')?.fallback_capabilities)
+      .toEqual({ maxOutputTokens: 58_982, tools: true, structuredOutput: 'prompt' })
+    expect(catalogBody.data.find(model => model.id === 'deepseek-v4-flash')?.fallback_capabilities)
+      .toEqual({ maxOutputTokens: 345_600, tools: true, structuredOutput: 'prompt' })
     expect(catalogBody.data.map(model => model.id)).toEqual([
       'gpt-5.6-sol', 'claude-sonnet-5', 'gemini-3.8-flash',
       'deepseek-v4-pro', 'deepseek-v4-flash', 'gemini-3.6-pro-preview',
