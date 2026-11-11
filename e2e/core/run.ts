@@ -160,6 +160,7 @@ async function main(): Promise<void> {
     setStage('normal-quit')
     await sleep(250)
     await app.close()
+    app = undefined
     assert.equal(existsSync(join(fixture.configDir, '.server.lock')), false)
     assert.equal(existsSync(join(fixture.configDir, '.server.lease')), false)
     setStage('restart-launch')
