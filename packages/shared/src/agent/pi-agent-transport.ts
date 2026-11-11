@@ -743,11 +743,10 @@ export abstract class PiAgentTransport extends PiAgentHost {
         // A graceful exit already closed the turn through the child's exit handler.
         if (!unsettled()) return;
         this.debug(`Pi subprocess ${child.pid ?? '(unknown pid)'} ignored shutdown for ${graceMs}ms; sending SIGKILL`);
+        // Unlike the ready timeout, do not close the turn here: this child owns a
+        // live session, so the turn stays open until its real exit is reported.
+        // A process the OS cannot reap is not safe to replace either.
         child.kill('SIGKILL');
-        // Same hand-off as the ready timeout: close this generation now and let
-        // the killed child's late exit be ignored.
-        this.handleSubprocessExit(null, 'SIGKILL');
-        ++this.subprocessGeneration;
       }, graceMs);
       killTimer.unref?.();
     }, settleMs);

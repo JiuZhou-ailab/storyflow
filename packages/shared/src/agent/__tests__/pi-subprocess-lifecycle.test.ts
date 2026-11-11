@@ -114,12 +114,6 @@ function isAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-async function waitUntilDead(pid: number, ms: number): Promise<boolean> {
-  const deadline = Date.now() + ms;
-  while (isAlive(pid) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
-  return !isAlive(pid);
-}
-
 describe('Pi abort settlement deadline', () => {
   const deadlines = { abortSettleTimeoutMs: 100, abortStopGraceMs: 300 };
   const complete = expect.objectContaining({ type: 'complete' });
@@ -153,11 +147,14 @@ describe('Pi abort settlement deadline', () => {
       const stuck = await startChat(agent, 'cancel me');
       agent.forceAbort(AbortReason.UserStop);
       expect(await within(stuck.finished, 3_000)).toContainEqual(exited);
+      // Closed by the reported exit, not by sending the signal: the killed child
+      // is already reaped, so it cannot overlap the replacement on the session.
+      expect(isAlive(stuck.pid)).toBe(false);
       expect(agent.isIdle()).toBe(true);
-      expect(await waitUntilDead(stuck.pid, 2_000)).toBe(true);
 
       writeFileSync(server, settlingServer);
       const next = await startChat(agent, 'next');
+      expect(next.pid).not.toBe(stuck.pid);
       expect(await within(next.finished, 3_000)).toContainEqual(complete);
     } finally { agent.destroy(); }
   });
