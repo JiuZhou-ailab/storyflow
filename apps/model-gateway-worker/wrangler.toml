@@ -3,8 +3,12 @@ main = "src/index.ts"
 compatibility_date = "2026-05-28"
 workers_dev = false
 
+# Pinned on purpose. Smart Placement re-picks the execution location on every
+# deploy; on 2026-11-11 it picked LAX, where 20-28% of requests to the upstream
+# origin never returned headers (520/524). Before changing the region, compare
+# the upstream_ray colo suffix against upstream_status in Workers Observability.
 [placement]
-mode = "smart"
+region = "aws:ap-southeast-1"
 
 routes = [
   { pattern = "storyflow-model.zjding.com", custom_domain = true },

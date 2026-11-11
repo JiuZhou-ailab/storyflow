@@ -10,6 +10,12 @@ Files: `wrangler.toml`, `package.json`, and `src/` for the Worker entrypoint plu
 public error codes and response shapes. Logs mark `phase: headers`; HTTP 200 is
 not stream completion. Model selection/retries live in Pi, never in this Worker.
 
+Execution is pinned with `[placement] region` rather than Smart Placement, which
+re-picks the location on every deploy and has landed on a colo whose path to the
+upstream origin stalls. After a deploy, the colo suffix of the logged
+`upstream_ray` (or the `cf-placement` response header) shows where the Worker ran;
+check it against `upstream_status` before calling the deploy healthy.
+
 With `STORYFLOW_ACCESS_ENFORCEMENT = "required"`, verified JWTs also require a current account/session decision through the Broker's private `ACCESS_AUTHORITY` Service Binding. No allow cache is used; dependency failures return 503 before upstream work. `legacy` exists only for the coordinated [managed access cutover](../../docs/managed-access-qa.md).
 
 The authenticated model catalog includes approved fallback capabilities and may be
