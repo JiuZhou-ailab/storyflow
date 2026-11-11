@@ -38,7 +38,11 @@ function Install-Version([string]$path) {
   if (!(Test-Path $exe)) { throw 'Installed executable missing' }
   Stop-TestApp # NSIS may auto-launch; the shortcut is the entry under test.
   $script:installedExeHash = (Get-FileHash $exe -Algorithm SHA256).Hash
-  $script:installedAsarHash = (Get-FileHash (Join-Path $installDir 'resources/app.asar') -Algorithm SHA256).Hash
+  $script:installedCodePath = Join-Path $installDir 'resources/app.asar'
+  if (!(Test-Path $script:installedCodePath)) {
+    $script:installedCodePath = Join-Path $installDir 'resources/app/dist/main.cjs'
+  }
+  $script:installedCodeHash = (Get-FileHash $script:installedCodePath -Algorithm SHA256).Hash
   # Older upgrade baselines predate CRAFT_DISABLE_AUTO_UPDATE. Keep their feed
   # offline too, so this startup gate never depends on the current live release.
   @"
@@ -50,7 +54,7 @@ updaterCacheDirName: storyflow-startup-gate
 
 function Assert-TestPackage {
   if ((Get-FileHash $exe -Algorithm SHA256).Hash -ne $script:installedExeHash -or
-      (Get-FileHash (Join-Path $installDir 'resources/app.asar') -Algorithm SHA256).Hash -ne $script:installedAsarHash) {
+      (Get-FileHash $script:installedCodePath -Algorithm SHA256).Hash -ne $script:installedCodeHash) {
     throw 'Installed package was replaced during startup acceptance'
   }
 }
@@ -127,7 +131,7 @@ function Launch-Shortcut([string]$scenario, [switch]$Duplicate) {
     throw "Expected one visible application owner, got $($owners.Count)"
   }
   if ($Duplicate -and $owners[0].Id -ne $existingOwners[0].Id) { throw 'Second launch replaced the existing owner' }
-  @{ scenario = $scenario; ownerPid = $owners[0].Id; launchedPid = $launched.Id; duplicate = [bool]$Duplicate; executableSha256 = $script:installedExeHash; appAsarSha256 = $script:installedAsarHash } |
+  @{ scenario = $scenario; ownerPid = $owners[0].Id; launchedPid = $launched.Id; duplicate = [bool]$Duplicate; executableSha256 = $script:installedExeHash; applicationSha256 = $script:installedCodeHash } |
     ConvertTo-Json -Compress | Set-Content (Join-Path $EvidenceDirectory "$scenario-process.json")
 }
 
