@@ -338,7 +338,7 @@ async function runHeavyWriting(): Promise<Metric[]> {
     await waitForWritingDocument(live, 200)
     const ms = Date.now() - t0
     return [metric('heavy-writing', 'open mid catalog chapter (第200章)', ms, 'ms', TARGET.heavyMs, {
-      note: 'CONTEXT heavy tier ≤1s; current TextSource content + two animation frames; legacy Tiptap paint metric is not comparable',
+      note: 'CONTEXT heavy tier ≤1s; target document loaded and writing/source content synchronized + two animation frames; legacy paint metric is not comparable',
     })]
   } finally {
     await live.close()

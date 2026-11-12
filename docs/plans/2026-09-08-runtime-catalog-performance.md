@@ -250,3 +250,19 @@ legacyWall=[566, 540, 706]
 - 双窗口 QA 在创建前监听 attach，等待新 page target 出现并与对应 renderer session 关联后固定 sid，不再读取 `live.sid` 作为第二窗口的身份。覆盖先发现后 attach、先 attach 后创建 RPC 返回及创建失败清理。
 
 旧报告中的目录 click-to-row 样本保留原口径；旧就绪条件下的章节打开、恢复和章节 heap 结果不再用于本次评审验收。修正后的目录 / 双窗口恢复 QA、章节打开 / heap 及首片 / 键入复测结果与所有失败会更新到 [PR #96 正文](https://github.com/JiuZhou-ailab/storyflow/pull/96)，与实际受测 head 和构建指纹一同保存。
+
+### 评审修正后的目录复测
+
+受测源提交 `4b781f6b3c2ae83427be88ad930af5c870e940c9`，报告 `catalog-1794483082689.json`。关闭 trace/profile，完整 fixture 校验通过；三个 cold 样本初始窗口数均为 1。
+
+warm n=30：P50 **26.9ms**、P95 **36.1ms**、max **40.7ms**；warm gate 与全部文件变动、读取失败/恢复、目录展开/滚动及双窗口 QA 通过。第二窗口使用新 target ID 与对应 attach session，未依赖 last-attached sid。
+
+cold n=3：P50 **110.9ms**、P95 **193.9ms**、max **203.1ms**；原 cold 门槛仍失败，未修改。GC heap **33.91MB**。
+
+```text
+warm=[40.7, 29, 25.0, 29.8, 29.9, 31.1, 25.0, 29.0, 26.1, 29.1, 24.6, 26.7, 24.8, 28.2, 24.2, 27.9, 26.0, 25, 25.7, 27.1, 30.4, 32.1, 25.0, 25.3, 23.6, 23.7, 26.5, 39.4, 30.8, 29.8]
+cold=[203.1, 95.5, 110.9]
+legacyWall=[576, 525, 588]
+```
+
+renderer entry SHA-256：`2e113978e7e074c4035e6f0b6641e6cf9f5831c4d79aa7e5aeb4a58bc5e56567`。修正后 53 项定向回归、类型检查、lint 与 renderer 构建通过；章节与输入复测的最终结果在 PR 正文续记。
