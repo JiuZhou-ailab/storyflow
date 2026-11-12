@@ -135,7 +135,9 @@ The default `all` gate continues to enforce both; `warm` is not a cold acceptanc
 `PERF_CATALOG_RECOVERY=1` also checks external add/rename/delete, a change made while
 away from the Project, mounted-editor preservation across repeated read failures,
 tree expansion/scroll preservation, and a real second-window write followed by focus refresh.
-QA runs after all warm timing samples.
+QA runs after all warm timing samples. Each cold launch removes only the marked
+fixture’s window-restoration file and asserts one initial page, so repeated
+multi-window QA cannot silently change the next measurement’s starting condition.
 
 To keep task-owned data and evidence inside the worktree:
 

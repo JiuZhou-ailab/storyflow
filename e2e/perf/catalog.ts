@@ -57,9 +57,16 @@ try {
     await evalOn(live, 'window.__catalogProjectRoot.querySelector("[data-session-id] button").click()')
   }
   for (let i = 0; i < runs; i++) {
+    // Multi-window QA persists restoration state in the owned fixture. Each cold
+    // sample must start from the same single-window Project Hub, including reruns.
+    assert.equal(JSON.parse(readFileSync(join(fixture, '.perf-fixture'), 'utf8')).scale, 1)
+    rmSync(join(fixture, 'window-state.json'), { force: true })
     const live = await launchApp(fixture)
     try {
       await waitFor(live, '!!window.electronAPI', 30000, 'preload')
+      const initialTargets = await live.cdp.send('Target.getTargets')
+      const windowCount = initialTargets.targetInfos.filter((target: any) => target.type === 'page').length
+      assert.equal(windowCount, 1, 'Cold catalog must start from one fresh window')
       await evalOn(live, install)
       const rpcTrace: Array<{ id: string; channel?: string; type: string; at: number; bytes: number; imagePath?: string }> = []
       const frameMethods = ['Network.webSocketFrameSent', 'Network.webSocketFrameReceived']
@@ -80,7 +87,7 @@ try {
       if (process.env.PERF_CATALOG_PROFILE === '1') { await live.cdp.send('Profiler.enable', {}, live.sid); await live.cdp.send('Profiler.start', {}, live.sid) }
       const legacy = await enterFirstWritingWorkspace(live)
       await waitFor(live, 'window.__catalogTiming.ready !== null', 10000, 'real catalog rows')
-      report.cold.push({ ...await evalOn(live, 'window.__catalogTiming'), rpcTrace: [...rpcTrace], legacyWallMs: legacy.catalogReadyAt - legacy.projectClickedAt, startupMarks: legacy.startupMarks, spans: live.perfLines.map(line => line.text).filter(line => /listFiles|switchWorkspace|getSessions/.test(line)) })
+      report.cold.push({ ...await evalOn(live, 'window.__catalogTiming'), windowCount, rpcTrace: [...rpcTrace], legacyWallMs: legacy.catalogReadyAt - legacy.projectClickedAt, startupMarks: legacy.startupMarks, spans: live.perfLines.map(line => line.text).filter(line => /listFiles|switchWorkspace|getSessions/.test(line)) })
       if (process.env.PERF_CATALOG_TRACE === '1') {
         for (const method of frameMethods) live.cdp.off(method, captureRpc)
         await live.cdp.send('Network.disable', {}, live.sid)
