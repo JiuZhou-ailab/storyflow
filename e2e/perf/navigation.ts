@@ -87,7 +87,11 @@ export function openWritingChapterExpression(chapter: number): string {
 export function writingDocumentReadyExpression(chapter: number): string {
   return `(() => {
     const editor = document.querySelector('textarea[data-testid="text-source"]')
-    return !!editor && (editor.getAttribute('aria-label') || '').includes(${JSON.stringify(writingChapterLabel(chapter))})
-      && editor.value.length > 0
+    if (editor && (editor.getAttribute('aria-label') || '').includes(${JSON.stringify(writingChapterLabel(chapter))})
+      && editor.value.length > 0) return true
+    const panel = document.querySelector('[data-testid="text-document"][data-document-view="writing"]')
+    const path = panel?.querySelector('p[title]')?.getAttribute('title') || ''
+    const writing = panel?.querySelector('.tiptap-editor--manuscript .ProseMirror')
+    return path.includes(${JSON.stringify(writingChapterLabel(chapter))}) && !!writing?.textContent?.trim()
   })()`
 }

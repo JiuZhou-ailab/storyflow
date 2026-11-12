@@ -1724,6 +1724,18 @@ function AppShellContent({
     }
   }, [])
 
+  const catalogProjectLocatorsRef = React.useRef(new Map<string, string>())
+  React.useLayoutEffect(() => {
+    const next = new Map(workspaces.map(workspace => [workspace.id, workspace.rootPath]))
+    for (const [id, oldRoot] of catalogProjectLocatorsRef.current) {
+      if (next.get(id) === oldRoot) continue
+      invalidateNovelWorkspaceCatalogRequests(oldRoot)
+      const newRoot = next.get(id)
+      if (newRoot) invalidateNovelWorkspaceCatalogRequests(newRoot)
+    }
+    catalogProjectLocatorsRef.current = next
+  }, [workspaces, invalidateNovelWorkspaceCatalogRequests])
+
   const novelWorkspaceCandidateRootsRef = React.useRef(novelWorkspaceCandidateRoots)
   novelWorkspaceCandidateRootsRef.current = novelWorkspaceCandidateRoots
 
@@ -1803,7 +1815,8 @@ function AppShellContent({
         : await loadNovelWorkspaceFiles(
             rootPath,
             undefined,
-            rootPath === novelWorkspaceRootRef.current || novelWorkspaceCatalogCacheRef.current.has(rootPath)
+            novelWorkspaceCandidateRootsRef.current.includes(rootPath)
+              || rootPath === novelWorkspaceRootRef.current || novelWorkspaceCatalogCacheRef.current.has(rootPath)
           )
       if (!catalog && detectInFlight) {
         catalog = await loadNovelWorkspaceFiles(rootPath, undefined, true)
@@ -1812,7 +1825,9 @@ function AppShellContent({
       if (readWorkspaceCatalogRevision(novelWorkspaceCatalogRevisionRef.current, rootPath) !== requestRevision) {
         return false
       }
-      if (novelWorkspaceRootRef.current && rootPath !== novelWorkspaceRootRef.current) return false
+      // A request belongs to the current candidate, even between render and the
+      // root-state effect. An old refresh must never publish into a new Project.
+      if (!novelWorkspaceCandidateRootsRef.current.includes(rootPath)) return false
 
       setNovelWorkspaceRoot(rootPath)
       setNovelWorkspaceCatalogIfChanged(catalog)
@@ -1844,7 +1859,9 @@ function AppShellContent({
     void onRenameProject(activeProjectId, nextName)
   }, [activeProjectId, novelProjectRenameValue, onRenameProject])
 
-  React.useEffect(() => {
+  // Reuse a warm snapshot before paint rather than leaving a loading frame for
+  // the passive effect. Fresh enumeration stays asynchronous and revision guarded.
+  React.useLayoutEffect(() => {
     if (novelWorkspaceCandidateRoots.length === 0) {
       setNovelWorkspaceDetecting(false)
       setNovelWorkspaceDetectionSettledKey(null)
@@ -1875,16 +1892,24 @@ function AppShellContent({
     let cancelled = false
 
     async function detectNovelWorkspace(): Promise<void> {
+      const fileChangesSignature = latestNovelFileChangesSignatureRef.current
       for (const rootPath of novelWorkspaceCandidateRoots) {
         const cachedNovelWorkspaceCatalog = novelWorkspaceCatalogCacheRef.current.get(rootPath)
         const knownWritingWorkspaceRoot = rootPath === activeWritingWorkspaceRoot
         if (cachedNovelWorkspaceCatalog) {
-          setCatalogFailure(previous => previous?.rootPath === rootPath ? null : previous)
           setNovelWorkspaceRoot(rootPath)
           setNovelWorkspaceCatalogIfChanged(cachedNovelWorkspaceCatalog)
           setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
           setNovelWorkspaceDetecting(false)
-          markNovelWorkspaceFileChangesCovered(rootPath)
+          // Paint the existing snapshot immediately, then check disk through the
+          // same authorized loader and in-flight/revision guards. Other windows
+          // and external tools can have changed this Project while it was away.
+          window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            if (cancelled) return
+            void refreshNovelWorkspaceFiles(rootPath).then(refreshed => {
+              if (refreshed) markNovelWorkspaceFileChangesCovered(rootPath, fileChangesSignature)
+            }).catch(() => {})
+          }))
           return
         }
 
@@ -1919,7 +1944,7 @@ function AppShellContent({
             setNovelWorkspaceCatalogIfChanged(catalog)
             setNovelWorkspaceDetectionSettledKey(novelWorkspaceCandidateKey)
             setNovelWorkspaceDetecting(false)
-            markNovelWorkspaceFileChangesCovered(rootPath)
+            markNovelWorkspaceFileChangesCovered(rootPath, fileChangesSignature)
             return
           }
         } catch {
@@ -1946,7 +1971,7 @@ function AppShellContent({
     return () => {
       cancelled = true
     }
-  }, [catalogRetry, activeWritingWorkspaceRoot, loadNovelWorkspaceFiles, markNovelWorkspaceFileChangesCovered, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots, rightWorkspaceVisible, setNovelWorkspaceCatalogIfChanged])
+  }, [catalogRetry, activeWritingWorkspaceRoot, loadNovelWorkspaceFiles, markNovelWorkspaceFileChangesCovered, novelWorkspaceCandidateKey, novelWorkspaceCandidateRoots, rightWorkspaceVisible, refreshNovelWorkspaceFiles, setNovelWorkspaceCatalogIfChanged])
 
   React.useEffect(() => {
     if (!novelWorkspaceRoot || !latestNovelFileChangesSignature) return

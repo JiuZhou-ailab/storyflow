@@ -211,13 +211,13 @@ function makeAssistantMessage(rng: Rng, ts: number, opts: { intermediate: boolea
   return m;
 }
 
-function makeToolMessage(rng: Rng, ts: number, turnId: string, wsPortableRoot: string): StoredMessage {
+function makeToolMessage(rng: Rng, ts: number, turnId: string, workspaceRoot: string): StoredMessage {
   const tool = pickTool(rng);
   let toolInput: Record<string, unknown>;
   let toolResult: string;
   switch (tool.name) {
     case "Read":
-      toolInput = { file_path: `${wsPortableRoot}/正文/第${String(randInt(rng, 1, 99)).padStart(2, "0")}章.md` };
+      toolInput = { file_path: `${workspaceRoot}/正文/第${String(randInt(rng, 1, 99)).padStart(2, "0")}章.md` };
       toolResult = synthText(rng, randInt(rng, 300, 3000));
       break;
     case "Edit":
@@ -229,7 +229,7 @@ function makeToolMessage(rng: Rng, ts: number, turnId: string, wsPortableRoot: s
       toolResult = `Successfully wrote ${randInt(rng, 1000, 8000)} bytes.`;
       break;
     case "Bash":
-      toolInput = { command: `wc -l ${wsPortableRoot}/正文/*.md | tail -1` };
+      toolInput = { command: `wc -l ${workspaceRoot}/正文/*.md | tail -1` };
       toolResult = `${randInt(rng, 100, 9999)} total`;
       break;
     case "mcp__wangwen-bigdata__query_sql":
@@ -278,7 +278,7 @@ interface BuiltSession {
  * Emit messages in turn structure (user → tools → final assistant) with
  * exact per-role budgets so tool share hits the requested ratio.
  */
-function buildSession(rng: Rng, spec: SessionSpec, wsPortableRoot: string, model: string): BuiltSession {
+function buildSession(rng: Rng, spec: SessionSpec, workspaceRoot: string, model: string): BuiltSession {
   const n = spec.messageCount;
   const nTool = Math.round(n * spec.toolShare);
   const nUser = Math.max(1, Math.round(n * 0.18));
@@ -306,7 +306,7 @@ function buildSession(rng: Rng, spec: SessionSpec, wsPortableRoot: string, model
         messages.push(makeAssistantMessage(rng, tick(), { intermediate: true, turnId }));
         budgets.assistant--;
       }
-      messages.push(makeToolMessage(rng, tick(), turnId, wsPortableRoot));
+      messages.push(makeToolMessage(rng, tick(), turnId, workspaceRoot));
       budgets.tool--;
     }
     if (budgets.assistant > 0) {
@@ -340,9 +340,9 @@ function buildSession(rng: Rng, spec: SessionSpec, wsPortableRoot: string, model
 
   const header: SessionHeader = {
     id: spec.id,
-    workspaceRootPath: wsPortableRoot,
+    workspaceRootPath: workspaceRoot,
     sdkSessionId: uuidLike(rng),
-    sdkCwd: wsPortableRoot,
+    sdkCwd: workspaceRoot,
     createdAt: spec.createdAt,
     lastUsedAt: ts + randInt(rng, 1_000, 60_000),
     lastMessageAt: ts,
@@ -350,7 +350,7 @@ function buildSession(rng: Rng, spec: SessionSpec, wsPortableRoot: string, model
     isFlagged: rng() < 0.05,
     sessionStatus: pick(rng, ["todo", "todo", "todo", "in-progress", "needs-review", "done"]),
     permissionMode: pick(rng, ["safe", "ask", "allow-all"]),
-    workingDirectory: wsPortableRoot,
+    workingDirectory: workspaceRoot,
     model,
     llmConnection: "perf-fixture-connection",
     connectionLocked: true,
@@ -417,13 +417,6 @@ const DEFAULT_STATUSES = {
 // ============================================================
 // Main
 // ============================================================
-
-function toPortable(absolutePath: string): string {
-  const home = homedir();
-  if (absolutePath === home) return "~";
-  if (absolutePath.startsWith(home + "/")) return "~" + absolutePath.slice(home.length);
-  return absolutePath;
-}
 
 function expandTilde(p: string): string {
   if (p === "~") return homedir();
@@ -492,7 +485,9 @@ function main() {
     const isNovelWs = w === 0;
     const slug = isNovelWs ? "perf-novel" : `perf-ws-${String(w + 1).padStart(2, "0")}`;
     const wsRoot = join(workspacesDir, slug);
-    const wsPortableRoot = toPortable(wsRoot);
+    // The Electron harness isolates HOME to the fixture. Keep locators absolute
+    // so generation and launch resolve exactly the same physical directories.
+    const workspaceRoot = wsRoot;
     const wsCreatedAt = BASE_TIME - randInt(rng, 30, 180) * 86_400_000;
     const wsName = isNovelWs ? "400章长篇小说" : `${pick(rng, wsNamePool)} ${String(w + 1).padStart(2, "0")}`;
     const stateDir = join(wsRoot, ".craft-agent");
@@ -501,7 +496,7 @@ function main() {
     mkdirSync(join(stateDir, "labels"), { recursive: true });
 
     configWorkspaces.push({
-      rootPath: wsPortableRoot,
+      rootPath: workspaceRoot,
       name: wsName,
       slug,
       id: uuidLike(rng),
@@ -517,7 +512,7 @@ function main() {
         permissionMode: "safe",
         cyclablePermissionModes: ["safe", "allow-all"],
         enabledSourceSlugs: [],
-        workingDirectory: wsPortableRoot,
+        workingDirectory: workspaceRoot,
       },
       localMcpServers: { enabled: true },
       createdAt: wsCreatedAt,
@@ -547,7 +542,7 @@ function main() {
         : Math.min(280, Math.max(1, Math.round(Math.exp(Math.log(SESSION_COUNT_MEDIAN) + SESSION_COUNT_SIGMA * randNormal(rng)))));
       const toolShare = isLong ? LONG_SESSION_TOOL_SHARE : rng() * 0.45;
       const id = generateSessionId(rng, createdAt, existingIds);
-      const built = buildSession(rng, { id, messageCount, toolShare, createdAt }, wsPortableRoot, model);
+      const built = buildSession(rng, { id, messageCount, toolShare, createdAt }, workspaceRoot, model);
 
       const sessionDir = join(stateDir, "sessions", id);
       mkdirSync(sessionDir, { recursive: true });

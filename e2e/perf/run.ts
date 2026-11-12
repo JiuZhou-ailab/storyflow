@@ -953,7 +953,7 @@ async function waitForSwitchLine(live: LaunchedApp, before: number, timeoutMs: n
 }
 
 async function waitForWritingDocument(live: LaunchedApp, chapter: number): Promise<void> {
-  await waitFor(live, writingDocumentReadyExpression(chapter), 15_000, `${writingChapterLabel(chapter)} source ready`)
+  await waitFor(live, writingDocumentReadyExpression(chapter), 15_000, `${writingChapterLabel(chapter)} document ready`)
   await evalOn(live, 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
 }
 
