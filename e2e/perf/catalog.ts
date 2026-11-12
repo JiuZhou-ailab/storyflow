@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path'
 import { launchApp, evalOn, waitFor, heapUsed, DEFAULT_FIXTURE, verifyStandardFixture } from './launch'
 import { enterFirstWritingWorkspace, openWritingChapter, navigateToWritingWorkspace } from './run'
 import { parsePositiveInteger, percentile } from './contract'
+import { openAttachedPage } from './page-session'
 
 const runs = parsePositiveInteger(process.env.PERF_CATALOG_RUNS, 20, 'PERF_CATALOG_RUNS')
 const fixture = process.env.PERF_FIXTURE ?? DEFAULT_FIXTURE
@@ -194,18 +195,16 @@ try {
         const workspaceRoot = project.rootPath.replace(/^~(?=\/|$)/, fixture)
         const marker = join(workspaceRoot, '__catalog-window-qa.md')
         const sessions = await evalOn<Array<{ id: string }>>(primary, `window.electronAPI.listSessionsByWorkspace(${JSON.stringify(project.id)})`)
-        await evalOn(primary, `window.electronAPI.openSessionInNewWindow(${JSON.stringify(project.id)}, ${JSON.stringify(sessions[0].id)})`)
-        const targets = await live.cdp.send('Target.getTargets')
-        const pages = targets.targetInfos.filter((t: any) => t.type === 'page')
-        assert.equal(pages.length, 2, 'Expected two real Project windows')
-        const second = { ...live, sid: live.sid }
+        const attached = await openAttachedPage(live.cdp, () => evalOn(primary,
+          `window.electronAPI.openSessionInNewWindow(${JSON.stringify(project.id)}, ${JSON.stringify(sessions[0].id)})`))
+        const second = { ...live, sid: attached.sid }
         assert.notEqual(primary.sid, second.sid)
         try {
           await waitFor(second, `!!document.querySelector('[data-panel-role="directory"] [role="treeitem"]')`, 30000, 'second window catalog')
           await evalOn(second, `window.electronAPI.writeFile(${JSON.stringify(marker)}, 'second window change')`)
           await evalOn(primary, 'window.dispatchEvent(new Event("focus"))')
           await waitFor(primary, `[...document.querySelectorAll('[data-panel-role="directory"] [role="treeitem"]')].some(el => el.firstElementChild?.title === '__catalog-window-qa.md')`, 10000, 'other window change reflected')
-          report.multiWindow = { realWindows: 2, otherWindowWriteRefreshed: true }
+          report.multiWindow = { realWindows: 2, primarySid: primary.sid, secondarySid: second.sid, secondaryTargetId: attached.targetId, otherWindowWriteRefreshed: true }
         } finally { rmSync(marker, { force: true }) }
       }
       console.log('catalog', i + 1, JSON.stringify(report.cold.at(-1)))

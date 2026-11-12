@@ -400,7 +400,7 @@ export function isNovelWorkspaceFilePathInRoot(path: string, rootPath: string): 
   return isSameOrChildPath(normalizeRootPath(path), normalizeRootPath(rootPath))
 }
 
-function normalizeRootPath(path: string): string {
+export function normalizeRootPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '')
 }
 

@@ -131,6 +131,8 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
 
   return (
     <div className={cn('flex h-full min-w-0 flex-col bg-background', className)}
+      data-document-path={file.path}
+      data-document-loading={loading ? 'true' : 'false'}
       data-document-search-state={searchTarget ? (searchLocation?.requestId === searchTarget.requestId ? searchLocation.status : 'pending') : undefined}>
       {searchLocation && searchLocation.requestId === searchTarget?.requestId && searchLocation.status !== 'located' ? (
         <div role="status" className="shrink-0 px-3 py-2 text-xs text-muted-foreground">
@@ -152,6 +154,7 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
           <TiptapMarkdownEditor
             ref={editorRef}
             content={content}
+            contentIdentity={file.path}
             searchTarget={searchTarget}
             onSearchLocation={handleSearchLocation}
             onDocumentChanged={onDocumentChanged}

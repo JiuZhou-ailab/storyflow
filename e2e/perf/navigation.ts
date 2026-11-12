@@ -91,7 +91,13 @@ export function writingDocumentReadyExpression(chapter: number): string {
       && editor.value.length > 0) return true
     const panel = document.querySelector('[data-testid="text-document"][data-document-view="writing"]')
     const path = panel?.querySelector('p[title]')?.getAttribute('title') || ''
-    const writing = panel?.querySelector('.tiptap-editor--manuscript .ProseMirror')
-    return path.includes(${JSON.stringify(writingChapterLabel(chapter))}) && !!writing?.textContent?.trim()
+    const documentView = panel?.querySelector('[data-document-path]')
+    const syncedEditor = documentView?.querySelector('.tiptap-editor--manuscript[data-editor-synced-path]')
+    const writing = syncedEditor?.querySelector('.ProseMirror')
+    return path.includes(${JSON.stringify(writingChapterLabel(chapter))})
+      && documentView?.getAttribute('data-document-path') === path
+      && documentView?.getAttribute('data-document-loading') === 'false'
+      && syncedEditor?.getAttribute('data-editor-synced-path') === path
+      && !!writing?.textContent?.trim()
   })()`
 }

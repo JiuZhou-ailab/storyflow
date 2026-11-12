@@ -992,7 +992,7 @@ function metric(scenario: string, name: string, value: number, unit: string, tar
 
 function report(metrics: Metric[], elapsedMs: number) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const resultsDir = join(import.meta.dirname, 'results')
+  const resultsDir = process.env.PERF_RESULTS_DIR ?? join(import.meta.dirname, 'results')
   mkdirSync(resultsDir, { recursive: true })
   const outPath = join(resultsDir, `${stamp}.json`)
   const decision = evaluateMeasuredBaselines(SCENARIOS, metrics)

@@ -94,7 +94,9 @@ PERF_RUNTIME=1 PERF_RUNTIME_CYCLES=3 PERF_RUNTIME_RESUMES=0 bun run e2e/perf/sea
 Runtime samples record complete owned process trees. `PERF_RUNTIME_CYCLES` accepts 1–3 and repeats 50 newly-created Sessions in the same Electron host; `PERF_RUNTIME_RESUMES` accepts 0–40 (default 20). A cold resume must create exactly one Pi, retain prior native assistant context, and make exactly one model request. Its paired clean restart terminates that newly-created, harness-owned Pi and uses the same Session. Warm measurements are explicitly distinguished from cold resumes. [Results and remaining acceptance gaps](../../docs/plans/2026-09-08-runtime-catalog-performance.md).
 
 Document readiness follows the active writing or source view: the requested chapter
-path and nonempty editor content must be present, then two animation frames complete.
+path, completed document load and nonempty synchronized editor content must be present,
+then two animation frames complete. The writing view acknowledges the document identity
+only after its incoming content has reached TipTap; a new header over old prose is not ready.
 The `paintAfterRead` log is not the readiness endpoint; historical chapter-open
 latencies using that log are not directly comparable. Search-navigation's legacy
 Tiptap/automatic-save assertions still need a separate contract migration; a failure
@@ -134,7 +136,9 @@ budget while still measuring and reporting cold samples and their original verdi
 The default `all` gate continues to enforce both; `warm` is not a cold acceptance pass.
 `PERF_CATALOG_RECOVERY=1` also checks external add/rename/delete, a change made while
 away from the Project, mounted-editor preservation across repeated read failures,
-tree expansion/scroll preservation, and a real second-window write followed by focus refresh.
+tree expansion/scroll preservation, and a real second-window write followed by focus refresh. The second window is
+identified by its new CDP target ID and matching attach event, including when
+creation acknowledgement precedes discovery or attachment.
 QA runs after all warm timing samples. Each cold launch removes only the marked
 fixture’s window-restoration file and asserts one initial page, so repeated
 multi-window QA cannot silently change the next measurement’s starting condition.
@@ -152,5 +156,5 @@ TMPDIR="$PERF_TASK_DIR" PERF_RESULTS_DIR="$PERF_TASK_DIR/interactions" \
 ```
 
 The generator writes absolute fixture locators so the launcher's isolated HOME does
-not reinterpret the developer's `~`. `PERF_RESULTS_DIR` applies to both catalog and
-interaction reports; failures and individual tail samples are retained.
+not reinterpret the developer's `~`. `PERF_RESULTS_DIR` applies to catalog, interaction and general driver
+reports; failures and individual tail samples are retained.

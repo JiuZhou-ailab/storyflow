@@ -4,6 +4,7 @@
 import { expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import { normalizeRootPath, getNovelWorkspaceCandidateRoots } from '@/lib/writing-workspace'
 import { advanceWorkspaceCatalogRevision, readWorkspaceCatalogRevision } from '../workspace-file-tree-model'
 
 const source = readFileSync(new URL('../../app-shell/AppShell.tsx', import.meta.url), 'utf8')
@@ -50,7 +51,7 @@ function harness() {
     novelWorkspaceCandidateRootsRef: ref(['/a']),
     novelWorkspaceRootRef: ref('/a'),
     latestNovelFileChangesSignatureRef: ref('signature-at-start'),
-    advanceWorkspaceCatalogRevision, readWorkspaceCatalogRevision,
+    advanceWorkspaceCatalogRevision, readWorkspaceCatalogRevision, normalizeRootPath,
     loadNovelWorkspaceFileTree: () => { const request = deferred(); requests.push(request); return request.promise },
     setCatalogFailure: (value: any) => { failure = typeof value === 'function' ? value(failure) : value },
     setNovelWorkspaceRoot: (root: string) => published.push({ root }),
@@ -201,4 +202,92 @@ it('relink and removal invalidate both snapshots and pending requests, including
   env.workspaces = []
   runEffect('catalogProjectLocatorsRef.current = next')
   expect(env.novelWorkspaceCatalogCacheRef.current.size).toBe(0)
+})
+
+it.each(['old-first', 'new-first'])('A → B → external changes → A reads after activation and rejects late A (%s)', async order => {
+  const { env, requests, published, runEffect } = harness()
+  const frames: Array<() => void> = []
+  const covered: string[] = []
+  Object.assign(env, {
+    window: { requestAnimationFrame: (callback: () => void) => frames.push(callback) },
+    rightWorkspaceVisible: true, setNovelWorkspaceDetecting: () => {}, setNovelWorkspaceDetectionSettledKey: () => {},
+    markNovelWorkspaceFileChangesCovered: (_root: string, signature: string) => covered.push(signature),
+  })
+  const activate = (root: string) => {
+    env.novelWorkspaceCandidateRoots = [root]
+    env.novelWorkspaceCandidateRootsRef.current = [root]
+    env.novelWorkspaceCandidateKey = root
+    env.activeWritingWorkspaceRoot = root
+    runEffect('invalidateNovelWorkspaceCatalogRequests(rootPath, true)')
+  }
+  const previous = catalog('removed.md')
+  const staleRpc = catalog('removed.md')
+  activate('/a')
+  env.novelWorkspaceCatalogCacheRef.current.set('/a', previous)
+  const old = env.refreshNovelWorkspaceFiles('/a') // Host captures old disk state; transport is delayed.
+  activate('/b')
+  const changedDisk = catalog('added.md') // External create + delete while away.
+  activate('/a')
+  runEffect('async function detectNovelWorkspace')
+  expect(published).toEqual([{ root: '/a' }, previous]) // Cached first frame survives.
+  expect(requests).toHaveLength(1)
+  frames.shift()!(); frames.shift()!()
+  expect(requests).toHaveLength(2) // A read actually starts after this activation.
+  const fresh = env.refreshNovelWorkspaceFiles('/a')
+  expect(requests).toHaveLength(2) // Same-activation callers still coalesce.
+  if (order === 'old-first') {
+    requests[0].resolve(staleRpc)
+    expect(await old).toBe(false)
+    expect(covered).toEqual([])
+    expect(published).not.toContain(staleRpc)
+    const duplicate = env.refreshNovelWorkspaceFiles('/a')
+    expect(requests).toHaveLength(2)
+    requests[1].resolve(changedDisk)
+    expect(await duplicate).toBe(true)
+  } else {
+    requests[1].resolve(changedDisk)
+    expect(await fresh).toBe(true)
+    requests[0].resolve(staleRpc)
+    expect(await old).toBe(false)
+  }
+  expect(await fresh).toBe(true)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(env.novelWorkspaceCatalogCacheRef.current.get('/a')).toBe(changedDisk)
+  expect(published.at(-1)).toBe(changedDisk)
+  expect(published).not.toContain(staleRpc)
+  expect(covered).toEqual(['signature-at-start'])
+})
+
+it.each(['relink', 'remove'])('Windows %s invalidates canonical snapshots and delayed requests', async operation => {
+  const { env, requests, published, runEffect } = harness()
+  const rawRoot = 'C:\\project\\'
+  const root = getNovelWorkspaceCandidateRoots({ activeWorkspaceRootPath: rawRoot })[0]!
+  expect(root).toBe('C:/project')
+  env.catalogProjectLocatorsRef = { current: new Map() }
+  env.workspaces = [{ id: 'project-a', rootPath: rawRoot }]
+  runEffect('catalogProjectLocatorsRef.current = next')
+  env.novelWorkspaceCandidateRootsRef.current = [root]
+  env.novelWorkspaceCatalogCacheRef.current.set(root, catalog('cached.md'))
+  env.novelWorkspaceCatalogCacheRef.current.set('D:/moved', catalog('old-target.md'))
+  const old = env.refreshNovelWorkspaceFiles(root)
+  env.workspaces = operation === 'relink' ? [{ id: 'project-a', rootPath: 'D:\\moved\\' }] : []
+  runEffect('catalogProjectLocatorsRef.current = next')
+  expect(env.novelWorkspaceCatalogCacheRef.current.has(root)).toBe(false)
+  if (operation === 'relink') expect(env.novelWorkspaceCatalogCacheRef.current.has('D:/moved')).toBe(false)
+  requests[0].resolve(catalog('late.md')) // Even if the same root is associated again, its old revision is gone.
+  expect(await old).toBe(false)
+  expect(published).toEqual([])
+  expect(env.novelWorkspaceCatalogCacheRef.current.has(root)).toBe(false)
+})
+it('equivalent Windows separators and trailing slashes do not cancel a current read', async () => {
+  const { env, requests, runEffect } = harness()
+  env.catalogProjectLocatorsRef = { current: new Map() }
+  env.workspaces = [{ id: 'a', rootPath: 'C:\\project\\' }]
+  runEffect('catalogProjectLocatorsRef.current = next')
+  env.novelWorkspaceCandidateRootsRef.current = ['C:/project']
+  const pending = env.refreshNovelWorkspaceFiles('C:/project')
+  env.workspaces = [{ id: 'a', rootPath: 'C:/project///' }]
+  runEffect('catalogProjectLocatorsRef.current = next')
+  requests[0].resolve(catalog('current.md'))
+  expect(await pending).toBe(true)
 })

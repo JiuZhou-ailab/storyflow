@@ -182,6 +182,7 @@ import {
   getNovelFileChangeActivityKey,
   getNovelWorkspaceRelativePath,
   getNovelWorkspaceCandidateRoots,
+  normalizeRootPath,
   areNovelWorkspaceFilesEqual,
   closeNovelDocumentTab,
   isNovelWorkspaceFilePathInRoot,
@@ -1644,7 +1645,7 @@ function AppShellContent({
   skillDiscoveryCwdRef.current = activeSessionWorkingDirectory || activeWorkspace?.rootPath
   const activeWritingWorkspaceRoot = isProjectRuntime
     && activeWorkspace
-    ? activeWorkspace.rootPath
+    ? normalizeRootPath(activeWorkspace.rootPath)
     : null
 
   const latestNovelFileChanges = React.useMemo<FileChange[]>(() => {
@@ -1713,9 +1714,10 @@ function AppShellContent({
     completedNovelFileChangeRefreshKeys.add(refreshKey)
   }, [])
 
-  const invalidateNovelWorkspaceCatalogRequests = React.useCallback((rootPath: string) => {
+  const invalidateNovelWorkspaceCatalogRequests = React.useCallback((rawRootPath: string, preserveSnapshot = false) => {
+    const rootPath = normalizeRootPath(rawRootPath)
     advanceWorkspaceCatalogRevision(novelWorkspaceCatalogRevisionRef.current, rootPath)
-    novelWorkspaceCatalogCacheRef.current.delete(rootPath)
+    if (!preserveSnapshot) novelWorkspaceCatalogCacheRef.current.delete(rootPath)
     novelWorkspaceRefreshInFlightRef.current.delete(rootPath)
     for (const loadKey of novelWorkspaceLoadInFlightRef.current.keys()) {
       if (loadKey.startsWith(`${rootPath}\n`)) {
@@ -1726,7 +1728,7 @@ function AppShellContent({
 
   const catalogProjectLocatorsRef = React.useRef(new Map<string, string>())
   React.useLayoutEffect(() => {
-    const next = new Map(workspaces.map(workspace => [workspace.id, workspace.rootPath]))
+    const next = new Map(workspaces.map(workspace => [workspace.id, normalizeRootPath(workspace.rootPath)]))
     for (const [id, oldRoot] of catalogProjectLocatorsRef.current) {
       if (next.get(id) === oldRoot) continue
       invalidateNovelWorkspaceCatalogRequests(oldRoot)
@@ -1735,6 +1737,14 @@ function AppShellContent({
     }
     catalogProjectLocatorsRef.current = next
   }, [workspaces, invalidateNovelWorkspaceCatalogRequests])
+
+  // Each activation gets a new revision, including A → B → A. Keep the last
+  // snapshot for first paint, but never join a read issued before this activation.
+  React.useLayoutEffect(() => {
+    for (const rootPath of novelWorkspaceCandidateRoots) {
+      invalidateNovelWorkspaceCatalogRequests(rootPath, true)
+    }
+  }, [novelWorkspaceCandidateRoots, invalidateNovelWorkspaceCatalogRequests])
 
   const novelWorkspaceCandidateRootsRef = React.useRef(novelWorkspaceCandidateRoots)
   novelWorkspaceCandidateRootsRef.current = novelWorkspaceCandidateRoots
@@ -1895,7 +1905,7 @@ function AppShellContent({
       const fileChangesSignature = latestNovelFileChangesSignatureRef.current
       for (const rootPath of novelWorkspaceCandidateRoots) {
         const cachedNovelWorkspaceCatalog = novelWorkspaceCatalogCacheRef.current.get(rootPath)
-        const knownWritingWorkspaceRoot = rootPath === activeWritingWorkspaceRoot
+        const knownWritingWorkspaceRoot = rootPath === normalizeRootPath(activeWritingWorkspaceRoot ?? '')
         if (cachedNovelWorkspaceCatalog) {
           setNovelWorkspaceRoot(rootPath)
           setNovelWorkspaceCatalogIfChanged(cachedNovelWorkspaceCatalog)

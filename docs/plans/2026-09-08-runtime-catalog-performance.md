@@ -238,3 +238,15 @@ legacyWall=[566, 540, 706]
 
 完整本地日志及 JSON 保存在 worktree 的 Git 临时目录：`validate.log`、`validate-final.log`、`test-verified.log`、`isolated-final.log`、`confirmed/`、`interactions/`。
 上文已版本化保存每轮目录统计、失败、构建指纹和全部 warm / cold / legacy 耗时数组，避免只留下成功汇总。
+
+
+## #37 评审返工（评审 5873426090）
+
+针对 `1c140b8886acd8d7c9bdec4b4a51cc597cca243e` 的四项修改：
+
+- 每次 candidate root 重新激活，在同一 revision 表中推进代际并解除此前的 load / refresh 合并，保留已有快照用于首帧。绘制后的 revalidation 必须由本次激活发起，旧读取不能发布或覆盖新结果；同次激活的调用仍合并。受控生产 callback / effect 回归分别覆盖旧结果先到与新结果先到。
+- Writing root、registry locator 比较及失效入口共用 `normalizeRootPath`，与候选 root 一致。Windows `C:\project\` 与 `C:/project` 不再形成两组缓存 key；重定位、移除及迟到返回均有回归，等价分隔符变化不会取消有效请求。
+- 写作视图的就绪判定要求加载已完成，并且 TipTap 对本次文件身份和 content 的同步已经确认。确认发生在 `setContent` 完成后；仅更新标题、保留上章正文或尚未同步新内容均不通过。解析失败的重试也不会确认旧正文。编辑器仍保持挂载。
+- 双窗口 QA 在创建前监听 attach，等待新 page target 出现并与对应 renderer session 关联后固定 sid，不再读取 `live.sid` 作为第二窗口的身份。覆盖先发现后 attach、先 attach 后创建 RPC 返回及创建失败清理。
+
+旧报告中的目录 click-to-row 样本保留原口径；旧就绪条件下的章节打开、恢复和章节 heap 结果不再用于本次评审验收。修正后的目录 / 双窗口恢复 QA、章节打开 / heap 及首片 / 键入复测结果与所有失败会更新到 [PR #96 正文](https://github.com/JiuZhou-ailab/storyflow/pull/96)，与实际受测 head 和构建指纹一同保存。
