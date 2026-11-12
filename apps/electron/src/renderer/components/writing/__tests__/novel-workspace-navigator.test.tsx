@@ -89,7 +89,10 @@ describe('novel writing workspace layout', () => {
     expect(html).toContain('tiptap-editor--manuscript')
     expect(html).toContain('tiptap-editor--line-numbers')
     expect(html).toContain('Total 10 characters')
-    expect(html).not.toContain('story/chapters/chapter-01.md')
+    // Readiness metadata carries identity without adding another visible title.
+    expect(html).toContain('data-document-path="/novel/story/chapters/chapter-01.md"')
+    expect(html).toContain('data-document-loading="false"')
+    expect(html.replace(/<[^>]+>/g, '')).not.toContain('story/chapters/chapter-01.md')
     expect(html).not.toContain('Save')
     expect(html).not.toContain('Open')
     expect(html).not.toContain('Write')

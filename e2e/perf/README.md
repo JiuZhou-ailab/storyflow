@@ -89,14 +89,16 @@ PERF_RUNTIME=1 PERF_RUNTIME_CYCLES=3 PERF_RUNTIME_RESUMES=0 bun run e2e/perf/sea
 
 `PERF_BASELINE=1` records failed timing budgets without stopping the run; it is not an acceptance pass. Catalog timings start at the Session click which activates a Project and end at the actual directory row, with the preceding project-expansion click and legacy wall time retained separately. The driver verifies 6000 globally unique Sessions, a 1000-message Session in every workspace, and all 400 chapters through the real APIs after timing, so verification does not warm the measured path. No chapter is opened before catalog measurement. `PERF_CATALOG_RECOVERY=1` edits only the generated fixture, denies its chapter-directory permissions, exercises focus refresh and two retries, and restores permissions in a finally block; the mounted editor and unsaved marker must survive. Do not use it on a real Project.
 
-`PERF_CATALOG_TRACE=1` additionally records cold-path WebSocket RPC channel/ID, timestamps, UTF-8 byte counts and image paths (no general RPC payloads). `PERF_CATALOG_PROFILE=1` captures a CPU profile. These instrumented runs diagnose waits and request fan-out; use runs with both disabled for acceptance timings. The cold trace stops before fixture verification and warm sampling.
+`PERF_CATALOG_TRACE=1` additionally records cold-path WebSocket RPC channel/ID, timestamps, UTF-8 byte counts and image paths (no general RPC payloads). `PERF_CATALOG_PROFILE=1` captures a CPU profile. These instrumented runs diagnose waits and request fan-out; use runs with both disabled for acceptance timings. The cold trace stops before fixture verification; warm samples have their own trace windows. Instrumented runs remain diagnostic only.
 
 Runtime samples record complete owned process trees. `PERF_RUNTIME_CYCLES` accepts 1–3 and repeats 50 newly-created Sessions in the same Electron host; `PERF_RUNTIME_RESUMES` accepts 0–40 (default 20). A cold resume must create exactly one Pi, retain prior native assistant context, and make exactly one model request. Its paired clean restart terminates that newly-created, harness-owned Pi and uses the same Session. Warm measurements are explicitly distinguished from cold resumes. [Results and remaining acceptance gaps](../../docs/plans/2026-09-08-runtime-catalog-performance.md).
 
-Document readiness follows the current source editor: the requested chapter path and
-nonempty source must be present, then two animation frames complete. The retired
-Tiptap `paintAfterRead` log is not emitted by TextSource; historical chapter-open
-latencies using that endpoint are not directly comparable. Search-navigation's legacy
+Document readiness follows the active writing or source view: the requested chapter
+path, completed document load and nonempty synchronized editor content must be present,
+then two animation frames complete. The writing view acknowledges the document identity
+only after its incoming content has reached TipTap; a new header over old prose is not ready.
+The `paintAfterRead` log is not the readiness endpoint; historical chapter-open
+latencies using that log are not directly comparable. Search-navigation's legacy
 Tiptap/automatic-save assertions still need a separate contract migration; a failure
 there must not be reported as complete interaction coverage.
 
@@ -126,3 +128,33 @@ resource reloads occur during Session construction and again before each prompt.
 Ready precedes Session/Extension construction, so it does not mean model-ready.
 The fixture isolates HOME and does not execute the user's installed Extensions or
 MCP servers. User-extension compatibility needs its own isolated regression.
+
+### Warm Project return (#37)
+
+`PERF_CATALOG_GATE=warm` enforces the warm n=30 P50 ≤100ms / P95 ≤500ms
+budget while still measuring and reporting cold samples and their original verdict.
+The default `all` gate continues to enforce both; `warm` is not a cold acceptance pass.
+`PERF_CATALOG_RECOVERY=1` also checks external add/rename/delete, a change made while
+away from the Project, mounted-editor preservation across repeated read failures,
+tree expansion/scroll preservation, and a real second-window write followed by focus refresh. The second window is
+identified by its new CDP target ID and matching attach event, including when
+creation acknowledgement precedes discovery or attachment.
+QA runs after all warm timing samples. Each cold launch removes only the marked
+fixture’s window-restoration file and asserts one initial page, so repeated
+multi-window QA cannot silently change the next measurement’s starting condition.
+
+To keep task-owned data and evidence inside the worktree:
+
+```bash
+PERF_TASK_DIR="$(git rev-parse --absolute-git-dir)/tmp"
+mkdir -p "$PERF_TASK_DIR"
+bun run scripts/perf/generate-fixture.ts --out "$PERF_TASK_DIR/perf-fixture"
+PERF_FIXTURE="$PERF_TASK_DIR/perf-fixture" PERF_RESULTS_DIR="$PERF_TASK_DIR/catalog" \
+  PERF_CATALOG_GATE=warm PERF_CATALOG_RECOVERY=1 bun run e2e/perf/catalog.ts
+TMPDIR="$PERF_TASK_DIR" PERF_RESULTS_DIR="$PERF_TASK_DIR/interactions" \
+  PERF_INTERACTIONS=first-text,long-stream bun run e2e/perf/search-stream-runtime.ts
+```
+
+The generator writes absolute fixture locators so the launcher's isolated HOME does
+not reinterpret the developer's `~`. `PERF_RESULTS_DIR` applies to catalog, interaction and general driver
+reports; failures and individual tail samples are retained.

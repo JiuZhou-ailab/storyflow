@@ -10,7 +10,7 @@
 - `WorkspaceProjectSidebar.tsx`：随侧栏模块装载真实项目文件树，避免目录数据就绪后再串行等待模块，并呈现空白项目提示。
 - `WorkspaceFileTree.tsx`：受控、带文件名筛选的虚拟化文件树，展示服务端目录截断提示；浏览器使用原生 Tab 出入；仅在提供相应回调时启用拖动、重命名和删除。
 - `WorkspaceFileTreeRow.tsx`：文件树可见行、右键菜单和行内编辑。
-- `useWritingWorkspaceState.ts`：文件树展开状态的持久化及新建、导入、移动、重命名、删除操作；目录读取和文档缓冲仍由 AppShell 组合。
+- `useWritingWorkspaceState.ts`：文件树展开状态的持久化及新建、导入、移动、重命名、删除操作；目录读取和文档缓冲仍由 AppShell 组合。AppShell 在绘制前复用已有目录，每次重新激活先推进既有 revision（保留首帧快照），再通过同一 in-flight 链路发起本次激活后的读取；locator 比较与失效沿用候选 root 的规范化规则；重定位或移除清理对应缓存，刷新失败保留当前目录及编辑内容并提供重试。
 - `WorkspaceCreateEntryDialog.tsx`：新建文件/文件夹的受控展示和输入法提交保护。
 - `useWorkspaceProjectSurface.ts`：冷启动状态与创建、导入、Skills 命令的编排边界。
 - `workspace-file-actions.ts`：文件级本地系统操作的可测试应用边界。

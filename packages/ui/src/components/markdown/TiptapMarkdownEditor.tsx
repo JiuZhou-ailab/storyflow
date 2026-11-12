@@ -476,6 +476,8 @@ export interface TiptapMarkdownEditorProps {
   onSearchLocation?: (location: DocumentSearchLocation) => void
   /** Markdown string content */
   content: string
+  /** Optional owning document identity for observable content synchronization. */
+  contentIdentity?: string
   /** Called when content changes */
   onUpdate?: (markdown: string) => void
   /** Called when the document changes without forcing a Markdown snapshot. */
@@ -503,6 +505,7 @@ export interface TiptapMarkdownEditorProps {
 
 export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle, TiptapMarkdownEditorProps>(function TiptapMarkdownEditor({
   content,
+  contentIdentity,
   searchTarget,
   onSearchLocation,
   onUpdate,
@@ -674,7 +677,11 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
   // Sync content when the selected task changes (key prop handles this,
   // but as a safety net for direct content prop changes)
   const prevContentRef = React.useRef(content)
+  const [syncedContent, setSyncedContent] = React.useState<{ identity: string; content: string } | null>(null)
   React.useEffect(() => {
+    const acknowledgeContent = () => {
+      if (contentIdentity !== undefined) setSyncedContent({ identity: contentIdentity, content })
+    }
     if (editor) {
       const fastSyncAction = getIncomingContentSyncAction({
         previousContent: prevContentRef.current,
@@ -685,6 +692,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         if (fastSyncAction === 'record') {
           prevContentRef.current = content
         }
+        acknowledgeContent()
         return
       }
 
@@ -695,10 +703,13 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         currentMarkdown: currentMd,
       })
 
-      if (syncAction === 'ignore') return
+      if (syncAction === 'ignore') { acknowledgeContent(); return }
 
-      prevContentRef.current = content
-      if (syncAction === 'record') return
+      if (syncAction === 'record') {
+        prevContentRef.current = content
+        acknowledgeContent()
+        return
+      }
 
       try {
         isApplyingExternalContentRef.current = true
@@ -728,13 +739,15 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         isApplyingExternalContentRef.current = false
       }
 
+      prevContentRef.current = content
+      acknowledgeContent()
       queueMicrotask(() => {
         if (!editor.isDestroyed) {
           scheduleShikiRefresh(editor)
         }
       })
     }
-  }, [editor, content])
+  }, [editor, content, contentIdentity])
 
   React.useEffect(() => {
     if (!editor || !editable || !searchTarget || handledSearchRef.current === searchTarget.requestId) return
@@ -754,6 +767,7 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
   return (
     <div
       ref={setBubbleMenuAppendTo}
+      data-editor-synced-path={syncedContent?.identity === contentIdentity && syncedContent?.content === content ? contentIdentity : undefined}
       className={cn(
         'tiptap-editor',
         showToolbar && 'tiptap-editor--with-toolbar',

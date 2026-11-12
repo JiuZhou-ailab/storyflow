@@ -1,15 +1,17 @@
 import { test, expect } from 'bun:test'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 test('standard fixture gives every workspace session a globally unique identity', async () => {
   const root = mkdtempSync(join(tmpdir(), 'storyflow-fixture-'))
   const output = join(root, 'data')
   try {
-    const child = Bun.spawn(['bun', 'scripts/perf/generate-fixture.ts', '--out', output], { stdout: 'pipe', stderr: 'pipe' })
+    const child = Bun.spawn(['bun', 'scripts/perf/generate-fixture.ts', '--out', output], { stdout: 'pipe', stderr: 'pipe', env: { ...process.env, HOME: root } })
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
     expect(code, stdout + stderr).toBe(0)
+    const config = JSON.parse(readFileSync(join(output, 'config.json'), 'utf8'))
+    expect(config.workspaces.every((workspace: { rootPath: string }) => isAbsolute(workspace.rootPath))).toBe(true)
     const ids = readdirSync(join(output, 'workspaces')).flatMap(workspace => readdirSync(join(output, 'workspaces', workspace, '.craft-agent', 'sessions')))
     expect(ids).toHaveLength(6000)
     expect(new Set(ids).size).toBe(6000)

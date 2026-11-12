@@ -443,8 +443,9 @@ try {
   throw error
 } finally {
   results.modelRequests = requests
-  mkdirSync(join(root, 'e2e/perf/results'), { recursive: true })
-  const output = join(root, 'e2e/perf/results', `interaction-${Date.now()}-${baseline ? 'before' : 'after'}.json`)
+  const resultsDir = process.env.PERF_RESULTS_DIR ?? join(root, 'e2e/perf/results')
+  mkdirSync(resultsDir, { recursive: true })
+  const output = join(resultsDir, `interaction-${Date.now()}-${baseline ? 'before' : 'after'}.json`)
   writeFileSync(output, JSON.stringify(results, null, 2))
   console.log('Evidence:', output)
   await app?.close()

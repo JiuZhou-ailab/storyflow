@@ -338,7 +338,7 @@ async function runHeavyWriting(): Promise<Metric[]> {
     await waitForWritingDocument(live, 200)
     const ms = Date.now() - t0
     return [metric('heavy-writing', 'open mid catalog chapter (第200章)', ms, 'ms', TARGET.heavyMs, {
-      note: 'CONTEXT heavy tier ≤1s; current TextSource content + two animation frames; legacy Tiptap paint metric is not comparable',
+      note: 'CONTEXT heavy tier ≤1s; target document loaded and writing/source content synchronized + two animation frames; legacy paint metric is not comparable',
     })]
   } finally {
     await live.close()
@@ -953,7 +953,7 @@ async function waitForSwitchLine(live: LaunchedApp, before: number, timeoutMs: n
 }
 
 async function waitForWritingDocument(live: LaunchedApp, chapter: number): Promise<void> {
-  await waitFor(live, writingDocumentReadyExpression(chapter), 15_000, `${writingChapterLabel(chapter)} source ready`)
+  await waitFor(live, writingDocumentReadyExpression(chapter), 15_000, `${writingChapterLabel(chapter)} document ready`)
   await evalOn(live, 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
 }
 
@@ -992,7 +992,7 @@ function metric(scenario: string, name: string, value: number, unit: string, tar
 
 function report(metrics: Metric[], elapsedMs: number) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const resultsDir = join(import.meta.dirname, 'results')
+  const resultsDir = process.env.PERF_RESULTS_DIR ?? join(import.meta.dirname, 'results')
   mkdirSync(resultsDir, { recursive: true })
   const outPath = join(resultsDir, `${stamp}.json`)
   const decision = evaluateMeasuredBaselines(SCENARIOS, metrics)

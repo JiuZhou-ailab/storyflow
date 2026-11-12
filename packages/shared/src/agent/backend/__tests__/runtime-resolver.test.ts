@@ -111,10 +111,12 @@ describe('resolveRipgrepPath', () => {
     try { rmSync(tmpBase, { recursive: true, force: true }); } catch {}
   });
 
-  it('finds vendored ripgrep binary (@vscode/ripgrep)', () => {
+  it('finds the preferred vendored ripgrep binary below another installation', () => {
     const appRoot = join(tmpBase, 'vendored');
     const binaryName = process.platform === 'win32' ? 'rg.exe' : 'rg';
-    const rgDir = join(appRoot, 'node_modules', '@vscode', 'ripgrep', 'bin');
+    // Match the resolver's preferred layout so an ancestor dependency cannot
+    // win merely because TMPDIR is inside a development checkout.
+    const rgDir = join(appRoot, 'node_modules', '@vscode', 'ripgrep-binary', 'bin');
     mkdirSync(rgDir, { recursive: true });
     const rgPath = join(rgDir, binaryName);
     writeFileSync(rgPath, '#!/bin/sh\n');
