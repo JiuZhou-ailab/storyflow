@@ -4,12 +4,12 @@ compatibility_date = "2026-08-16"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 
-[placement]
-mode = "smart"
-
 routes = [
   { pattern = "storyflow-tools.zjding.com", custom_domain = true },
 ]
+
+[placement]
+mode = "smart"
 
 [secrets]
 required = ["ANYSEARCH_API_KEY", "FIRECRAWL_API_KEY"]
