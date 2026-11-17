@@ -112,6 +112,7 @@ export async function normalizeUpstreamError(
   };
   headers.set("x-should-retry", String(retryable));
   let status = response.status;
+  let gatewayCode: string | undefined;
   if (denied) {
     status = 502;
     body = {
@@ -135,6 +136,22 @@ export async function normalizeUpstreamError(
         code: "upstream_html_response",
       },
     };
+  } else if (!body && (status === 520 || status === 525)) {
+    // Cloudflare can return plain text (or an empty body), not just HTML.
+    // Use standard 502 semantics for SDK/native retries; metadata retains the
+    // actual origin status (Pi's generic classifier does not recognize 525).
+    gatewayCode = "upstream_origin_error";
+    body = {
+      code: gatewayCode,
+      error: {
+        message: status === 525
+          ? "Could not establish a secure connection to the model provider"
+          : "The model provider is temporarily unavailable",
+        type: "upstream_error",
+        code: gatewayCode,
+      },
+    };
+    status = 502;
   } else if (response.status === 400 && !truncated && !text.trim()) {
     status = 502;
     body = {
@@ -163,7 +180,7 @@ export async function normalizeUpstreamError(
       JSON.stringify({ ...body, ...nested, ...metadata }),
       { status, headers },
     ),
-    code,
+    code: code ?? gatewayCode,
     retryable,
   };
 }

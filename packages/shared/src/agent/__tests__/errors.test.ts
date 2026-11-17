@@ -34,6 +34,9 @@ describe('parseError', () => {
   it('classifies Cloudflare-specific upstream failures as service errors', () => {
     expect(parseError(new Error('520 error code: 520')).code).toBe('service_error')
     expect(parseError(new Error('524 error code: 524')).code).toBe('service_error')
+    const parsed = parseError(new Error('525 error code: 525'))
+    expect(parsed.code).toBe('service_error')
+    expect(parsed.message).not.toContain('error code:')
   })
 
   it('does not remap regular 401 auth errors as proxy_error', () => {

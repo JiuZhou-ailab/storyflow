@@ -751,7 +751,7 @@ describe('model gateway worker', () => {
     }
   })
 
-  it('logs upstream failures with correlation fields but without request content or credentials', async () => {
+  it.each([520, 525])('logs upstream %i with correlation fields but without request content or credentials', async (upstreamStatus) => {
     const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
 
     try {
@@ -775,17 +775,23 @@ describe('model gateway worker', () => {
           }),
         }),
         makeEnv(),
-        async () => new Response('error code: 520', {
-          status: 520,
+        async () => new Response(`error code: ${upstreamStatus}`, {
+          status: upstreamStatus,
           headers: { 'cf-ray': 'upstream-request-ray' },
         }),
       )
 
-      expect(response.status).toBe(520)
+      expect(response.status).toBe(502)
+      expect(await response.json()).toMatchObject({
+        code: 'upstream_origin_error',
+        upstream_status: upstreamStatus,
+        error: { code: 'upstream_origin_error', upstream_status: upstreamStatus, retryable: true },
+      })
       expect(errorSpy).toHaveBeenCalledTimes(1)
       expect(errorSpy.mock.calls[0]?.[0]).toMatchObject({
         stage: 'upstream',
-        upstream_status: 520,
+        upstream_status: upstreamStatus,
+        upstream_code: 'upstream_origin_error',
         upstream_ray: 'upstream-request-ray',
         user: 'feishu:ou_debug',
         user_name: '飞书用户',
@@ -816,6 +822,7 @@ describe('model gateway worker', () => {
       expect(logged).not.toContain('private prompt content')
       expect(logged).not.toContain(CURRENT_MODEL_SECRET)
       expect(logged).not.toContain('server-only-newapi-key')
+      expect(logged).not.toContain('error code:')
     } finally {
       errorSpy.mockRestore()
     }

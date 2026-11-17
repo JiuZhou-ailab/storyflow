@@ -392,7 +392,7 @@ export function parseError(
     code = 'proxy_error';
   // HTML alone cannot identify where interception happened. Managed gateways,
   // load balancers, and providers can all return HTML error pages.
-  } else if (looksLikeHtmlPayload(lowerMessage) || lowerMessage.includes('upstream_html_response')) {
+  } else if (looksLikeHtmlPayload(lowerMessage) || lowerMessage.includes('upstream_html_response') || lowerMessage.includes('upstream_origin_error')) {
     code = 'service_error';
   // Check for specific HTTP status codes or patterns
   } else if (lowerMessage.includes('402') || lowerMessage.includes('payment required')) {
@@ -420,7 +420,7 @@ export function parseError(
     code = 'rate_limited';
   } else if (isAnthropicMessageStopStreamError(lowerMessage)) {
     code = 'provider_error';
-  } else if (lowerMessage.includes('500') || lowerMessage.includes('502') || lowerMessage.includes('503') || lowerMessage.includes('504') || lowerMessage.includes('520') || lowerMessage.includes('524') || lowerMessage.includes('internal server error') || lowerMessage.includes('service unavailable') || lowerMessage.includes('overloaded')) {
+  } else if (lowerMessage.includes('500') || lowerMessage.includes('502') || lowerMessage.includes('503') || lowerMessage.includes('504') || lowerMessage.includes('520') || lowerMessage.includes('524') || lowerMessage.includes('525') || lowerMessage.includes('internal server error') || lowerMessage.includes('service unavailable') || lowerMessage.includes('overloaded')) {
     code = 'service_error';
   } else if (lowerMessage.includes('network') || lowerMessage.includes('econnrefused') || lowerMessage.includes('enotfound') || lowerMessage.includes('fetch failed') || lowerMessage.includes('connection')) {
     code = 'network_error';

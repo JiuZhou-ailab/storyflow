@@ -79,6 +79,17 @@ Provider-internal retries also increment transport attempt. Missing legacy field
 remain unknown. HTTP `phase: headers` is not generation completion; use Pi
 `model_stream_end.outcome` and `stop_reason`. Unknown cost is logged as null.
 
+Issue #99 adds all-four-protocol gateway-to-real-session coverage for upstream
+401/403, unknown-scope 429, quota/billing exhaustion, invalid requests, content
+policy rejection and missing/disallowed models, with both provider and session
+retry enabled: one HTTP request, no model switch or retry event, one settlement.
+Plain-text 520/525 are normalized to 502 with `upstream_origin_error` and the real
+`upstream_status`; a one-retry session budget produces exactly two requests when
+fallback is disabled, then a safe `service_error` UI message. Gateway tests cover
+empty/oversized bodies, structured permanent-error preservation, and separate
+520/525 logs without raw origin diagnostics. These checks use local HTTP only;
+they do not establish production provider health.
+
 ## Renderer QA
 
 1. Run `bun run --cwd apps/electron dev --host 127.0.0.1 --port 5189` and open

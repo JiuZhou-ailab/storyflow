@@ -31,6 +31,14 @@ cancellation and correlation regressions; migrated patches pass the same 72 test
 Remove each hunk when its named checks pass on a supported **unpatched** release.
 Do not infer outer AgentSession correctness from provider SDK retries alone.
 
+Issue #99 also pins `upstream_origin_error` in Pi's native assistant retry
+classifier. Google can discard HTTP 502 status while retaining the gateway's
+structured 520/525 error body, so generic status matching misses 525. Permanent
+denial and `retryable: false` still take precedence. The reproduction/removal
+gate is the four-protocol 520/525 test in `managed-access-contract.test.ts`:
+remove this hunk once a supported unpatched Pi preserves these native retries
+within the same session budget. No upstream issue/PR has been submitted for it.
+
 ```sh
 bun test packages/pi-agent-server/src/managed-access-contract.test.ts packages/pi-agent-server/src/managed-fallback.test.ts
 bun test packages/pi-agent-server/src/runtime-budgets.test.ts packages/pi-agent-server/src/primary-session.test.ts
