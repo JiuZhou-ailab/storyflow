@@ -36,14 +36,14 @@ export function FileViewer({ workspaceId, sessionId, refresh, path, searchTarget
   const { t } = useTranslation()
   const { isDark } = useTheme()
   const [content, setContent] = useState<string>('')
-  const readKey = JSON.stringify([path, searchTarget?.requestId])
+  const readKey = JSON.stringify([path, searchTarget?.requestId, refresh])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const classification = useMemo(() => path ? classifyFile(path) : null, [path])
   const isVideo = useMemo(() => path ? isVideoFile(path) : false, [path])
   const mediaUrl = useMemo(
-    () => path ? `workspace-file://media/${encodeURIComponent(path)}` : '',
-    [path],
+    () => path ? `workspace-file://media/${encodeURIComponent(path)}?revision=${encodeURIComponent(String(refresh ?? ''))}` : '',
+    [path, refresh],
   )
   const loadDataUrl = useCallback((filePath: string) => window.electronAPI.readFileDataUrl(filePath), [])
   const loadPdfData = useCallback((filePath: string) => window.electronAPI.readFileBinary(filePath), [])
@@ -128,7 +128,7 @@ export function FileViewer({ workspaceId, sessionId, refresh, path, searchTarget
           <Spinner className="text-lg" />
         </div>
       )}>
-        <FilePreviewRenderer
+        <FilePreviewRenderer key={readKey}
           state={embeddedPreviewState}
           onClose={onClose ?? (() => {})}
           loadDataUrl={loadDataUrl}

@@ -1,8 +1,6 @@
-import { requestDocumentLeave } from '../files/text-document-state'
-import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 // input: Active conversation identity, optional file-open intent and session file RPC/events
-// output: Session-owned file groups and a file tabs and a source preview with live refresh
-// pos: Conversation-owned data adapter for existing workspace layout, tabs, tree and preview
+// output: Session-owned file groups and one read-only preview with live refresh
+// pos: Conversation-owned data adapter for existing workspace layout, tree and preview
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
@@ -15,7 +13,6 @@ import { PANEL_MIN_WIDTH, WORKSPACE_DIRECTORY_DEFAULT_WIDTH } from '../app-shell
 import { DEFAULT_WORKSPACE_WIDTH } from '../app-shell/layout-defaults'
 import { WorkspaceDockLayout } from '../workspace/WorkspaceDockLayout'
 import { WorkspaceFileHeaderActions } from '../workspace/WorkspaceFileHeaderActions'
-import { NovelDocumentTabStrip } from '../writing/NovelDocumentTabStrip'
 import { Button } from '../ui/button'
 import type { NovelWorkspaceFile } from '@/lib/writing-workspace'
 import { toast } from 'sonner'
@@ -69,7 +66,7 @@ export function useConversationWorkspace({ sessionId, active, compact, available
     icon={open ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
     tooltip={t(open ? 'conversationFiles.collapse' : 'conversationFiles.expand')}
     aria-label={t(open ? 'conversationFiles.collapse' : 'conversationFiles.expand')}
-    aria-expanded={open} onClick={() => { void requestDocumentLeave().then(ok => { if (ok) setOpen(value => !value) }) }} className="h-[26px] w-[26px] rounded-lg" /> : null
+    aria-expanded={open} onClick={() => setOpen(value => !value)} className="h-[26px] w-[26px] rounded-lg" /> : null
   const panel = active && !compact && open ? <ResizableColumn mode="document-dock" role="conversation-files"
     sashLabel={t('conversationFiles.title')} width={shownWidth} disableAnimation
     onResizeStart={(_mode, event) => {
@@ -86,7 +83,7 @@ export function useConversationWorkspace({ sessionId, active, compact, available
       document.addEventListener('mousemove', move)
       document.addEventListener('mouseup', stop)
     }}>
-    <ConversationFilesPanel sessionId={sessionId} requestedFile={requested?.owner === owner ? requested : undefined} onClose={() => { void requestDocumentLeave().then(ok => { if (ok) { stopResize.current?.(); setOpen(false) } }) }} />
+    <ConversationFilesPanel sessionId={sessionId} requestedFile={requested?.owner === owner ? requested : undefined} onClose={() => { stopResize.current?.(); setOpen(false) }} />
   </ResizableColumn> : null
   const drawerRequest = React.useMemo(() => compact && requested?.owner === owner && sessionId
     ? { path: requested.path, sessionId } : undefined, [compact, requested, owner, sessionId])
@@ -131,13 +128,7 @@ function ConversationFilesContent({ sessionId, requestedFile, onClose, compact }
   const [revision, setRevision] = React.useState(0)
   const [retry, setRetry] = React.useState(0)
 
-  const [paths, setPaths] = React.useState<string[]>(requestedFile ? [requestedFile.path] : [])
-  const activate = React.useCallback((path: string) => {
-    setPaths(previous => previous.includes(path) ? previous : [...previous, path])
-    setSelectedPath(path)
-  }, [])
-  const select = React.useCallback(async (path: string) => { if (await requestDocumentLeave()) activate(path) }, [activate])
-  React.useEffect(() => { if (requestedFile) select(requestedFile.path) }, [requestedFile, select])
+  React.useEffect(() => { if (requestedFile) setSelectedPath(requestedFile.path) }, [requestedFile])
 
   React.useEffect(() => {
     if (!sessionId) return
@@ -179,7 +170,7 @@ function ConversationFilesContent({ sessionId, requestedFile, onClose, compact }
     }
   }, [sessionId, retry])
 
-  const selected = selectedPath ? findConversationFile(content, selectedPath) ?? { path: selectedPath, name: selectedPath.split('/').pop() ?? selectedPath, type: 'file' as const } : undefined
+  const selected = selectedPath ? findConversationFile(content, selectedPath) : undefined
   const reveal = (path: string) => { void window.electronAPI.showInFolder(path) }
   const toggleFolder = (id: string, open: boolean) => setExpanded(previous => {
     const next = new Set(previous)
@@ -214,7 +205,7 @@ function ConversationFilesContent({ sessionId, requestedFile, onClose, compact }
           expandedIds={new Set([...expanded].filter(id => id.startsWith(`${group.kind}/`)).map(id => id.slice(group.kind.length + 1)))}
           onExpandedChange={(id, open) => toggleFolder(`${group.kind}/${id}`, open)}
           labels={{ rename: t('common.rename'), delete: t('common.delete') }}
-          onSelectFile={file => select(file.path)}
+          onSelectFile={file => setSelectedPath(file.path)}
           getMenuActions={entry => entry.type === 'file' ? [{ id: 'reveal', label: t('conversationFiles.reveal'), onSelect: () => reveal(entry.path) }] : []}
         />)}
       </React.Suspense>
@@ -222,21 +213,14 @@ function ConversationFilesContent({ sessionId, requestedFile, onClose, compact }
     </nav>
   )
   const directoryLabel = t(directoryVisible ? 'writing.directory.collapse' : 'writing.directory.expand')
-  const header = <NovelDocumentTabStrip
-    files={paths.map(path => ({ path, relativePath: findConversationFile(content, path)?.name ?? path.split('/').pop() ?? path }))}
-    activePath={selectedPath ?? null} onActivate={file => select(file.path)}
-    onClose={async path => {
-      if (!await requestDocumentLeave()) return
-      const remaining = paths.filter(value => value !== path)
-      setPaths(remaining)
-      if (selectedPath === path) setSelectedPath(remaining.at(-1))
-    }}
-    trailingActions={<>
-      {selected && !selected.unavailable && <WorkspaceFileHeaderActions path={selected.path} readOnly={selected.readOnly} beforeOpen={requestDocumentLeave} onRefresh={() => { void requestDocumentLeave().then(ok => { if (ok) setRevision(value => value + 1) }) }} />}
-      <HeaderIconButton icon={<FolderOpen className="h-4 w-4" strokeWidth={1.7} />} tooltip={directoryLabel} aria-label={directoryLabel} aria-expanded={directoryVisible} data-state={directoryVisible ? 'open' : 'closed'} onClick={() => setDirectoryVisible(value => !value)} className="h-[26px] w-[26px] rounded-lg" />
-      {onClose && <HeaderIconButton icon={<PanelRightClose className="h-4 w-4" />} tooltip={t('conversationFiles.collapse')} aria-label={t('conversationFiles.collapse')} aria-expanded onClick={() => { void requestDocumentLeave().then(ok => { if (ok) onClose?.() }) }} className="h-[26px] w-[26px] rounded-lg" />}
-    </>}
-  />
+  const header = <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/40 px-3">
+    <span className="min-w-0 flex-1 truncate text-sm font-medium">{t('conversationFiles.title')}</span>
+    <span className="text-xs text-muted-foreground">{t('conversationFiles.readOnly')}</span>
+    {selected && !selected.unavailable && <WorkspaceFileHeaderActions path={selected.path} readOnly={selected.readOnly}
+      onRefresh={() => setRevision(value => value + 1)} />}
+    <HeaderIconButton icon={<FolderOpen className="h-4 w-4" strokeWidth={1.7} />} tooltip={directoryLabel} aria-label={directoryLabel} aria-expanded={directoryVisible} data-state={directoryVisible ? 'open' : 'closed'} onClick={() => setDirectoryVisible(value => !value)} className="h-[26px] w-[26px] rounded-lg" />
+    {onClose && <HeaderIconButton icon={<PanelRightClose className="h-4 w-4" />} tooltip={t('conversationFiles.collapse')} aria-label={t('conversationFiles.collapse')} aria-expanded onClick={onClose} className="h-[26px] w-[26px] rounded-lg" />}
+  </div>
 
   return (
     <section data-testid="conversation-files" data-session-id={sessionId} aria-label={t('conversationFiles.title')} className="h-full min-h-0 bg-background">
@@ -247,8 +231,8 @@ function ConversationFilesContent({ sessionId, requestedFile, onClose, compact }
             <p>{t('conversationFiles.loadFailed')}</p><p className="break-words">{error}</p>
             <Button variant="ghost" size="sm" onClick={() => setRetry(value => value + 1)}>{t('conversationFiles.retry')}</Button>
           </div> : loading ? <div role="status" className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">{t('conversationFiles.loading')}</div>
-            : selectedPath && !selected ? <div role="status" className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">{t('conversationFiles.missing')}</div>
-            : selected ? <FileViewer workspaceId={FREE_CONVERSATION_WORKSPACE_ID} sessionId={sessionId} refresh={`${selected.modifiedAt}:${selected.size}:${revision}`} path={selected.path}
+            : selectedPath && (!selected || selected.unavailable) ? <div role="status" className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">{t('conversationFiles.missing')}</div>
+            : selected ? <FileViewer key={selected.path} refresh={`${selected.modifiedAt}:${selected.size}:${revision}`} path={selected.path}
                 externalPreviewHint={selected.readOnly ? t('conversationFiles.unsupported') : undefined} />
             : <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">{t(empty ? 'conversationFiles.empty' : 'conversationFiles.select')}</div>}
         </div>
