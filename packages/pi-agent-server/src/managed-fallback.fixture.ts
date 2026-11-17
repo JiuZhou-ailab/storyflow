@@ -38,6 +38,7 @@ export function completion(model: string) {
 
 type FixtureOptions = {
   catalog?: ModelDefinition[];
+  persistent?: boolean;
   extensionFactory?(
     runtime: ModelRuntime,
     config: import("../../shared/src/agent/backend/pi/protocol.ts").PiInitMessage,
@@ -205,7 +206,9 @@ export async function fixture(
         ...customTools.map((t) => t.name),
         ...(options.extraTools ?? []),
       ],
-      sessionManager: SessionManager.inMemory(root),
+      sessionManager: options.persistent
+        ? SessionManager.create(root, join(root, "sessions"))
+        : SessionManager.inMemory(root),
     }));
     await session.bindExtensions({});
     const events: string[] = [];

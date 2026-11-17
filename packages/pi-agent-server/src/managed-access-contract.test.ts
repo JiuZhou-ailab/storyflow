@@ -13,7 +13,7 @@ const protocols = [
   ['openai-completions', ['deepseek-v4-flash', 'deepseek-v4-pro']],
   ['openai-responses', ['gpt-5.6-sol', 'gpt-6.1-sol']],
   ['anthropic-messages', ['claude-sonnet-5', 'claude-opus-5-5']],
-  ['google-generative-ai', ['gemini-3.8-flash', 'gemini-3.7-flash']],
+  ['google-generative-ai', ['gemini-3.8-flash', 'gemini-4-argon']],
 ] as const;
 
 for (const [api, models] of protocols) {
@@ -83,8 +83,8 @@ for (const [api, models] of protocols) {
     await fixture(async ({ session, requests, notices }) => {
       await session.prompt('test');
       await session.waitForIdle();
-      expect(requests.map(request => request.model)).toEqual([models[0], models[0], api === 'google-generative-ai' ? models[0] : models[1]]);
-      if (api === 'google-generative-ai') expect(notices).toEqual([]);
+      expect(requests.map(request => request.model)).toEqual([models[0], models[0], models[1]]);
+      expect(notices).toEqual([`${models[0]}->${models[1]}`]);
       expect(session.getLastAssistantText()).toBe('OK');
       expect(session.model?.maxTokens).toBe(cloneManagedModelCatalog(api).find(model => model.id === session.model?.id)!.fallbackCapabilities!.maxOutputTokens);
       for (const { body, model } of requests) {
@@ -144,7 +144,29 @@ test('Google provider retry honors bounded body Retry-After when its SDK drops h
     ? Response.json({ error: { message: '503 unavailable', retryable: true, retry_after_ms: 1000 } },
       { status: 503, headers: { 'retry-after': '1' } })
     : protocolCompletion('google-generative-ai', model), undefined,
-  { api: 'google-generative-ai', models: ['gemini-3.8-flash', 'gemini-3.7-flash'], providerRetries: 1 });
+  { api: 'google-generative-ai', models: ['gemini-3.8-flash', 'gemini-4-argon'], providerRetries: 1 });
+});
+
+test('Gemini Argon cannot fall back to Flash with a smaller declared context window', async () => {
+  const models = ['gemini-4-argon', 'gemini-3.8-flash'];
+  await fixture(async ({ session, requests, notices, events }) => {
+    await session.prompt('preserve the context contract');
+    await session.waitForIdle();
+    expect(requests.map(request => request.model)).toEqual(Array(4).fill(models[0]));
+    expect(notices).toEqual([]);
+    expect(events.filter(event => event === 'agent_settled')).toHaveLength(1);
+  }, () => Response.json({ error: { message: '503 unavailable' } }, { status: 503 }), undefined,
+  { api: 'google-generative-ai', models, catalog: cloneManagedModelCatalog('google-generative-ai') });
+});
+
+test('an account catalog authorizing only Flash cannot borrow a registered Pro candidate', async () => {
+  await fixture(async ({ session, requests, notices }) => {
+    await session.prompt('stay within account authorization');
+    await session.waitForIdle();
+    expect(requests.map(request => request.model)).toEqual(Array(4).fill('deepseek-v4-flash'));
+    expect(notices).toEqual([]);
+  }, () => Response.json({ error: { message: '503 unavailable' } }, { status: 503 }), undefined,
+  { catalog: cloneManagedModelCatalog('openai-completions').filter(model => model.id === 'deepseek-v4-flash') });
 });
 
 test('Google preserves permanent semantics after the gateway adds metadata to a near-limit body', async () => {
@@ -155,7 +177,7 @@ test('Google preserves permanent semantics after the gateway adds metadata to a 
   }, async () => (await normalizeUpstreamError(Response.json({
     error: { message: 'Invalid request', code: 'invalid_request_error', padding: 'x'.repeat(16_250) },
   }, { status: 502 }))).response, undefined,
-  { api: 'google-generative-ai', models: ['gemini-3.8-flash', 'gemini-3.7-flash'], providerRetries: 1 });
+  { api: 'google-generative-ai', models: ['gemini-3.8-flash', 'gemini-4-argon'], providerRetries: 1 });
 });
 
 test('legacy clients retain the published string error shape', async () => {

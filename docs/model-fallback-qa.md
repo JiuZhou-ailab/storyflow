@@ -90,6 +90,23 @@ empty/oversized bodies, structured permanent-error preservation, and separate
 520/525 logs without raw origin diagnostics. These checks use local HTTP only;
 they do not establish production provider health.
 
+### #101 acceptance (2026-11-17)
+
+The existing selection Extension already implements automatic recovery within Pi's
+native retry budget; #101 adds acceptance coverage without changing runtime policy.
+Both runtime suites now use the current Gemini pair (`gemini-3.8-flash` and
+`gemini-4-argon`) rather than retired `gemini-3.7-flash`. All four protocols assert
+A,A,B recovery using the product catalog and registered output capacities. The
+reverse Argon-to-Flash direction remains excluded because Flash declares a smaller
+context window. A registered candidate without an account catalog capability
+declaration is also excluded.
+
+The committed-tool scenario now uses a file-backed Pi session. Reopening its
+history preserves one user message, the original tool call/result and the final
+fallback assistant model. A subsequent explicit prompt after resource reload
+still sends the committed result without executing the tool again. These loopback
+checks establish runtime/history behavior, not desktop restart or production health.
+
 ## Renderer QA
 
 1. Run `bun run --cwd apps/electron dev --host 127.0.0.1 --port 5189` and open
