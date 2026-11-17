@@ -2,6 +2,7 @@
 // output: Spec #41 observable retry, fallback, history and side-effect contracts.
 // pos: Integration acceptance at the approved Pi runtime boundary.
 import { expect, test, spyOn } from "bun:test";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type {
   AgentSession,
   InlineExtension,
@@ -375,7 +376,7 @@ for (const partial of ["text", "reasoning", "tool", "empty"] as const)
 for (const [api, models] of [
   ["openai-responses", ["gpt-6.1-sol", "gpt-5.6-sol"]],
   ["anthropic-messages", ["claude-sonnet-5", "claude-opus-5-5"]],
-  ["google-generative-ai", ["gemini-3.8-flash", "gemini-3.7-flash"]],
+  ["google-generative-ai", ["gemini-3.8-flash", "gemini-4-argon"]],
 ] as const) {
   test(`${api} uses native protocol and only available same-family fallback`, async () => {
     await fixture(
@@ -385,9 +386,9 @@ for (const [api, models] of [
         expect(requests.map((r) => r.model)).toEqual([
           models[0],
           models[0],
-          api === "google-generative-ai" ? models[0] : models[1],
+          models[1],
         ]);
-        if (api === "google-generative-ai") expect(notices).toEqual([]);
+        expect(notices).toEqual([`${models[0]}->${models[1]}`]);
         expect(session.getLastAssistantText()).toBe("OK");
       },
       (model, index) =>
@@ -431,7 +432,7 @@ for (const [api, models] of [
   });
 }
 
-test("a completed tool side effect is executed once and survives the failed continuation", async () => {
+test("a committed tool survives fallback, resource reload and durable history reopening without replay", async () => {
   const { Type } = await import("@sinclair/typebox");
   let effects = 0;
   await fixture(
@@ -458,6 +459,25 @@ test("a completed tool side effect is executed once and survives the failed cont
             .map((r) => r.headers.get("x-storyflow-model-call-id")),
         ).size,
       ).toBe(1);
+      expect(session.getLastAssistantText()).toBe("OK");
+      const reopened = SessionManager.open(session.sessionManager.getSessionFile()!);
+      const history = reopened.buildSessionContext().messages;
+      expect(history.filter(message => message.role === "user")).toHaveLength(1);
+      expect(history.filter(message => message.role === "assistant")).toContainEqual(
+        expect.objectContaining({ content: [{ type: "toolCall", id: "effect-1", name: "effect", arguments: {} }] }),
+      );
+      expect(history.filter(message => message.role === "toolResult")).toEqual([
+        expect.objectContaining({ toolCallId: "effect-1", content: [{ type: "text", text: "COMMITTED_EFFECT" }] }),
+      ]);
+      expect(history.at(-1)).toMatchObject({ role: "assistant", model: "deepseek-v4-pro", stopReason: "stop" });
+      expect(JSON.stringify(history)).toContain("COMMITTED_EFFECT");
+      await session.reload();
+      await session.prompt("continue from the committed result");
+      await session.waitForIdle();
+      expect(effects).toBe(1);
+      expect(requests).toHaveLength(5);
+      expect(requests.at(-1)?.model).toBe("deepseek-v4-pro");
+      expect(JSON.stringify(requests.at(-1)?.body)).toContain("COMMITTED_EFFECT");
     },
     (model, index) => {
       if (index === 1)
@@ -474,6 +494,7 @@ test("a completed tool side effect is executed once and survives the failed cont
     },
     undefined,
     {
+      persistent: true,
       tools: [
         {
           name: "effect",
@@ -606,7 +627,7 @@ for (const retryAfter of ["2147484", "1000000000000000000"]) {
           ))).response
         : protocolCompletion("google-generative-ai", model),
       undefined,
-      { api: "google-generative-ai", models: ["gemini-3.8-flash", "gemini-3.7-flash"], providerRetries: 1 },
+      { api: "google-generative-ai", models: ["gemini-3.8-flash", "gemini-4-argon"], providerRetries: 1 },
     );
   });
 }
@@ -629,7 +650,7 @@ test("Google native retry honors gateway Retry-After metadata when its SDK omits
     undefined,
     {
       api: "google-generative-ai",
-      models: ["gemini-3.8-flash", "gemini-3.7-flash"],
+      models: ["gemini-3.8-flash", "gemini-4-argon"],
     },
   );
 });
@@ -638,7 +659,7 @@ for (const [api, models] of [
   ["openai-completions", ["deepseek-v4-flash", "deepseek-v4-pro"]],
   ["openai-responses", ["gpt-5.6-sol", "gpt-6.1-sol"]],
   ["anthropic-messages", ["claude-sonnet-5", "claude-opus-5-5"]],
-  ["google-generative-ai", ["gemini-3.8-flash", "gemini-3.7-flash"]],
+  ["google-generative-ai", ["gemini-3.8-flash", "gemini-4-argon"]],
 ] as const)
   test(`${api} never reports an empty HTTP 200 stream as completed`, async () => {
     await fixture(
