@@ -17,6 +17,68 @@ const protocols = [
 ] as const;
 
 for (const [api, models] of protocols) {
+  for (const [status, code] of [
+    [401, 'invalid_api_key'],
+    [403, 'unknown'],
+    [429, 'unknown'],
+    [502, 'insufficient_quota'],
+    [502, 'billing_hard_limit_reached'],
+    [502, 'invalid_request_error'],
+    [502, 'content_policy_violation'],
+    [502, 'model_not_found'],
+    [502, 'model_not_allowed'],
+  ] as const) {
+    test(`${api} gateway ${status}/${code} stops provider and session retries without switching models`, async () => {
+      await fixture(async ({ session, requests, notices, events }) => {
+        await session.prompt('test');
+        await session.waitForIdle();
+        expect(requests).toHaveLength(1);
+        expect(notices).toHaveLength(0);
+        expect(events).not.toContain('auto_retry_start');
+        expect(events.filter(event => event === 'agent_settled')).toHaveLength(1);
+        expect(session.messages.at(-1)).toMatchObject({ role: 'assistant', stopReason: 'error' });
+      }, async () => (await normalizeUpstreamError(Response.json({
+        error: { message: 'Request rejected', code },
+      }, { status }))).response, undefined,
+      { api, models: [...models], providerRetries: 1 });
+    });
+  }
+  for (const status of [520, 525]) {
+    test(`${api} normalized ${status} uses only the native session budget and projects safe UI text`, async () => {
+      await fixture(async ({ session, requests, notices, events }) => {
+        await session.prompt('test');
+        await session.waitForIdle();
+        expect(requests.map(request => request.model)).toEqual([models[0], models[0]]);
+        expect(notices).toHaveLength(0);
+        expect(events.filter(event => event === 'auto_retry_start')).toHaveLength(1);
+        expect(events.filter(event => event === 'agent_settled')).toHaveLength(1);
+        const message = session.messages.at(-1)!;
+        expect(message).toMatchObject({ role: 'assistant', stopReason: 'error' });
+        if (message.role !== 'assistant') throw new Error('Missing assistant failure');
+        expect(message.errorMessage).toContain('upstream_origin_error');
+        expect(message.errorMessage).toContain(String(status));
+        expect(message.errorMessage).not.toContain('error code:');
+        const projected = parseError(new Error(message.errorMessage));
+        expect(projected.code).toBe('service_error');
+        expect(projected.canRetry).toBe(true);
+        expect(projected.message).not.toContain('error code:');
+      }, async () => (await normalizeUpstreamError(new Response(`error code: ${status}`, {
+        status, headers: { 'content-type': 'text/plain' },
+      }))).response, undefined,
+      { api, models: [...models], maxRetries: 1, disabled: true });
+    });
+  }
+  test(`${api} origin error code never overrides explicit no-retry metadata`, async () => {
+    await fixture(async ({ session, requests, events }) => {
+      await session.prompt('test');
+      await session.waitForIdle();
+      expect(requests).toHaveLength(1);
+      expect(events).not.toContain('auto_retry_start');
+    }, async () => (await normalizeUpstreamError(new Response('error code: 525', {
+      status: 525, headers: { 'x-should-retry': 'false' },
+    }))).response, undefined,
+    { api, models: [...models], providerRetries: 1 });
+  });
   test(`${api} product catalog preserves native output capacity across retries and available fallback`, async () => {
     await fixture(async ({ session, requests, notices }) => {
       await session.prompt('test');

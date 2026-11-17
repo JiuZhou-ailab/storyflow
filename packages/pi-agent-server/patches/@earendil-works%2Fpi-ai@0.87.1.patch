@@ -211,6 +211,16 @@ diff --git a/dist/utils/retry.js b/dist/utils/retry.js
      // OpenCode Go/free-tier limits returned as 429 JSON error types by OpenCode's
      // Zen API. These are subscription/account limits, not transient throttles.
      "GoUsageLimitError",
+@@ -18,6 +22,9 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
+     "billing",
+ ]);
+ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
++    // Gateway origin failures remain identifiable when an SDK drops HTTP status.
++    // The permanent-rejection pattern above still takes precedence.
++    '\"code\"\\s*:\\s*\"upstream_origin_error\"',
+     // Generic provider load, HTTP status, and server-side transient failures.
+     "overloaded",
+     "currently experiencing high demand",
 diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
 --- a/dist/api/google-shared.js
 +++ b/dist/api/google-shared.js

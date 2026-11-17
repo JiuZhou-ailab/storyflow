@@ -4,6 +4,36 @@
 import { expect, test } from "bun:test";
 import { normalizeUpstreamError } from "./upstream-error";
 
+for (const status of [520, 525]) {
+  for (const text of [`error code: ${status}`, "", "private origin diagnostics".repeat(1000)]) {
+    test(`HTTP ${status} non-JSON body (${text.length} bytes) becomes a safe structured error`, async () => {
+      const normalized = await normalizeUpstreamError(new Response(text, {
+        status,
+        headers: { "content-type": "text/plain", "retry-after": "1", "cf-ray": "origin-ray" },
+      }));
+      expect(normalized.code).toBe("upstream_origin_error");
+      expect(normalized.response.status).toBe(502);
+      expect(normalized.response.headers.get("content-type")).toBe("application/json");
+      expect(normalized.response.headers.get("retry-after")).toBe("1");
+      const body = await normalized.response.json();
+      const metadata = { upstream_status: status, scope: "upstream_capacity", retryable: true, retry_after_ms: 1000 };
+      expect(body).toMatchObject({ code: "upstream_origin_error", ...metadata });
+      expect(body.error).toMatchObject({ code: "upstream_origin_error", type: "upstream_error", ...metadata });
+      expect(JSON.stringify(body)).not.toContain("error code:");
+      expect(JSON.stringify(body)).not.toContain("private origin diagnostics");
+    });
+  }
+  test(`HTTP ${status} preserves a structured permanent rejection`, async () => {
+    const normalized = await normalizeUpstreamError(Response.json({
+      error: { code: "insufficient_quota", message: "Quota exhausted" },
+    }, { status }));
+    expect(normalized.retryable).toBe(false);
+    expect(await normalized.response.json()).toMatchObject({
+      error: { code: "insufficient_quota" }, upstream_status: status, retryable: false,
+    });
+  });
+}
+
 for (const [status, code, retryable] of [
   [403, "unknown", false],
   [401, "invalid_api_key", false],
