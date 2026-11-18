@@ -18,7 +18,7 @@ import {
 import { createProviderHooks } from "./provider-hooks.ts";
 import type { ModelDefinition } from '../../shared/src/config/models.ts';
 import { buildCustomEndpointModelDef } from './custom-endpoint-models.ts';
-import { toPiCustomEndpointModelConfig } from '../../shared/src/agent/backend/pi/protocol.ts';
+import { toPiCustomEndpointModelConfig, type ModelFallbackNotice } from '../../shared/src/agent/backend/pi/protocol.ts';
 
 export function completion(model: string) {
   const chunk = (delta: object, finish_reason: string | null) => ({
@@ -72,7 +72,7 @@ export async function fixture(
       body: Record<string, unknown>;
     }>;
     events: string[];
-    notices: string[];
+    notices: ModelFallbackNotice[];
     root: string;
     config: import("../../shared/src/agent/backend/pi/protocol.ts").PiInitMessage;
     replaceConfig(
@@ -169,7 +169,7 @@ export async function fixture(
         provider: { maxRetries: options.providerRetries ?? 0 },
       },
     });
-    const notices: string[] = [];
+    const notices: ModelFallbackNotice[] = [];
     const extraExtension = options.extensionFactory?.(modelRuntime, config, root);
     const customTools = [...(options.tools ?? []), ...(extraExtension && typeof extraExtension === 'object' && 'tool' in extraExtension ? [extraExtension.tool as ToolDefinition] : [])];
     const openSession = async (sessionManager: SessionManager) => {
@@ -189,7 +189,7 @@ export async function fixture(
               getSession: () => session ?? null,
               getConfig: () => config,
               fixedModel: options.fixed,
-              notify: (from, to) => notices.push(`${from}->${to}`),
+              notify: notice => notices.push(notice),
             },
           }),
           ...(extra ? [extra] : []),

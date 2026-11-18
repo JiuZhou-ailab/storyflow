@@ -54,3 +54,15 @@ test('completed file links receive the current workspace navigation callback', (
   expect(compare(previous, { ...previous })).toBe(true)
   expect(compare(previous, { ...previous, onOpenFile: () => {} })).toBe(false)
 })
+
+test('shows the recorded assistant model in full and compact chat after history reload', async () => {
+  const { messageToStored, storedToMessage } = await import('@craft-agent/core/types')
+  const { groupMessagesByTurn } = await import('../turn-utils')
+  const stored = messageToStored({ id: 'reply', role: 'assistant', timestamp: 1, content: 'Done', model: 'deepseek-v4-pro' })
+  const [turn] = groupMessagesByTurn([storedToMessage(stored)])
+  if (turn?.type !== 'assistant') throw new Error('Expected assistant turn')
+  for (const compactMode of [false, true]) {
+    const html = renderToStaticMarkup(<TurnCard {...turn} compactMode={compactMode} />)
+    expect(html).toContain('deepseek-v4-pro')
+  }
+})

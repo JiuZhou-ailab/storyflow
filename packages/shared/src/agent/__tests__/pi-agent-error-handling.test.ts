@@ -3,6 +3,7 @@
 // pos: Host-side PiAgent protocol boundary test
 
 import { describe, expect, it } from 'bun:test'
+import { setupI18n } from '../../i18n/index.ts'
 import { PiAgent } from '../pi-agent.ts'
 import { AbortReason } from '../backend/types.ts'
 import type { BackendConfig } from '../backend/types.ts'
@@ -191,6 +192,27 @@ describe('PiAgent subprocess error handling', () => {
       },
     }])
     agent.destroy()
+  })
+
+  it('shows the fallback models and reason for both new and older subprocess notices', () => {
+    const agent = new PiAgent(createConfig())
+    const t = setupI18n()
+    const enqueued: unknown[] = []
+    ;(agent as any).eventQueue.enqueue = (event: unknown) => enqueued.push(event)
+    const models = { from: 'Primary', to: 'Backup' }
+    try {
+      for (const reason of [undefined, 'consecutive_failure', 'cooldown']) {
+        ;(agent as any).handleLine(JSON.stringify({
+          type: 'extension_notification', message: '', modelFallback: { ...models, reason },
+        }))
+      }
+      const messages = ['chat.modelFallback', 'chat.modelFallback', 'chat.modelFallbackCooldown']
+      expect(enqueued).toEqual(messages.map(key => ({ type: 'info', level: 'info', message: t.t(key, models) })))
+      for (const key of messages) {
+        expect(t.t(key, models)).toContain(models.from)
+        expect(t.t(key, models)).toContain(models.to)
+      }
+    } finally { agent.destroy() }
   })
 
   it('preserves Extension notification severity', () => {
