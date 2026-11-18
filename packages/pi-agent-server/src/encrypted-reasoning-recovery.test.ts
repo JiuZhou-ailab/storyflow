@@ -4,9 +4,10 @@
 
 import { expect, test } from 'bun:test';
 import { Type } from 'typebox';
-import { defineTool, type InlineExtension } from '@earendil-works/pi-coding-agent';
+import { defineTool, type AgentSession, type InlineExtension } from '@earendil-works/pi-coding-agent';
 import { fixture } from './managed-fallback.fixture.ts';
 import { isEncryptedReasoningFailure } from './encrypted-reasoning-recovery.ts';
+import { normalizeUpstreamError } from '../../../apps/model-gateway-worker/src/upstream-error.ts';
 
 const CIPHER = 'CIPHER-FROM-ACCOUNT-A';
 
@@ -102,21 +103,32 @@ test('an encrypted-reasoning rejection resends once without the stale reasoning 
     expect(f.session.sessionManager.getEntries().slice(0, historyBefore.length)).toEqual(historyBefore);
     expect(f.session.messages.some(message => message.role === 'assistant' && message.stopReason === 'error')).toBe(false);
 
-    // The recovery point survives for later turns: no new failure, no stale ciphertext.
-    const next = f.requests.length;
-    await f.session.prompt('And the next scene');
-    await f.session.waitForIdle();
-    expect(f.requests.length - next).toBe(1);
-    expect(JSON.stringify(f.requests.at(-1)!.body)).not.toContain(CIPHER);
-    expect(f.session.getLastAssistantText()).toBe('CONTINUED');
-  }, (model, _index, body) => {
+    async function expectCleanTurn(session: AgentSession, prompt: string) {
+      const before = f.requests.length;
+      await session.prompt(prompt);
+      await session.waitForIdle();
+      expect(f.requests.length - before).toBe(1);
+      const request = JSON.stringify(f.requests.at(-1)!.body);
+      expect(request).not.toContain(CIPHER);
+      expect(request).toContain('CIPHER-FROM-ACCOUNT-B');
+      expect(session.getLastAssistantText()).toBe('CONTINUED');
+    }
+
+    await f.session.reload();
+    await expectCleanTurn(f.session, 'And the next scene');
+    await expectCleanTurn(await f.reopenSession(), 'Continue after reopening');
+  }, async (model, _index, body) => {
     const text = JSON.stringify(body);
-    if (rotated && text.includes(CIPHER)) return invalidEncrypted();
+    if (rotated && text.includes(CIPHER)) {
+      // The gateway also accepts type-only errors. Long origin diagnostics exceed Pi's error-body limit.
+      const origin = Response.json({ error: { type: 'invalid_encrypted_content', message: 'x'.repeat(5000) } }, { status: 400 });
+      return (await normalizeUpstreamError(origin)).response;
+    }
     if (rotated) return responsesTurn(model, { cipher: 'CIPHER-FROM-ACCOUNT-B', text: 'CONTINUED' });
     return text.includes('LOOKUP RESULT')
       ? responsesTurn(model, { cipher: CIPHER, text: 'FOUND' })
       : responsesTurn(model, { cipher: CIPHER, call: { id: 'call-1', name: 'lookup' } });
-  }, undefined, { api: 'openai-responses', models: ['gpt-5.6-luna'], tools: [lookup] });
+  }, undefined, { api: 'openai-responses', models: ['gpt-6.1-sol'], tools: [lookup], persistent: true });
 });
 
 test('a recovery that fails again ends the turn with the original error after two requests', async () => {

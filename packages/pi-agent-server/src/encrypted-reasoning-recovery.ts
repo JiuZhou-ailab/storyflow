@@ -10,6 +10,7 @@ import type { AssistantMessage } from '@earendil-works/pi-ai';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 const CODE = 'invalid_encrypted_content';
+const CUTOFF_ENTRY = 'storyflow-encrypted-reasoning-cutoff';
 const RESPONSES_APIS = new Set(['openai-responses', 'azure-openai-responses', 'openai-codex-responses']);
 // A different model id makes pi-ai apply its cross-model replay rules: reasoning
 // items and paired function_call item ids are not replayed; text and tools are.
@@ -31,8 +32,6 @@ export function isEncryptedReasoningFailure(message: { role: string } & Partial<
 }
 
 export function installEncryptedReasoningRecovery(pi: ExtensionAPI, options: { diagnostic?(data: Record<string, unknown>): void } = {}): void {
-  // Runtime-local by design: a restart forgets the cutoff and costs at most one more recovery.
-  const cutoffs = new Map<string, number>();
   let recovered = false;
   let resending = false;
   let failure: AssistantMessage | undefined;
@@ -60,16 +59,26 @@ export function installEncryptedReasoningRecovery(pi: ExtensionAPI, options: { d
     const target = [...ctx.sessionManager.getBranch()].reverse().find(entry =>
       entry.type === 'message' && entry.message.role === 'assistant' && entry.message.timestamp === current.timestamp);
     if (!target) return;
-    const sessionId = ctx.sessionManager.getSessionId();
-    cutoffs.set(sessionId, Math.max(cutoffs.get(sessionId) ?? 0, current.timestamp));
     recovered = true;
     resending = true;
     options.diagnostic?.({ event: 'encrypted_reasoning_recovery', model: current.model, result: 'resend' });
-    return { entries: [{ type: 'context_edit', targetId: target.id, replacement: null }], continue: true };
+    return {
+      entries: [
+        { type: 'context_edit', targetId: target.id, replacement: null },
+        { type: 'custom', customType: CUTOFF_ENTRY, data: current.timestamp },
+      ],
+      continue: true,
+    };
   });
   pi.on('context', (event, ctx) => {
-    const cutoff = cutoffs.get(ctx.sessionManager.getSessionId());
-    if (cutoff === undefined) return undefined;
+    // Read only the active branch so reloads and reopened sessions see the same recovery boundary.
+    let cutoff = -Infinity;
+    for (const entry of ctx.sessionManager.getBranch()) {
+      if (entry.type === 'custom' && entry.customType === CUTOFF_ENTRY && typeof entry.data === 'number' && Number.isFinite(entry.data)) {
+        cutoff = Math.max(cutoff, entry.data);
+      }
+    }
+    if (cutoff === -Infinity) return;
     let changed = false;
     const messages = event.messages.map(message => {
       if (message.role !== 'assistant' || !RESPONSES_APIS.has(message.api) || message.timestamp > cutoff) return message;

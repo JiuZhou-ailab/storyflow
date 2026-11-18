@@ -81,10 +81,10 @@ test("unknown 403 is access denial without inventing a provider-key cause or log
   });
 });
 
-test("invalid encrypted reasoning is a safe, permanent request error that keeps its message", async () => {
+test("invalid encrypted reasoning is a compact, permanent request error", async () => {
   const normalized = await normalizeUpstreamError(
     Response.json(
-      { error: { message: "The encrypted content could not be verified", code: "invalid_encrypted_content" } },
+      { error: { message: "private origin diagnostic", type: "invalid_encrypted_content" } },
       { status: 400 },
     ),
   );
@@ -101,4 +101,17 @@ test("invalid encrypted reasoning is a safe, permanent request error that keeps 
     scope: "upstream_request",
     upstream_code: "invalid_encrypted_content",
   });
+});
+
+test("blank upstream error codes fall through to the next non-empty string", async () => {
+  for (const body of [
+    { error: { code: "", type: "invalid_encrypted_content" }, code: "server_error" },
+    { error: { code: null, type: " " }, code: "invalid_encrypted_content" },
+  ]) {
+    const normalized = await normalizeUpstreamError(Response.json(body, { status: 400 }));
+    expect(await normalized.response.json()).toMatchObject({
+      error: { code: "invalid_encrypted_content" },
+      retryable: false,
+    });
+  }
 });

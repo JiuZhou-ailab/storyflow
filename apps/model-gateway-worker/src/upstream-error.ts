@@ -81,7 +81,9 @@ export async function normalizeUpstreamError(
     body?.error && typeof body.error === "object"
       ? (body.error as Record<string, unknown>)
       : undefined;
-  const rawCode = error?.code ?? error?.type ?? body?.code;
+  const rawCode = [error?.code, error?.type, body?.code].find(
+    value => typeof value === "string" && value.trim().length > 0,
+  );
   const code =
     typeof rawCode === "string" && SAFE_CODES.has(rawCode)
       ? rawCode
@@ -121,6 +123,17 @@ export async function normalizeUpstreamError(
           ? "Upstream access denied"
           : "Model provider authentication failed",
       code: "upstream_auth_failed",
+    };
+  } else if (status === 400 && code === "invalid_encrypted_content") {
+    // Pi reads the SDK's unwrapped error as bounded JSON. Keep the recovery code
+    // intact even when the origin uses error.type or includes long diagnostics.
+    body = {
+      code,
+      error: {
+        code,
+        type: "invalid_request_error",
+        message: "The encrypted content could not be verified",
+      },
     };
   } else if (html) {
     status =
