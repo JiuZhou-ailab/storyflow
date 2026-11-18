@@ -232,3 +232,26 @@ diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
          id === "gemini-flash-latest" ||
          id === "gemini-flash-lite-latest" ||
          // Match both hosted Gemma 4 naming forms: gemma-4-* and gemma4-*.
+diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
+--- a/dist/api/google-shared.js
++++ b/dist/api/google-shared.js
+@@ -185,6 +185,7 @@
+         }
+         else if (msg.role === "assistant") {
+             const parts = [];
++            let firstToolCall = true;
+             // Check if message is from same provider and model - only then keep thinking blocks
+             const isSameProviderAndModel = msg.provider === model.provider && msg.model === model.id;
+             for (const block of msg.content) {
+@@ -226,7 +227,10 @@
+                     }
+                 }
+                 else if (block.type === "toolCall") {
+-                    const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature);
++                    // Gemini validates the first function call in each model step, including replayed history.
++                    const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature) ??
++                        (firstToolCall && (getGeminiMajorVersion(model.id) ?? 0) >= 3 ? "skip_thought_signature_validator" : undefined);
++                    firstToolCall = false;
+                     const part = {
+                         functionCall: {
+                             name: block.name,
