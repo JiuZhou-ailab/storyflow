@@ -122,6 +122,17 @@ export async function normalizeUpstreamError(
           : "Model provider authentication failed",
       code: "upstream_auth_failed",
     };
+  } else if (status === 400 && code === "invalid_encrypted_content") {
+    // Pi reads the SDK's unwrapped error as bounded JSON. Keep the recovery code
+    // intact even when the origin uses error.type or includes long diagnostics.
+    body = {
+      code,
+      error: {
+        code,
+        type: "invalid_request_error",
+        message: "The encrypted content could not be verified",
+      },
+    };
   } else if (html) {
     status =
       response.status === 524

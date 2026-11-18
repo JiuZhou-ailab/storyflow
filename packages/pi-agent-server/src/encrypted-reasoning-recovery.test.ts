@@ -7,6 +7,7 @@ import { Type } from 'typebox';
 import { defineTool, type InlineExtension } from '@earendil-works/pi-coding-agent';
 import { fixture } from './managed-fallback.fixture.ts';
 import { isEncryptedReasoningFailure } from './encrypted-reasoning-recovery.ts';
+import { normalizeUpstreamError } from '../../../apps/model-gateway-worker/src/upstream-error.ts';
 
 const CIPHER = 'CIPHER-FROM-ACCOUNT-A';
 
@@ -109,14 +110,18 @@ test('an encrypted-reasoning rejection resends once without the stale reasoning 
     expect(f.requests.length - next).toBe(1);
     expect(JSON.stringify(f.requests.at(-1)!.body)).not.toContain(CIPHER);
     expect(f.session.getLastAssistantText()).toBe('CONTINUED');
-  }, (model, _index, body) => {
+  }, async (model, _index, body) => {
     const text = JSON.stringify(body);
-    if (rotated && text.includes(CIPHER)) return invalidEncrypted();
+    if (rotated && text.includes(CIPHER)) {
+      // The gateway also accepts type-only errors. Long origin diagnostics exceed Pi's error-body limit.
+      const origin = Response.json({ error: { type: 'invalid_encrypted_content', message: 'x'.repeat(5000) } }, { status: 400 });
+      return (await normalizeUpstreamError(origin)).response;
+    }
     if (rotated) return responsesTurn(model, { cipher: 'CIPHER-FROM-ACCOUNT-B', text: 'CONTINUED' });
     return text.includes('LOOKUP RESULT')
       ? responsesTurn(model, { cipher: CIPHER, text: 'FOUND' })
       : responsesTurn(model, { cipher: CIPHER, call: { id: 'call-1', name: 'lookup' } });
-  }, undefined, { api: 'openai-responses', models: ['gpt-5.6-luna'], tools: [lookup] });
+  }, undefined, { api: 'openai-responses', models: ['gpt-6.1-sol'], tools: [lookup] });
 });
 
 test('a recovery that fails again ends the turn with the original error after two requests', async () => {
