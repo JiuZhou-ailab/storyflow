@@ -178,6 +178,7 @@
   "chat.learnMore": "Dowiedz się więcej",
   "chat.mentionFilesSkillsSources": "Dołącz pliki, foldery, źródła",
   "chat.modelFallback": "Model {{from}} wielokrotnie zawiódł; przełączono na {{to}}.",
+  "chat.modelFallbackCooldown": "Model {{from}} jest tymczasowo wstrzymany po wcześniejszych błędach. Przełączono na {{to}}.",
   "chat.modelOutputIncomplete": "Odpowiedź modelu jest niekompletna. Zachowano częściową treść; ponów próbę lub wyraźnie poproś o kontynuację.",
   "chat.modelPicker.supportsImagesOff": "Obrazy wyłączone — kliknij, aby włączyć",
   "chat.modelPicker.supportsImagesOn": "Obrazy włączone",

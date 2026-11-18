@@ -2,7 +2,7 @@
 // output: Bounded subprocess startup and abort settlement, correlated protocol results, and Pi event delivery
 // pos: Policy-free Boundary Protocol beneath the Product Host projection
 
-import { i18n } from '../i18n/index.ts';
+import { formatModelFallbackNotice } from './backend/pi/model-fallback-notice.ts';
 /**
  * Pi Backend (Subprocess RPC Client)
  *
@@ -908,7 +908,9 @@ export abstract class PiAgentTransport extends PiAgentHost {
       case 'extension_notification':
         this.eventQueue.enqueue({
           type: 'info',
-          message: msg.modelFallback ? i18n.t('chat.modelFallback', msg.modelFallback) : String(msg.message || 'Extension notification'),
+          message: msg.modelFallback
+            ? formatModelFallbackNotice(msg.modelFallback)
+            : String(msg.message || 'Extension notification'),
           level: msg.level === 'warning' || msg.level === 'error' ? msg.level : 'info',
         });
         break;

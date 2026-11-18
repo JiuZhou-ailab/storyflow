@@ -2275,6 +2275,9 @@ export function ResponseCard({
             </div>
           </div>
 
+          {compactMode && model && (
+            <div className="pl-[22px] pr-4 pb-2 text-xs text-muted-foreground break-all">{model}</div>
+          )}
           {/* Footer with actions - hidden in compact mode */}
           {!compactMode && (
             <div className={cn(

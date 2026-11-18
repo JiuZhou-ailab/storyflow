@@ -233,7 +233,7 @@ for (const mode of [
 
 test("exhausted budget does not switch until the next explicit operation; cooldown has no probes", async () => {
   await fixture(
-    async ({ session, requests }) => {
+    async ({ session, requests, notices }) => {
       await session.prompt("first");
       await session.waitForIdle();
       expect(requests.map((r) => r.model)).toEqual([
@@ -247,6 +247,7 @@ test("exhausted budget does not switch until the next explicit operation; cooldo
       expect(requests.at(-1)?.headers.get("x-storyflow-requested-model")).toBe(
         "deepseek-v4-flash",
       );
+      expect(notices).toEqual([{ from: "deepseek-v4-flash", to: "deepseek-v4-pro", reason: "cooldown" }]);
       const clock = spyOn(Date, "now").mockReturnValue(Date.now() + 301_000);
       try {
         expect(requests).toHaveLength(3);
@@ -388,7 +389,7 @@ for (const [api, models] of [
           models[0],
           models[1],
         ]);
-        expect(notices).toEqual([`${models[0]}->${models[1]}`]);
+        expect(notices).toEqual([{ from: models[0], to: models[1], reason: "consecutive_failure" }]);
         expect(session.getLastAssistantText()).toBe("OK");
       },
       (model, index) =>

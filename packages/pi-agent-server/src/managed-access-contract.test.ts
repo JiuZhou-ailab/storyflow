@@ -84,7 +84,7 @@ for (const [api, models] of protocols) {
       await session.prompt('test');
       await session.waitForIdle();
       expect(requests.map(request => request.model)).toEqual([models[0], models[0], models[1]]);
-      expect(notices).toEqual([`${models[0]}->${models[1]}`]);
+      expect(notices).toEqual([{ from: models[0], to: models[1], reason: "consecutive_failure" }]);
       expect(session.getLastAssistantText()).toBe('OK');
       expect(session.model?.maxTokens).toBe(cloneManagedModelCatalog(api).find(model => model.id === session.model?.id)!.fallbackCapabilities!.maxOutputTokens);
       for (const { body, model } of requests) {

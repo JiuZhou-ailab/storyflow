@@ -19,8 +19,8 @@ import {
   MANAGED_FALLBACK_FAMILIES,
   MANAGED_MODEL_CATALOG,
 } from "../../shared/src/config/managed-model-catalog.ts";
-import type { PiInitMessage } from "../../shared/src/agent/backend/pi/protocol.ts";
-import { setupI18n } from "../../shared/src/i18n/index.ts";
+import type { ModelFallbackNotice, PiInitMessage } from "../../shared/src/agent/backend/pi/protocol.ts";
+import { formatModelFallbackNotice } from "../../shared/src/agent/backend/pi/model-fallback-notice.ts";
 
 const FAILURE_THRESHOLD = 2;
 const COOLDOWN_MS = 5 * 60_000;
@@ -29,7 +29,7 @@ export interface ManagedFallbackOptions {
   getSession(): AgentSession | null;
   getConfig(): PiInitMessage;
   fixedModel?: boolean;
-  notify?(from: string, to: string): void;
+  notify?(notice: ModelFallbackNotice): void;
   diagnostic?(data: Record<string, unknown>): void;
 }
 
@@ -167,24 +167,19 @@ export function createManagedFallback(
       return;
     switched = true;
     attempted.add(candidate.id);
+    const reason = bypass ? "cooldown" : "consecutive_failure";
     options.diagnostic?.({
       event: "model_fallback",
       requested_model: preferred?.id ?? source.id,
       effective_model: candidate.id,
-      reason: bypass ? "cooldown" : "consecutive_failure",
+      reason,
     });
     if (!announced) {
       announced = true;
       // Native UI notification is projected by the existing Extension UI adapter.
-      if (options.notify) options.notify(source.name, candidate.name);
-      else
-        ctx.ui.notify(
-          setupI18n().t("chat.modelFallback", {
-            from: source.name,
-            to: candidate.name,
-          }),
-          "info",
-        );
+      const notice = { from: source.name, to: candidate.name, reason } as const;
+      if (options.notify) options.notify(notice);
+      else ctx.ui.notify(formatModelFallbackNotice(notice), "info");
     }
   };
 

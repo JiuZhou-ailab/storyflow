@@ -152,7 +152,7 @@ export async function createPrimaryPiSession(
   });
   const makeProviderHooks = (getSession: () => AgentSession | null) => createProviderHooks({
     enable1MContext: config.enable1MContext === true,
-    fallback: { getSession, getConfig: context.getConfig, notify: (from, to) => send({ type: 'extension_notification', message: '', modelFallback: { from, to } }), diagnostic: data => debugLog(JSON.stringify(data)) },
+    fallback: { getSession, getConfig: context.getConfig, notify: modelFallback => send({ type: 'extension_notification', message: '', modelFallback }), diagnostic: data => debugLog(JSON.stringify(data)) },
   });
   const providerHooks = makeProviderHooks(() => activeSession);
   const subagentExtension = createSubagentExtension({

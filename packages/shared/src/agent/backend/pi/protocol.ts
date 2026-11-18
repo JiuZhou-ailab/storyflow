@@ -11,6 +11,13 @@ import type {
 } from '../types.ts';
 import type { ConversationRewindErrorCode } from '../../../protocol/dto.ts';
 
+export interface ModelFallbackNotice {
+  from: string;
+  to: string;
+  /** Older subprocesses only reported switches after repeated failures. */
+  reason?: 'consecutive_failure' | 'cooldown';
+}
+
 export type PiCredential =
   | { type: 'api_key'; key: string }
   | { type: 'oauth'; access: string; refresh: string; expires: number }
@@ -203,7 +210,7 @@ export type PiOutboundMessage =
   | { type: 'session_id_update'; sessionId: string }
   | {
       type: 'extension_notification';
-      modelFallback?: { from: string; to: string };
+      modelFallback?: ModelFallbackNotice;
       message: string;
       level?: 'info' | 'warning' | 'error';
     }
