@@ -1,8 +1,6 @@
 // input: Pi cross-provider tool history and Google Gemini model metadata
 // output: Regression coverage for Gemini 3 unsigned function-call replay
-// pos: Dependency contract test pinning pi-ai's Google adapter replay behavior
-//      (explicit tool-call ids since 0.84.4; previously a Storyflow patch added
-//      the skip_thought_signature_validator sentinel to pi-ai 0.84.1)
+// pos: Dependency contract test for Pi's Google message adapter
 
 import { describe, expect, it } from "bun:test";
 import type { Context, Model } from "@earendil-works/pi-ai";
@@ -94,29 +92,39 @@ function firstFunctionCallThoughtSignature(
 }
 
 describe("Gemini thought-signature compatibility", () => {
-  it("replays unsigned tool calls into Gemini 3 with explicit tool-call ids instead of signatures", () => {
-    // Since pi-ai 0.84.4, unsigned function calls rely on requiresToolCallId
-    // (explicit ids for Gemini >= 3) rather than the former
-    // skip_thought_signature_validator sentinel.
-    const foreignContext = toolHistory({
+  it("supplies the missing first signature at each step of a Gemini 3.8 tool loop", () => {
+    const model = googleModel("gemini-3.8-flash", "custom-endpoint");
+    const context = toolHistory({
       provider: "deepseek",
       api: "openai-completions",
       model: "deepseek-v4-flash",
     });
-    const unsignedNativeContext = toolHistory({
-      provider: "custom-endpoint",
-      api: "google-generative-ai",
-      model: "gemini-3.1-pro-preview",
-    });
-
-    for (const context of [foreignContext, unsignedNativeContext]) {
-      const part = firstFunctionCallPart(
-        googleModel("gemini-3.1-pro-preview"),
-        context,
-      );
-      expect(part?.functionCall?.id).toBe("call-1");
-      expect(part?.thoughtSignature).toBeUndefined();
+    const [, assistant, result] = toolHistory({ ...model, model: model.id }).messages;
+    if (assistant?.role !== "assistant" || result?.role !== "toolResult") {
+      throw new Error("Expected a tool call and its result");
     }
+    context.messages.push(
+      {
+        ...assistant,
+        content: [
+          { type: "text", text: "Checking both files." },
+          { type: "toolCall", id: "call-2", name: "read", arguments: {} },
+          { type: "toolCall", id: "call-3", name: "read", arguments: {} },
+        ],
+      },
+      { ...result, toolCallId: "call-2", toolName: "read" },
+      { ...result, toolCallId: "call-3", toolName: "read" },
+    );
+
+    const calls = convertMessages(model, context).flatMap((content) =>
+      (content.parts ?? []).filter((part) => part.functionCall)
+        .map((part) => [part.functionCall?.id, part.thoughtSignature]),
+    );
+    expect(calls).toEqual([
+      ["call-1", "skip_thought_signature_validator"],
+      ["call-2", "skip_thought_signature_validator"],
+      ["call-3", undefined],
+    ]);
   });
 
   it("preserves genuine Gemini signatures and leaves pre-Gemini-3 history unchanged", () => {

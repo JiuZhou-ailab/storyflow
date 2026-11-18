@@ -60,3 +60,8 @@ an unpatched supported Pi recognizes that ID and the v2 native-wire tests pass.
 Managed Claude Opus 5.5 is registered through Pi's public
 `compat.forceAdaptiveThinking` metadata. Responses replay/item ID projection
 remains Pi-owned; no gateway or product history sanitizer is added.
+
+For #109, the Google adapter retains a valid native signature and supplies
+Google's documented fallback for an unsigned first function call in each Gemini
+3+ model response. Parallel siblings keep their original signature handling.
+Remove the hunk when unpatched Pi passes `gemini-thought-signature-compat.test.ts`.
