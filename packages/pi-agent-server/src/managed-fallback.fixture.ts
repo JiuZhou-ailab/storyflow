@@ -64,6 +64,7 @@ type FixtureOptions = {
 export async function fixture(
   run: (f: {
     session: AgentSession;
+    reopenSession(): Promise<AgentSession>;
     requests: Array<{
       model: string;
       headers: Headers;
@@ -171,50 +172,60 @@ export async function fixture(
     const notices: string[] = [];
     const extraExtension = options.extensionFactory?.(modelRuntime, config, root);
     const customTools = [...(options.tools ?? []), ...(extraExtension && typeof extraExtension === 'object' && 'tool' in extraExtension ? [extraExtension.tool as ToolDefinition] : [])];
-    const resourceLoader = new DefaultResourceLoader({
-      cwd: root,
-      agentDir: root,
-      settingsManager,
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-      noContextFiles: true,
-      extensionFactories: [
-        createProviderHooks({
-          enable1MContext: false,
-          fallback: {
-            getSession: () => session ?? null,
-            getConfig: () => config,
-            fixedModel: options.fixed,
-            notify: (from, to) => notices.push(`${from}->${to}`),
-          },
-        }),
-        ...(extra ? [extra] : []),
-        ...(extraExtension ? [extraExtension] : []),
-      ],
-    });
-    await resourceLoader.reload();
-    ({ session } = await createAgentSession({
-      cwd: root,
-      modelRuntime,
-      settingsManager,
-      resourceLoader,
-      model: modelRuntime.getModel("fixture", ids[0]!),
-      customTools,
-      tools: [
-        ...customTools.map((t) => t.name),
-        ...(options.extraTools ?? []),
-      ],
-      sessionManager: options.persistent
-        ? SessionManager.create(root, join(root, "sessions"))
-        : SessionManager.inMemory(root),
-    }));
-    await session.bindExtensions({});
+    const openSession = async (sessionManager: SessionManager) => {
+      const resourceLoader = new DefaultResourceLoader({
+        cwd: root,
+        agentDir: root,
+        settingsManager,
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        noContextFiles: true,
+        extensionFactories: [
+          createProviderHooks({
+            enable1MContext: false,
+            fallback: {
+              getSession: () => session ?? null,
+              getConfig: () => config,
+              fixedModel: options.fixed,
+              notify: (from, to) => notices.push(`${from}->${to}`),
+            },
+          }),
+          ...(extra ? [extra] : []),
+          ...(extraExtension ? [extraExtension] : []),
+        ],
+      });
+      await resourceLoader.reload();
+      ({ session } = await createAgentSession({
+        cwd: root,
+        modelRuntime,
+        settingsManager,
+        resourceLoader,
+        model: modelRuntime.getModel("fixture", ids[0]!),
+        customTools,
+        tools: [
+          ...customTools.map((t) => t.name),
+          ...(options.extraTools ?? []),
+        ],
+        sessionManager,
+      }));
+      await session.bindExtensions({});
+      return session;
+    };
+    const initialSession = await openSession(options.persistent
+      ? SessionManager.create(root, join(root, "sessions"))
+      : SessionManager.inMemory(root));
     const events: string[] = [];
-    session.subscribe((e) => events.push(e.type));
+    initialSession.subscribe((e) => events.push(e.type));
     await run({
-      session,
+      session: initialSession,
+      async reopenSession() {
+        if (!session?.sessionFile) throw new Error("Expected a persisted fixture session");
+        const file = session.sessionFile;
+        session.dispose();
+        return openSession(SessionManager.open(file));
+      },
       requests,
       events,
       notices,

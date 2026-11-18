@@ -81,7 +81,9 @@ export async function normalizeUpstreamError(
     body?.error && typeof body.error === "object"
       ? (body.error as Record<string, unknown>)
       : undefined;
-  const rawCode = error?.code ?? error?.type ?? body?.code;
+  const rawCode = [error?.code, error?.type, body?.code].find(
+    value => typeof value === "string" && value.trim().length > 0,
+  );
   const code =
     typeof rawCode === "string" && SAFE_CODES.has(rawCode)
       ? rawCode

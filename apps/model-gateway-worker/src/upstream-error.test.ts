@@ -102,3 +102,16 @@ test("invalid encrypted reasoning is a compact, permanent request error", async 
     upstream_code: "invalid_encrypted_content",
   });
 });
+
+test("blank upstream error codes fall through to the next non-empty string", async () => {
+  for (const body of [
+    { error: { code: "", type: "invalid_encrypted_content" }, code: "server_error" },
+    { error: { code: null, type: " " }, code: "invalid_encrypted_content" },
+  ]) {
+    const normalized = await normalizeUpstreamError(Response.json(body, { status: 400 }));
+    expect(await normalized.response.json()).toMatchObject({
+      error: { code: "invalid_encrypted_content" },
+      retryable: false,
+    });
+  }
+});
