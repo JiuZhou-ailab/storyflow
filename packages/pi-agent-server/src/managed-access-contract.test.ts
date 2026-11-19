@@ -106,23 +106,49 @@ for (const [api, models] of protocols) {
         const message = session.messages.at(-1)!;
         expect(message.role).toBe('assistant');
         if (message.role !== 'assistant') throw new Error('Missing assistant failure');
-        const projected = normalizeManagedDefaultGatewayAuthError(
+        // Only an identity rejection renews (so the broker can clear the login); final rejections never do.
+        let renewals = 0;
+        const projected = await normalizeManagedDefaultGatewayAuthError(
           parseError(new Error(message.errorMessage)), 'storyflow-managed',
+          async () => { renewals++; return { recovery: 'retry' }; },
         );
+        expect(renewals).toBe(reason === 'session_revoked' ? 1 : 0);
         expect(JSON.parse(projected.originalError!)).toEqual({
           code: reason === 'dependency_unavailable' ? 'authorization_dependency_unavailable'
             : reason === 'session_revoked' ? 'model_access_token_invalid' : 'managed_access_denied',
           reason, stage: 'model', correlation_id: 'contract-42',
+          ...(reason === 'session_revoked' ? { renewal: 'retry' } : {}),
         });
         expect(projected.canRetry).toBe(reason === 'dependency_unavailable');
-        expect(projected.title).toBe(reason === 'session_revoked' ? 'Sign In Required'
-          : reason === 'dependency_unavailable' ? 'Default AI Access Interrupted' : 'Default AI Access Denied');
+        expect(projected.title).toBe(reason === 'session_revoked' ? 'Sign in again'
+          : reason === 'dependency_unavailable' ? 'Access service temporarily unavailable' : 'Managed model access removed');
       }, (_model, _index, _body, headers) => accessFailure(reason, 'model', {
         correlation_id: 'contract-42',
       }, headers.get('x-storyflow-error-format') === 'sdk-v1' ? 'sdk' : 'legacy'), undefined,
       { api, models: [...models], maxRetries: 0, providerRetries: reason === 'dependency_unavailable' ? 0 : 1 });
     });
   }
+  test(`${api} legacy-enforcement 401 shows the observed renewal outcome, not a guess`, async () => {
+    await fixture(async ({ session, requests }) => {
+      await session.prompt('test');
+      await session.waitForIdle();
+      expect(requests).toHaveLength(1);
+      const message = session.messages.at(-1)!;
+      if (message.role !== 'assistant') throw new Error('Missing assistant failure');
+      for (const recovery of ['retry', 'sign_in', 'access_removed', 'service_unavailable'] as const) {
+        let renewals = 0;
+        const projected = await normalizeManagedDefaultGatewayAuthError(
+          parseError(new Error(message.errorMessage)), 'storyflow-managed',
+          async () => { renewals++; return { recovery }; },
+        );
+        expect(renewals).toBe(1);
+        expect(JSON.parse(projected.originalError!)).toEqual({ renewal: recovery });
+        expect(projected.message).not.toContain('if sign-in appears');
+      }
+    // Published legacy body of the model gateway while STORYFLOW_ACCESS_ENFORCEMENT=legacy.
+    }, () => Response.json({ error: 'Invalid model access token', code: 'model_access_token_invalid' }, { status: 401 }),
+    undefined, { api, models: [...models], maxRetries: 0, providerRetries: 1 });
+  });
   test(`${api} provider retry respects permanent gateway rejection`, async () => {
     await fixture(async ({ session, requests }) => {
       await session.prompt('test');

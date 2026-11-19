@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { ManagedAccessRefreshError } from '@craft-agent/shared/auth/managed-access'
 import { createSourceGrantRefs, loadWorkspaceSources } from '@craft-agent/shared/sources'
 import { SessionManager, createManagedSession, setSessionRuntimeHooks } from './SessionManager.ts'
+import { MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE } from './managed-gateway-auth-error'
+import { holdStopCleanupAtFlush, stopAndFireTimeoutFallback } from './stop-fallback.fixture'
 
 // Regression tests for #710 — OAuth tokens expire without silent refresh.
 //
@@ -207,6 +210,151 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
 
     expect(managed.isProcessing).toBe(false)
     expect(errors).toHaveLength(1)
+  })
+
+  it('shows the host-classified recovery when managed access cannot be renewed before sending', async () => {
+    const managed = buildSession('managed-refresh-classified')
+    managed.llmConnection = 'storyflow-managed'
+    const events: Array<{ type?: string; error?: unknown }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string; error?: unknown })
+    })
+    let ensureCalls = 0
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => {
+        ensureCalls++
+        throw new ManagedAccessRefreshError('sign_in', { reason: 'session_revoked', correlationId: 'broker-11' })
+      },
+    })
+
+    await sm.sendMessage(managed.id, 'hello')
+
+    // One preflight, no renewal retry, no replay and no raw error text.
+    expect(ensureCalls).toBe(1)
+    expect(managed.isProcessing).toBe(false)
+    expect(events.filter(event => event.type === 'error')).toEqual([])
+    expect(events.filter(event => event.type === 'typed_error')).toEqual([expect.objectContaining({
+      error: expect.objectContaining({ title: 'Sign in again', canRetry: false, details: ['Reference: broker-11'] }),
+    })])
+    expect(managed.messages.filter(message => message.role === 'user')).toHaveLength(1)
+    expect(managed.messages.at(-1)).toMatchObject({ role: 'error', errorTitle: 'Sign in again', errorCanRetry: false })
+  })
+
+  it('treats a stop during the pre-send renewal as an interruption, not an access error', async () => {
+    const managed = buildSession('managed-refresh-stopped')
+    managed.llmConnection = 'storyflow-managed'
+    const events: Array<{ type?: string }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string })
+    })
+    let markStarted!: () => void
+    let failRenewal!: (error: unknown) => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: () => {
+        markStarted()
+        return new Promise((_resolve, reject) => { failRenewal = reject })
+      },
+    })
+
+    const sending = sm.sendMessage(managed.id, 'hello')
+    await started
+    await sm.cancelProcessing(managed.id)
+    expect(managed.isProcessing).toBe(true)
+    failRenewal(new ManagedAccessRefreshError('sign_in', { reason: 'session_revoked' }))
+    await sending
+
+    expect(managed.isProcessing).toBe(false)
+    expect(events.filter(event => event.type === 'typed_error' || event.type === 'error')).toEqual([])
+    expect(managed.messages.filter(message => message.role === 'error')).toEqual([])
+  })
+
+  it.each(['cleaning up', 'finished'] as const)('drops a late pre-send renewal failure after a real stop whose timeout fallback has %s', async timing => {
+    const managed = buildSession(`managed-refresh-stop-timeout-${timing.replace(' ', '-')}`)
+    managed.llmConnection = 'storyflow-managed'
+    const events: Array<{ type?: string }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string })
+    })
+    let markStarted!: () => void
+    let failRenewal!: (error: unknown) => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: () => {
+        markStarted()
+        return new Promise((_resolve, reject) => { failRenewal = reject })
+      },
+    })
+
+    const sending = sm.sendMessage(managed.id, 'hello')
+    await started
+    const cleanup = holdStopCleanupAtFlush(sm)
+    await stopAndFireTimeoutFallback(sm, managed.id)
+    await cleanup.flushStarted
+    // The fallback already reset the stop flag; the turn is still processing in the same generation.
+    expect(managed.stopRequested).toBe(false)
+    expect(managed.isProcessing).toBe(true)
+    if (timing === 'finished') {
+      cleanup.releaseFlush()
+      await cleanup.finished()
+      expect(managed.isProcessing).toBe(false)
+    }
+    failRenewal(new ManagedAccessRefreshError('service_unavailable', { correlationId: 'broker-12' }))
+    await sending
+    cleanup.releaseFlush()
+    await cleanup.finished()
+
+    const turnEvents = events.map(event => event.type)
+      .filter(type => type === 'interrupted' || type === 'complete' || type === 'typed_error' || type === 'error')
+    expect(turnEvents).toEqual(['interrupted', 'complete'])
+    expect(managed.isProcessing).toBe(false)
+    expect(managed.messages.filter(message => message.role === 'error')).toEqual([])
+  })
+
+  it('still shows sign-in when the rejected login revokes managed runtimes during the preflight', async () => {
+    const managed = buildSession('managed-refresh-revoked-runtime')
+    managed.llmConnection = 'storyflow-managed'
+    const events: Array<{ type?: string }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string })
+    })
+    let revocation: Promise<void> | undefined
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => {
+        // Mirrors Electron: a broker 401 clears the login, whose auth change revokes managed runtimes without awaiting.
+        revocation = sm.disposeConnectionRuntimes('storyflow-managed')
+        throw new ManagedAccessRefreshError('sign_in', { reason: 'session_revoked' })
+      },
+    })
+
+    await sm.sendMessage(managed.id, 'hello')
+    await revocation
+
+    expect(managed.isProcessing).toBe(false)
+    expect(managed.runtimeState).toBeUndefined()
+    expect(events.filter(event => event.type === 'error')).toEqual([])
+    expect(events.filter(event => event.type === 'typed_error')).toHaveLength(1)
+    expect(managed.messages.at(-1)).toMatchObject({ role: 'error', errorTitle: 'Sign in again' })
+  })
+
+  it('keeps the host message when this host cannot provide managed access at all', async () => {
+    const managed = buildSession('managed-host-unavailable')
+    managed.llmConnection = 'storyflow-managed'
+    const events: Array<{ type?: string; error?: unknown }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string; error?: unknown })
+    })
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => { throw new Error(MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE) },
+    })
+
+    await sm.sendMessage(managed.id, 'hello')
+
+    // Shared/server mode is not a temporary outage; it must not claim the user is still signed in.
+    expect(events.filter(event => event.type === 'typed_error')).toEqual([])
+    expect(events.filter(event => event.type === 'error')).toEqual([
+      expect.objectContaining({ error: MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE }),
+    ])
   })
 
   it('preflights managed model access for one-shot calls', async () => {

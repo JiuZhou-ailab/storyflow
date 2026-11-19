@@ -86,6 +86,7 @@ import {
   type ClientAuthService,
   type ClientAuthState,
 } from './client-auth'
+import { classifyModelAccessRefreshFailure } from './client-auth-broker'
 import { readClientAuthOverrides } from './client-auth-overrides'
 import { createClientAuthSessionStore } from './client-auth-session-store'
 import {
@@ -675,8 +676,11 @@ app.whenReady().then(async () => {
               if (serverModeEnabled) {
                 throw new Error('Default AI access is unavailable while shared server mode is enabled')
               }
-              const result = await authService.ensureModelAccessToken({ force: forceRefresh === true })
-              return result
+              try {
+                return await authService.ensureModelAccessToken({ force: forceRefresh === true })
+              } catch (error) {
+                throw classifyModelAccessRefreshFailure(error, authService.getState().authenticated)
+              }
             },
             whenSubprocessEnvReady: whenShellEnvReady,
           })

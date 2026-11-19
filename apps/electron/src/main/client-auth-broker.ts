@@ -1,8 +1,12 @@
 // input: Auth broker URLs, Storyflow identity sessions, and broker JSON responses
-// output: Bounded HTTPS broker exchanges, transport diagnostics, and normalized desktop identity with company capabilities
+// output: Bounded HTTPS broker exchanges, transport diagnostics, renewal-failure recovery, and normalized desktop identity with company capabilities
 // pos: Main-process network trust boundary beneath the client auth service
 
-import { isAccessReason } from '@craft-agent/shared/auth/managed-access'
+import {
+  isAccessReason,
+  isManagedAccessRefreshError,
+  ManagedAccessRefreshError,
+} from '@craft-agent/shared/auth/managed-access'
 
 import type {
   ClientAuthBrokerClient,
@@ -241,6 +245,21 @@ export function normalizeBrokerClientAuthUser(
 export function isRejectedAppSession(error: unknown): boolean {
   return error instanceof ClientAuthBrokerHttpError
     && error.status === 401
+}
+
+/**
+ * Turn a failed managed-model capability renewal into the next action the user can take.
+ * Only an Identity Session rejection (or an already signed-out client) asks for sign-in;
+ * broker outages, timeouts and network failures keep the login and say so.
+ */
+export function classifyModelAccessRefreshFailure(error: unknown, signedIn: boolean): ManagedAccessRefreshError {
+  if (isManagedAccessRefreshError(error)) return error
+  const brokerError = error instanceof ClientAuthBrokerHttpError ? error : undefined
+  const reason = isAccessReason(brokerError?.diagnostic?.reason) ? brokerError.diagnostic.reason : undefined
+  const recovery = !signedIn || brokerError?.status === 401 ? 'sign_in'
+    : brokerError?.status === 403 ? 'access_removed'
+      : 'service_unavailable'
+  return new ManagedAccessRefreshError(recovery, { reason, correlationId: brokerError?.diagnostic?.correlationId, cause: error })
 }
 
 function normalizeFeishuBrokerPublicConfig(body: Record<string, unknown>): ClientFeishuBrokerPublicConfig {

@@ -1,8 +1,13 @@
-// input: Typed provider/auth errors, safe access diagnostics and session connection slug
-// output: User-facing managed-access recovery with safe diagnostic references
+// input: Typed provider/auth errors, safe access diagnostics, session connection slug and an observed capability renewal
+// output: One user-facing managed-access recovery (resend, sign in, access removed, wait) with safe diagnostic references
 // pos: Session error normalization boundary for bundled default AI access
 
-import { isAccessReason } from '@craft-agent/shared/auth/managed-access'
+import {
+  isAccessReason,
+  type AccessReason,
+  type ManagedAccessRecovery,
+} from '@craft-agent/shared/auth/managed-access'
+import { setupI18n } from '@craft-agent/shared/i18n'
 import type { TypedError } from '@craft-agent/core/types'
 import { isManagedLlmConnectionSlug } from '@craft-agent/shared/config'
 
@@ -15,53 +20,88 @@ export function isManagedDefaultGatewayConnection(
   return !!connectionSlug && isManagedLlmConnectionSlug(connectionSlug)
 }
 
-export function normalizeManagedDefaultGatewayAuthError(
+/** Published gateway diagnostic fields that may be persisted with a user-facing error. */
+export interface ManagedAccessDiagnostic { code: string; reason: AccessReason; stage: string; correlation_id?: string }
+
+/** Observed outcome of one forced capability renewal for the next explicit operation. */
+export interface ManagedAccessRenewal { recovery: ManagedAccessRecovery; reason?: AccessReason; correlationId?: string }
+
+const ACCESS_REMOVED_REASONS: ReadonlySet<AccessReason> = new Set(['account_disabled', 'scope_denied', 'model_denied'])
+const SIGN_IN_REASONS: ReadonlySet<AccessReason> = new Set(['session_revoked', 'legacy_session'])
+
+/**
+ * Resolve a managed gateway rejection into one recovery the user can act on.
+ *
+ * Permission and dependency rejections are final and never renew. Identity/token
+ * rejections renew the capability once for the next explicit operation, and the
+ * message reports that observed outcome instead of asking the user to guess.
+ * Nothing here replays the failed message or retries the model call.
+ */
+export async function normalizeManagedDefaultGatewayAuthError(
   error: TypedError,
   connectionSlug: string | null | undefined,
-): TypedError {
+  renew: () => Promise<ManagedAccessRenewal>,
+): Promise<TypedError> {
   if (!isManagedDefaultGatewayConnection(connectionSlug)) return error
   const diagnostic = readAccessDiagnostic(error.originalError)
-  if (diagnostic) {
-    const denied = ['account_disabled', 'scope_denied', 'model_denied'].includes(diagnostic.reason)
-    const signIn = ['session_revoked', 'legacy_session'].includes(diagnostic.reason)
-    const unavailable = diagnostic.reason === 'dependency_unavailable'
-    const canRetry = unavailable || diagnostic.reason === 'token_expired'
-    return { ...error, code: signIn || diagnostic.reason === 'token_expired' ? 'invalid_api_key' : 'service_error',
-      title: denied ? 'Default AI Access Denied' : signIn ? 'Sign In Required' : 'Default AI Access Interrupted',
-      message: denied ? 'Your access to this capability has been removed. Contact your administrator.'
-        : signIn ? 'This session is no longer valid. Sign in again to restore access.'
-          : unavailable ? 'The access service is temporarily unavailable. Try again later.'
-            : diagnostic.reason === 'token_expired' ? 'Access expired. Retry this message to use renewed access.'
-              : 'Access could not be verified. Contact support with the diagnostic reference.',
-      canRetry, actions: canRetry ? [{ key: 'r', label: 'Retry', action: 'retry' }] : [],
-      details: diagnostic.correlation_id ? ['Reference: ' + diagnostic.correlation_id] : undefined,
-      originalError: JSON.stringify(diagnostic),
-    }
+  if (diagnostic && ACCESS_REMOVED_REASONS.has(diagnostic.reason)) {
+    return presentManagedAccessRecovery('access_removed', { diagnostic }, error)
   }
-  if (error.code !== 'invalid_api_key') {
-    return error
+  if (diagnostic?.reason === 'dependency_unavailable') {
+    return presentManagedAccessRecovery('service_unavailable', { diagnostic }, error)
   }
+  if (!diagnostic && error.code !== 'invalid_api_key' && error.code !== 'expired_oauth_token') return error
 
+  const renewal = await renew()
+  // A gateway that explicitly revoked the session outranks a racing renewal result.
+  const recovery = diagnostic && SIGN_IN_REASONS.has(diagnostic.reason) ? 'sign_in' : renewal.recovery
+  return presentManagedAccessRecovery(recovery, { diagnostic, renewal }, error)
+}
+
+/** Build the persisted, localized error for a known managed-access recovery. */
+export function presentManagedAccessRecovery(
+  recovery: ManagedAccessRecovery,
+  evidence: { diagnostic?: ManagedAccessDiagnostic; renewal?: ManagedAccessRenewal },
+  base?: TypedError,
+): TypedError {
+  const i18n = setupI18n()
+  const { diagnostic, renewal } = evidence
+  // Literal keys keep these strings visible to the i18n coverage check.
+  const copy: Record<ManagedAccessRecovery, () => [title: string, message: string]> = {
+    retry: () => [i18n.t('errors.managedAccessRenewedTitle'), i18n.t('errors.managedAccessRenewed')],
+    sign_in: () => [i18n.t('errors.managedAccessSignInTitle'), i18n.t('errors.managedAccessSignIn')],
+    access_removed: () => [i18n.t('errors.managedAccessRemovedTitle'), i18n.t('errors.managedAccessRemoved')],
+    service_unavailable: () => [i18n.t('errors.managedAccessUnavailableTitle'), i18n.t('errors.managedAccessUnavailable')],
+  }
+  const [title, message] = copy[recovery]()
+  const canRetry = recovery === 'retry' || recovery === 'service_unavailable'
+  const reference = diagnostic?.correlation_id ?? renewal?.correlationId
+  // Keep only bounded, token-free evidence so support can match the user-visible error to trusted logs.
+  const evidenceRecord = {
+    ...diagnostic,
+    ...(renewal ? {
+      renewal: renewal.recovery,
+      ...(renewal.reason ? { renewal_reason: renewal.reason } : {}),
+      ...(renewal.correlationId ? { renewal_correlation_id: renewal.correlationId } : {}),
+    } : {}),
+  }
+  // Recovery is always an explicit user action; never leave an automatic-retry delay behind.
+  const inherited: Partial<TypedError> = { ...base }
+  delete inherited.retryDelayMs
   return {
-    ...error,
-    code: 'invalid_api_key',
-    title: 'Default AI Access Interrupted',
-    message: 'Default AI access was interrupted. Retry this message; if sign-in appears, sign in again.',
-    actions: [
-      {
-        key: 'r',
-        label: 'Retry',
-        action: 'retry',
-      },
-    ],
-    canRetry: true,
-    details: undefined,
-    originalError: undefined,
+    ...inherited,
+    code: recovery === 'retry' || recovery === 'sign_in' ? 'invalid_api_key' : 'service_error',
+    title,
+    message,
+    actions: canRetry ? [{ key: 'r', label: i18n.t('common.retry'), action: 'retry' }] : [],
+    canRetry,
+    details: reference ? [i18n.t('errors.managedAccessReference', { reference })] : undefined,
+    originalError: JSON.stringify(evidenceRecord),
   }
 }
 
 // Only the published, bounded diagnostic fields survive user-facing normalization.
-function readAccessDiagnostic(raw: string | undefined): { code: string; reason: string; stage: string; correlation_id?: string } | undefined {
+function readAccessDiagnostic(raw: string | undefined): ManagedAccessDiagnostic | undefined {
   if (!raw) return undefined
   try {
     const value = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1))
