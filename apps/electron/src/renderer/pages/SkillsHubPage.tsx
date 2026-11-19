@@ -67,12 +67,20 @@ import {
 
 type SkillsTab = 'discover' | 'installed'
 
+const CATALOG_REFRESH_INTERVAL_MS = 60_000
+const initialCatalog: {
+  skills: MarketSkillSummary[]
+  updatedAt: number | null
+  error: { message: string; occurredAt: number } | null
+  loading: boolean
+} = { skills: [], updatedAt: null, error: null, loading: true }
+
 export function getMarketSkillVisual(skill: MarketSkillSummary) {
   return resolveSkillVisual([skill.slug, skill.displayName, ...skill.tags, ...skill.roots])
 }
 
 export default function SkillsHubPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const skills = useAtomValue(skillsAtom)
   const sources = useAtomValue(sourcesAtom)
   const workspaceId = useAtomValue(windowWorkspaceIdAtom)
@@ -81,10 +89,9 @@ export default function SkillsHubPage() {
   const detailRequestId = React.useRef(0)
   currentWorkspaceId.current = workspaceId
 
-  const [marketSkills, setMarketSkills] = React.useState<MarketSkillSummary[]>([])
-  const [catalogLoading, setCatalogLoading] = React.useState(true)
-  const [catalogError, setCatalogError] = React.useState<string | null>(null)
-  const [reloadToken, setReloadToken] = React.useState(0)
+  const [catalog, setCatalog] = React.useState(initialCatalog)
+  const { skills: marketSkills, updatedAt: catalogUpdatedAt, error: catalogError, loading: catalogLoading } = catalog
+  const catalogRequest = React.useRef<ReturnType<typeof window.electronAPI.listSkillsFromMarket> | null>(null)
   const [activeTab, setActiveTab] = React.useState<SkillsTab>('discover')
   const [query, setQuery] = React.useState('')
   const [catalogView, setCatalogView] = React.useState<CatalogView>('all')
@@ -99,23 +106,48 @@ export default function SkillsHubPage() {
   const [skillToPublish, setSkillToPublish] = React.useState<LoadedSkill | null>(null)
   const [skillToRemove, setSkillToRemove] = React.useState<LoadedSkill | null>(null)
 
+  const refreshCatalog = React.useCallback(() => {
+    if (catalogRequest.current) return
+    const request = window.electronAPI.listSkillsFromMarket(true)
+    catalogRequest.current = request
+    setCatalog(current => ({ ...current, loading: true }))
+    void request.then(response => {
+      if (catalogRequest.current !== request) return
+      catalogRequest.current = null
+      setCatalog({ skills: response.skills, updatedAt: Date.now(), error: null, loading: false })
+    }, error => {
+      if (catalogRequest.current !== request) return
+      catalogRequest.current = null
+      const failure = { message: error instanceof Error ? error.message : String(error), occurredAt: Date.now() }
+      setCatalog(current => ({ ...current, error: failure, loading: false }))
+    })
+  }, [])
+
   React.useEffect(() => {
-    let active = true
-    setCatalogLoading(true)
-    setCatalogError(null)
-    void window.electronAPI.listSkillsFromMarket()
-      .then(response => {
-        if (!active) return
-        setMarketSkills(response.skills)
-        setCatalogLoading(false)
-      })
-      .catch(error => {
-        if (!active) return
-        setCatalogError(error instanceof Error ? error.message : String(error))
-        setCatalogLoading(false)
-      })
-    return () => { active = false }
-  }, [reloadToken])
+    if (activeTab !== 'discover' || catalogLoading) return
+    let timer: number | undefined
+    const isVisible = () => !document.hidden && document.hasFocus()
+    const schedule = (lastRefreshAt: number) => {
+      window.clearTimeout(timer)
+      if (!isVisible()) return
+      const delay = lastRefreshAt + CATALOG_REFRESH_INTERVAL_MS - Date.now()
+      if (delay <= 0) refreshCatalog()
+      else timer = window.setTimeout(() => { if (isVisible()) refreshCatalog() }, delay)
+    }
+    const resume = () => schedule(catalogUpdatedAt ?? 0)
+    const pause = () => window.clearTimeout(timer)
+
+    schedule(catalogError?.occurredAt ?? catalogUpdatedAt ?? 0)
+    window.addEventListener('focus', resume)
+    window.addEventListener('blur', pause)
+    document.addEventListener('visibilitychange', resume)
+    return () => {
+      pause()
+      window.removeEventListener('focus', resume)
+      window.removeEventListener('blur', pause)
+      document.removeEventListener('visibilitychange', resume)
+    }
+  }, [activeTab, catalogError, catalogLoading, catalogUpdatedAt, refreshCatalog])
 
   React.useEffect(() => {
     if (!workspaceId) {
@@ -181,7 +213,6 @@ export default function SkillsHubPage() {
       if (requestId === detailRequestId.current) {
         setSelectedMarketSkill(detail)
         setMarketSkillDetail(detail)
-        setMarketSkills(current => current.map(item => item.slug === detail.slug ? detail : item))
       }
     } catch (error) {
       if (requestId === detailRequestId.current) {
@@ -205,11 +236,21 @@ export default function SkillsHubPage() {
     setMarketSkillDetailLoading(false)
   }, [])
 
-  React.useEffect(() => window.electronAPI.onClientAuthStateChanged(() => {
-    closeMarketSkill()
-    setMarketSkills([])
-    setReloadToken(value => value + 1)
-  }), [closeMarketSkill])
+  React.useEffect(() => {
+    const unsubscribe = window.electronAPI.onClientAuthStateChanged(() => {
+      catalogRequest.current = null
+      closeMarketSkill()
+      setSkillToPublish(null)
+      setCatalog(initialCatalog)
+      setCatalogView(view => view === 'company' ? 'all' : view)
+      refreshCatalog()
+    })
+    refreshCatalog()
+    return () => {
+      unsubscribe()
+      catalogRequest.current = null
+    }
+  }, [closeMarketSkill, refreshCatalog])
 
   const installSkill = React.useCallback(async (skill: MarketSkillSummary) => {
     if (!workspaceId || installingSlug || !isInstallableMarketSkill(skill)) return
@@ -467,19 +508,31 @@ export default function SkillsHubPage() {
 
         <TabsContent value="discover" className="mt-5">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-3">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => window.electronAPI.openUrl('https://skillhub.cn')}
-            >
-              <Compass aria-hidden="true" />
-              {t('skillsHub.browseSkillHub', '浏览 SkillHub')}
-              <ExternalLink aria-hidden="true" />
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => window.electronAPI.openUrl('https://skillhub.cn')}
+              >
+                <Compass aria-hidden="true" />
+                {t('skillsHub.browseSkillHub', '浏览 SkillHub')}
+                <ExternalLink aria-hidden="true" />
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={catalogLoading}
+                onClick={refreshCatalog}
+              >
+                <RefreshCw aria-hidden="true" className={cn(catalogLoading && 'animate-spin motion-reduce:animate-none')} />
+                {t(catalogLoading ? 'skillsHub.refreshing' : 'skillsHub.refresh')}
+              </Button>
+            </div>
             <div className="flex rounded-md bg-foreground/[0.04] p-0.5" role="group" aria-label={t('skillsHub.catalogView', '目录范围')}>
               {([
-                ...(marketSkills.some(skill => skill.visibility === 'company') ? ['company'] as const : []),
+                ...(catalogView === 'company' || marketSkills.some(skill => skill.visibility === 'company') ? ['company'] as const : []),
                 'featured',
                 'all',
               ] as const).map(view => (
@@ -505,20 +558,27 @@ export default function SkillsHubPage() {
             </div>
           </div>
 
+          {catalogError && (
+            <div role="alert" className="mt-4 rounded-lg border border-destructive/25 bg-destructive/[0.04] px-4 py-4">
+              <p className="text-sm font-medium">{t('skillsHub.loadFailed', 'Skills 目录加载失败')}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{catalogError.message}</p>
+              {catalogUpdatedAt !== null && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('skillsHub.lastRefreshed', { time: new Date(catalogUpdatedAt).toLocaleString(i18n.resolvedLanguage) })}
+                </p>
+              )}
+              <Button type="button" size="sm" variant="outline" className="mt-3" disabled={catalogLoading} onClick={refreshCatalog}>
+                {t('common.retry', '重试')}
+              </Button>
+            </div>
+          )}
+
           <div className="mt-4" aria-live="polite">
-            {catalogLoading ? (
+            {catalogUpdatedAt === null ? !catalogError && (
               <>
                 <p className="sr-only">{t('skillsHub.loading', '正在加载 Skills 目录')}</p>
                 <CatalogSkeleton />
               </>
-            ) : catalogError ? (
-              <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/[0.04] px-4 py-4">
-                <p className="text-sm font-medium">{t('skillsHub.loadFailed', 'Skills 目录加载失败')}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{catalogError}</p>
-                <Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => setReloadToken(value => value + 1)}>
-                  {t('common.retry', '重试')}
-                </Button>
-              </div>
             ) : filteredMarketSkills.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border/80 px-4 py-8 text-center">
                 <Zap className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
@@ -647,7 +707,9 @@ export default function SkillsHubPage() {
           open={skillToPublish !== null}
           onOpenChange={open => { if (!open) setSkillToPublish(null) }}
           onPublished={() => {
-            setReloadToken(value => value + 1)
+            // Publication invalidates any earlier catalog read in the main process.
+            catalogRequest.current = null
+            refreshCatalog()
             setActiveTab('discover')
             setCatalogView('all')
             setQuery('')
