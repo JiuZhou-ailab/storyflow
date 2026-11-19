@@ -37,6 +37,7 @@ try {
   await evalOn(live, `window.electronAPI.switchWorkspace(${JSON.stringify(workspace.id)})`)
   await evalOn(live, `(() => { const url = new URL(location.href); url.search = new URLSearchParams({workspaceId:${JSON.stringify(workspace.id)},ws:${JSON.stringify(workspace.id)},route:'allSessions'}).toString(); location.href=url.href })()`)
   await waitFor(live, 'document.querySelector("[data-tutorial=activity-profile]")')
+  await live.cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }, live.sid)
   await evalOn(live, `Array.from(document.querySelectorAll('[role="dialog"] button')).find(b=>/继续使用|Continue/.test(b.textContent))?.click()`)
   assert.ok((await evalOn<Array<{slug: string}>>(live, `window.electronAPI.getSkills(${JSON.stringify(workspace.id)})`)).some(skill => skill.slug === 'qa-upload'))
 
@@ -125,7 +126,9 @@ try {
   async function click(text: string, selector = 'button') {
     const expression = `Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(e=>e.textContent.trim()===${JSON.stringify(text)})`
     await waitFor(live, expression)
-    if (selector.includes('menuitem')) {
+    // The Radix dropdown trigger opens on pointerdown. Ordinary actions use DOM clicks
+    // so another Electron acceptance run cannot intercept them by taking desktop focus.
+    if (!await evalOn(live, `${expression}.getAttribute('aria-haspopup') === 'menu'`)) {
       await evalOn(live, `${expression}.click()`)
       return
     }
@@ -181,6 +184,7 @@ try {
   await click('公司')
   await evalOn(live, `${searchInput}.focus()`)
   await live.cdp.send('Input.insertText', { text: 'QA' }, live.sid)
+  await waitFor(live, `${searchInput}.value === 'QA'`)
   await marketFixture(`qa => {
     qa.catalog = [...qa.catalog, { ...qa.catalog[0], slug: 'qa-new', displayName: 'QA New' }];
     qa.holdList = true;
