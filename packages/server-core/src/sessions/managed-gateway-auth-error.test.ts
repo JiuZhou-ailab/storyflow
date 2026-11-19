@@ -262,6 +262,31 @@ describe('managed default gateway auth error normalization', () => {
     })
   })
 
+  it('records sign-in after the rejected login aborts and revokes the reporting runtime', async () => {
+    const sm = new SessionManager((_workspaceId, managed) => managed.workspace)
+    const managed = managedSession('managed-renewal-revoked-runtime')
+    const forceAbort = jest.fn()
+    managed.agent = { isProcessing: () => true, forceAbort, dispose: jest.fn() }
+    managed.isProcessing = true
+    managed.messages = []
+    ;(sm as any).sessions.set(managed.id, managed)
+    let revocation: Promise<void> | undefined
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => {
+        // Mirrors Electron: clearing a rejected login revokes managed runtimes without awaiting.
+        revocation = sm.disposeConnectionRuntimes('storyflow-managed')
+        throw new ManagedAccessRefreshError('sign_in', { reason: 'session_revoked' })
+      },
+    })
+
+    await (sm as any).processEvent(managed, { type: 'typed_error', error: baseInvalidApiKeyError })
+    await revocation
+
+    expect(forceAbort).toHaveBeenCalledTimes(1)
+    expect(managed.messages).toHaveLength(1)
+    expect(managed.messages[0]).toMatchObject({ role: 'error', errorTitle: 'Sign in again', errorCanRetry: false })
+  })
+
   it('treats an unclassified renewal failure as temporary rather than a sign-out', async () => {
     const sm = new SessionManager((_workspaceId, managed) => managed.workspace)
     const managed = managedSession('managed-renewal-unknown')

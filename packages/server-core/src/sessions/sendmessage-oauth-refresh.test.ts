@@ -5,6 +5,7 @@ import { join } from 'path'
 import { ManagedAccessRefreshError } from '@craft-agent/shared/auth/managed-access'
 import { createSourceGrantRefs, loadWorkspaceSources } from '@craft-agent/shared/sources'
 import { SessionManager, createManagedSession, setSessionRuntimeHooks } from './SessionManager.ts'
+import { MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE } from './managed-gateway-auth-error'
 
 // Regression tests for #710 — OAuth tokens expire without silent refresh.
 //
@@ -236,6 +237,52 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     })])
     expect(managed.messages.filter(message => message.role === 'user')).toHaveLength(1)
     expect(managed.messages.at(-1)).toMatchObject({ role: 'error', errorTitle: 'Sign in again', errorCanRetry: false })
+  })
+
+  it('still shows sign-in when the rejected login revokes managed runtimes during the preflight', async () => {
+    const managed = buildSession('managed-refresh-revoked-runtime')
+    managed.llmConnection = 'storyflow-managed'
+    const events: Array<{ type?: string }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string })
+    })
+    let revocation: Promise<void> | undefined
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => {
+        // Mirrors Electron: a broker 401 clears the login, whose auth change revokes managed runtimes without awaiting.
+        revocation = sm.disposeConnectionRuntimes('storyflow-managed')
+        throw new ManagedAccessRefreshError('sign_in', { reason: 'session_revoked' })
+      },
+    })
+
+    await sm.sendMessage(managed.id, 'hello')
+    await revocation
+
+    expect(managed.isProcessing).toBe(false)
+    expect(managed.runtimeState).toBeUndefined()
+    expect(events.filter(event => event.type === 'error')).toEqual([])
+    expect(events.filter(event => event.type === 'typed_error')).toHaveLength(1)
+    expect(managed.messages.at(-1)).toMatchObject({ role: 'error', errorTitle: 'Sign in again' })
+  })
+
+  it('keeps the host message when this host cannot provide managed access at all', async () => {
+    const managed = buildSession('managed-host-unavailable')
+    managed.llmConnection = 'storyflow-managed'
+    const events: Array<{ type?: string; error?: unknown }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string; error?: unknown })
+    })
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => { throw new Error(MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE) },
+    })
+
+    await sm.sendMessage(managed.id, 'hello')
+
+    // Shared/server mode is not a temporary outage; it must not claim the user is still signed in.
+    expect(events.filter(event => event.type === 'typed_error')).toEqual([])
+    expect(events.filter(event => event.type === 'error')).toEqual([
+      expect.objectContaining({ error: MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE }),
+    ])
   })
 
   it('preflights managed model access for one-shot calls', async () => {
