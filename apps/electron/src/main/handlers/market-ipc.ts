@@ -16,7 +16,7 @@ import { listMcpServersFromMarket } from '../mcp-market-client'
 type MarketFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 interface MarketIpcDeps {
-  catalog: { load(): Promise<unknown>; invalidate(): void }
+  catalog: { load(refresh?: boolean): Promise<unknown>; invalidate(): void }
   authService: ClientAuthService
   getToken: () => Promise<string | undefined>
   fetchImpl: MarketFetch
@@ -24,7 +24,7 @@ interface MarketIpcDeps {
 
 export function registerMarketIpc(deps: MarketIpcDeps): void {
   const { catalog, authService, getToken, fetchImpl } = deps
-  ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.LIST, () => catalog.load())
+  ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.LIST, (_event, refresh?: boolean) => catalog.load(refresh === true))
   ipcMain.handle(SKILLS_MARKET_IPC_CHANNELS.DETAIL, async (_event, skillSlug: string) => {
     return getSkillDetailFromMarket(skillSlug, {
       token: await getToken(),

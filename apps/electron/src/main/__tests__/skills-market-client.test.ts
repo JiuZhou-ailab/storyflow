@@ -13,7 +13,7 @@ import {
 } from '../skills-market-client'
 
 describe('Skills Market client', () => {
-  it('coalesces catalog reads, expires them, and discards invalidated or failed requests', async () => {
+  it('refreshes a cached catalog, coalesces in-flight reads, and discards invalidated or failed requests', async () => {
     const clock = spyOn(Date, 'now').mockReturnValue(1_000)
     let calls = 0
     let fail = false
@@ -25,13 +25,19 @@ describe('Skills Market client', () => {
     })
     try {
       const first = catalog.load()
-      expect(catalog.load()).toBe(first)
+      expect(catalog.load(true)).toBe(first)
       await first
       await catalog.load()
       expect(calls).toBe(1)
+      const refresh = catalog.load(true)
+      expect(refresh).not.toBe(first)
+      expect(catalog.load()).toBe(refresh)
+      expect(catalog.load(true)).toBe(refresh)
+      await refresh
+      expect(calls).toBe(2)
       clock.mockReturnValue(31_000)
       await catalog.load()
-      expect(calls).toBe(2)
+      expect(calls).toBe(3)
       catalog.invalidate()
       const stale = catalog.load()
       catalog.invalidate()
@@ -44,7 +50,7 @@ describe('Skills Market client', () => {
       await expect(catalog.load()).rejects.toThrow('offline')
       fail = false
       await expect(catalog.load()).resolves.toBe(response)
-      expect(calls).toBe(6)
+      expect(calls).toBe(7)
     } finally {
       clock.mockRestore()
     }
@@ -62,6 +68,7 @@ describe('Skills Market client', () => {
       calls.push(url.toString())
       expect(new Headers(init?.headers).get('authorization')).toBe('Bearer market-access-token')
       if (url.toString().endsWith('/api/skills')) {
+        expect(init?.cache).toBe('no-store')
         return Response.json({
           total: 1,
           skills: [{
@@ -81,6 +88,7 @@ describe('Skills Market client', () => {
         })
       }
       if (url.toString().endsWith('/api/skills/internal-writing')) {
+        expect(init?.cache).toBe('no-store')
         return Response.json({
           slug: 'internal-writing',
           version: '1.0.0',
@@ -108,6 +116,7 @@ describe('Skills Market client', () => {
           installUrl: 'craftagents://action/install-skill',
         })
       }
+      expect(init?.cache).toBeUndefined()
       return new Response(raw)
     }
 

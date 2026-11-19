@@ -644,7 +644,7 @@ export interface ElectronAPI {
   getSkills(workspaceId: string, workingDirectory?: string): Promise<LoadedSkill[]>
   getSkillFiles?(workspaceId: string, skillSlug: string): Promise<SkillFile[]>
   exportSkill(workspaceId: string, skillSlug: string, workingDirectory?: string): Promise<ExportResult>
-  listSkillsFromMarket(): Promise<import('@craft-agent/shared/skills/marketplace').MarketSkillListResponse>
+  listSkillsFromMarket(refresh?: boolean): Promise<import('@craft-agent/shared/skills/marketplace').MarketSkillListResponse>
   getSkillDetailFromMarket(skillSlug: string): Promise<import('@craft-agent/shared/skills/marketplace').MarketSkillDetail>
   downloadSkillFromMarket(input: Pick<import('@craft-agent/shared/skills/marketplace').MarketSkillSummary, 'slug' | 'version' | 'sha256'>): Promise<import('@craft-agent/shared/skills/marketplace').DownloadedMarketSkill>
   publishSkillToMarket(input: import('@craft-agent/shared/skills/marketplace').SkillMarketPublishInput): Promise<import('@craft-agent/shared/skills/marketplace').SkillMarketPublishResult>

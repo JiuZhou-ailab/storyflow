@@ -29,8 +29,10 @@ export function createSkillsMarketCatalogLoader(load: () => Promise<MarketSkillL
   let cached: { promise: Promise<MarketSkillListResponse>; expiresAt: number } | undefined
   return {
     invalidate() { cached = undefined },
-    load(): Promise<MarketSkillListResponse> {
-      if (cached && Date.now() < cached.expiresAt) return cached.promise
+    load(refresh = false): Promise<MarketSkillListResponse> {
+      if (cached && (cached.expiresAt === Infinity || (!refresh && Date.now() < cached.expiresAt))) {
+        return cached.promise
+      }
       const entry = { promise: Promise.resolve().then(load), expiresAt: Infinity }
       cached = entry
       entry.promise = entry.promise.then(result => {
@@ -49,6 +51,7 @@ export function createSkillsMarketCatalogLoader(load: () => Promise<MarketSkillL
 
 export async function listSkillsFromMarket(options: MarketClientOptions): Promise<MarketSkillListResponse> {
   const response = await options.fetchImpl(`${DEFAULT_SKILLS_MARKET_ORIGIN}/api/skills`, {
+    cache: 'no-store',
     headers: marketHeaders(options.token),
     signal: AbortSignal.timeout(15_000),
   })
@@ -63,6 +66,7 @@ export async function getSkillDetailFromMarket(
   const response = await options.fetchImpl(
     `${DEFAULT_SKILLS_MARKET_ORIGIN}/api/skills/${encodeURIComponent(skillSlug)}`,
     {
+      cache: 'no-store',
       headers: marketHeaders(options.token),
       signal: AbortSignal.timeout(15_000),
     },

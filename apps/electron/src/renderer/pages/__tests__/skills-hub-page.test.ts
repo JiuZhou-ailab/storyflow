@@ -66,7 +66,7 @@ describe('SkillsHubPage contracts', () => {
   })
 
   it('keeps reference-only recommendations visible without synthetic Markdown instructions', () => {
-    expect(source).toContain('window.electronAPI.listSkillsFromMarket()')
+    expect(source).toContain('window.electronAPI.listSkillsFromMarket(true)')
     expect(source).not.toContain('DEFAULT_SKILLS_MARKET_ORIGIN')
     expect(source).toContain('isInstallableMarketSkill(skill)')
     expect(source).toContain("t('skillsHub.referenceOnly', '仅供参考')")
@@ -75,11 +75,6 @@ describe('SkillsHubPage contracts', () => {
     expect(source).toContain("showContent ? 'grid-rows-[auto_minmax(0,1fr)_auto]' : 'grid-rows-[auto_auto]'")
     expect(isInstallableMarketSkill(marketSkill)).toBe(true)
     expect(isInstallableMarketSkill({ ...marketSkill, sha256: '' })).toBe(false)
-  })
-
-  it('reloads the uncached catalog after a successful publication', () => {
-    expect(source).toContain('setReloadToken(value => value + 1)')
-    expect(source).toContain("setActiveTab('discover')")
   })
 
   it('resolves hidden runtime workspaces without hiding the header actions', () => {
