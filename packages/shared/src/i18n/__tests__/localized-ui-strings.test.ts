@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import { setupI18n } from '../setupI18n'
 
 describe('localized shared UI strings', () => {
+  // i18next is process-wide in bun test; a leaked language changes later files' English assertions.
+  afterEach(async () => {
+    await setupI18n().changeLanguage('en')
+  })
+
   it('has Chinese labels for common fallback controls', () => {
     const i18n = setupI18n()
     i18n.changeLanguage('zh-Hans')
