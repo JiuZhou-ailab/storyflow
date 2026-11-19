@@ -5001,14 +5001,25 @@ export class SessionManager implements ISessionManager {
         }
         const connectionSlug = resolveManagedConnectionSlug(managed)
         const accessRenewalGeneration = managed.processingGeneration
+        let awaitedAccessRenewal = false
         // Managed access rejections wait for one bounded capability renewal so the
         // message states the observed next step; the failed turn is never replayed.
         const typedError = await normalizeManagedDefaultGatewayAuthError(
           event.error,
           connectionSlug,
-          () => this.refreshManagedCredentialForNextTurn(managed),
+          () => {
+            awaitedAccessRenewal = true
+            return this.refreshManagedCredentialForNextTurn(managed)
+          },
         )
-        if (!managed.isProcessing || managed.processingGeneration !== accessRenewalGeneration) {
+        // A user stop, redirect or shutdown only sets stopRequested; isProcessing and the
+        // generation stay unchanged until the turn drains, so check it explicitly. A Broker 401
+        // revokes runtimes without a stop request and still reports that sign-in is required.
+        if (
+          !managed.isProcessing
+          || managed.processingGeneration !== accessRenewalGeneration
+          || (awaitedAccessRenewal && managed.stopRequested)
+        ) {
           getSessionLog().info('Skipping typed_error after a stop or newer turn during access renewal')
           break
         }

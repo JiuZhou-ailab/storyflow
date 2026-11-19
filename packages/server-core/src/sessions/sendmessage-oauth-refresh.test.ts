@@ -239,6 +239,35 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     expect(managed.messages.at(-1)).toMatchObject({ role: 'error', errorTitle: 'Sign in again', errorCanRetry: false })
   })
 
+  it('treats a stop during the pre-send renewal as an interruption, not an access error', async () => {
+    const managed = buildSession('managed-refresh-stopped')
+    managed.llmConnection = 'storyflow-managed'
+    const events: Array<{ type?: string }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string })
+    })
+    let markStarted!: () => void
+    let failRenewal!: (error: unknown) => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: () => {
+        markStarted()
+        return new Promise((_resolve, reject) => { failRenewal = reject })
+      },
+    })
+
+    const sending = sm.sendMessage(managed.id, 'hello')
+    await started
+    await sm.cancelProcessing(managed.id)
+    expect(managed.isProcessing).toBe(true)
+    failRenewal(new ManagedAccessRefreshError('sign_in', { reason: 'session_revoked' }))
+    await sending
+
+    expect(managed.isProcessing).toBe(false)
+    expect(events.filter(event => event.type === 'typed_error' || event.type === 'error')).toEqual([])
+    expect(managed.messages.filter(message => message.role === 'error')).toEqual([])
+  })
+
   it('still shows sign-in when the rejected login revokes managed runtimes during the preflight', async () => {
     const managed = buildSession('managed-refresh-revoked-runtime')
     managed.llmConnection = 'storyflow-managed'

@@ -38,6 +38,24 @@ const gatewayRejection = (status: number, body: Record<string, string>): TypedEr
   originalError: `${status} ${JSON.stringify(body)}`,
 })
 
+type RenewalResult = { token: string; refreshed: boolean }
+type PendingRenewal = ReturnType<typeof pendingRenewal>
+
+/** A runtime-hook renewal the test settles explicitly, after observing that it started. */
+function pendingRenewal() {
+  let markStarted!: () => void
+  let resolve!: (result: RenewalResult) => void
+  let reject!: (error: unknown) => void
+  const started = new Promise<void>(done => { markStarted = done })
+  const result = new Promise<RenewalResult>((onResolve, onReject) => { resolve = onResolve; reject = onReject })
+  return {
+    started,
+    resolve,
+    reject,
+    hook: jest.fn(async () => { markStarted(); return result }),
+  }
+}
+
 function managedSession(id: string) {
   return createManagedSession({
     id,
@@ -300,23 +318,37 @@ describe('managed default gateway auth error normalization', () => {
     expect(managed.messages.at(-1)).toMatchObject({ errorTitle: 'Access service temporarily unavailable', errorCanRetry: true })
   })
 
-  it('drops the error when the user stops the turn while renewal is in flight', async () => {
+  it.each([
+    ['renewed', (renewal: PendingRenewal) => renewal.resolve({ token: 'managed-token', refreshed: true })],
+    ['sign-in', (renewal: PendingRenewal) => renewal.reject(new ManagedAccessRefreshError('sign_in', { reason: 'session_revoked' }))],
+  ] as const)('drops a stale %s result when the user stops while renewal is in flight', async (_outcome, settle) => {
     const sm = new SessionManager((_workspaceId, managed) => managed.workspace)
-    const managed = managedSession('managed-renewal-stopped')
-    managed.agent = { isProcessing: () => false }
+    const managed = managedSession(`managed-renewal-stopped-${_outcome}`)
+    const forceAbort = jest.fn()
+    managed.agent = { isProcessing: () => true, forceAbort }
     managed.isProcessing = true
     managed.messages = []
     ;(sm as any).sessions.set(managed.id, managed)
-    setSessionRuntimeHooks({
-      ensureManagedModelAccessToken: async () => {
-        managed.isProcessing = false
-        return { token: 'managed-token', refreshed: true }
-      },
+    const events: Array<{ type?: string }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string })
     })
+    const renewal = pendingRenewal()
+    setSessionRuntimeHooks({ ensureManagedModelAccessToken: renewal.hook })
 
-    await (sm as any).processEvent(managed, { type: 'typed_error', error: baseInvalidApiKeyError })
+    const processing = (sm as any).processEvent(managed, { type: 'typed_error', error: baseInvalidApiKeyError })
+    await renewal.started
+    await sm.cancelProcessing(managed.id)
+    // The real stop window: the turn has not drained, so neither flag nor generation has moved.
+    expect(managed.isProcessing).toBe(true)
+    expect(managed.stopRequested).toBe(true)
+    settle(renewal)
+    await processing
+    ;(sm as any).clearStopTimer(managed)
 
-    expect(managed.messages).toEqual([])
+    expect(forceAbort).toHaveBeenCalledTimes(1)
+    expect(events.map(event => event.type)).toEqual(['interrupted'])
+    expect(managed.messages.map((message: { role: string }) => message.role)).toEqual(['info'])
   })
 
   it('does not recycle an idle runtime until the next operation preflight', async () => {
