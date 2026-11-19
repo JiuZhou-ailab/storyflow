@@ -3886,10 +3886,15 @@ export class SessionManager implements ISessionManager {
         sendSpan.setMetadata('error', error instanceof Error ? error.message : String(error))
         sendSpan.end()
         if (isManagedAccessRefreshError(error) && isManagedDefaultGatewayConnection(resolveManagedConnectionSlug(managed))) {
-          // Pre-send capability renewal failed before any model call: same recovery as a gateway rejection.
-          this.recordTypedError(managed, presentManagedAccessRecovery(error.recovery, {
-            renewal: { recovery: error.recovery, reason: error.reason, correlationId: error.correlationId },
-          }))
+          if (this.turnHasEnded(managed, myGeneration)) {
+            // A stop's timeout fallback can finish (or be finishing) the turn while renewal is pending.
+            getSessionLog().info('Skipping managed access recovery for a turn that already stopped')
+          } else {
+            // Pre-send capability renewal failed before any model call: same recovery as a gateway rejection.
+            this.recordTypedError(managed, presentManagedAccessRecovery(error.recovery, {
+              renewal: { recovery: error.recovery, reason: error.reason, correlationId: error.correlationId },
+            }))
+          }
         } else {
           this.sendEvent({
             type: 'error',
@@ -4551,6 +4556,19 @@ export class SessionManager implements ISessionManager {
     }
   }
 
+  /**
+   * True once a turn was removed, superseded, finished, or handed to stop cleanup.
+   * A stop's timeout fallback resets stopRequested before it clears isProcessing, and
+   * the generation only changes when a new turn starts, so neither flag alone shows that
+   * a late access-renewal outcome belongs to a turn the user already stopped.
+   */
+  private turnHasEnded(managed: ManagedSession, generation: number): boolean {
+    return this.sessions.get(managed.id) !== managed
+      || managed.processingGeneration !== generation
+      || !managed.isProcessing
+      || this.stoppingGenerations.get(managed) === generation
+  }
+
   /** Persist a typed error and send its full structure to the renderer. */
   private recordTypedError(managed: ManagedSession, typedError: TypedError): void {
     // Build rich error message with all diagnostic fields for persistence and UI display
@@ -5012,12 +5030,11 @@ export class SessionManager implements ISessionManager {
             return this.refreshManagedCredentialForNextTurn(managed)
           },
         )
-        // A user stop, redirect or shutdown only sets stopRequested; isProcessing and the
-        // generation stay unchanged until the turn drains, so check it explicitly. A Broker 401
-        // revokes runtimes without a stop request and still reports that sign-in is required.
+        // A user stop, redirect or shutdown first only sets stopRequested; its timeout fallback
+        // later clears that flag while cleanup runs (turnHasEnded covers both). A Broker 401
+        // revokes runtimes without stopping the turn and still reports that sign-in is required.
         if (
-          !managed.isProcessing
-          || managed.processingGeneration !== accessRenewalGeneration
+          this.turnHasEnded(managed, accessRenewalGeneration)
           || (awaitedAccessRenewal && managed.stopRequested)
         ) {
           getSessionLog().info('Skipping typed_error after a stop or newer turn during access renewal')

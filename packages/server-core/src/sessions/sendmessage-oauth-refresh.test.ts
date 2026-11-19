@@ -6,6 +6,7 @@ import { ManagedAccessRefreshError } from '@craft-agent/shared/auth/managed-acce
 import { createSourceGrantRefs, loadWorkspaceSources } from '@craft-agent/shared/sources'
 import { SessionManager, createManagedSession, setSessionRuntimeHooks } from './SessionManager.ts'
 import { MANAGED_MODEL_ACCESS_UNAVAILABLE_MESSAGE } from './managed-gateway-auth-error'
+import { holdStopCleanupAtFlush, stopAndFireTimeoutFallback } from './stop-fallback.fixture'
 
 // Regression tests for #710 — OAuth tokens expire without silent refresh.
 //
@@ -265,6 +266,48 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
 
     expect(managed.isProcessing).toBe(false)
     expect(events.filter(event => event.type === 'typed_error' || event.type === 'error')).toEqual([])
+    expect(managed.messages.filter(message => message.role === 'error')).toEqual([])
+  })
+
+  it.each(['cleaning up', 'finished'] as const)('drops a late pre-send renewal failure after a real stop whose timeout fallback has %s', async timing => {
+    const managed = buildSession(`managed-refresh-stop-timeout-${timing.replace(' ', '-')}`)
+    managed.llmConnection = 'storyflow-managed'
+    const events: Array<{ type?: string }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string })
+    })
+    let markStarted!: () => void
+    let failRenewal!: (error: unknown) => void
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: () => {
+        markStarted()
+        return new Promise((_resolve, reject) => { failRenewal = reject })
+      },
+    })
+
+    const sending = sm.sendMessage(managed.id, 'hello')
+    await started
+    const cleanup = holdStopCleanupAtFlush(sm)
+    await stopAndFireTimeoutFallback(sm, managed.id)
+    await cleanup.flushStarted
+    // The fallback already reset the stop flag; the turn is still processing in the same generation.
+    expect(managed.stopRequested).toBe(false)
+    expect(managed.isProcessing).toBe(true)
+    if (timing === 'finished') {
+      cleanup.releaseFlush()
+      await cleanup.finished()
+      expect(managed.isProcessing).toBe(false)
+    }
+    failRenewal(new ManagedAccessRefreshError('service_unavailable', { correlationId: 'broker-12' }))
+    await sending
+    cleanup.releaseFlush()
+    await cleanup.finished()
+
+    const turnEvents = events.map(event => event.type)
+      .filter(type => type === 'interrupted' || type === 'complete' || type === 'typed_error' || type === 'error')
+    expect(turnEvents).toEqual(['interrupted', 'complete'])
+    expect(managed.isProcessing).toBe(false)
     expect(managed.messages.filter(message => message.role === 'error')).toEqual([])
   })
 

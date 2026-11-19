@@ -9,6 +9,7 @@ import { setupI18n } from '@craft-agent/shared/i18n'
 import { FREE_CONVERSATION_WORKSPACE_ID } from '@craft-agent/shared/protocol'
 import { createManagedSession, SessionManager, setSessionRuntimeHooks } from './SessionManager.ts'
 import { normalizeManagedDefaultGatewayAuthError, presentManagedAccessRecovery, type ManagedAccessRenewal } from './managed-gateway-auth-error'
+import { holdStopCleanupAtFlush, stopAndFireTimeoutFallback } from './stop-fallback.fixture'
 
 const LEGACY_INTERRUPTED_MESSAGE = 'Default AI access was interrupted. Retry this message; if sign-in appears, sign in again.'
 
@@ -348,6 +349,42 @@ describe('managed default gateway auth error normalization', () => {
 
     expect(forceAbort).toHaveBeenCalledTimes(1)
     expect(events.map(event => event.type)).toEqual(['interrupted'])
+    expect(managed.messages.map((message: { role: string }) => message.role)).toEqual(['info'])
+  })
+
+  it.each(['cleaning up', 'finished'] as const)('drops a late renewal after a real stop whose timeout fallback has %s', async timing => {
+    const sm = new SessionManager((_workspaceId, managed) => managed.workspace)
+    const managed = managedSession(`managed-renewal-stop-timeout-${timing.replace(' ', '-')}`)
+    managed.agent = { isProcessing: () => true, forceAbort: jest.fn() }
+    managed.isProcessing = true
+    managed.messages = []
+    ;(sm as any).sessions.set(managed.id, managed)
+    const events: Array<{ type?: string }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string })
+    })
+    const renewal = pendingRenewal()
+    setSessionRuntimeHooks({ ensureManagedModelAccessToken: renewal.hook })
+    const cleanup = holdStopCleanupAtFlush(sm)
+
+    const processing = (sm as any).processEvent(managed, { type: 'typed_error', error: baseInvalidApiKeyError })
+    await renewal.started
+    await stopAndFireTimeoutFallback(sm, managed.id)
+    await cleanup.flushStarted
+    // The fallback already reset the stop flag; the turn is still processing in the same generation.
+    expect(managed.stopRequested).toBe(false)
+    expect(managed.isProcessing).toBe(true)
+    if (timing === 'finished') {
+      cleanup.releaseFlush()
+      await cleanup.finished()
+      expect(managed.isProcessing).toBe(false)
+    }
+    renewal.resolve({ token: 'managed-token', refreshed: true })
+    await processing
+    cleanup.releaseFlush()
+    await cleanup.finished()
+
+    expect(events.map(event => event.type)).toEqual(['interrupted', 'complete'])
     expect(managed.messages.map((message: { role: string }) => message.role)).toEqual(['info'])
   })
 
