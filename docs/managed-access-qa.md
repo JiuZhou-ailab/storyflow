@@ -1,6 +1,6 @@
 # Managed access: acceptance and cutover (#42)
 
-Code and migrations implement current Account Access and revocable Identity Sessions. Checked-in Worker configs intentionally remain `legacy` until the coordinated release below; this mode does **not** revoke already-issued capabilities. This document is an operator runbook, not evidence of production deployment.
+Code and migrations implement current Account Access and revocable Identity Sessions. Checked-in Worker configs are `required` since #116 (step 4 below); deploying them needs the persisted `STORYFLOW_ACCESS_CANARY_SESSION` from step 3. The former `legacy` mode did **not** revoke already-issued capabilities and must not be restored. This document is an operator runbook, not evidence of production deployment.
 
 ## Local acceptance (no paid provider requests)
 
