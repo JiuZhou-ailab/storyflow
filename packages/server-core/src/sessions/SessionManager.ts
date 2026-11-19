@@ -79,7 +79,7 @@ import { getLastApiError } from '@craft-agent/shared/provider-diagnostics'
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { classifyFsError, retryTransientFs, isLowSignal } from '@craft-agent/shared/utils'
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type OneShotLlmRequest, type OneShotLlmResult, type NovelSelectionRewriteRequest, type NovelSelectionRewriteResult, type UnreadSummary, type RemoteSessionTransferPayload, generateMessageId } from '@craft-agent/shared/protocol'
-import { type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics, type TurnUsage } from '@craft-agent/core/types'
+import { type Message, type StoredAttachment, type ToolDisplayMeta, type TurnMetrics, type TurnUsage, type TypedError } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
 import { getCurrentLanguageName } from '@craft-agent/shared/i18n'
 import { buildNovelSelectionRewritePrompt, sanitizeNovelSelectionReplacement } from '@craft-agent/shared/writing'
@@ -110,9 +110,12 @@ import { resolveToolDisplayMeta } from './tool-display'
 export { consumePendingSdkFork } from './managed-session'
 import { SESSION_TURN_HARD_TIMEOUT_MS, TurnWatchdog, type TurnWatchdogTimeout } from './turn-watchdog'
 import { WorkspaceFreshness } from './workspace-freshness'
+import { isManagedAccessRefreshError } from '@craft-agent/shared/auth/managed-access'
 import {
   isManagedDefaultGatewayConnection,
   normalizeManagedDefaultGatewayAuthError,
+  presentManagedAccessRecovery,
+  type ManagedAccessRenewal,
 } from './managed-gateway-auth-error'
 
 // Import from server-core domain utilities
@@ -2638,8 +2641,8 @@ export class SessionManager implements ISessionManager {
   }
 
   /** Renew a rejected capability without mutating the reporting runtime. (Delegates to AgentRuntime.) */
-  private async refreshManagedCredentialForNextTurn(managed: ManagedSession): Promise<void> {
-    await this.agentRuntime.refreshManagedCredentialForNextTurn(managed)
+  private async refreshManagedCredentialForNextTurn(managed: ManagedSession): Promise<ManagedAccessRenewal> {
+    return this.agentRuntime.refreshManagedCredentialForNextTurn(managed)
   }
 
   /**
@@ -3882,11 +3885,18 @@ export class SessionManager implements ISessionManager {
         sendSpan.mark('chat.error')
         sendSpan.setMetadata('error', error instanceof Error ? error.message : String(error))
         sendSpan.end()
-        this.sendEvent({
-          type: 'error',
-          sessionId,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        }, managed.workspace.id)
+        if (isManagedAccessRefreshError(error) && isManagedDefaultGatewayConnection(resolveManagedConnectionSlug(managed))) {
+          // Pre-send capability renewal failed before any model call: same recovery as a gateway rejection.
+          this.recordTypedError(managed, presentManagedAccessRecovery(error.recovery, {
+            renewal: { recovery: error.recovery, reason: error.reason, correlationId: error.correlationId },
+          }))
+        } else {
+          this.sendEvent({
+            type: 'error',
+            sessionId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }, managed.workspace.id)
+        }
         // Handle error via centralized handler
         if (managed.isProcessing) await this.onProcessingStopped(sessionId, 'error', myGeneration)
       }
@@ -4541,6 +4551,40 @@ export class SessionManager implements ISessionManager {
     }
   }
 
+  /** Persist a typed error and send its full structure to the renderer. */
+  private recordTypedError(managed: ManagedSession, typedError: TypedError): void {
+    // Build rich error message with all diagnostic fields for persistence and UI display
+    const typedErrorMessage: Message = {
+      id: generateMessageId(),
+      role: 'error',
+      // Combine title and message for content display (handles undefined gracefully)
+      content: typedError.message || typedError.title || 'An error occurred',
+      timestamp: this.monotonic(),
+      // Rich error fields for diagnostics and retry functionality
+      errorCode: typedError.code,
+      errorTitle: typedError.title,
+      errorDetails: typedError.details,
+      errorOriginal: typedError.originalError,
+      errorCanRetry: typedError.canRetry,
+    }
+    managed.messages.push(typedErrorMessage)
+    // Send typed_error event with full structure for renderer to handle
+    this.sendEvent({
+      type: 'typed_error',
+      sessionId: managed.id,
+      error: {
+        code: typedError.code,
+        title: typedError.title,
+        message: typedError.message,
+        actions: typedError.actions,
+        canRetry: typedError.canRetry,
+        details: typedError.details,
+        originalError: typedError.originalError,
+      },
+      timestamp: typedErrorMessage.timestamp,
+    }, managed.workspace.id)
+  }
+
   private async processEvent(managed: ManagedSession, event: AgentEvent): Promise<void> {
     const sessionId = managed.id
     const workspaceId = managed.workspace.id
@@ -4956,48 +5000,22 @@ export class SessionManager implements ISessionManager {
           break
         }
         const connectionSlug = resolveManagedConnectionSlug(managed)
-        const typedError = normalizeManagedDefaultGatewayAuthError(event.error, connectionSlug)
+        const accessRenewalGeneration = managed.processingGeneration
+        // Managed access rejections wait for one bounded capability renewal so the
+        // message states the observed next step; the failed turn is never replayed.
+        const typedError = await normalizeManagedDefaultGatewayAuthError(
+          event.error,
+          connectionSlug,
+          () => this.refreshManagedCredentialForNextTurn(managed),
+        )
+        if (!managed.isProcessing || managed.processingGeneration !== accessRenewalGeneration) {
+          getSessionLog().info('Skipping typed_error after a stop or newer turn during access renewal')
+          break
+        }
 
         // Typed errors have structured information - send both formats for compatibility
         getSessionLog().info('typed_error:', JSON.stringify(typedError, null, 2))
-
-        const isAuthError = typedError.code === 'invalid_api_key' ||
-          typedError.code === 'expired_oauth_token'
-
-        if (isAuthError && isManagedDefaultGatewayConnection(connectionSlug)) {
-          void this.refreshManagedCredentialForNextTurn(managed)
-        }
-
-        // Build rich error message with all diagnostic fields for persistence and UI display
-        const typedErrorMessage: Message = {
-          id: generateMessageId(),
-          role: 'error',
-          // Combine title and message for content display (handles undefined gracefully)
-          content: typedError.message || typedError.title || 'An error occurred',
-          timestamp: this.monotonic(),
-          // Rich error fields for diagnostics and retry functionality
-          errorCode: typedError.code,
-          errorTitle: typedError.title,
-          errorDetails: typedError.details,
-          errorOriginal: typedError.originalError,
-          errorCanRetry: typedError.canRetry,
-        }
-        managed.messages.push(typedErrorMessage)
-        // Send typed_error event with full structure for renderer to handle
-        this.sendEvent({
-          type: 'typed_error',
-          sessionId,
-          error: {
-            code: typedError.code,
-            title: typedError.title,
-            message: typedError.message,
-            actions: typedError.actions,
-            canRetry: typedError.canRetry,
-            details: typedError.details,
-            originalError: typedError.originalError,
-          },
-          timestamp: typedErrorMessage.timestamp,
-        }, workspaceId)
+        this.recordTypedError(managed, typedError)
         break
 
       case 'task_backgrounded':

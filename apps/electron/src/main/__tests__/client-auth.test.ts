@@ -12,6 +12,8 @@ import {
   type ClientAuthBrokerTokenRefreshResult,
   type ClientAuthNeonService,
 } from '../client-auth'
+import { ClientAuthBrokerHttpError, classifyModelAccessRefreshFailure } from '../client-auth-broker'
+import { ManagedAccessRefreshError } from '@craft-agent/shared/auth/managed-access'
 
 function modelToken(expiresAtMs: number): string {
   return [
@@ -39,6 +41,47 @@ it('signs out locally before remote revocation and reports an unconfirmed remote
   })
   await expect(service.signOut()).rejects.toThrow('remote session revocation could not be confirmed')
   expect(service.getState().authenticated).toBe(false)
+})
+
+describe('managed model access renewal failures', () => {
+  const failingService = (failure: unknown) => createClientAuthService({ required: true, authBrokerUrl: 'https://auth.test' }, {
+    initialSession: { user: { provider: 'neon', userId: 'user' }, appSessionToken: 'app-session' },
+    createAuthBrokerClient: () => ({ ...unusedBrokerMethods, refreshModelAccessToken: async () => { throw failure } }),
+  })
+
+  it.each([
+    [new ClientAuthBrokerHttpError('Authentication required', 401, { reason: 'session_revoked', correlationId: 'ref-401' }), 'sign_in', false, 'session_revoked', 'ref-401'],
+    [new ClientAuthBrokerHttpError('Invalid client session', 401), 'sign_in', false, undefined, undefined],
+    [new ClientAuthBrokerHttpError('Managed access permission denied', 403, { reason: 'account_disabled', correlationId: 'ref-403' }), 'access_removed', true, 'account_disabled', 'ref-403'],
+    [new ClientAuthBrokerHttpError('Access service temporarily unavailable', 503, { reason: 'dependency_unavailable' }), 'service_unavailable', true, 'dependency_unavailable', undefined],
+    [new ClientAuthBrokerHttpError('Model access refresh failed: HTTP 502', 502), 'service_unavailable', true, undefined, undefined],
+    [new TypeError('fetch failed'), 'service_unavailable', true, undefined, undefined],
+    [new DOMException('The operation timed out.', 'TimeoutError'), 'service_unavailable', true, undefined, undefined],
+  ] as const)('classifies %p as %s and only clears login on identity rejection', async (failure, recovery, keepsLogin, reason, correlationId) => {
+    const service = failingService(failure)
+    const error = await service.ensureModelAccessToken({ force: true }).catch(caught => caught)
+    // Same composition as the Product Host runtime hook.
+    const classified = classifyModelAccessRefreshFailure(error, service.getState().authenticated)
+
+    expect(classified).toBeInstanceOf(ManagedAccessRefreshError)
+    expect(classified.recovery).toBe(recovery)
+    expect(classified.reason).toBe(reason)
+    expect(classified.correlationId).toBe(correlationId)
+    expect(classified.cause).toBe(failure)
+    expect(service.getState().authenticated).toBe(keepsLogin)
+    service.dispose()
+  })
+
+  it('asks a signed-out client to sign in and keeps already classified failures', async () => {
+    const service = createClientAuthService({ required: true, authBrokerUrl: 'https://auth.test' }, {
+      createAuthBrokerClient: () => unusedBrokerMethods,
+    })
+    const error = await service.ensureModelAccessToken({ force: true }).catch(caught => caught)
+    expect(classifyModelAccessRefreshFailure(error, service.getState().authenticated).recovery).toBe('sign_in')
+    const classified = new ManagedAccessRefreshError('access_removed')
+    expect(classifyModelAccessRefreshFailure(classified, true)).toBe(classified)
+    service.dispose()
+  })
 })
 
 const unusedNeonSessionMethods = {

@@ -45,7 +45,8 @@ import {
   type ManagedSession,
 } from './managed-session'
 import { buildServersFromSources } from './source-bridge'
-import { isManagedDefaultGatewayConnection } from './managed-gateway-auth-error'
+import { isManagedAccessRefreshError } from '@craft-agent/shared/auth/managed-access'
+import { isManagedDefaultGatewayConnection, type ManagedAccessRenewal } from './managed-gateway-auth-error'
 import {
   buildBackendHostRuntimeContext,
   getSessionLog,
@@ -384,12 +385,20 @@ export class AgentRuntime {
     return { token: modelAccess.token }
   }
 
-  /** Renew a rejected capability without mutating the runtime that reported it. */
-  async refreshManagedCredentialForNextTurn(managed: ManagedSession): Promise<void> {
+  /**
+   * Renew a rejected capability for the next explicit operation without mutating the
+   * runtime that reported it, and report what the user can do next.
+   */
+  async refreshManagedCredentialForNextTurn(managed: ManagedSession): Promise<ManagedAccessRenewal> {
     try {
       await this.ensureManagedCredentialForSessionLocked(managed, true)
+      return { recovery: 'retry' }
     } catch (error) {
       getSessionLog().warn(`[managed-access] Credential refresh failed for ${managed.id}: ${error instanceof Error ? error.message : error}`)
+      // Hosts that do not classify renewal failures cannot prove the login is gone.
+      return isManagedAccessRefreshError(error)
+        ? { recovery: error.recovery, reason: error.reason, correlationId: error.correlationId }
+        : { recovery: 'service_unavailable' }
     }
   }
 

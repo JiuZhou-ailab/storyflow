@@ -13,6 +13,31 @@ export class ManagedAccessError extends Error {
   constructor(readonly reason: AccessReason) { super(reason) }
 }
 
+/** What the user can do next after managed access was rejected and a renewal was attempted. */
+export const MANAGED_ACCESS_RECOVERIES = ['retry', 'sign_in', 'access_removed', 'service_unavailable'] as const
+export type ManagedAccessRecovery = typeof MANAGED_ACCESS_RECOVERIES[number]
+
+/** A desktop capability renewal failure, already classified by the host that owns the Identity Session. */
+export class ManagedAccessRefreshError extends Error {
+  readonly recovery: Exclude<ManagedAccessRecovery, 'retry'>
+  readonly reason?: AccessReason
+  readonly correlationId?: string
+  constructor(recovery: Exclude<ManagedAccessRecovery, 'retry'>, detail: { reason?: AccessReason; correlationId?: string; cause?: unknown } = {}) {
+    super(`Managed model access renewal failed: ${recovery}${detail.reason ? ` (${detail.reason})` : ''}`, { cause: detail.cause })
+    this.name = 'ManagedAccessRefreshError'
+    this.recovery = recovery
+    if (detail.reason) this.reason = detail.reason
+    if (detail.correlationId) this.correlationId = detail.correlationId
+  }
+}
+
+// Duck-typed so the check survives bundling that duplicates this module.
+export function isManagedAccessRefreshError(value: unknown): value is ManagedAccessRefreshError {
+  if (!(value instanceof Error) || value.name !== 'ManagedAccessRefreshError') return false
+  const recovery = (value as { recovery?: unknown }).recovery
+  return recovery === 'sign_in' || recovery === 'access_removed' || recovery === 'service_unavailable'
+}
+
 export interface AccessIdentity { sub: string; sid?: string }
 export interface AccessPolicy { scopes: string[]; models: string[] | null }
 export interface AccessDecision { policy?: AccessPolicy; reason?: AccessReason }

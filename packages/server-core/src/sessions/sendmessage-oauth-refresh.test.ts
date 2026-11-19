@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { ManagedAccessRefreshError } from '@craft-agent/shared/auth/managed-access'
 import { createSourceGrantRefs, loadWorkspaceSources } from '@craft-agent/shared/sources'
 import { SessionManager, createManagedSession, setSessionRuntimeHooks } from './SessionManager.ts'
 
@@ -207,6 +208,34 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
 
     expect(managed.isProcessing).toBe(false)
     expect(errors).toHaveLength(1)
+  })
+
+  it('shows the host-classified recovery when managed access cannot be renewed before sending', async () => {
+    const managed = buildSession('managed-refresh-classified')
+    managed.llmConnection = 'storyflow-managed'
+    const events: Array<{ type?: string; error?: unknown }> = []
+    sm.setEventSink((channel, _target, event) => {
+      if (channel === 'session:event') events.push(event as { type?: string; error?: unknown })
+    })
+    let ensureCalls = 0
+    setSessionRuntimeHooks({
+      ensureManagedModelAccessToken: async () => {
+        ensureCalls++
+        throw new ManagedAccessRefreshError('sign_in', { reason: 'session_revoked', correlationId: 'broker-11' })
+      },
+    })
+
+    await sm.sendMessage(managed.id, 'hello')
+
+    // One preflight, no renewal retry, no replay and no raw error text.
+    expect(ensureCalls).toBe(1)
+    expect(managed.isProcessing).toBe(false)
+    expect(events.filter(event => event.type === 'error')).toEqual([])
+    expect(events.filter(event => event.type === 'typed_error')).toEqual([expect.objectContaining({
+      error: expect.objectContaining({ title: 'Sign in again', canRetry: false, details: ['Reference: broker-11'] }),
+    })])
+    expect(managed.messages.filter(message => message.role === 'user')).toHaveLength(1)
+    expect(managed.messages.at(-1)).toMatchObject({ role: 'error', errorTitle: 'Sign in again', errorCanRetry: false })
   })
 
   it('preflights managed model access for one-shot calls', async () => {
