@@ -5,7 +5,6 @@ import { expect, it } from 'bun:test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { build } from 'esbuild'
 
 // Linux CI runners lack a SUID chrome-sandbox; this test covers renderer boundaries, not the OS sandbox.
 const LINUX_CI_SANDBOX_ARGS = process.platform === 'linux' ? ['--no-sandbox'] : []
@@ -16,13 +15,19 @@ it('registers only real OS files across Electron context isolation', async () =>
     const path = join(dir, 'native.txt')
     await writeFile(path, 'native')
     const preload = join(dir, 'preload.cjs')
-    await build({
-      stdin: { resolveDir: import.meta.dir, contents: `import { contextBridge } from 'electron';
+    // A one-shot build avoids esbuild's shared Node subprocess pipes under Bun.
+    const bundle = Bun.spawnSync([
+      process.execPath, 'run', '--silent', 'esbuild',
+      '--bundle', '--platform=node', '--format=cjs', '--external:electron', `--outfile=${preload}`,
+    ], {
+      cwd: import.meta.dir,
+      stdin: Buffer.from(`import { contextBridge } from 'electron';
 import { getUserAttachmentPath } from ${JSON.stringify(join(import.meta.dir, '../user-attachment.ts'))};
 
-contextBridge.exposeInMainWorld('attachment', { getPath: getUserAttachmentPath });` },
-      bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outfile: preload,
+contextBridge.exposeInMainWorld('attachment', { getPath: getUserAttachmentPath });`),
+      stdout: 'pipe', stderr: 'pipe', timeout: 5_000,
     })
+    expect(bundle.exitCode, `esbuild ${bundle.signalCode ?? ''}\n${bundle.stderr.toString()}`).toBe(0)
     const script = join(dir, 'run.cjs')
     await writeFile(script, `const { app, BrowserWindow, ipcMain } = require('electron');
 app.setPath('userData', ${JSON.stringify(join(dir, 'profile'))});

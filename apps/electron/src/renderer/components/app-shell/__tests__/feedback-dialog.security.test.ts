@@ -5,7 +5,6 @@ import { expect, it } from 'bun:test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { build } from 'esbuild'
 
 // Linux CI runners lack a SUID chrome-sandbox; this test covers renderer boundaries, not the OS sandbox.
 const LINUX_CI_SANDBOX_ARGS = process.platform === 'linux' ? ['--no-sandbox'] : []
@@ -13,8 +12,14 @@ const LINUX_CI_SANDBOX_ARGS = process.platform === 'linux' ? ['--no-sandbox'] : 
 it('shows clear limits and cannot exceed them through concurrent pastes', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'feedback-ui-'))
   try {
-    const bundle = await build({
-      stdin: { resolveDir: import.meta.dir, loader: 'tsx', contents: `
+    // A one-shot build avoids esbuild's shared Node subprocess pipes under Bun.
+    const bundle = Bun.spawnSync([
+      process.execPath, 'run', '--silent', 'esbuild',
+      '--bundle', '--platform=browser', '--format=iife', '--loader=tsx',
+      `--tsconfig=${join(import.meta.dir, '../../../../../tsconfig.json')}`,
+    ], {
+      cwd: import.meta.dir,
+      stdin: Buffer.from(`
         import React from 'react'; import {createRoot} from 'react-dom/client';
         import i18n from 'i18next'; import {I18nextProvider} from 'react-i18next';
         import en from '@craft-agent/shared/i18n/locales/en.json';
@@ -22,10 +27,10 @@ it('shows clear limits and cannot exceed them through concurrent pastes', async 
         function App() { const [open,setOpen]=React.useState(true); window.reopenFeedback=()=>setOpen(true);
           return <FeedbackDialog open={open} onOpenChange={setOpen}/>; }
         i18n.init({lng:'en', resources:{en:{translation:en}}}).then(()=>createRoot(document.getElementById('root')).render(<I18nextProvider i18n={i18n}><App/></I18nextProvider>));
-      ` },
-      tsconfig: join(import.meta.dir, '../../../../../tsconfig.json'),
-      bundle: true, platform: 'browser', format: 'iife', write: false,
+      `),
+      stdout: 'pipe', stderr: 'pipe', timeout: 5_000,
     })
+    expect(bundle.exitCode, `esbuild ${bundle.signalCode ?? ''}\n${bundle.stderr.toString()}`).toBe(0)
     const checks = `async () => {
       const pause = () => new Promise(r => setTimeout(r, 25));
       const wait = async test => { for(let i=0;i<200;i++){if(test()) return; await pause();} throw new Error('UI timeout'); };
@@ -53,7 +58,7 @@ app.setPath('userData',${JSON.stringify(join(dir, 'profile'))});
 app.whenReady().then(async()=>{
  const win=new BrowserWindow({show:false,webPreferences:{sandbox:true}});
  await win.loadURL('data:text/html,<div id="root"></div>');
- await win.webContents.executeJavaScript(${JSON.stringify(bundle.outputFiles[0]!.text)});
+ await win.webContents.executeJavaScript(${JSON.stringify(bundle.stdout.toString())});
  console.log('RESULT:'+JSON.stringify(await win.webContents.executeJavaScript(${JSON.stringify(`(${checks})()`)})));
  app.quit();
 }).catch(error=>{console.error(error);app.exit(1)});`)
