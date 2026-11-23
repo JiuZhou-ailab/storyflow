@@ -175,7 +175,7 @@ async function main(): Promise<void> {
     assert.ok(recovered.some(candidate => candidate.id === session.id))
     const recoveredMode = await callOn<{ permissionMode: string }>(app,
       'async function (id) { return await window.electronAPI.getSessionPermissionModeState(id) }', [session.id])
-    assert.equal(recoveredMode.permissionMode, 'ask', 'Project restart must renew execute consent; Session files cannot grant capabilities')
+    assert.equal(recoveredMode.permissionMode, 'allow-all', 'Project restart must restore the execute consent granted through Allow All')
     assert.equal(readFileSync(fixture.targetFile, 'utf8'), AGENT_EDIT)
 
     setStage('passed')
