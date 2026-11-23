@@ -149,6 +149,8 @@
   "chat.clearDraft": "清除草稿",
   "chat.clickForTaskActions": "点击查看任务操作",
   "chat.clickToOpen": "点击打开 {{name}}",
+  "chat.commentarySummaryLoading": "正在生成思考摘要…",
+  "chat.commentarySummaryUnavailable": "展开查看思考原文",
   "chat.connectionDefault": "此连接的默认值",
   "chat.connectionUnavailable": "连接不可用",
   "chat.connectionUnavailableDescription": "此会话使用的连接已被删除。请创建一个新会话以继续。",

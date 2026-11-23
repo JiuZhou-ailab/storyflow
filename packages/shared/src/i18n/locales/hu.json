@@ -149,6 +149,8 @@
   "chat.clearDraft": "Piszkozat törlése",
   "chat.clickForTaskActions": "Kattints a feladatműveletekért",
   "chat.clickToOpen": "Kattints a(z) {{name}} megnyitásához",
+  "chat.commentarySummaryLoading": "A megjegyzés összefoglalása…",
+  "chat.commentarySummaryUnavailable": "A modell megjegyzésének megtekintése",
   "chat.connectionDefault": "A kapcsolat alapértelmezése",
   "chat.connectionUnavailable": "Kapcsolat nem érhető el",
   "chat.connectionUnavailableDescription": "A munkamenet által használt kapcsolatot eltávolították. A folytatáshoz hozz létre egy új munkamenetet.",

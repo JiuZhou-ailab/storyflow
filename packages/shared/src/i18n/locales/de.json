@@ -149,6 +149,8 @@
   "chat.clearDraft": "Entwurf löschen",
   "chat.clickForTaskActions": "Für Aufgabenaktionen klicken",
   "chat.clickToOpen": "Klicken um {{name}} zu öffnen",
+  "chat.commentarySummaryLoading": "Zusammenfassung wird erstellt …",
+  "chat.commentarySummaryUnavailable": "Erläuterung des Modells anzeigen",
   "chat.connectionDefault": "Standard dieser Verbindung",
   "chat.connectionUnavailable": "Verbindung nicht verfügbar",
   "chat.connectionUnavailableDescription": "Die von dieser Sitzung verwendete Verbindung wurde entfernt. Erstellen Sie eine neue Sitzung, um fortzufahren.",

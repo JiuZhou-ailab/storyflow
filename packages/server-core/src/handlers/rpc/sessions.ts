@@ -16,6 +16,7 @@ import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { setTransferableHandler } from './transfer'
 import { getConversationFiles } from './session-conversation-files'
+import { summarizeTurnCommentary } from '../../sessions/turn-commentary-summary'
 
 interface ClientSessionWatchState {
   watcher: import('fs').FSWatcher
@@ -432,6 +433,8 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
       case 'refreshTitle':
         log.info(`IPC: refreshTitle received for session ${sessionId}`)
         return sessionManager.refreshTitle(sessionId)
+      case 'summarizeTurnCommentary':
+        return summarizeTurnCommentary(sessionManager, sessionId, command.messageIds)
       // Connection selection (locked after first message)
       case 'setConnection':
         log.info(`IPC: setConnection received for session ${sessionId}, connection: ${command.connectionSlug}`)

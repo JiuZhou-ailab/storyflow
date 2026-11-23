@@ -149,6 +149,8 @@
   "chat.clearDraft": "下書きをクリア",
   "chat.clickForTaskActions": "クリックしてタスクアクションを表示",
   "chat.clickToOpen": "クリックして{{name}}を開く",
+  "chat.commentarySummaryLoading": "コメントを要約中…",
+  "chat.commentarySummaryUnavailable": "モデルのコメントを表示",
   "chat.connectionDefault": "この接続のデフォルト",
   "chat.connectionUnavailable": "接続を利用できません",
   "chat.connectionUnavailableDescription": "このセッションで使用していた接続は削除されました。続行するには新しいセッションを作成してください。",
