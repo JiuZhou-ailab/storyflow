@@ -359,7 +359,7 @@ describe('PiEventAdapter', () => {
       ];
 
       expect(events).toEqual([
-        { type: 'text_delta', text: 'Checking the evidence', turnId: 'pi-turn-1__m0' },
+        { type: 'text_delta', text: 'Checking the evidence', turnId: 'pi-turn-1__m0', isIntermediate: true },
         { type: 'text_complete', text: 'Checking the evidence', isIntermediate: true, turnId: 'pi-turn-1__m0' },
         { type: 'text_delta', text: 'Final answer', turnId: 'pi-turn-1__m1' },
         { type: 'text_complete', text: 'Final answer', isIntermediate: false, turnId: 'pi-turn-1__m1', sdkTurnAnchor: undefined },

@@ -1,12 +1,14 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { MoreHorizontal, FileDiff, ArrowUpRight } from 'lucide-react'
+import { MoreHorizontal, FileDiff, ArrowUpRight, ChevronDown } from 'lucide-react'
 import { SimpleDropdown, SimpleDropdownItem } from '../ui/SimpleDropdown'
 import { cn } from '../../lib/utils'
 
 export interface TurnCardActionsMenuProps {
   /** Callback to open turn details in a new window */
   onOpenDetails?: () => void
+  /** Callback to reopen the inline activity list from the response. */
+  onExpandActivities?: () => void
   /** Callback to open all edits/writes in multi-file diff view */
   onOpenMultiFileDiff?: () => void
   /** Whether this turn has any Edit or Write activities */
@@ -20,10 +22,12 @@ export interface TurnCardActionsMenuProps {
  *
  * Shows:
  * - "View file changes" when turn has Edit/Write activities
- * - "View turn details" always
+ * - "View turn details" when the host supplies a details view
+ * - "Show technical details" when the inline activity list is hidden
  */
 export function TurnCardActionsMenu({
   onOpenDetails,
+  onExpandActivities,
   onOpenMultiFileDiff,
   hasEditOrWriteActivities,
   className,
@@ -32,7 +36,7 @@ export function TurnCardActionsMenu({
   const [isOpen, setIsOpen] = React.useState(false)
 
   // Don't render if no actions available
-  if (!onOpenDetails && !onOpenMultiFileDiff) {
+  if (!onOpenDetails && !onOpenMultiFileDiff && !onExpandActivities) {
     return null
   }
 
@@ -44,6 +48,7 @@ export function TurnCardActionsMenu({
         <div
           role="button"
           tabIndex={0}
+          aria-label={t('chat.viewTurnDetails')}
           className={cn(
             "p-1 rounded-[6px] transition-opacity shrink-0",
             "opacity-0 group-hover:opacity-100",
@@ -63,6 +68,11 @@ export function TurnCardActionsMenu({
         </div>
       }
     >
+      {onExpandActivities && (
+        <SimpleDropdownItem onClick={onExpandActivities} icon={<ChevronDown />}>
+          {t('chat.showTechnicalDetails')}
+        </SimpleDropdownItem>
+      )}
       {onOpenMultiFileDiff && hasEditOrWriteActivities && (
         <SimpleDropdownItem
           onClick={onOpenMultiFileDiff}

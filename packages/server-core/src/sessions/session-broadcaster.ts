@@ -1,5 +1,5 @@
 // input: SessionEvent payloads, workspace/global broadcast triggers, and the host EventSink
-// output: Workspace-scoped event delivery, deduplicated global broadcasts, and batched text deltas
+// output: Workspace-scoped event delivery, deduplicated global broadcasts, and deltas batched by text block
 // pos: Leaf outbound-event module under the SessionManager facade; sole owner of the EventSink reference
 
 import type { EventSink } from '@craft-agent/server-core/transport'
@@ -13,6 +13,7 @@ const DELTA_BATCH_INTERVAL_MS = 50  // Flush batched deltas every 50ms
 interface PendingDelta {
   delta: string
   turnId?: string
+  isIntermediate?: true
 }
 
 export class SessionBroadcaster {
@@ -45,16 +46,13 @@ export class SessionBroadcaster {
    * Queue a text delta for batched sending (performance optimization)
    * Instead of sending 50+ IPC events per second, batches deltas and flushes every 50ms
    */
-  queueDelta(sessionId: string, workspaceId: string, delta: string, turnId?: string): void {
+  queueDelta(sessionId: string, workspaceId: string, delta: string, turnId?: string, isIntermediate?: true): void {
     const existing = this.pendingDeltas.get(sessionId)
-    if (existing) {
-      // Append to existing batch
+    if (existing && existing.turnId === turnId && existing.isIntermediate === isIntermediate) {
       existing.delta += delta
-      // Keep the latest turnId (should be the same, but just in case)
-      if (turnId) existing.turnId = turnId
     } else {
-      // Start new batch
-      this.pendingDeltas.set(sessionId, { delta, turnId })
+      if (existing) this.flushDelta(sessionId, workspaceId)
+      this.pendingDeltas.set(sessionId, { delta, turnId, isIntermediate })
     }
 
     // Schedule flush if not already scheduled
@@ -85,7 +83,8 @@ export class SessionBroadcaster {
         type: 'text_delta',
         sessionId,
         delta: pending.delta,
-        turnId: pending.turnId
+        turnId: pending.turnId,
+        ...(pending.isIntermediate && { isIntermediate: pending.isIntermediate }),
       }, workspaceId)
       this.pendingDeltas.delete(sessionId)
     }

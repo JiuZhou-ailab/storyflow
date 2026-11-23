@@ -36,6 +36,7 @@ export interface TextDeltaEvent {
   sessionId: string
   delta: string
   turnId?: string
+  isIntermediate?: true
 }
 
 /**

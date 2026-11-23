@@ -98,6 +98,7 @@ export function handleTextDelta(
     timestamp: Date.now(),
     isStreaming: true,
     isPending: true,
+    isIntermediate: event.isIntermediate,
     turnId: event.turnId,
   }
 
