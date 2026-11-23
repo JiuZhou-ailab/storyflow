@@ -44,23 +44,32 @@ test('shows pending text from the real message-to-turn boundary before classific
   expect(html).toContain('首片正文')
 })
 
-test('keeps classified process text in one preview until the turn finishes', async () => {
+test('renders live Markdown at full length and shows streaming status during a pause', () => {
+  const html = renderToStaticMarkup(<TurnCard turnId="turn" activities={[]} isStreaming isComplete={false}
+    response={{ text: '## 正文\n\n**第一段**\n\n第二段\n\n最后一段', isStreaming: true }} />)
+  expect(html).toMatch(/<strong\b[^>]*>第一段<\/strong>/)
+  expect(html).toContain('最后一段')
+  expect(html).toContain('Streaming...')
+  expect(html).not.toContain('flex-row-reverse')
+})
+
+test('keeps live process text in chronological activity rows and hides the collapsed summary in chat', async () => {
   const { groupMessagesByTurn } = await import('../turn-utils')
-  const [turn] = groupMessagesByTurn([{
-    id: 'process', role: 'assistant', content: '读取原稿\n核对章节\n检查引用\n准备修订', timestamp: 1, isIntermediate: true,
-  }])
+  const [turn] = groupMessagesByTurn([
+    { id: 'process', role: 'assistant', content: '先检查原稿\n再读取第三章', timestamp: 1, isIntermediate: true },
+    { id: 'read-tool', role: 'tool', content: '', timestamp: 2, toolName: 'Read', toolUseId: 'read-tool', toolInput: { file_path: 'chapter-3.md' } },
+  ])
   if (turn?.type !== 'assistant') throw new Error('Expected assistant turn')
-  expect(turn.isStreaming).toBe(false)
+  const live = renderToStaticMarkup(<TurnCard {...turn} isExpanded hideCompletedActivitySummary />)
+  expect(live).toContain('flex-row-reverse')
+  expect(live.match(/再读取第三章/g)).toHaveLength(1)
+  expect(live.indexOf('再读取第三章')).toBeLessThan(live.indexOf('chapter-3.md'))
 
-  const live = renderToStaticMarkup(<TurnCard {...turn} isExpanded />)
-  expect(live).toContain('max-h-[3lh]')
-  expect(live.match(/准备修订/g)).toHaveLength(1)
-  expect(live).toContain('读取原稿\n核对章节\n检查引用\n准备修订')
-
-  const done = renderToStaticMarkup(<TurnCard {...turn} isComplete />)
-  expect(done).toContain('aria-expanded="false"')
-  expect(done).not.toContain('max-h-[3lh]')
-  expect(done).not.toContain('准备修订')
+  const done = renderToStaticMarkup(<TurnCard {...turn} isComplete isExpanded={false} hideCompletedActivitySummary
+    response={{ text: '**完成**', isStreaming: false }} />)
+  expect(done).not.toContain('aria-expanded="false"')
+  expect(done).not.toContain('chapter-3.md')
+  expect(done).toMatch(/<strong\b[^>]*>完成<\/strong>/)
 })
 
 test('completed file links receive the current workspace navigation callback', () => {

@@ -1,5 +1,5 @@
 // input: Session turns, tool activity metadata, turn metrics, annotations, and chat display callbacks
-// output: Rendered assistant/user turn cards with live process previews, rich blocks, usage details, and annotation affordances
+// output: Rendered assistant/user turn cards with live activity text, rich response blocks, and annotation affordances
 // pos: Shared chat transcript presentation layer for Electron and viewer surfaces
 
 import * as React from 'react'
@@ -291,6 +291,8 @@ export interface TurnCardProps {
   metrics?: TurnMetrics
   /** Start in expanded state */
   defaultExpanded?: boolean
+  /** Show the response without a separate activity summary when the completed turn is collapsed. */
+  hideCompletedActivitySummary?: boolean
   /** Controlled expansion state (overrides internal state) */
   isExpanded?: boolean
   /** Callback when expansion state changes */
@@ -652,13 +654,12 @@ function getPreviewText(
 // Sub-Components
 // ============================================================================
 
-/** Keep the tail of one plain-text block visible as it grows and rewraps. */
-function ProcessTextPreview({ text }: { text: string }) {
+function LiveActivityText({ text }: { text: string }) {
   return (
-    // Reverse with a single child anchors the scrollport to the bottom without
-    // moving the surrounding chat scroll container or reading layout per delta.
-    <span className="flex min-w-0 flex-1 max-h-[3lh] flex-col-reverse overflow-hidden leading-5">
-      <span className="shrink-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{text.trimEnd()}</span>
+    // Inline-end is the scroll origin. The auto margin aligns short text
+    // to inline-start and disappears when the content overflows.
+    <span dir="auto" className="flex min-w-0 flex-1 flex-row-reverse overflow-hidden whitespace-nowrap">
+      <span className="shrink-0 [margin-inline-end:auto]">{text}</span>
     </span>
   )
 }
@@ -751,8 +752,7 @@ export function ActivityStatusIcon({
 
 interface ActivityRowProps {
   activity: ActivityItem
-  /** Render the latest process step in the live preview outside the activity list. */
-  livePreview?: boolean
+  isTurnActive: boolean
   /** Callback to open activity details in Monaco */
   onOpenDetails?: () => void
   /** Whether this is the last child at its depth level (for └ corner in tree view) */
@@ -782,13 +782,13 @@ function TreeViewConnector({ depth }: { depth: number; isLastChild?: boolean }) 
 }
 
 /** Single activity row in expanded view */
-function ActivityRow({ activity, livePreview, onOpenDetails, isLastChild, sessionFolderPath, displayMode = 'detailed' }: ActivityRowProps) {
+function ActivityRow({ activity, isTurnActive, onOpenDetails, isLastChild, sessionFolderPath, displayMode = 'detailed' }: ActivityRowProps) {
   const depth = activity.depth || 0
 
   // Intermediate messages (LLM commentary) - render with dashed circle icon
-  // Show "Thinking" while streaming, stripped markdown content when complete
   if (activity.type === 'intermediate') {
     const isThinking = activity.status === 'running'
+    const content = stripMarkdown(activity.content || '')
     const isComplete = activity.status === 'completed'
     return (
       <div className="flex items-stretch">
@@ -803,16 +803,16 @@ function ActivityRow({ activity, livePreview, onOpenDetails, isLastChild, sessio
           {isThinking ? (
             <div className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}>
               <Spinner className={SIZE_CONFIG.spinnerSize} />
-              {livePreview && <span className="sr-only">Thinking...</span>}
+              {content && isTurnActive && <span className="sr-only">Thinking...</span>}
             </div>
           ) : (
             <MessageCircleDashed className={cn(SIZE_CONFIG.iconSize, "shrink-0")} />
           )}
-          {livePreview ? (
-            <ProcessTextPreview text={activity.content ?? ''} />
+          {isTurnActive && content ? (
+            <LiveActivityText text={content} />
           ) : (
             <span className={cn("truncate flex-1", onOpenDetails && isComplete && "group-hover/row:underline")}>
-              {isThinking ? 'Thinking...' : stripMarkdown(activity.content || '')}
+              {isThinking ? 'Thinking...' : content}
             </span>
           )}
           {/* Open details button */}
@@ -1100,6 +1100,7 @@ function ActivityRow({ activity, livePreview, onOpenDetails, isLastChild, sessio
 
 interface ActivityGroupRowProps {
   group: ActivityGroup
+  isTurnActive: boolean
   /** Controlled expansion state for activity groups */
   expandedGroups?: Set<string>
   /** Callback when expansion changes */
@@ -1118,7 +1119,7 @@ interface ActivityGroupRowProps {
  * Renders a Task subagent with its child activities grouped together.
  * Provides visual containment and collapsible children.
  */
-function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExpandedGroupsChange, onOpenActivityDetails, animationIndex = 0, sessionFolderPath, displayMode = 'detailed' }: ActivityGroupRowProps) {
+function ActivityGroupRow({ group, isTurnActive, expandedGroups: externalExpandedGroups, onExpandedGroupsChange, onOpenActivityDetails, animationIndex = 0, sessionFolderPath, displayMode = 'detailed' }: ActivityGroupRowProps) {
   // Use local state if no controlled state provided
   const [localExpandedGroups, setLocalExpandedGroups] = useState<Set<string>>(new Set())
   const expandedGroups = externalExpandedGroups ?? localExpandedGroups
@@ -1254,6 +1255,7 @@ function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExp
                 >
                   <ActivityRow
                     activity={child}
+                    isTurnActive={isTurnActive}
                     onOpenDetails={onOpenActivityDetails ? () => onOpenActivityDetails(child) : undefined}
                     isLastChild={idx === group.children.length - 1}
                     sessionFolderPath={sessionFolderPath}
@@ -1303,6 +1305,8 @@ export interface ResponseCardProps {
   showAcceptPlan?: boolean
   /** Hide footer for compact embedding (EditPopover) */
   compactMode?: boolean
+  /** Turn actions presented alongside the response when the activity section is hidden. */
+  activityActions?: React.ReactNode
   /** Durable elapsed time and token usage shown in the response action footer */
   metrics?: TurnMetrics
   /** Callback to branch the session from this response */
@@ -1465,6 +1469,7 @@ export function ResponseCard({
   isLastResponse = true,
   showAcceptPlan = true,
   compactMode = false,
+  activityActions,
   metrics,
   onBranch,
   onAddAnnotation,
@@ -2223,6 +2228,9 @@ export function ResponseCard({
           "relative group",
           isPlan && "bg-background shadow-minimal rounded-[8px] overflow-hidden"
         )}>
+          {compactMode && activityActions && (
+            <div className="absolute top-2 right-2 z-10">{activityActions}</div>
+          )}
           {/* Fullscreen button - desktop only; compact mode keeps message chrome minimal */}
           {!compactMode && (
           <button
@@ -2342,6 +2350,7 @@ export function ResponseCard({
                 {model && <span className="text-xs text-muted-foreground">{model}</span>}
                 {metrics && <TurnUsageTooltip metrics={metrics} />}
                 {onBranch && <BranchDropdown onBranch={onBranch} />}
+                {activityActions}
               </div>
             </div>
           )}
@@ -2432,6 +2441,7 @@ export const TurnCard = React.memo(function TurnCard({
   isComplete,
   metrics,
   defaultExpanded = false,
+  hideCompletedActivitySummary = false,
   isExpanded: externalIsExpanded,
   onExpandedChange,
   expandedActivityGroups: externalExpandedActivityGroups,
@@ -2529,11 +2539,6 @@ export const TurnCard = React.memo(function TurnCard({
   const handleExpandedActivityGroupsChange = onExpandedActivityGroupsChange ?? setLocalExpandedActivityGroups
 
   const isAwaitingContent = !!response && !response.text.trim()
-  // Text is classified only when its message ends. Until then it may still
-  // become either a process step or the final Markdown response.
-  const pendingResponse = !isComplete && response?.isStreaming && !response.isPlan && !isAwaitingContent
-    ? response
-    : undefined
 
   // Compute preview text with cross-fade animation
   const previewText = useMemo(
@@ -2564,10 +2569,6 @@ export const TurnCard = React.memo(function TurnCard({
     () => allSortedActivities.filter(a => a.type !== 'plan'),
     [allSortedActivities]
   )
-  const liveProcessActivity = !isComplete && !pendingResponse
-    ? sortedActivities.findLast(activity => activity.type === 'intermediate' && !activity.parentId && activity.content?.trim())
-    : undefined
-  const showResponse = response && !isAwaitingContent && !pendingResponse
 
   // Check if we have any Task subagents - if so, use grouped view
   const hasTaskSubagents = useMemo(
@@ -2619,17 +2620,31 @@ export const TurnCard = React.memo(function TurnCard({
 
   // Only count non-plan activities for the collapsible section
   const hasActivities = sortedActivities.length > 0
+  const showResponseOnly = hideCompletedActivitySummary && hasActivities && isComplete
+    && !isExpanded && !isAwaitingContent && !!response && !response.isPlan
+  const collapsedProcess = !isComplete && !isExpanded
+    ? sortedActivities.findLast(activity => activity.type === 'intermediate' && activity.content?.trim())
+    : undefined
+  const collapsedProcessText = collapsedProcess?.content ? stripMarkdown(collapsedProcess.content) : ''
+  const activityActions = renderActionsMenu ? renderActionsMenu() : (
+    <TurnCardActionsMenu
+      onOpenDetails={onOpenDetails}
+      onExpandActivities={showResponseOnly ? toggleExpanded : undefined}
+      onOpenMultiFileDiff={onOpenMultiFileDiff}
+      hasEditOrWriteActivities={effectiveHasEditOrWriteActivities}
+    />
+  )
 
   // Determine if thinking indicator should show using the phase-based state machine.
   // This properly handles the "gap" state (awaiting) between tool completion and next action,
   // which was previously causing the turn card to "disappear".
-  const isThinking = !pendingResponse && !liveProcessActivity && shouldShowThinkingIndicator(turnPhase, isAwaitingContent)
+  const isThinking = shouldShowThinkingIndicator(turnPhase, isAwaitingContent)
     && !sortedActivities.some(activity => activity.status === 'running')
 
   return (
     <div className="space-y-1">
       {/* Activity Section - excluded from search highlighting (matches ripgrep behavior) */}
-      {hasActivities && (
+      {hasActivities && !showResponseOnly && (
         <div className="group select-none" data-search-exclude="true">
           {/* Collapsed Header / Toggle */}
           <button
@@ -2659,29 +2674,25 @@ export const TurnCard = React.memo(function TurnCard({
             </span>
 
             {/* Preview text with crossfade + inline failure count */}
-            <span className="relative flex-1 min-w-0 h-5 flex items-center">
-              <AnimatePresence initial={false}>
-                <motion.span
-                  key={previewText}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="absolute inset-0 truncate"
-                >
-                  {previewText}
-                </motion.span>
-              </AnimatePresence>
-            </span>
+            {collapsedProcessText ? <LiveActivityText text={collapsedProcessText} /> : (
+              <span className="relative flex-1 min-w-0 h-5 flex items-center">
+                <AnimatePresence initial={false}>
+                  <motion.span
+                    key={previewText}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="absolute inset-0 truncate"
+                  >
+                    {previewText}
+                  </motion.span>
+                </AnimatePresence>
+              </span>
+            )}
 
             {/* Turn actions menu - use platform override or default */}
-            {renderActionsMenu ? renderActionsMenu() : (
-              <TurnCardActionsMenu
-                onOpenDetails={onOpenDetails}
-                onOpenMultiFileDiff={onOpenMultiFileDiff}
-                hasEditOrWriteActivities={effectiveHasEditOrWriteActivities}
-              />
-            )}
+            {activityActions}
           </button>
 
           {/* Expanded Activity List */}
@@ -2719,6 +2730,7 @@ export const TurnCard = React.memo(function TurnCard({
                         <ActivityGroupRow
                           key={item.parent.id}
                           group={item}
+                          isTurnActive={!isComplete}
                           expandedGroups={expandedActivityGroups}
                           onExpandedGroupsChange={handleExpandedActivityGroupsChange}
                           onOpenActivityDetails={onOpenActivityDetails}
@@ -2726,7 +2738,7 @@ export const TurnCard = React.memo(function TurnCard({
                           sessionFolderPath={sessionFolderPath}
                           displayMode={displayMode}
                         />
-                      ) : item.id !== liveProcessActivity?.id && (
+                      ) : (
                         <motion.div
                           key={item.id}
                           initial={
@@ -2739,6 +2751,7 @@ export const TurnCard = React.memo(function TurnCard({
                         >
                           <ActivityRow
                             activity={item}
+                            isTurnActive={!isComplete}
                             onOpenDetails={onOpenActivityDetails ? () => onOpenActivityDetails(item) : undefined}
                             sessionFolderPath={sessionFolderPath}
                             displayMode={displayMode}
@@ -2748,7 +2761,7 @@ export const TurnCard = React.memo(function TurnCard({
                     ))
                   ) : (
                     /* Flat view for simple tool calls */
-                    sortedActivities.map((activity, index) => activity.id !== liveProcessActivity?.id && (
+                    sortedActivities.map((activity, index) => (
                       <motion.div
                         key={activity.id}
                         initial={
@@ -2762,6 +2775,7 @@ export const TurnCard = React.memo(function TurnCard({
                       >
                         <ActivityRow
                           activity={activity}
+                          isTurnActive={!isComplete}
                           onOpenDetails={onOpenActivityDetails ? () => onOpenActivityDetails(activity) : undefined}
                           isLastChild={lastChildSet.has(activity.id)}
                           sessionFolderPath={sessionFolderPath}
@@ -2792,24 +2806,6 @@ export const TurnCard = React.memo(function TurnCard({
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
-      )}
-
-      {pendingResponse && (
-        <div
-          data-search-root="response"
-          className="select-text pl-[22px] pr-4 py-1.5 text-sm text-muted-foreground"
-        >
-          <ProcessTextPreview text={pendingResponse.text} />
-        </div>
-      )}
-      {liveProcessActivity && (
-        <div className="pl-[22px] pr-4" data-search-exclude="true">
-          <ActivityRow
-            activity={liveProcessActivity}
-            livePreview
-            onOpenDetails={onOpenActivityDetails ? () => onOpenActivityDetails(liveProcessActivity) : undefined}
-          />
         </div>
       )}
 
@@ -2855,12 +2851,12 @@ export const TurnCard = React.memo(function TurnCard({
       {/* Animated version for playground demos */}
       {animateResponse && (
         <AnimatePresence>
-          {showResponse && (
+          {response && !isAwaitingContent && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className={cn("select-text", hasActivities && "mt-2")}
+              className={cn("select-text", hasActivities && !showResponseOnly && "mt-2")}
             >
               <ResponseCard
                 text={response.text}
@@ -2881,6 +2877,7 @@ export const TurnCard = React.memo(function TurnCard({
                 onAcceptWithCompact={onAcceptPlanWithCompact}
                 isLastResponse={isLastResponse}
                 compactMode={compactMode}
+                activityActions={showResponseOnly ? activityActions : undefined}
                 metrics={isComplete ? metrics : undefined}
                 onBranch={onBranch && response.messageId && response.canBranch !== false ? (options?: { newPanel?: boolean }) => onBranch(response.messageId!, options) : undefined}
                 sendMessageKey={sendMessageKey}
@@ -2893,8 +2890,8 @@ export const TurnCard = React.memo(function TurnCard({
         </AnimatePresence>
       )}
       {/* Non-animated version for regular app use */}
-      {!animateResponse && showResponse && (
-        <div className={cn("select-text", hasActivities && "mt-2")}>
+      {!animateResponse && response && !isAwaitingContent && (
+        <div className={cn("select-text", hasActivities && !showResponseOnly && "mt-2")}>
           <ResponseCard
             text={response.text}
             model={response.model}
@@ -2914,6 +2911,7 @@ export const TurnCard = React.memo(function TurnCard({
             onAcceptWithCompact={onAcceptPlanWithCompact}
             isLastResponse={isLastResponse}
             compactMode={compactMode}
+            activityActions={showResponseOnly ? activityActions : undefined}
             metrics={isComplete ? metrics : undefined}
             onBranch={onBranch && response.messageId && response.canBranch !== false ? (options?: { newPanel?: boolean }) => onBranch(response.messageId!, options) : undefined}
             sendMessageKey={sendMessageKey}
@@ -2940,7 +2938,7 @@ export const TurnCard = React.memo(function TurnCard({
   if (!prev.isComplete || !next.isComplete) return false
 
   // Re-render if expansion state changed
-  if (prev.isExpanded !== next.isExpanded) return false
+  if (prev.isExpanded !== next.isExpanded || prev.hideCompletedActivitySummary !== next.hideCompletedActivitySummary) return false
   if (hasRelevantActivityGroupExpansionChanged(prev.activities, prev.expandedActivityGroups, next.expandedActivityGroups)) return false
 
   // Re-render if isLastResponse changed (for Accept Plan button visibility)

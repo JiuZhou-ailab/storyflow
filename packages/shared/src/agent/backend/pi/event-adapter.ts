@@ -1,5 +1,5 @@
 // input: Pi SDK lifecycle events and streamed tool output
-// output: Renderer-visible product events with stable tool names and failure status
+// output: Renderer-visible product events with typed reasoning deltas, stable tool names, and failure status
 // pos: One-way projection from Pi runtime facts into Storyflow session state
 
 /**
@@ -353,6 +353,7 @@ export class PiEventAdapter {
             type: 'text_delta',
             text: amEvent.delta,
             turnId: this.contentBlockTurnId,
+            isIntermediate: true,
           };
           break;
         }

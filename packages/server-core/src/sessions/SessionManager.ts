@@ -4611,7 +4611,7 @@ export class SessionManager implements ISessionManager {
       case 'text_delta':
         managed.streamingText += event.text
         // Queue delta for batched sending (performance: reduces IPC from 50+/sec to ~20/sec)
-        this.queueDelta(sessionId, workspaceId, event.text, event.turnId)
+        this.broadcaster.queueDelta(sessionId, workspaceId, event.text, event.turnId, event.isIntermediate)
         break
 
       case 'text_complete': {
@@ -5166,14 +5166,6 @@ export class SessionManager implements ISessionManager {
 
   private sendEvent(event: SessionEvent, workspaceId?: string): void {
     this.broadcaster.sendEvent(event, workspaceId)
-  }
-
-  /**
-   * Queue a text delta for batched sending (performance optimization)
-   * Instead of sending 50+ IPC events per second, batches deltas and flushes every 50ms
-   */
-  private queueDelta(sessionId: string, workspaceId: string, delta: string, turnId?: string): void {
-    this.broadcaster.queueDelta(sessionId, workspaceId, delta, turnId)
   }
 
   /**

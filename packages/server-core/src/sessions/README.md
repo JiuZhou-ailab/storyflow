@@ -6,7 +6,7 @@ Modules by reason-of-change (all flat in this directory):
 
 | Module | Owns |
 | --- | --- |
-| `session-broadcaster.ts` | Event sink fan-out: sendEvent, broadcast*, delta batching |
+| `session-broadcaster.ts` | Event sink fan-out: sendEvent, broadcast*, delta batching by text block and classification |
 | `share-service.ts` | revokeShare for legacy third-party shares (creating shares is removed) |
 | `message-edits.ts` | Message annotation add/update/remove + updateMessageContent |
 | `plan-tracking.ts` | Pending plan execution state (five plain functions over ManagedSession) |

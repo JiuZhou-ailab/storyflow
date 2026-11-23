@@ -98,4 +98,21 @@ describe('handleTextDelta streaming hot path', () => {
 
     expect(handleTextDelta(state, event)).toBe(state)
   })
+
+  it('projects classified reasoning as pending intermediate text from the first delta', () => {
+    const event: TextDeltaEvent = {
+      type: 'text_delta',
+      sessionId: 'session-1',
+      delta: 'Check the draft',
+      turnId: 'reasoning-1',
+      isIntermediate: true,
+    }
+    const next = handleTextDelta(makeState([]), event)
+    expect(next.session.messages[0]).toMatchObject({
+      content: event.delta,
+      isIntermediate: true,
+      isPending: true,
+      isStreaming: true,
+    })
+  })
 })
