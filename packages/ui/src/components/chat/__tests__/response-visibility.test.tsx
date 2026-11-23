@@ -44,6 +44,25 @@ test('shows pending text from the real message-to-turn boundary before classific
   expect(html).toContain('首片正文')
 })
 
+test('keeps classified process text in one preview until the turn finishes', async () => {
+  const { groupMessagesByTurn } = await import('../turn-utils')
+  const [turn] = groupMessagesByTurn([{
+    id: 'process', role: 'assistant', content: '读取原稿\n核对章节\n检查引用\n准备修订', timestamp: 1, isIntermediate: true,
+  }])
+  if (turn?.type !== 'assistant') throw new Error('Expected assistant turn')
+  expect(turn.isStreaming).toBe(false)
+
+  const live = renderToStaticMarkup(<TurnCard {...turn} isExpanded />)
+  expect(live).toContain('max-h-[3lh]')
+  expect(live.match(/准备修订/g)).toHaveLength(1)
+  expect(live).toContain('读取原稿\n核对章节\n检查引用\n准备修订')
+
+  const done = renderToStaticMarkup(<TurnCard {...turn} isComplete />)
+  expect(done).toContain('aria-expanded="false"')
+  expect(done).not.toContain('max-h-[3lh]')
+  expect(done).not.toContain('准备修订')
+})
+
 test('completed file links receive the current workspace navigation callback', () => {
   type Props = React.ComponentProps<typeof TurnCard>
   const compare = (TurnCard as unknown as { compare: (prev: Props, next: Props) => boolean }).compare

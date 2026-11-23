@@ -1,5 +1,5 @@
 // input: Session turns, tool activity metadata, turn metrics, annotations, and chat display callbacks
-// output: Rendered assistant/user turn cards with rich blocks, compact usage details, and annotation affordances
+// output: Rendered assistant/user turn cards with live process previews, rich blocks, usage details, and annotation affordances
 // pos: Shared chat transcript presentation layer for Electron and viewer surfaces
 
 import * as React from 'react'
@@ -589,7 +589,6 @@ function getPreviewText(
 
   let activityIntent: string | undefined
   let runningTaskDescription: string | undefined
-  let latestIntermediateContent: string | undefined
   let firstTaskDescription: string | undefined
   let errorCount = 0
   const runningToolNames: string[] = []
@@ -608,10 +607,6 @@ function getPreviewText(
       }
     }
 
-    if (isStreaming && !isComplete && activity.type === 'intermediate' && activity.content) {
-      latestIntermediateContent = activity.content
-    }
-
     if (activity.status === 'running' && activity.toolName && runningToolNames.length < 3) {
       runningToolNames.push(getToolDisplayName(activity.toolName))
     }
@@ -626,12 +621,6 @@ function getPreviewText(
   // Find running Task tools and show their description
   if (runningTaskDescription) {
     return runningTaskDescription
-  }
-
-  // While still streaming, show the latest intermediate message content
-  // This gives visibility into what the LLM is "thinking"
-  if (isStreaming && !isComplete && latestIntermediateContent) {
-    return latestIntermediateContent
   }
 
   // Show running tool names
@@ -662,6 +651,17 @@ function getPreviewText(
 // ============================================================================
 // Sub-Components
 // ============================================================================
+
+/** Keep the tail of one plain-text block visible as it grows and rewraps. */
+function ProcessTextPreview({ text }: { text: string }) {
+  return (
+    // Reverse with a single child anchors the scrollport to the bottom without
+    // moving the surrounding chat scroll container or reading layout per delta.
+    <span className="flex min-w-0 flex-1 max-h-[3lh] flex-col-reverse overflow-hidden leading-5">
+      <span className="shrink-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{text.trimEnd()}</span>
+    </span>
+  )
+}
 
 /**
  * Status icon for an activity - exported for reuse in inline execution.
@@ -751,6 +751,8 @@ export function ActivityStatusIcon({
 
 interface ActivityRowProps {
   activity: ActivityItem
+  /** Render the latest process step in the live preview outside the activity list. */
+  livePreview?: boolean
   /** Callback to open activity details in Monaco */
   onOpenDetails?: () => void
   /** Whether this is the last child at its depth level (for └ corner in tree view) */
@@ -780,14 +782,13 @@ function TreeViewConnector({ depth }: { depth: number; isLastChild?: boolean }) 
 }
 
 /** Single activity row in expanded view */
-function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, displayMode = 'detailed' }: ActivityRowProps) {
+function ActivityRow({ activity, livePreview, onOpenDetails, isLastChild, sessionFolderPath, displayMode = 'detailed' }: ActivityRowProps) {
   const depth = activity.depth || 0
 
   // Intermediate messages (LLM commentary) - render with dashed circle icon
   // Show "Thinking" while streaming, stripped markdown content when complete
   if (activity.type === 'intermediate') {
     const isThinking = activity.status === 'running'
-    const displayContent = isThinking ? 'Thinking...' : stripMarkdown(activity.content || '')
     const isComplete = activity.status === 'completed'
     return (
       <div className="flex items-stretch">
@@ -806,7 +807,13 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
           ) : (
             <MessageCircleDashed className={cn(SIZE_CONFIG.iconSize, "shrink-0")} />
           )}
-          <span className={cn("truncate flex-1", onOpenDetails && isComplete && "group-hover/row:underline")}>{displayContent}</span>
+          {livePreview ? (
+            <ProcessTextPreview text={activity.content ?? ''} />
+          ) : (
+            <span className={cn("truncate flex-1", onOpenDetails && isComplete && "group-hover/row:underline")}>
+              {isThinking ? 'Thinking...' : stripMarkdown(activity.content || '')}
+            </span>
+          )}
           {/* Open details button */}
           {onOpenDetails && isComplete && (
             <div
@@ -2521,6 +2528,11 @@ export const TurnCard = React.memo(function TurnCard({
   const handleExpandedActivityGroupsChange = onExpandedActivityGroupsChange ?? setLocalExpandedActivityGroups
 
   const isAwaitingContent = !!response && !response.text.trim()
+  // Text is classified only when its message ends. Until then it may still
+  // become either a process step or the final Markdown response.
+  const pendingResponse = !isComplete && response?.isStreaming && !response.isPlan && !isAwaitingContent
+    ? response
+    : undefined
 
   // Compute preview text with cross-fade animation
   const previewText = useMemo(
@@ -2551,6 +2563,10 @@ export const TurnCard = React.memo(function TurnCard({
     () => allSortedActivities.filter(a => a.type !== 'plan'),
     [allSortedActivities]
   )
+  const liveProcessActivity = !isComplete && !pendingResponse
+    ? sortedActivities.findLast(activity => activity.type === 'intermediate' && !activity.parentId && activity.content?.trim())
+    : undefined
+  const showResponse = response && !isAwaitingContent && !pendingResponse
 
   // Check if we have any Task subagents - if so, use grouped view
   const hasTaskSubagents = useMemo(
@@ -2606,7 +2622,7 @@ export const TurnCard = React.memo(function TurnCard({
   // Determine if thinking indicator should show using the phase-based state machine.
   // This properly handles the "gap" state (awaiting) between tool completion and next action,
   // which was previously causing the turn card to "disappear".
-  const isThinking = shouldShowThinkingIndicator(turnPhase, isAwaitingContent)
+  const isThinking = !pendingResponse && !liveProcessActivity && shouldShowThinkingIndicator(turnPhase, isAwaitingContent)
     && !sortedActivities.some(activity => activity.status === 'running')
 
   return (
@@ -2617,6 +2633,7 @@ export const TurnCard = React.memo(function TurnCard({
           {/* Collapsed Header / Toggle */}
           <button
             onClick={toggleExpanded}
+            aria-expanded={isExpanded}
             className={cn(
               "flex items-center gap-2 w-full pl-2.5 pr-1.5 py-1.5 rounded-[8px] text-left",
               SIZE_CONFIG.fontSize,
@@ -2708,7 +2725,7 @@ export const TurnCard = React.memo(function TurnCard({
                           sessionFolderPath={sessionFolderPath}
                           displayMode={displayMode}
                         />
-                      ) : (
+                      ) : item.id !== liveProcessActivity?.id && (
                         <motion.div
                           key={item.id}
                           initial={
@@ -2730,7 +2747,7 @@ export const TurnCard = React.memo(function TurnCard({
                     ))
                   ) : (
                     /* Flat view for simple tool calls */
-                    sortedActivities.map((activity, index) => (
+                    sortedActivities.map((activity, index) => activity.id !== liveProcessActivity?.id && (
                       <motion.div
                         key={activity.id}
                         initial={
@@ -2777,6 +2794,24 @@ export const TurnCard = React.memo(function TurnCard({
         </div>
       )}
 
+      {pendingResponse && (
+        <div
+          data-search-root="response"
+          className="select-text pl-[22px] pr-4 py-1.5 text-sm text-muted-foreground"
+        >
+          <ProcessTextPreview text={pendingResponse.text} />
+        </div>
+      )}
+      {liveProcessActivity && (
+        <div className="pl-[22px] pr-4" data-search-exclude="true">
+          <ActivityRow
+            activity={liveProcessActivity}
+            livePreview
+            onOpenDetails={onOpenActivityDetails ? () => onOpenActivityDetails(liveProcessActivity) : undefined}
+          />
+        </div>
+      )}
+
       {/* Standalone thinking indicator - when no activities but still working */}
       {!hasActivities && isThinking && !animateResponse && (
         <div className={cn("flex items-center gap-2 px-3 py-1.5 text-muted-foreground", SIZE_CONFIG.fontSize)}>
@@ -2819,7 +2854,7 @@ export const TurnCard = React.memo(function TurnCard({
       {/* Animated version for playground demos */}
       {animateResponse && (
         <AnimatePresence>
-          {response && !isAwaitingContent && (
+          {showResponse && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2857,7 +2892,7 @@ export const TurnCard = React.memo(function TurnCard({
         </AnimatePresence>
       )}
       {/* Non-animated version for regular app use */}
-      {!animateResponse && response && !isAwaitingContent && (
+      {!animateResponse && showResponse && (
         <div className={cn("select-text", hasActivities && "mt-2")}>
           <ResponseCard
             text={response.text}
