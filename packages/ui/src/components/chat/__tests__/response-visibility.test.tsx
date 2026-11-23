@@ -50,24 +50,27 @@ test('renders live Markdown at full length and shows streaming status during a p
   expect(html).toMatch(/<strong\b[^>]*>第一段<\/strong>/)
   expect(html).toContain('最后一段')
   expect(html).toContain('Streaming...')
-  expect(html).not.toContain('flex-row-reverse')
+  expect(html).not.toContain('h-[1lh]')
 })
 
-test('keeps live process text in chronological activity rows and hides the collapsed summary in chat', async () => {
+test('keeps live process text in order and shows the completed activity toggle above the response', async () => {
   const { groupMessagesByTurn } = await import('../turn-utils')
   const [turn] = groupMessagesByTurn([
     { id: 'process', role: 'assistant', content: '先检查原稿\n再读取第三章', timestamp: 1, isIntermediate: true },
     { id: 'read-tool', role: 'tool', content: '', timestamp: 2, toolName: 'Read', toolUseId: 'read-tool', toolInput: { file_path: 'chapter-3.md' } },
   ])
   if (turn?.type !== 'assistant') throw new Error('Expected assistant turn')
-  const live = renderToStaticMarkup(<TurnCard {...turn} isExpanded hideCompletedActivitySummary />)
-  expect(live).toContain('flex-row-reverse')
+  const live = renderToStaticMarkup(<TurnCard {...turn} isExpanded />)
+  expect(live).toContain('h-[1lh]')
+  expect(live).toContain('flex-col-reverse')
+  expect(live).toContain('先检查原稿\n再读取第三章')
   expect(live.match(/再读取第三章/g)).toHaveLength(1)
   expect(live.indexOf('再读取第三章')).toBeLessThan(live.indexOf('chapter-3.md'))
 
-  const done = renderToStaticMarkup(<TurnCard {...turn} isComplete isExpanded={false} hideCompletedActivitySummary
+  const done = renderToStaticMarkup(<TurnCard {...turn} isComplete isExpanded={false}
     response={{ text: '**完成**', isStreaming: false }} />)
-  expect(done).not.toContain('aria-expanded="false"')
+  expect(done).toContain('aria-expanded="false"')
+  expect(done.indexOf('aria-expanded="false"')).toBeLessThan(done.indexOf('data-search-root="response"'))
   expect(done).not.toContain('chapter-3.md')
   expect(done).toMatch(/<strong\b[^>]*>完成<\/strong>/)
 })

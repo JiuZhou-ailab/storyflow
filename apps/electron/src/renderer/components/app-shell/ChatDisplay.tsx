@@ -2050,7 +2050,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         intent={turn.intent}
                         isStreaming={turn.isStreaming}
                         isComplete={isTurnComplete}
-                        hideCompletedActivitySummary
                         metrics={turn.metrics}
                         isExpanded={isTurnExpanded(assistantUiKey, isTurnComplete)}
                         onExpandedChange={(expanded) =>
