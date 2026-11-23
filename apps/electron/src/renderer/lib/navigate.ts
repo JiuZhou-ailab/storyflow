@@ -13,6 +13,7 @@
  */
 
 import { routes, type Route } from '../../shared/routes'
+import type { SessionCreationSource } from '../../shared/types'
 
 // Re-export routes for convenience
 export { routes }
@@ -22,8 +23,8 @@ export type { Route }
 export const NAVIGATE_EVENT = 'craft-agent-navigate'
 
 export interface NavigateOptions {
-  /** Opt in for an ordinary new conversation started in the desktop UI. */
-  inheritPermissionMode?: true
+  /** Creation source for navigation that originated outside the desktop UI. */
+  sessionCreationSource?: SessionCreationSource
   /** Open the target in a new panel instead of navigating the current one */
   newPanel?: boolean
   /** Skip auto-selecting first item when navigating to a list view (used when closing panels) */

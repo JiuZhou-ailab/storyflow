@@ -1,4 +1,4 @@
-// input: Electron app/startup lifecycle, workspace IDs, saved window URLs, and renderer resources
+// input: Electron app/startup lifecycle, workspace IDs, startup sources, saved window URLs, and renderer resources
 // output: Managed windows, awaited first-load readiness, and bounded per-window runtime recovery
 // pos: Owns desktop app window creation, restoration, and per-window lifecycle wiring
 
@@ -10,6 +10,7 @@ import { existsSync } from 'fs'
 import { release } from 'os'
 import { getWindowsBackgroundMaterialEnabled } from '@craft-agent/shared/config/storage'
 import { RPC_CHANNELS, type WindowCloseRequestSource } from '../shared/types'
+import { WINDOW_STARTUP_SOURCE_PARAM } from '../shared/routes'
 import { i18n } from '@craft-agent/shared/i18n'
 import type { SavedWindow } from './window-state'
 import { classifyMainWindowNavigation } from './main-window-navigation'
@@ -122,6 +123,8 @@ export interface CreateWindowOptions {
   workspaceId: string
   /** Deep link URL to navigate to after window loads (without ?window= param) */
   initialDeepLink?: string
+  /** Classify automatic Session creation when a deep link opens the window. */
+  startupSource?: 'external'
   /** Full URL to restore from saved state (preserves route/query params) */
   restoreUrl?: string
 }
@@ -203,7 +206,7 @@ export class WindowManager {
    * @param options - Window creation options
    */
   createWindow(options: CreateWindowOptions): BrowserWindow {
-    const { workspaceId, initialDeepLink, restoreUrl } = options
+    const { workspaceId, initialDeepLink, restoreUrl, startupSource } = options
 
     // Load platform-specific app icon
     // Packaged macOS windows reuse the bundle icon installed by electron-builder.
@@ -334,6 +337,8 @@ export class WindowManager {
       try { new URL(restoreUrl).searchParams.forEach((value, key) => { query[key] = value }) }
       catch { /* Invalid saved navigation falls back to the current workspace. */ }
     }
+    delete query[WINDOW_STARTUP_SOURCE_PARAM]
+    if (startupSource) query[WINDOW_STARTUP_SOURCE_PARAM] = startupSource
     const fail = (code: string): void => {
       if (failed || window.isDestroyed() || this.isAppQuitting) return
       if (firstLoadSucceeded && this.hasRuntimeStarted()) {
@@ -673,7 +678,7 @@ export class WindowManager {
   /**
    * Focus existing window for workspace or create new one
    */
-  focusOrCreateWindow(workspaceId: string): BrowserWindow {
+  focusOrCreateWindow(workspaceId: string, startupSource?: CreateWindowOptions['startupSource']): BrowserWindow {
     const existing = this.getWindowByWorkspace(workspaceId)
     if (existing) {
       if (existing.isMinimized()) {
@@ -682,7 +687,7 @@ export class WindowManager {
       existing.focus()
       return existing
     }
-    return this.createWindow({ workspaceId })
+    return this.createWindow({ workspaceId, startupSource })
   }
 
   /**

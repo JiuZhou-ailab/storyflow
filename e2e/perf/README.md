@@ -5,7 +5,7 @@ Local-only Electron performance measurement (ADR-0001). Launches the built app a
 Uses **raw CDP** (bun native WebSocket via `cdp.ts`), not Playwright — Playwright cannot complete a CDP handshake with Electron 39 / Chrome 142.
 
 - `cdp.ts` — flat-session CDP client
-- `launch.ts` — launch/teardown + heap GC + perf-log capture
+- `launch.ts` — launch/teardown, optional startup deep links, heap GC, and perf-log capture
 - `navigation.ts` — ActivityRail project discovery + deterministic fixture selection
 - `navigation.test.tsx` — rendered ActivityRail ↔ perf navigation contract
 - `contract.ts` — strict scenario/config parsing and fail-closed baseline decision

@@ -117,11 +117,13 @@ export interface Session {
   supportsBranching?: boolean
 }
 
+export type SessionCreationSource = 'desktop' | 'external'
+
 export interface CreateSessionOptions {
   name?: string
   permissionMode?: PermissionMode
-  /** Apply the remembered user choice when the desktop explicitly starts an ordinary conversation. */
-  inheritPermissionMode?: true
+  /** Initiator of the request. Omitted sources use the workspace defaults. */
+  creationSource?: SessionCreationSource
   /**
    * Reasoning/thinking level override. When set, takes precedence over workspace
    * and global defaults. Silently ignored by the underlying SDK on non-reasoning

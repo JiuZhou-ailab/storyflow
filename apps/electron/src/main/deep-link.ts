@@ -292,6 +292,7 @@ export async function handleDeepLink(
     const window = windowManager.createWindow({
       workspaceId: wsId,
       initialDeepLink: navUrl,
+      startupSource: 'external',
     })
     mainLog.info('[DeepLink] Window created:', window.webContents.id)
 
@@ -303,7 +304,7 @@ export async function handleDeepLink(
 
   if (target.workspaceId) {
     // Workspace specified - focus or create window for that workspace
-    window = windowManager.focusOrCreateWindow(target.workspaceId)
+    window = windowManager.focusOrCreateWindow(target.workspaceId, 'external')
   } else {
     // No workspace - use focused window or last active
     window = windowManager.getFocusedWindow() ?? windowManager.getLastActiveWindow()

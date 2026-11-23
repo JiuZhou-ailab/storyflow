@@ -65,9 +65,14 @@ it.each(['windows', 'deep-link', 'none'])('enters runtime only after a successfu
     mainStartupSucceeded: false, mainRuntimeStarted: false, mainStopping: false, recovering: false,
     fatalStartup: false, mainStartupIsHeadless: false, isHeadless: false, isClientOnly: true,
     isDebugMode: false, scheduleDeferredRuntime: undefined, moduleSink: null, moduleClientResolver: null,
-    pendingDeepLink: 'storyflow://test', windowManager: {},
+    pendingDeepLink: 'craftagents://allSessions', windowManager: {},
+    parseDeepLink: () => ({ view: 'allSessions' }),
     shouldCreateWindowsAfterStartup: () => true,
-    createInitialWindows: async () => { expect(context.mainRuntimeStarted).toBe(false); if (failureAt === 'windows') throw failure },
+    createInitialWindows: async (source: string) => {
+      expect(source).toBe('external')
+      expect(context.mainRuntimeStarted).toBe(false)
+      if (failureAt === 'windows') throw failure
+    },
     handleDeepLink: async () => { expect(context.mainRuntimeStarted).toBe(false); if (failureAt === 'deep-link') throw failure },
     mainLog: { info() {}, error() {}, warn() {} }, getMessagingGatewayLogFilePath: () => '',
     app, showStartupRecovery, quitCoordinator: { prepare: async () => {} }, recordStartupFailure: mock(() => {}),

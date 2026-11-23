@@ -52,8 +52,12 @@ it('restores permission modes across Host restarts and applies the latest manual
       if (gateway.permissionMode !== 'ask' || readFileSync(preferencesPath, 'utf8') !== beforeGateway) {
         throw new Error('Gateway /new inherited execute mode or wrote an execute grant');
       }
-      const inherited = await create({ inheritPermissionMode: true });
-      const free = await create({ inheritPermissionMode: true }, getFreeConversationWorkspace().id);
+      const external = await create({ creationSource: 'external' });
+      if (external.permissionMode !== 'ask' || readFileSync(preferencesPath, 'utf8') !== beforeGateway) {
+        throw new Error('External RPC inherited execute mode or wrote an execute grant');
+      }
+      const inherited = await create({ creationSource: 'desktop' });
+      const free = await create({ creationSource: 'desktop' }, getFreeConversationWorkspace().id);
       const oneOff = await create({ permissionMode: 'allow-all' });
       return { selected: selected.id, inherited: inherited.id, free: free.id, oneOff: oneOff.id };
     `)
@@ -64,16 +68,16 @@ it('restores permission modes across Host restarts and applies the latest manual
       const ids = ${JSON.stringify(ids)};
       const restored = Object.values(ids).map(mode);
       const defaultModes = [];
-      for (const options of [{ inheritPermissionMode: true }, { inheritPermissionMode: true, permissionMode: 'safe' }, { inheritPermissionMode: true, hidden: true }, undefined]) {
+      for (const options of [{ creationSource: 'desktop' }, { creationSource: 'desktop', permissionMode: 'safe' }, { creationSource: 'desktop', hidden: true }, undefined]) {
         defaultModes.push((await create(options)).permissionMode);
       }
       await select(ids.selected, 'safe', false);
       await select(ids.selected, 'allow-all');
-      defaultModes.push((await create({ inheritPermissionMode: true })).permissionMode);
+      defaultModes.push((await create({ creationSource: 'desktop' })).permissionMode);
       await select(ids.oneOff, 'ask', true);
-      const next = await create({ inheritPermissionMode: true });
+      const next = await create({ creationSource: 'desktop' });
       await select(next.id, 'allow-all', false);
-      const ask = await create({ inheritPermissionMode: true });
+      const ask = await create({ creationSource: 'desktop' });
       return { restored, defaultModes, ask: ask.id, next: next.permissionMode, temporary: next.id };
     `)
     expect(afterExecute.restored).toEqual(['allow-all', 'allow-all', 'allow-all', 'ask'])
@@ -87,7 +91,7 @@ it('restores permission modes across Host restarts and applies the latest manual
         inherited: mode(ids.inherited),
         ask: mode(${JSON.stringify(afterExecute.ask)}),
         temporary: mode(${JSON.stringify(afterExecute.temporary)}),
-        newConversation: (await create({ inheritPermissionMode: true })).permissionMode,
+        newConversation: (await create({ creationSource: 'desktop' })).permissionMode,
       };
     `)).toEqual({ selected: 'ask', inherited: 'allow-all', ask: 'ask', temporary: 'ask', newConversation: 'ask' })
   } finally {

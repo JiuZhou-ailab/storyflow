@@ -51,7 +51,7 @@ import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-
 import { ensureToolIcons, ensurePresetThemes } from '@craft-agent/shared/config'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
 import { setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
-import { handleDeepLink } from './deep-link'
+import { handleDeepLink, parseDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
@@ -284,7 +284,7 @@ if (!gotTheLock) {
 }
 
 // Helper to create initial windows on startup
-async function createInitialWindows(): Promise<void> {
+async function createInitialWindows(startupSource?: 'external'): Promise<void> {
   if (!windowManager) return
 
   // Load saved window state
@@ -307,6 +307,7 @@ async function createInitialWindows(): Promise<void> {
       const win = windowManager.createWindow({
         workspaceId: saved.workspaceId,
         restoreUrl: saved.url,
+        startupSource,
       })
       const visible = screen.getAllDisplays().some(({ workArea }) =>
         saved.bounds.x + saved.bounds.width > workArea.x && saved.bounds.x < workArea.x + workArea.width
@@ -325,7 +326,7 @@ async function createInitialWindows(): Promise<void> {
   }
 
   const startupWorkspaceId = resolveStartupWindowWorkspaceId(workspaces)
-  windowManager.createWindow({ workspaceId: startupWorkspaceId })
+  windowManager.createWindow({ workspaceId: startupWorkspaceId, startupSource })
   mainLog.info(startupWorkspaceId
     ? `Created window for first workspace: ${workspaces[0].name}`
     : 'Created project hub window without a workspace')
@@ -965,7 +966,7 @@ app.whenReady().then(async () => {
       initSucceeded: mainStartupSucceeded,
       isHeadless,
     })) {
-      await createInitialWindows()
+      await createInitialWindows(pendingDeepLink && parseDeepLink(pendingDeepLink) ? 'external' : undefined)
     }
     if (mainStopping) return
     scheduleDeferredRuntime?.()

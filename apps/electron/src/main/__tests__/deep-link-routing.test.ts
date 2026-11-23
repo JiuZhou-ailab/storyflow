@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, mock } from 'bun:test'
 import { handleDeepLink, parseDeepLink } from '../deep-link'
 import { RPC_CHANNELS } from '../../shared/types'
 import type { EventSink } from '@craft-agent/server-core/transport'
@@ -47,9 +47,10 @@ describe('handleDeepLink routing', () => {
 
   it('prefers resolved target client over preferred caller client', async () => {
     const targetWindow = createMockWindow(22)
+    const focusOrCreateWindow = mock(() => targetWindow)
 
     const windowManager = {
-      focusOrCreateWindow: () => targetWindow,
+      focusOrCreateWindow,
       getFocusedWindow: () => targetWindow,
       getLastActiveWindow: () => targetWindow,
       getWorkspaceForWindow: (webContentsId: number) => webContentsId === 22 ? 'ws-target' : 'ws-other',
@@ -68,6 +69,7 @@ describe('handleDeepLink routing', () => {
       'client-caller',
     )
 
+    expect(focusOrCreateWindow).toHaveBeenCalledWith('ws-target', 'external')
     expect(sent.length).toBe(1)
     expect(sent[0]?.channel).toBe(RPC_CHANNELS.deeplink.NAVIGATE)
     expect(sent[0]?.target).toEqual({ to: 'client', clientId: 'client-target' })

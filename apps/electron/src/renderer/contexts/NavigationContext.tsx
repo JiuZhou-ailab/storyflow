@@ -1,5 +1,5 @@
 // input: Typed routes, external deep links, runtime activation, current project identity, and navigation events
-// output: Restored workspace/session panels, canonical session sends, settings overlay state, and verified external actions
+// output: Restored workspace/session panels, canonical session sends, creation sources, settings overlay state, and verified external actions
 // pos: Renderer navigation authority; external actions must cross a visible confirmation boundary
 import { requestDocumentLeave } from '../components/files/text-document-state'
 
@@ -31,7 +31,7 @@ import {
   buildRightSidebarParam,
   type ParsedRoute,
 } from '../../shared/route-parser'
-import { routes, type Route, type ViewRoute } from '../../shared/routes'
+import { routes, WINDOW_STARTUP_SOURCE_PARAM, type Route, type ViewRoute } from '../../shared/routes'
 import { parsePermissionMode } from '@craft-agent/shared/agent/mode-types'
 import { MarketSkillInstallDialog, type MarketSkillInstallRequest } from '@/components/app-shell/MarketSkillInstallDialog'
 import { NAVIGATE_EVENT, type NavigateOptions } from '../lib/navigate'
@@ -129,7 +129,7 @@ interface NavigationProviderProps {
   /** Switch by stable ID; the App may also accept legacy slug URLs. */
   onSwitchWorkspaceByRouteKey?: (routeKey: string) => boolean
   /** Activate the owning runtime before an internal cross-workspace action. */
-  onActivateWorkspace?: (workspaceId: string, landingRoute?: Route) => Promise<void>
+  onActivateWorkspace?: (workspaceId: string, landingRoute?: Route, options?: NavigateOptions) => Promise<void>
   /** Session creation handler */
   onCreateSession: (workspaceId: string, options?: import('../../shared/types').CreateSessionOptions) => Promise<Session>
   /** Canonical send path, including optimistic user-message projection. */
@@ -237,7 +237,7 @@ export function NavigationProvider({
   const isPopstateSwitchRef = useRef(false)
 
   // Queue navigation if not ready yet
-  const pendingNavigationRef = useRef<ParsedRoute | null>(null)
+  const pendingNavigationRef = useRef<{ parsed: ParsedRoute; options?: NavigateOptions } | null>(null)
 
   // Suppress auto-select for one cycle (used by skipAutoSelect to prevent the effect from re-selecting)
   const suppressAutoSelectRef = useRef(false)
@@ -338,6 +338,7 @@ export function NavigationProvider({
 
     // Persist per-workspace URL for workspace switch restoration
     if (workspaceRouteKey) {
+      url.searchParams.delete(WINDOW_STARTUP_SOURCE_PARAM)
       storage.set(storage.KEYS.workspaceUrl, url.search, workspaceRouteKey)
     }
   }, [store, workspaceRouteKey, updateCanGoBackForward])
@@ -692,11 +693,11 @@ export function NavigationProvider({
           const switchingWorkspace = targetWorkspaceId !== workspaceId
           if (switchingWorkspace) {
             if (!onActivateWorkspace) throw new Error('Workspace switching is unavailable')
-            await onActivateWorkspace(targetWorkspaceId)
+            await onActivateWorkspace(targetWorkspaceId, undefined, options)
           }
           const createOptions: import('../../shared/types').CreateSessionOptions = {}
-          if (options?.inheritPermissionMode === true) {
-            createOptions.inheritPermissionMode = true
+          if (options?.sessionCreationSource) {
+            createOptions.creationSource = options.sessionCreationSource
           }
           if (parsed.params.mode) {
             const parsedMode = parsePermissionMode(parsed.params.mode)
@@ -888,7 +889,7 @@ export function NavigationProvider({
       }
 
       if (!isReady) {
-        pendingNavigationRef.current = parsed
+        pendingNavigationRef.current = { parsed, options }
         return
       }
 
@@ -1131,11 +1132,11 @@ export function NavigationProvider({
 
   useEffect(() => {
     if (isReady && pendingNavigationRef.current) {
-      const pending = pendingNavigationRef.current
+      const { parsed: pending, options } = pendingNavigationRef.current
       pendingNavigationRef.current = null
 
       if (pending.type === 'action') {
-        handleActionNavigation(pending)
+        handleActionNavigation(pending, options)
         return
       }
 
@@ -1186,7 +1187,7 @@ export function NavigationProvider({
           })
           return
         }
-        navigate(route as Route)
+        navigate(route as Route, { sessionCreationSource: 'external' })
       }
     })
 
@@ -1201,8 +1202,8 @@ export function NavigationProvider({
     const handleNavigateEvent = (event: Event) => {
       const customEvent = event as CustomEvent<{ route: Route } & NavigateOptions>
       if (customEvent.detail?.route) {
-        const { route: r, newPanel, inheritPermissionMode } = customEvent.detail
-        navigate(r, { newPanel, inheritPermissionMode })
+        const { route: r, ...options } = customEvent.detail
+        navigate(r, options)
       }
     }
 
