@@ -14,6 +14,7 @@ Modules by reason-of-change (all flat in this directory):
 | `auth-flow.ts` | reinitializeAuth, completeAuthRequest, credential input handling |
 | `export-import.ts` | Session export/import incl. remote transfer payloads |
 | `turn-commentary-summary.ts` | On-demand Simplified Chinese summaries of completed commentary via the Session's one-shot model query |
+| `next-message-suggestion.ts` | Short composer drafts inferred from bounded recent dialogue with the Session's mini model |
 | `persistence.ts` | Boot/init gate, disk load, debounced persist queue, lazy message load, idle release |
 | `permission-mode-preferences.ts` | Host-owned last selected mode and durable execute grants scoped to a Session |
 | `session-init.bench.ts` | Local fresh-process restoration benchmark and FS/JSON/build/yield diagnostics for the 6000-Session fixture |
@@ -47,6 +48,8 @@ Standalone scheduled tasks live in the free-conversation runtime and start at Ho
 Every send serializes its short admission phase per Session: loading, queue selection, persistence, and claiming the processing generation. The gate releases before model execution, so concurrent sends durably queue rather than overwrite the active turn. Completion retains processing ownership through async cleanup and reserves queued replay before reopening admission. Stop callbacks carry their originating generation; a forced UI stop still drains the previous iterator before another chat can use the shared Pi event queue. Bound automation validation hands off synchronously to the send's own operation lease; validation never retains a lease while cold runtime acquisition waits for active operations to drain.
 
 Session titles derive from the user-visible request: context badges and edit instructions do not enter first-title inference. The full original message remains unchanged in the transcript; explicit title refresh also strips edit metadata.
+
+After publishing a successful completed turn for an actively viewed Session with no queued send, the Host may publish an ephemeral composer suggestion keyed to the completed reply. The query has its own deadline and uses the Session's Pi lease. A changed generation, runtime epoch or active view invalidates the pending result.
 
 Idle runtime residency is independent of the transcript cache. Operation drain and native Pi settlement trigger an opportunistic sweep, keeping the three most recently used eligible runtimes. Active leases/admission, native prompts or pending requests, queued sends, permission/auth interactions, background work, and closing Sessions are exempt. The existing per-Session mutex protects the final eligibility check, durable flush, and disposal; sweeps never wait behind user operations or trigger themselves on failure. Cleanup failures retain their original runtime/MCP owners and block replacement until the same cleanup succeeds. Native history is restored through the existing Pi creation path, without replaying the user request.
 

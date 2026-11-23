@@ -71,6 +71,8 @@ export interface Session {
   lastMessageAt: number
   messages: Message[]
   isProcessing: boolean
+  /** Ephemeral composer suggestion for a specific completed reply. */
+  nextMessageSuggestion?: NextMessageSuggestion
   /** Live questions awaiting answers; restored on reconnect, never persisted to disk. */
   pendingUserQuestions?: UserQuestionRequest[]
   /** Orders question snapshots and events within one Host lifetime. */
@@ -173,6 +175,11 @@ export interface PermissionModeState {
 // Session events (main → renderer)
 // ---------------------------------------------------------------------------
 
+export interface NextMessageSuggestion {
+  replyId: string
+  text: string
+}
+
 // turnId: Correlation ID from the API's message.id, groups all events in an assistant turn
 export type SessionEvent =
   | { type: 'text_delta'; sessionId: string; delta: string; turnId?: string; isIntermediate?: true }
@@ -192,6 +199,7 @@ export type SessionEvent =
   | { type: 'status'; sessionId: string; message: string; statusType?: 'compacting' | 'retrying' }
   | { type: 'info'; sessionId: string; message: string; statusType?: 'compaction_complete'; level?: 'info' | 'warning' | 'error' | 'success'; timestamp?: number }
   | { type: 'title_generated'; sessionId: string; title: string }
+  | { type: 'next_message_suggested'; sessionId: string; suggestion: NextMessageSuggestion }
   | { type: 'async_operation'; sessionId: string; isOngoing: boolean }
   | { type: 'working_directory_changed'; sessionId: string; workingDirectory: string }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }

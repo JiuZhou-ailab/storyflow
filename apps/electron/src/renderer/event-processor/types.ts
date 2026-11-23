@@ -10,6 +10,7 @@
  */
 
 import type { Session, Message, PermissionRequest, CredentialRequest, UserQuestionRequest, TypedError, PermissionMode, AuthRequest, ToolDisplayMeta } from '../../shared/types'
+import type { SessionEvent } from '@craft-agent/shared/protocol'
 
 /**
  * Streaming state for a session - replaces streamingTextRef
@@ -521,6 +522,7 @@ export type AgentEvent =
   | InfoEvent
   | InterruptedEvent
   | TitleGeneratedEvent
+  | Extract<SessionEvent, { type: 'next_message_suggested' }>
   | AsyncOperationEvent
   | WorkingDirectoryChangedEvent
   | WorkingDirectoryErrorEvent

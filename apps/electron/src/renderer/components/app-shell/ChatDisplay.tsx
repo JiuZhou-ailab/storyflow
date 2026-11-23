@@ -1,5 +1,5 @@
 // input: Session state, transcript messages, tool activities, and chat input callbacks.
-// output: Unified new-chat starters, rotating tips, transcript, action overlays, and composer.
+// output: New-chat starters, transcript, action overlays, and composer with suggestions scoped to the latest reply.
 // pos: Main renderer surface for session conversation panels.
 
 import * as React from "react"
@@ -734,6 +734,13 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const queuedUserMessages = partitionedMessages.queuedUserMessages
   const transcriptMessages = partitionedMessages.transcriptMessages
   const latestUserMessage = partitionedMessages.latestUserMessage
+  const nextMessageSuggestion = session?.nextMessageSuggestion
+  const currentSuggestion = nextMessageSuggestion && !session?.isProcessing
+    && queuedUserMessages.length === 0
+    && transcriptMessages.findLast(message => message.role === 'user' || message.role === 'error'
+      || message.role === 'plan' || (message.role === 'assistant' && !message.isIntermediate))?.id === nextMessageSuggestion.replyId
+    ? nextMessageSuggestion
+    : undefined
   const pendingFollowUpAnnotations = partitionedMessages.pendingFollowUpAnnotations
   // Continuous stream: structure-stable text_delta patches the last turn only.
   // Full groupMessagesByTurn stays the source of truth for structure changes.
@@ -2239,6 +2246,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             onRemoveQueuedMessage={handleRemoveQueuedMessage}
             inputProps={{
               placeholder,
+              nextMessageSuggestion: currentSuggestion,
               disabled: isInputDisabled,
               isProcessing: session.isProcessing,
               isFocusedPanel,
