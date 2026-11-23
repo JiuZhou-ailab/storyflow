@@ -1,3 +1,7 @@
+// input: Project-owned JSONL retry queue, clock, and webhook results
+// output: Deferred retry execution, atomic queue updates, and terminal attempt history
+// pos: Owns scheduled webhook retries and serializes Project retry queue mutations
+
 /**
  * RetryScheduler - Persistent retry queue for failed webhooks
  *
@@ -12,7 +16,8 @@
  * entry is written. Queue entries survive app restarts.
  */
 
-import { readFile, writeFile, appendFile } from 'fs/promises';
+import { randomUUID } from 'node:crypto';
+import { readFile, appendFile, open, rename, unlink } from 'node:fs/promises';
 import { join, resolve } from 'path';
 import { createLogger } from '../utils/debug.ts';
 import { executeWebhookRequest, createWebhookHistoryEntry } from './webhook-utils.ts';
@@ -152,7 +157,7 @@ export class RetryScheduler {
   }
 
   /**
-   * Process the queue: read entries, retry those that are due, rewrite the queue.
+   * Process the queue and persist changes made by due retries.
    */
   private tick(): Promise<void> {
     if (this.inFlightTick) return this.inFlightTick;
@@ -172,7 +177,7 @@ export class RetryScheduler {
     // by this lock, preserving durable entries and preventing duplicate retry execution.
     return withRetryQueueMutation(this.workspaceRootPath, async () => {
       try {
-      let queuePath = resolveAutomationOwnedPath(
+      const queuePath = resolveAutomationOwnedPath(
         this.workspaceRootPath,
         join(this.workspaceRootPath, AUTOMATIONS_RETRY_QUEUE_FILE),
       );
@@ -202,6 +207,7 @@ export class RetryScheduler {
 
       const now = Date.now();
       const remaining: RetryQueueEntry[] = [];
+      let changed = false;
 
       for (const entry of entries) {
         if (entry.nextRetryAt > now) {
@@ -211,6 +217,7 @@ export class RetryScheduler {
         }
 
         // Attempt retry
+        changed = true;
         log.debug(`[RetryScheduler] Retrying ${entry.id} (deferred attempt ${entry.deferredAttempt + 1}/${MAX_DEFERRED_ATTEMPTS})`);
         let result: WebhookActionResult;
         try {
@@ -275,21 +282,33 @@ export class RetryScheduler {
         }
       }
 
-      // Rewrite queue file with remaining entries
-      queuePath = resolveAutomationOwnedPath(
-        this.workspaceRootPath,
-        join(this.workspaceRootPath, AUTOMATIONS_RETRY_QUEUE_FILE),
-      );
-      if (remaining.length === 0) {
-        await writeFile(queuePath, '', 'utf-8');
-      } else {
-        const content = remaining.map(e => JSON.stringify(e)).join('\n') + '\n';
-        await writeFile(queuePath, content, 'utf-8');
-      }
+      if (!changed) return;
+
+      const content = remaining.map(entry => JSON.stringify(entry) + '\n').join('');
+      await this.replaceQueue(queuePath, content);
       } catch (err) {
         log.debug(`[RetryScheduler] Tick error: ${err}`);
       }
     });
+  }
+
+  /** Stage a complete snapshot beside the queue before replacing it under the queue lock. */
+  private async replaceQueue(queuePath: string, content: string): Promise<void> {
+    const tempPath = resolveAutomationOwnedPath(this.workspaceRootPath, `${queuePath}.${randomUUID()}.tmp`);
+    const tempFile = await open(tempPath, 'wx', 0o600);
+    try {
+      try {
+        await tempFile.writeFile(content, 'utf-8');
+      } finally {
+        await tempFile.close();
+      }
+      await rename(tempPath, resolveAutomationOwnedPath(this.workspaceRootPath, queuePath));
+    } catch (error) {
+      await unlink(tempPath).catch(cleanupError => {
+        log.debug(`[RetryScheduler] Failed to remove temporary queue file: ${cleanupError}`);
+      });
+      throw error;
+    }
   }
 
 }
