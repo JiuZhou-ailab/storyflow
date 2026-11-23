@@ -1,4 +1,4 @@
-// input: Fixture data dir, repo-built Electron app (apps/electron/dist), raw CDP client (cdp.ts)
+// input: Fixture data dir, Electron executable, optional launch deep link, and raw CDP client (cdp.ts)
 // output: A launched-app handle (page session + perf log capture) and page-driving helpers for scenarios
 // pos: Shared launch/teardown/interaction boundary for the perf harness; owns no measurement policy itself
 
@@ -44,6 +44,8 @@ export interface LaunchAppOptions {
   userDataDir?: string
   /** Persist process output even when launch fails before returning a handle. */
   processLogPath?: string
+  /** Deliver an external protocol URL through the real cold-start entry point. */
+  deepLink?: string
 }
 
 /**
@@ -80,7 +82,7 @@ export async function launchApp(fixtureDir: string, options: LaunchAppOptions = 
   const spawnedAt = Date.now()
   const proc = spawn(
     executablePath,
-    [...(packaged ? [] : ['.']), `--user-data-dir=${userDataDir}`, '--remote-debugging-port=0'],
+    [...(packaged ? [] : ['.']), `--user-data-dir=${userDataDir}`, '--remote-debugging-port=0', ...(options.deepLink ? [options.deepLink] : [])],
     {
       cwd: packaged ? dirname(executablePath) : ELECTRON_APP_DIR,
       env: {

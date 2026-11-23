@@ -1,16 +1,17 @@
 // input: Repo-built Electron app and a generated, isolated session fixture
-// output: Offline startup/restart checks for project and free-conversation composers
+// output: Offline startup/restart and source-specific permission checks for conversation composers
 // pos: Regression guard for session recovery independent of the project file pane
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { launchApp, evalOn, type LaunchedApp } from '../perf/launch'
+import { launchApp, evalOn, waitFor, type LaunchedApp } from '../perf/launch'
 
 const root = resolve(import.meta.dirname, '../..')
-const fixture = mkdtempSync(join(tmpdir(), 'storyflow-startup-recovery-'))
+const temporaryRoot = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-path', 'tmp'], { cwd: root, encoding: 'utf8' }).trim()
+mkdirSync(temporaryRoot, { recursive: true })
+const fixture = mkdtempSync(join(temporaryRoot, 'storyflow-startup-recovery-'))
 let live: LaunchedApp | undefined
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -76,6 +77,7 @@ try {
   assert.equal((await evalOn<any[]>(live, `window.electronAPI.getSessions()`)).length, 1)
   console.log('PASS: empty free workspace opens one composer and survives restart without duplicates')
 
+  await evalOn(live, `window.electronAPI.sessionCommand(${JSON.stringify(freeSessions[0].id)}, {type:'setPermissionMode', mode:'allow-all', remember:true})`)
   const projectRoot = join(fixture, 'empty-project')
   mkdirSync(projectRoot)
   const project = await evalOn<{id: string}>(live, `window.electronAPI.createWorkspace(${JSON.stringify(projectRoot)}, 'Empty startup project')`)
@@ -86,9 +88,62 @@ try {
   const projectSessions = await evalOn<any[]>(live, `window.electronAPI.getSessions()`)
   assert.equal(projectSessions.length, 1)
   assert.equal(projectSessions[0].messages.length, 0)
+  assert.equal(projectSessions[0].permissionMode, 'allow-all')
   await openRoute(live, 'writing')
   assert.equal((await evalOn<any[]>(live, `window.electronAPI.getSessions()`)).length, 1)
-  console.log('PASS: empty project opens one blank conversation without duplicates or model calls')
+  console.log('PASS: empty project opens one blank conversation in the remembered mode')
+
+  const externalRoot = join(fixture, 'external-project')
+  mkdirSync(externalRoot)
+  const external = await evalOn<{id: string}>(live, `window.electronAPI.createWorkspace(${JSON.stringify(externalRoot)}, 'External startup project')`)
+  const preferences = join(fixture, 'session-permission-modes.json')
+  const beforeDeepLink = readFileSync(preferences, 'utf8')
+  await live.close()
+  live = await launchApp(fixture, {
+    preserveServerLockState: true,
+    userDataDir: join(fixture, 'electron-profile'),
+    deepLink: `craftagents://workspace/${external.id}/allSessions`,
+  })
+  await waitFor(live, `new URL(location.href).searchParams.get('workspaceId') === ${JSON.stringify(external.id)}`)
+  await waitForComposer(live)
+  const externalSessions = await evalOn<Array<{workspaceId: string; permissionMode: string}>>(live, `window.electronAPI.getSessions()`)
+  assert.equal(externalSessions.length, 1)
+  assert.equal(externalSessions[0].workspaceId, external.id)
+  assert.equal(externalSessions[0].permissionMode, 'ask')
+  assert.equal(readFileSync(preferences, 'utf8'), beforeDeepLink)
+  console.log('PASS: opening an empty project by deep link uses the project default without changing grants')
+
+  const restoredProjects: Array<{ id: string }> = []
+  for (const name of ['Untargeted restore', 'Targeted restore']) {
+    const folder = join(fixture, name)
+    mkdirSync(folder)
+    restoredProjects.push(await evalOn<{id: string}>(live, `window.electronAPI.createWorkspace(${JSON.stringify(folder)}, ${JSON.stringify(name)})`))
+  }
+  const [untargeted, targeted] = restoredProjects
+  assert.ok(untargeted && targeted)
+  await live.close()
+  const windowStatePath = join(fixture, 'window-state.json')
+  const { bounds } = JSON.parse(readFileSync(windowStatePath, 'utf8')).windows[0]
+  writeFileSync(windowStatePath, JSON.stringify({
+    windows: restoredProjects.map(({ id }) => ({ type: 'main', workspaceId: id, bounds })),
+    lastFocusedWorkspaceId: untargeted.id,
+  }))
+  live = await launchApp(fixture, {
+    userDataDir: join(fixture, 'electron-profile'),
+    deepLink: `craftagents://workspace/${targeted.id}/allSessions`,
+  })
+  await waitForComposer(live)
+  const deadline = Date.now() + 15_000
+  let restoredModes: string[][] = []
+  while (Date.now() < deadline) {
+    restoredModes = await evalOn<string[][]>(live, `Promise.all(${JSON.stringify(restoredProjects.map(({ id }) => id))}.map(async id =>
+      (await window.electronAPI.listSessionsByWorkspace(id)).map(session => session.permissionMode)
+    ))`)
+    if (restoredModes.every(modes => modes.length > 0)) break
+    await pause(150)
+  }
+  assert.deepEqual(restoredModes, [['allow-all'], ['ask']])
+  console.log('PASS: cold deep link applies only to the targeted project among restored windows')
 } finally {
   await live?.close()
   rmSync(fixture, { recursive: true, force: true })

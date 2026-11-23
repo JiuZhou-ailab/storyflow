@@ -18,6 +18,8 @@
 import type { SettingsSubpage } from './settings-registry'
 import type { PermissionMode } from '@craft-agent/shared/agent/mode-types'
 
+export const WINDOW_STARTUP_SOURCE_PARAM = 'startupSource'
+
 // Helper to build query strings from params
 function toQueryString(params?: Record<string, string | undefined>): string {
   if (!params) return ''

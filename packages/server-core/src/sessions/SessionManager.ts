@@ -1,4 +1,4 @@
-// input: Workspace sessions, Pi product projections, persistence stores, Project lifecycle coordinator, and Host services
+// input: Workspace sessions and creation sources, Pi product projections, persistence stores, Project lifecycle coordinator, and Host services
 // output: Generation-owned atomic sends, projected Pi events, commands, remembered permission choices, and drained Host teardown
 // pos: Storyflow Product Host session boundary; Pi owns Agent turn execution
 
@@ -1965,8 +1965,8 @@ export class SessionManager implements ISessionManager {
     const wsConfig = await retryTransientFs(() => loadWorkspaceConfig(workspaceRootPath))
     const globalDefaults = loadConfigDefaults()
 
-    // Only ordinary conversations inherit the Host-owned user choice.
-    const rememberedMode = options?.inheritPermissionMode === true && !options.hidden && !options.branchFromSessionId
+    // Only ordinary conversations created by the desktop UI inherit the Host-owned choice.
+    const rememberedMode = options?.creationSource === 'desktop' && !options.hidden && !options.branchFromSessionId
       && options.permissionMode === undefined
       ? this.permissionModePreferences.lastSelectedMode
       : undefined

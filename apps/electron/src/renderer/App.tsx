@@ -1,7 +1,7 @@
 import { DocumentLeaveDialog } from './components/files/DocumentLeaveDialog'
 import { requestDocumentLeave } from './components/files/text-document-state'
-// input: Electron preload API, persisted app/workspace/session state, and renderer navigation events
-// output: Top-level renderer state orchestration, retryable startup/project entry, account settings data, and AppShell context wiring
+// input: Electron preload API, persisted app/workspace/session state, launch source, and renderer navigation events
+// output: Retryable startup/project entry, source-aware desktop Session creation, account settings data, and AppShell context wiring
 // pos: Root renderer application component
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
@@ -40,6 +40,7 @@ import { useSession } from '@/hooks/useSession'
 import { NavigationProvider } from '@/contexts/NavigationContext'
 import { GLOBAL_SETTINGS_SUBPAGES, SettingsDialog } from '@/pages/settings/SettingsNavigator'
 import { navigate, routes, type NavigateOptions, type Route } from './lib/navigate'
+import { WINDOW_STARTUP_SOURCE_PARAM } from '../shared/routes'
 import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
 import { stripMarkdown } from './utils/text'
 import { coerceInputText } from './lib/input-text'
@@ -215,6 +216,11 @@ function AppContent() {
 
   // App state: loading -> project catalog or active workspace
   const [appState, setAppState] = useState<AppState>('loading')
+  // This source belongs to the initial hydration only. Explicit workspace
+  // activation supplies its own source, including when it precedes hydration.
+  const hydrationSourceRef = useRef<NavigateOptions['sessionCreationSource']>(
+    new URLSearchParams(window.location.search).get(WINDOW_STARTUP_SOURCE_PARAM) === 'external' ? 'external' : undefined,
+  )
   const [globalSettingsSubpage, setGlobalSettingsSubpage] = useState<SettingsSubpage | null>(null)
   const [clientAuthState, setClientAuthState] = useState<ClientAuthState | null>(null)
 
@@ -462,7 +468,10 @@ function AppContent() {
     workspaceId: string,
     options?: import('../shared/types').CreateSessionOptions,
   ): Promise<Session> => {
-    return window.electronAPI.createSession(workspaceId, options)
+    return window.electronAPI.createSession(workspaceId, {
+      ...options,
+      creationSource: options?.creationSource ?? 'desktop',
+    })
   }, [])
 
   const handleCreateSession = useCallback(async (
@@ -575,6 +584,7 @@ function AppContent() {
     selectionGeneration = workspaceSelectionGenerationRef.current,
   ): Promise<Session[]> => {
     const loadingWorkspaceId = workspaceIdForLoad
+    const creationSource = hydrationSourceRef.current
     const optionsBeforeLoad = store.get(sessionOptionsAtom)
     setSessionLoadError(null)
     store.set(sessionMetadataReadyAtom, false)
@@ -590,7 +600,7 @@ function AppContent() {
 
       // Every opened workspace needs a usable composer when no conversation can be restored.
       if (loadingWorkspaceId && shouldAutoCreateBaseSession(loadingWorkspaceId, loadedSessions)) {
-        const baseSession = await createSessionOnServer(loadingWorkspaceId)
+        const baseSession = await createSessionOnServer(loadingWorkspaceId, { creationSource })
         if (selectionGeneration !== workspaceSelectionGenerationRef.current) return []
         loadedSessions = [...loadedSessions, baseSession]
       }
@@ -599,6 +609,12 @@ function AppContent() {
       // NOTE: No sessionsAtom used - sessions are only in per-session atoms
       initializeSessions(loadedSessions)
       store.set(sessionMetadataReadyAtom, true)
+      hydrationSourceRef.current = undefined
+      const url = new URL(window.location.href)
+      if (url.searchParams.has(WINDOW_STARTUP_SOURCE_PARAM)) {
+        url.searchParams.delete(WINDOW_STARTUP_SOURCE_PARAM)
+        history.replaceState(history.state, '', url)
+      }
 
       setSessionOptions(current => initializeSessionOptionsMap(loadedSessions, optionsBeforeLoad, current))
 
@@ -1779,7 +1795,7 @@ function AppContent() {
       return
     }
 
-    const session = await handleCreateSession(windowWorkspaceId, { inheritPermissionMode: true })
+    const session = await handleCreateSession(windowWorkspaceId)
 
     if (params.name) {
       await window.electronAPI.sessionCommand(session.id, { type: 'rename', name: params.name })
@@ -1954,6 +1970,7 @@ function AppContent() {
       }
 
       workspaceSwitchInFlightRef.current = workspaceId
+      hydrationSourceRef.current = navigationOptions?.sessionCreationSource
 
       setRuntimeWorkspace(nextWorkspace)
       setWindowWorkspaceId(workspaceId)
@@ -2323,12 +2340,11 @@ function AppContent() {
 
   const handleOpenFreeConversations = useCallback((options?: { createNew?: boolean }) => {
     const targetRoute = options?.createNew ? routes.action.newSession() : routes.view.allSessions()
-    const navigationOptions: NavigateOptions | undefined = options?.createNew ? { inheritPermissionMode: true } : undefined
     if (windowWorkspaceId === FREE_CONVERSATION_WORKSPACE_ID) {
-      navigate(targetRoute, navigationOptions)
+      navigate(targetRoute)
       return
     }
-    return activateRuntimeWorkspace(FREE_CONVERSATION_WORKSPACE_ID, targetRoute, navigationOptions)
+    return activateRuntimeWorkspace(FREE_CONVERSATION_WORKSPACE_ID, targetRoute)
   }, [activateRuntimeWorkspace, windowWorkspaceId])
 
   useEffect(() => {

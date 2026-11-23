@@ -1,6 +1,8 @@
 import { describe, expect, it, mock } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import { WINDOW_STARTUP_SOURCE_PARAM } from '../../../../shared/routes'
+import type { SessionCreationSource } from '../../../../shared/types'
 
 const app = readFileSync(new URL('../../../App.tsx', import.meta.url), 'utf8')
 const rail = readFileSync(new URL('../ActivityRail.tsx', import.meta.url), 'utf8')
@@ -43,6 +45,7 @@ function activation(api: Record<string, unknown> = {}) {
     workspaceActivationRequestRef: { current: 0 },
     workspaceSelectionGenerationRef: { current: 0 }, workspaceOpenTargetRef: { current: null as { id: string; route?: string } | null },
     workspaceSwitchInFlightRef: { current: null as string | null }, lastLoadedSessionsWorkspaceRef: { current: null },
+    hydrationSourceRef: { current: undefined as SessionCreationSource | undefined },
     pendingCreatedWorkspaceRef: { current: null }, sessionDraftsRef: { current: new Map() },
     setOpeningWorkspace: opening.set, setWorkspaceOpenError: error.set, setStartupError() {},
     requestDocumentLeave: async () => true, withTimeout: (promise: Promise<any>) => promise,
@@ -67,7 +70,8 @@ describe('project activation recovery', () => {
     }
     const load = callback(app, 'loadSessionsFromServer', {
       ...context,
-      window: { electronAPI: { getSessions: () => sessions.promise } },
+      window: { location: { href: 'https://renderer.test/' }, electronAPI: { getSessions: () => sessions.promise } },
+      WINDOW_STARTUP_SOURCE_PARAM,
       store: { get: () => new Map(), set() {} }, sessionOptionsAtom: '', SESSION_RPC_TIMEOUT_MS: 5000,
       shouldAutoCreateBaseSession: () => false, initializeSessions: hydrated.set,
       initializeSessionOptionsMap: () => new Map(), initialSessionId: null,
@@ -169,6 +173,33 @@ describe('project activation recovery', () => {
     expect(h.error.get()).toBeNull()
     expect(h.state.get()).toBe('ready')
     expect(h.switched).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the external creation source until session hydration succeeds', async () => {
+    const h = activation()
+    h.context.hydrationSourceRef.current = 'external'
+    const url = new URL('https://renderer.test/')
+    url.searchParams.set(WINDOW_STARTUP_SOURCE_PARAM, 'external')
+    const replaceState = mock()
+    const historyState = { seq: 1 }
+    const getSessions = mock().mockRejectedValueOnce(new Error('offline')).mockResolvedValue([])
+    const createSessionOnServer = mock(async () => ({ id: 'base', permissionModeVersion: 1 }))
+    const load = callback(app, 'loadSessionsFromServer', {
+      ...h.context,
+      window: { location: { href: url.href }, electronAPI: { getSessions, getTransportConnectionState: async () => null } },
+      history: { state: historyState, replaceState }, WINDOW_STARTUP_SOURCE_PARAM,
+      store: { get: () => new Map(), set() {} }, sessionOptionsAtom: '', SESSION_RPC_TIMEOUT_MS: 5000,
+      shouldAutoCreateBaseSession: () => true, initializeSessions() {}, createSessionOnServer,
+      initializeSessionOptionsMap: () => new Map(), initialSessionId: null,
+      shouldTreatSessionLoadFailureAsTransportFallback: () => false,
+    })
+    await load('a')
+    expect(h.context.hydrationSourceRef.current).toBe('external')
+    expect(replaceState).not.toHaveBeenCalled()
+    await load('a')
+    expect(createSessionOnServer).toHaveBeenCalledWith('a', { creationSource: 'external' })
+    expect(h.context.hydrationSourceRef.current).toBeUndefined()
+    expect(replaceState).toHaveBeenCalledWith(historyState, '', new URL('https://renderer.test/'))
   })
   it('old failures cannot overwrite a newer success', async () => {
     const first = deferred(), h = activation({ resolveRuntimeWorkspace: (id: string) => id === 'a' ? first.promise : Promise.resolve({ id }) })

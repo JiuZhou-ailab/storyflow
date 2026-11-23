@@ -1,5 +1,5 @@
 // input: Built Electron app, isolated project files, and deterministic Market responses
-// output: Catalog refresh/recovery, authenticated publication, real file installation, and prefilled Skill task checks
+// output: Catalog refresh/recovery, authenticated publication, real file installation, and Skill draft and mode checks
 // pos: Skills Market UI acceptance; publication is intercepted and never reaches the public registry
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -138,6 +138,15 @@ try {
   }
   console.log('QA: Market responses ready')
 
+  const modeTrigger = '[data-tutorial="permission-mode-dropdown"]'
+  const executeMode = '[data-tutorial="permission-mode-allow-all"]'
+  const isExecuteMode = `document.querySelector(${JSON.stringify(modeTrigger)})?.textContent.includes("直接运行")`
+  await waitFor(live, `document.querySelector(${JSON.stringify(modeTrigger)})`)
+  await evalOn(live, `document.querySelector(${JSON.stringify(modeTrigger)}).click()`)
+  await waitFor(live, `document.querySelector(${JSON.stringify(executeMode)})`)
+  await evalOn(live, `document.querySelector(${JSON.stringify(executeMode)}).click()`)
+  await waitFor(live, isExecuteMode)
+
   // Control the 60-second deadline without changing short renderer timers or waiting a minute.
   await evalOn(live, `(() => {
     const now = Date.now;
@@ -275,7 +284,8 @@ try {
   assert.equal(readFileSync(join(workspace.rootPath, '.pi/skills/qa-consume/SKILL.md'), 'utf8'), markdown)
   await click('立即使用', '[role="dialog"] button')
   await waitFor(live, 'document.querySelector("[contenteditable=true]")?.textContent.includes("qa-consume")')
-  console.log('PASS real project installation, Pi discovery and Skill-prefilled task without sending')
+  await waitFor(live, isExecuteMode)
+  console.log('PASS real project installation, Pi discovery and Skill-prefilled task in the remembered mode')
 
   await go('action/install-skill?' + new URLSearchParams({ slug: summary.slug, version: summary.version, sha256 }))
   await waitFor(live, 'document.querySelector("[role=dialog]")?.textContent.includes("安装 Skill")')
@@ -283,6 +293,17 @@ try {
   await waitFor(live, 'document.querySelector("[role=status]")?.textContent.includes("qa-consume")')
   assert.equal(readFileSync(join(workspace.rootPath, '.pi/skills/qa-consume/SKILL.md'), 'utf8'), markdown)
   console.log('PASS shared-link confirmation and existing Skill preservation')
+
+  await go('skills')
+  const installedTab = 'document.querySelector(\'[role="tab"][id$="-trigger-installed"]\')'
+  await waitFor(live, installedTab)
+  await evalOn(live, `${installedTab}.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))`)
+  const installedSkill = 'Array.from(document.querySelectorAll("#installed-skills-grid article")).find(e=>e.textContent.includes("qa-upload"))'
+  await waitFor(live, installedSkill)
+  await evalOn(live, `Array.from((${installedSkill}).querySelectorAll('button')).find(b=>b.textContent.trim()==="立即使用").click()`)
+  await waitFor(live, 'document.querySelector("[contenteditable=true]")?.textContent.includes("qa-upload")')
+  await waitFor(live, isExecuteMode)
+  console.log('PASS installed Skill starts a new draft in the remembered mode')
 } catch (error) {
   if (app) console.error(await evalOn(app, 'document.body.innerText.slice(-7000)'))
   throw error

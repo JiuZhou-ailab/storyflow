@@ -65,9 +65,14 @@ it.each(['windows', 'deep-link', 'none'])('enters runtime only after a successfu
     mainStartupSucceeded: false, mainRuntimeStarted: false, mainStopping: false, recovering: false,
     fatalStartup: false, mainStartupIsHeadless: false, isHeadless: false, isClientOnly: true,
     isDebugMode: false, scheduleDeferredRuntime: undefined, moduleSink: null, moduleClientResolver: null,
-    pendingDeepLink: 'storyflow://test', windowManager: {},
+    pendingDeepLink: 'craftagents://allSessions', windowManager: {},
+    parseDeepLink: () => ({ view: 'allSessions' }),
     shouldCreateWindowsAfterStartup: () => true,
-    createInitialWindows: async () => { expect(context.mainRuntimeStarted).toBe(false); if (failureAt === 'windows') throw failure },
+    createInitialWindows: async (target: { view: string }) => {
+      expect(target).toEqual({ view: 'allSessions' })
+      expect(context.mainRuntimeStarted).toBe(false)
+      if (failureAt === 'windows') throw failure
+    },
     handleDeepLink: async () => { expect(context.mainRuntimeStarted).toBe(false); if (failureAt === 'deep-link') throw failure },
     mainLog: { info() {}, error() {}, warn() {} }, getMessagingGatewayLogFilePath: () => '',
     app, showStartupRecovery, quitCoordinator: { prepare: async () => {} }, recordStartupFailure: mock(() => {}),
@@ -87,25 +92,39 @@ it.each(['windows', 'deep-link', 'none'])('enters runtime only after a successfu
   expect(context.mainRuntimeStarted).toBe(false)
 })
 
-it.each([0, 2])('waits for initial renderer loads with %s restored windows', async (savedCount) => {
+it.each([
+  { name: 'ordinary startup', savedIds: [], target: null, expected: [['', undefined]], targetId: undefined },
+  { name: 'ordinary restore', savedIds: ['a', 'b'], target: null, expected: [['a', undefined], ['b', undefined]], targetId: undefined },
+  { name: 'explicit target', savedIds: ['a', 'b'], target: { workspaceId: 'a' }, expected: [['a', 'external'], ['b', undefined]], targetId: 'a' },
+  { name: 'implicit target', savedIds: ['a', 'b'], target: {}, expected: [['a', undefined], ['b', 'external']], targetId: 'b' },
+  { name: 'new window link', savedIds: ['a', 'b'], target: { workspaceId: 'a', windowMode: 'full' }, expected: [['a', undefined], ['b', undefined]], targetId: undefined },
+  { name: 'unrestored target', savedIds: ['a', 'b'], target: { workspaceId: 'c' }, expected: [['a', undefined], ['b', undefined]], targetId: undefined },
+  { name: 'target without saved windows', savedIds: [], target: { workspaceId: 'a' }, expected: [['a', 'external']], targetId: 'a' },
+])('scopes startup source and waits for window loads during $name', async ({ savedIds, target, expected, targetId }) => {
   let loaded!: () => void
   const ready = new Promise<void>(resolve => { loaded = resolve })
   const creationSource = source.slice(source.indexOf('async function createInitialWindows('), source.indexOf('async function recoverStartup('))
+  const createWindow = mock(({ workspaceId }: { workspaceId: string; startupSource?: string }) => ({ workspaceId, center() {}, setBounds() {} }))
   const context = {
-    windowManager: { createWindow: () => ({ center() {}, setBounds() {} }), waitForInitialLoads: () => ready },
-    loadWindowState: () => ({ windows: Array.from({ length: savedCount }, () => ({ workspaceId: 'project', bounds: {} })) }),
+    target,
+    windowManager: { createWindow, waitForInitialLoads: () => ready },
+    loadWindowState: () => ({ windows: savedIds.map(workspaceId => ({ workspaceId, bounds: {} })), lastFocusedWorkspaceId: 'b' }),
     getWorkspaces: () => [], shouldRestoreWorkspaceWindowsOnOrdinaryStartup: () => true,
     isRestorableWindowWorkspace: () => true, resolveStartupWindowWorkspaceId: () => '',
     screen: { getAllDisplays: () => [] }, mainLog: { info() {} },
   }
   let completed = false
   const creation = runInNewContext(new Bun.Transpiler({ loader: 'ts' }).transformSync(creationSource)
-    + '\ncreateInitialWindows()', context) as Promise<void>
+    + '\ncreateInitialWindows(target)', context) as Promise<{ workspaceId: string } | undefined>
   void creation.then(() => { completed = true })
   await Promise.resolve()
   await Promise.resolve()
   expect(completed).toBe(false)
+  const sources: ReadonlyArray<readonly (string | undefined)[]> = createWindow.mock.calls.map(
+    ([options]) => [options.workspaceId, options.startupSource],
+  )
+  expect(sources).toEqual(expected)
   loaded()
-  await creation
+  expect((await creation)?.workspaceId).toBe(targetId)
   expect(completed).toBe(true)
 })

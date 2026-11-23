@@ -2789,7 +2789,7 @@ function AppShellContent({
     // Delegate to NavigationContext which handles session creation
     navigate(
       routes.action.newSession(),
-      { newPanel, inheritPermissionMode: true },
+      { newPanel },
     )
 
     // Focus the chat input after navigation completes
@@ -3017,13 +3017,13 @@ function AppShellContent({
     let session: Session | undefined
     await createConversationWithFeedback(async () => {
       if (workspaceId === activeWorkspaceId) {
-        session ??= await onCreateSession(workspaceId, { inheritPermissionMode: true })
+        session ??= await onCreateSession(workspaceId)
         navigateToSessionInPanel(session.id)
         return
       }
 
       await onSelectWorkspace(workspaceId)
-      session ??= await onCreateSession(workspaceId, { inheritPermissionMode: true })
+      session ??= await onCreateSession(workspaceId)
       if (onSelectProjectSession) {
         await onSelectProjectSession(workspaceId, session.id)
       } else {
