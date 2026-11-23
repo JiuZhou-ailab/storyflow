@@ -3,7 +3,7 @@ import { MANAGED_MODEL_CATALOG } from '../packages/shared/src/config/managed-mod
 import { verifyManagedModelsLive } from './verify-managed-models-live'
 import { protocolCompletion } from '../packages/pi-agent-server/src/managed-fallback.fixture'
 
-test('v2 deployment gate calls every catalog model using the desktop native protocol and metadata', async () => {
+test('deployment gate calls every catalog model using the desktop native protocol and metadata', async () => {
   const calls: Array<{ id: string; path: string; body: any }> = []
   const catalog = MANAGED_MODEL_CATALOG.map(model => ({
     id: model.id, name: model.name, short_name: model.shortName, description: model.description,
@@ -15,8 +15,8 @@ test('v2 deployment gate calls every catalog model using the desktop native prot
     const path = new URL(request.url).pathname
     if (path === '/v1/models') {
       expect(request.headers.get('authorization')).toBe('Bearer local-canary')
-      const v2 = request.headers.get('x-storyflow-model-catalog-version') === '2'
-      return Response.json({ data: catalog.filter(item => v2 || !MANAGED_MODEL_CATALOG.find(model => model.id === item.id)?.minimumCatalogVersion) })
+      const v3 = request.headers.get('x-storyflow-model-catalog-version') === '3'
+      return Response.json({ data: catalog.filter(item => v3 || !MANAGED_MODEL_CATALOG.find(model => model.id === item.id)?.minimumCatalogVersion) })
     }
     const body = await request.json() as any
     const id = body.model ?? /\/models\/([^:]+):/.exec(path)?.[1]
@@ -38,6 +38,6 @@ test('v2 deployment gate calls every catalog model using the desktop native prot
     expect(calls.map(call => call.id)).toEqual(MANAGED_MODEL_CATALOG.map(model => model.id))
     expect(calls.find(call => call.id === 'gpt-6.1-sol')?.path).toBe('/v1/responses')
     expect(calls.find(call => call.id === 'claude-opus-5-5')?.path).toBe('/v1/messages')
-    expect(calls.find(call => call.id === 'gemini-4-argon')?.path).toContain('gemini-4-argon:')
+    expect(calls.find(call => call.id === 'gemini-4-hydrogen')?.path).toContain('gemini-4-hydrogen:')
   } finally { server.stop(true) }
 }, 30_000)

@@ -216,7 +216,7 @@ describe('ModelRefreshService credentials', () => {
         if (String(input) !== 'https://model.example.com/v1/models') {
           throw new Error('unexpected URL: ' + String(input));
         }
-        if (new Headers(init?.headers).get('x-storyflow-model-catalog-version') !== '2') throw new Error('missing v2 negotiation');
+        if (new Headers(init?.headers).get('x-storyflow-model-catalog-version') !== '3') throw new Error('missing v3 negotiation');
         if (new Headers(init?.headers).get('authorization') !== 'Bearer managed-token') {
           throw new Error('missing managed token');
         }
@@ -456,6 +456,6 @@ for (const [api, preferredId] of [
     expect(result.ids.length).toBeGreaterThan(1)
     expect(result.original).not.toBe(result.expected[0])
     expect(result.preferred).toBe(preferredId)
-    if (api === 'google-generative-ai') expect(result.ids).toContain('gemini-4-argon')
+    if (api === 'google-generative-ai') expect(result.ids).toContain('gemini-4-hydrogen')
   })
 }

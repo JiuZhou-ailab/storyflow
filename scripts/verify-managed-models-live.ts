@@ -1,5 +1,5 @@
 // input: A CI broker-issued canary capability (never logged or persisted here).
-// output: Native per-model generation checks for both published and v2 catalogs.
+// output: Native per-model generation checks for the current catalog and legacy compatibility checks.
 // pos: Real-call deployment gate shared by the existing managed-auth workflow.
 import { MANAGED_MODEL_CATALOG, MANAGED_MODEL_CATALOG_VERSION, isRetiredManagedModel } from '../packages/shared/src/config/managed-model-catalog'
 import { verifyManagedModelCatalog } from './verify-managed-model-catalog'
@@ -11,7 +11,7 @@ type Fetch = typeof fetch
 export async function verifyManagedModelsLive(token: string, fetchImpl: Fetch = fetch, gateway = 'https://storyflow-model.zjding.com'): Promise<void> {
   const headers = { Authorization: `Bearer ${token}`, 'x-storyflow-model-catalog-version': MANAGED_MODEL_CATALOG_VERSION }
   const response = await fetchImpl(`${gateway}/v1/models`, { headers, signal: AbortSignal.timeout(30_000) })
-  if (!response.ok) throw new Error(`v2 catalog HTTP ${response.status}`)
+  if (!response.ok) throw new Error(`v${MANAGED_MODEL_CATALOG_VERSION} catalog HTTP ${response.status}`)
   const catalog = await response.json() as { data: Array<{ id: string; api: string }> }
   verifyManagedModelCatalog(catalog)
   const oldResponse = await fetchImpl(`${gateway}/v1/models`, {

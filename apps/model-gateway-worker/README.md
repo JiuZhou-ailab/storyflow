@@ -4,6 +4,10 @@ Cloudflare Worker proxy for managed Storyflow model connections and the read-onl
 multi-source short-drama catalog across OpenAI Responses, Chat Completions, Anthropic Messages, and Google GenAI routes.
 The gateway enforces model-to-protocol ownership and merges approved dynamic
 families with NewAPI's live model inventory before exposing `/v1/models`.
+Catalog v3 clients receive Gemini 4 Hydrogen with native Gemini thinking levels.
+The gateway also serves the published legacy and v2 catalogs to older clients.
+Deploy the v3 gateway before releasing v3 desktop clients so they receive the
+complete managed model list at sign-in.
 Files: `wrangler.toml`, `package.json`, and `src/` for the Worker entrypoint plus tests.
 
 `src/upstream-error.ts` adds bounded, safe retry metadata to failures while retaining

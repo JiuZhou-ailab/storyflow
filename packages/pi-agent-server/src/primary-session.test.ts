@@ -8,6 +8,7 @@ import { fixture, completion, protocolCompletion } from './managed-fallback.fixt
 import { createSystemPromptOverride } from './system-prompt-override.ts';
 import { createPrimaryPiSession } from './primary-session.ts';
 import { resolveModelForConnection } from '../../shared/src/agent/backend/connection-runtime.ts';
+import { cloneManagedModelCatalog } from '../../shared/src/config/managed-model-catalog.ts';
 import { createToolHooks } from './tool-hooks.ts';
 
 test('resuming an interrupted Pi turn preserves its raw history and never executes the partial tool', async () => {
@@ -148,4 +149,29 @@ test('selecting Gemini 4 Argon preserves its exact ID through a native Pi reques
     expect(f.requests.every(request => request.model === model)).toBe(true);
   }, model => protocolCompletion('google-generative-ai', model), undefined,
   { api: 'google-generative-ai', models: ['gemini-4-argon'] });
+});
+
+test('selecting Gemini 4 Hydrogen produces a native streamed reply with discrete thinking', async () => {
+  const modelId = 'gemini-4-hydrogen';
+  const catalog = cloneManagedModelCatalog('google-generative-ai');
+  await fixture(async f => {
+    const selectedId = resolveModelForConnection(modelId, {
+      slug: 'storyflow-managed-gemini', name: 'Gemini', providerType: 'pi_compat', authType: 'api_key_with_endpoint',
+      models: catalog, defaultModel: 'gemini-3.8-flash', createdAt: 1,
+    });
+    expect(selectedId).toBe(modelId);
+    expect(f.session.model?.id).toBe('gemini-3.8-flash');
+    await f.session.setModel(f.session.modelRuntime.getModel('fixture', selectedId!)!);
+    expect(f.session.model?.id).toBe(selectedId);
+    f.session.setThinkingLevel('low');
+    await f.session.prompt('hello');
+    expect(f.session.getLastAssistantText()).toBe('OK');
+    expect(f.requests).toHaveLength(1);
+    expect(f.requests[0]).toMatchObject({
+      model: modelId,
+      body: { generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } } },
+    });
+    expect(f.requests[0]?.body.generationConfig).not.toHaveProperty('thinkingConfig.thinkingBudget');
+  }, model => protocolCompletion('google-generative-ai', model), undefined,
+  { api: 'google-generative-ai', models: ['gemini-3.8-flash', modelId], catalog });
 });

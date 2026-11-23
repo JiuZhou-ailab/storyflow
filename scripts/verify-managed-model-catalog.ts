@@ -76,7 +76,7 @@ if (import.meta.main) {
   const path = process.env.MODEL_CATALOG_RESPONSE_PATH
   if (!path) throw new Error('MODEL_CATALOG_RESPONSE_PATH is required')
   // The existing workflow already writes the broker response beside the catalog.
-  // Re-fetch with the same desktop v2 negotiation rather than weakening the old gate.
+  // Re-fetch with the current desktop catalog version.
   const { dirname, join } = await import('node:path')
   const tokenPath = process.env.MODEL_ACCESS_TOKEN_RESPONSE_PATH ?? join(dirname(path), 'token-response.json')
   const { modelAccessToken } = await Bun.file(tokenPath).json()

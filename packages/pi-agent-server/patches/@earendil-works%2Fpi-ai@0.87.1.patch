@@ -224,18 +224,16 @@ diff --git a/dist/utils/retry.js b/dist/utils/retry.js
 diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
 --- a/dist/api/google-shared.js
 +++ b/dist/api/google-shared.js
-@@ -40,6 +40,7 @@
+@@ -40,6 +40,8 @@
      // Match Gemini 3 Pro/Flash IDs with or without a minor version, such as
      // gemini-3-flash-preview, gemini-3.1-pro-preview, and gemini-3.8-flash.
      /gemini-3(?:\.\d+)?-(?:pro|flash)/.test(id) ||
 +        id === "gemini-4-argon" ||
++        id === "gemini-4-hydrogen" ||
          id === "gemini-flash-latest" ||
          id === "gemini-flash-lite-latest" ||
          // Match both hosted Gemma 4 naming forms: gemma-4-* and gemma4-*.
-diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
---- a/dist/api/google-shared.js
-+++ b/dist/api/google-shared.js
-@@ -185,6 +185,7 @@
+@@ -184,6 +186,7 @@
          }
          else if (msg.role === "assistant") {
              const parts = [];
@@ -243,7 +241,7 @@ diff --git a/dist/api/google-shared.js b/dist/api/google-shared.js
              // Check if message is from same provider and model - only then keep thinking blocks
              const isSameProviderAndModel = msg.provider === model.provider && msg.model === model.id;
              for (const block of msg.content) {
-@@ -226,7 +227,10 @@
+@@ -225,7 +228,10 @@
                      }
                  }
                  else if (block.type === "toolCall") {

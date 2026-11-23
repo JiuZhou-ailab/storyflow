@@ -57,6 +57,9 @@ Pi 0.87.1's Google `usesGoogleThinkingLevel` does not recognize
 `gemini-4-argon`. The additional exact-ID hunk keeps this model on the native
 `thinkingLevel` path instead of sending a token `thinkingBudget`. Remove it when
 an unpatched supported Pi recognizes that ID and the v2 native-wire tests pass.
+Catalog v3 uses the same patch for `gemini-4-hydrogen`, which rejects
+`thinkingBudget` and `MINIMAL`. Remove its entry when unpatched Pi passes
+the Hydrogen request assertions in `primary-session.test.ts`.
 Managed Claude Opus 5.5 is registered through Pi's public
 `compat.forceAdaptiveThinking` metadata. Responses replay/item ID projection
 remains Pi-owned; no gateway or product history sanitizer is added.
