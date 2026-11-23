@@ -187,7 +187,7 @@ test('real Host preserves early system/tools and reasoning across tool loops, re
     await writeFile(join(project, 'chapter.md'), 'Externally revised chapter.');
     const external = await run('external');
     const afterExternal = await run('after-external');
-    await manager.setSessionPermissionMode(sessionId, 'safe');
+    await manager.setSessionPermissionMode(sessionId, 'safe', false);
     const permission = await run('policy-permission');
     const afterPermission = await run('policy-after-permission');
     await writeFile(join(sourceFolder, 'guide.md'), '# Fixture\nRead the manuscript metadata.');

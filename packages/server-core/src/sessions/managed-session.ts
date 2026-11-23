@@ -268,8 +268,7 @@ export function createManagedSessionState(
     && workspace.defaultPermissionMode !== 'allow-all'
     && overrides?.permissionMode !== 'allow-all'
   ) {
-    // ponytail: execute consent is process-scoped until durable per-Session
-    // capability grants have a Host-owned persistence contract.
+    // Project-owned metadata cannot restore execute consent on its own.
     managed.permissionMode = 'ask';
     managed.previousPermissionMode = undefined;
   }

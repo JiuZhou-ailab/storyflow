@@ -683,7 +683,7 @@ export function NavigationProvider({
   // =========================================================================
 
   const handleActionNavigation = useCallback(
-    async (parsed: ParsedRoute, options?: { newPanel?: boolean }) => {
+    async (parsed: ParsedRoute, options?: NavigateOptions) => {
       if (!workspaceId) return
 
       switch (parsed.name) {
@@ -695,6 +695,9 @@ export function NavigationProvider({
             await onActivateWorkspace(targetWorkspaceId)
           }
           const createOptions: import('../../shared/types').CreateSessionOptions = {}
+          if (options?.inheritPermissionMode === true) {
+            createOptions.inheritPermissionMode = true
+          }
           if (parsed.params.mode) {
             const parsedMode = parsePermissionMode(parsed.params.mode)
             if (parsedMode) {
@@ -838,7 +841,7 @@ export function NavigationProvider({
             }
             await window.electronAPI.sessionCommand(
               parsed.id,
-              { type: 'setPermissionMode', mode: parsedMode }
+              { type: 'setPermissionMode', mode: parsedMode, remember: false }
             )
           }
           break
@@ -1196,10 +1199,10 @@ export function NavigationProvider({
 
   useEffect(() => {
     const handleNavigateEvent = (event: Event) => {
-      const customEvent = event as CustomEvent<{ route: Route; newPanel?: boolean }>
+      const customEvent = event as CustomEvent<{ route: Route } & NavigateOptions>
       if (customEvent.detail?.route) {
-        const { route: r, newPanel } = customEvent.detail
-        navigate(r, newPanel ? { newPanel } : undefined)
+        const { route: r, newPanel, inheritPermissionMode } = customEvent.detail
+        navigate(r, { newPanel, inheritPermissionMode })
       }
     }
 

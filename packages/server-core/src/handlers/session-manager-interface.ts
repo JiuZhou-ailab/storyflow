@@ -87,7 +87,7 @@ export interface ISessionManager {
   // Session configuration
   // ---------------------------------------------------------------------------
 
-  setSessionPermissionMode(sessionId: string, mode: PermissionMode): Promise<void>
+  setSessionPermissionMode(sessionId: string, mode: PermissionMode, remember: boolean): Promise<void>
   setSessionThinkingLevel(sessionId: string, level: ThinkingLevel): Promise<void>
   updateWorkingDirectory(sessionId: string, path: string): Promise<void>
   setSessionSources(sessionId: string, sourceSlugs: string[]): Promise<void>

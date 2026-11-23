@@ -112,6 +112,7 @@ if (!process.argv.includes('--worker')) {
   const config = JSON.parse(readFileSync(`${fixture}/config.json`, 'utf8'))
   const sessions = new Map<string, ManagedSession>()
   const persistence = new SessionPersistence({
+    hasExecuteGrant: () => false,
     getSession: id => sessions.get(id), setSession: (id, session) => sessions.set(id, session),
     deleteSession: id => { sessions.delete(id) }, onQueuedRecovery() {},
     prepareBootServices: async () => {}, setInitialAutomationMetadata() {},

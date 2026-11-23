@@ -15,6 +15,7 @@ Modules by reason-of-change (all flat in this directory):
 | `export-import.ts` | Session export/import incl. remote transfer payloads |
 | `turn-commentary-summary.ts` | On-demand Simplified Chinese summaries of completed commentary via the Session's one-shot model query |
 | `persistence.ts` | Boot/init gate, disk load, debounced persist queue, lazy message load, idle release |
+| `permission-mode-preferences.ts` | Host-owned last selected mode and durable execute grants scoped to a Session |
 | `session-init.bench.ts` | Local fresh-process restoration benchmark and FS/JSON/build/yield diagnostics for the 6000-Session fixture |
 | `project-lifecycle-coordinator.ts` | Project/root locks and transition ownership, accepted-operation draining, epoch-owned invalidation restore, post-release queue recovery, and remove/relink orchestration; commit/storage and observer hooks remain on the Facade |
 | `workspace-freshness.ts` | Per-session in-memory md/txt manifest (size:mtime): turn-end checkpoint and one-shot `<workspace-brief>` of outside changes before the next send |
@@ -35,7 +36,9 @@ The published `queryOnce` RPC remains success-or-error: failed, cancelled and in
 
 Automatic Session cleanup uses the `deleteIfEmpty` Session command. The Host checks loaded messages and active operations atomically with the deletion tombstone under the Project lock; cold or busy Sessions are retained. Explicit user deletion remains separate. Clients never fall back to unconditional deletion when an older server rejects the new command. Send acknowledgement loss is an unknown outcome, not permission to delete or replay the request.
 
-Permission responses must match a pending request owned by the live Session and still awaited by Pi. The explicit `permissionMode: 'allow-all'` response option uses the same metadata mutation as the mode selector before resuming Pi's native `tool_call` hook; this updates the runtime, broadcasts the mode, and persists its metadata. Project execute consent remains process-scoped: writable Session metadata does not restore authorization after restart. Single-tool and administrator approvals do not implicitly change Session mode.
+The mode selector records the last choice in Host configuration. Ordinary desktop creation explicitly opts in to that choice, and other callers use the configured workspace default unless they specify a mode. Each existing Session restores its own mode. For Project Sessions, restoring execute mode requires a matching Host grant or a Host-configured Project execute default. Grants bind the Project registration, root, Session ID, and creation time. Moving to a stricter mode revokes the Session grant, including temporary mode changes. The mode selector alone updates the remembered choice.
+
+Permission responses must match a pending request owned by the live Session and still awaited by Pi. The explicit `permissionMode: 'allow-all'` response records consent for that Session and uses the same metadata mutation as the mode selector before resuming Pi's native `tool_call` hook. Single-tool and administrator approvals leave the Session mode unchanged.
 
 Pending user questions retain their complete requests beside their live resolvers. Session list and detail snapshots expose these requests so clients can recover after reload, project switching, or missed events. Answer and cancellation broadcast `user_question_resolved` by request ID to every workspace client. This state is process-scoped and is never restored from disk without a live waiter.
 

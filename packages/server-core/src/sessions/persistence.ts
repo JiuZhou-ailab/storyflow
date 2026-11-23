@@ -1,4 +1,4 @@
-// input: Session registry access, disk session stores, boot-service hooks, and a queue-recovery callback
+// input: Session registry access, disk session stores, Host execute grants, boot-service hooks, and a queue-recovery callback
 // output: Startup gating, disk→memory loading, debounced and invalidation-deferred writes, lazy hydration, idle-release
 // pos: Persistence subdomain under the SessionManager facade; owns initGate and message-loading dedup state
 
@@ -18,6 +18,7 @@ import {
 } from '@craft-agent/shared/agent'
 import { resolveSessionConnection } from '@craft-agent/shared/agent/backend'
 import {
+  type Workspace,
   migrateLegacyCredentials,
   migrateLegacyLlmConnectionsConfig,
   migrateOrphanedDefaultConnections,
@@ -48,6 +49,7 @@ export interface PersistenceDeps {
   getSession: (sessionId: string) => ManagedSession | undefined
   setSession: (sessionId: string, managed: ManagedSession) => void
   deleteSession: (sessionId: string) => void
+  hasExecuteGrant: (workspace: Workspace, session: { id: string; createdAt: number }) => boolean
   /**
    * D→J edge: a hydrated transcript may contain orphaned queued messages from a
    * crash; the persistence layer re-queues them and hands dispatch back to the
@@ -165,6 +167,9 @@ export class SessionPersistence {
             const managed = createManagedSession(meta, workspace, {
               enabledSourceSlugs: undefined,
               workingDirectory,
+              ...(meta.permissionMode === 'allow-all' && this.deps.hasExecuteGrant(workspace, meta)
+                ? { permissionMode: 'allow-all' }
+                : {}),
             })
 
             // Migration: clear orphaned llmConnection references (e.g., after connection was deleted)

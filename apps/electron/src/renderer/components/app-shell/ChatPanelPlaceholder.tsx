@@ -14,7 +14,7 @@ export function ChatPanelPlaceholder({ empty = false }: { empty?: boolean }) {
   const { t } = useTranslation()
   const { navigate } = useNavigationActions()
   const { rightSidebarButton } = useSessionPanelChrome()
-  const startConversation = () => navigate(routes.action.newSession())
+  const startConversation = () => navigate(routes.action.newSession(), { inheritPermissionMode: true })
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="writing-chat-placeholder">

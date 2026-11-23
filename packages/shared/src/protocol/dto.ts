@@ -120,6 +120,8 @@ export interface Session {
 export interface CreateSessionOptions {
   name?: string
   permissionMode?: PermissionMode
+  /** Apply the remembered user choice when the desktop explicitly starts an ordinary conversation. */
+  inheritPermissionMode?: true
   /**
    * Reasoning/thinking level override. When set, takes precedence over workspace
    * and global defaults. Silently ignored by the underlying SDK on non-reasoning
@@ -293,7 +295,7 @@ export type SessionCommand =
   | { type: 'markRead' }
   | { type: 'markUnread' }
   | { type: 'setActiveViewing'; workspaceId: string }
-  | { type: 'setPermissionMode'; mode: PermissionMode }
+  | { type: 'setPermissionMode'; mode: PermissionMode; remember?: boolean }
   | { type: 'setThinkingLevel'; level: ThinkingLevel }
   | { type: 'updateWorkingDirectory'; dir: string }
   | { type: 'setSources'; sourceSlugs: string[] }
