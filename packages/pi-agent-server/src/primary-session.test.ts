@@ -169,7 +169,7 @@ test('selecting Gemini 4 Hydrogen produces a native streamed reply with discrete
     expect(f.requests).toHaveLength(1);
     expect(f.requests[0]).toMatchObject({
       model: modelId,
-      body: { generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } } },
+      body: { generationConfig: { maxOutputTokens: 58_982, thinkingConfig: { thinkingLevel: 'LOW' } } },
     });
     expect(f.requests[0]?.body.generationConfig).not.toHaveProperty('thinkingConfig.thinkingBudget');
   }, model => protocolCompletion('google-generative-ai', model), undefined,

@@ -5,6 +5,8 @@ import { protocolCompletion } from '../packages/pi-agent-server/src/managed-fall
 
 test('deployment gate calls every catalog model using the desktop native protocol and metadata', async () => {
   const calls: Array<{ id: string; path: string; body: any }> = []
+  const catalogVersions: Array<string | null> = []
+  let leakHydrogenIntoV2 = false
   const catalog = MANAGED_MODEL_CATALOG.map(model => ({
     id: model.id, name: model.name, short_name: model.shortName, description: model.description,
     provider: model.provider, context_window: model.contextWindow, supports_thinking: model.supportsThinking,
@@ -15,8 +17,11 @@ test('deployment gate calls every catalog model using the desktop native protoco
     const path = new URL(request.url).pathname
     if (path === '/v1/models') {
       expect(request.headers.get('authorization')).toBe('Bearer local-canary')
-      const v3 = request.headers.get('x-storyflow-model-catalog-version') === '3'
-      return Response.json({ data: catalog.filter(item => v3 || !MANAGED_MODEL_CATALOG.find(model => model.id === item.id)?.minimumCatalogVersion) })
+      const version = request.headers.get('x-storyflow-model-catalog-version')
+      catalogVersions.push(version)
+      const catalogVersion = version === '2' && leakHydrogenIntoV2 ? 3 : Number(version ?? 1)
+      return Response.json({ data: catalog.filter((_, index) =>
+        (MANAGED_MODEL_CATALOG[index]?.minimumCatalogVersion ?? 1) <= catalogVersion) })
     }
     const body = await request.json() as any
     const id = body.model ?? /\/models\/([^:]+):/.exec(path)?.[1]
@@ -35,9 +40,15 @@ test('deployment gate calls every catalog model using the desktop native protoco
   } })
   try {
     await verifyManagedModelsLive('local-canary', fetch, `http://127.0.0.1:${server.port}`)
+    expect(catalogVersions).toEqual(['3', null, '2'])
     expect(calls.map(call => call.id)).toEqual(MANAGED_MODEL_CATALOG.map(model => model.id))
     expect(calls.find(call => call.id === 'gpt-6.1-sol')?.path).toBe('/v1/responses')
     expect(calls.find(call => call.id === 'claude-opus-5-5')?.path).toBe('/v1/messages')
-    expect(calls.find(call => call.id === 'gemini-4-hydrogen')?.path).toContain('gemini-4-hydrogen:')
+    const hydrogenCall = calls.find(call => call.id === 'gemini-4-hydrogen')
+    expect(hydrogenCall?.path).toContain('gemini-4-hydrogen:')
+    expect(hydrogenCall?.body.generationConfig.maxOutputTokens).toBe(58_982)
+    leakHydrogenIntoV2 = true
+    await expect(verifyManagedModelsLive('local-canary', fetch, `http://127.0.0.1:${server.port}`))
+      .rejects.toThrow('v2 desktop catalog changed unexpectedly')
   } finally { server.stop(true) }
 }, 30_000)

@@ -1,5 +1,5 @@
 // input: Product-managed model capabilities shared by desktop bootstrap and gateway
-// output: Canonical managed model definitions and safe mutable copies
+// output: Versioned managed model definitions and safe mutable copies
 // pos: Single source of truth for the Storyflow managed model catalog
 
 import type { ModelDefinition } from './models.ts';
@@ -234,6 +234,7 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
     id: 'gemini-4-hydrogen',
     // Catalog v3 clients use the native thinkingLevel field for Hydrogen.
     minimumCatalogVersion: 3,
+    fallbackCapabilities: withOutputHeadroom(65_536),
     name: 'Gemini 4 Hydrogen',
     shortName: 'Gemini',
     description: '',
