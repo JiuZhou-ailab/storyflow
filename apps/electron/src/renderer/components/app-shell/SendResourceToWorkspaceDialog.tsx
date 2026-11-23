@@ -14,6 +14,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Cloud, CloudOff, Monitor, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -69,6 +70,7 @@ function SendResourceToWorkspaceDialogContent({
   activeWorkspaceId,
   onTransferComplete,
 }: SendResourceToWorkspaceDialogProps) {
+  const { t } = useTranslation()
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
   const workspaceIconMap = useWorkspaceIcons(workspaces)
@@ -277,13 +279,13 @@ function SendResourceToWorkspaceDialogContent({
             onClick={() => onOpenChange(false)}
             disabled={isSending}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             onClick={handleSend}
             disabled={!selectedWorkspaceId || isSending}
           >
-            {isSending ? 'Sending...' : 'Send'}
+            {isSending ? t('common.sending') : t('common.send')}
           </Button>
         </DialogFooter>
       </DialogContent>

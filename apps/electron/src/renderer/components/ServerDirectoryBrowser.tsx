@@ -196,7 +196,7 @@ export function ServerDirectoryBrowser({
           className="flex-1 font-mono text-xs"
         />
         <Button variant="outline" size="sm" onClick={handlePathSubmit} disabled={loading}>
-          Go
+          {t('settings.server.openDirectoryPath')}
         </Button>
       </div>
 
@@ -304,13 +304,13 @@ export function ServerDirectoryBrowser({
 
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             onClick={handleSelect}
             disabled={mode === 'manual' ? !pathInput.trim() : (!listing && !pathInput.trim())}
           >
-            Select
+            {t('settings.server.confirmDirectory')}
           </Button>
         </DialogFooter>
       </DialogContent>

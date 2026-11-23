@@ -238,10 +238,10 @@ export function SendToWorkspaceDialog({
             onClick={() => onOpenChange(false)}
             disabled={isTransferring}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={handleTransfer} disabled={!selectedWorkspaceId || isTransferring}>
-            {isTransferring ? 'Sending...' : 'Send'}
+            {isTransferring ? t('common.sending') : t('common.send')}
           </Button>
         </DialogFooter>
       </DialogContent>

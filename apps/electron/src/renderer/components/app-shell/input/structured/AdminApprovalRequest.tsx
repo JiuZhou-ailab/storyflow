@@ -85,7 +85,7 @@ export function AdminApprovalRequest({
           onClick={handleApprove}
         >
           <Check className="h-3.5 w-3.5" />
-          Approve
+          {t('chat.adminApprovalApprove')}
         </Button>
 
         <Button
@@ -95,7 +95,7 @@ export function AdminApprovalRequest({
           onClick={onCancel}
         >
           <X className="h-3.5 w-3.5" />
-          Cancel
+          {t('common.cancel')}
         </Button>
 
         <div className="min-w-0 flex-1" />
@@ -104,10 +104,10 @@ export function AdminApprovalRequest({
           <Switch
             checked={rememberChoice}
             onCheckedChange={setRememberChoice}
-            aria-label={`Remember this exact command for ${rememberForMinutes} minutes`}
+            aria-label={t('chat.adminApprovalRememberCommand', { minutes: rememberForMinutes })}
           />
           <Label className="text-[11px] text-muted-foreground cursor-pointer" onClick={() => setRememberChoice(!rememberChoice)}>
-            Remember for {rememberForMinutes} min
+            {t('chat.adminApprovalRemember', { minutes: rememberForMinutes })}
           </Label>
         </div>
       </div>

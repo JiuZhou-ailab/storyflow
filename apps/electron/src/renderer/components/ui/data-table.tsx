@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import type {
   ColumnDef,
   ColumnFiltersState,
@@ -78,6 +79,7 @@ export function DataTable<TData, TValue>({
   getSubRows,
   defaultExpanded = true,
 }: DataTableProps<TData, TValue>) {
+  const { t } = useTranslation()
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [columnSizing, setColumnSizing] = React.useState<ColumnSizingState>({})
@@ -254,7 +256,7 @@ export function DataTable<TData, TValue>({
           onClick={() => table.previousPage()}
           disabled={!table.getCanPreviousPage()}
         >
-          Previous
+          {t('table.previousPage')}
         </Button>
         <span className="text-sm text-muted-foreground">
           Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
@@ -265,7 +267,7 @@ export function DataTable<TData, TValue>({
           onClick={() => table.nextPage()}
           disabled={!table.getCanNextPage()}
         >
-          Next
+          {t('table.nextPage')}
         </Button>
       </div>
     </div>
