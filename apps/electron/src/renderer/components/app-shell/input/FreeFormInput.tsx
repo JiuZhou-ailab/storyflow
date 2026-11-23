@@ -791,40 +791,42 @@ export function FreeFormInput({
   // This disables safe mode AND submits the message in one action
   // Only process events for this session (sessionId must match)
   React.useEffect(() => {
-    const handleApprovePlan = async (e: CustomEvent<PlanApprovalEventDetail>) => {
+    const handleApprovePlan = async (event: Event) => {
+      const detail = (event as CustomEvent<PlanApprovalEventDetail>).detail
       // Only handle if this event is for our session
-      if (e.detail?.sessionId && e.detail.sessionId !== sessionId) {
+      if (detail?.sessionId && detail.sessionId !== sessionId) {
         return
       }
       if (!await enablePlanExecution()) return
 
-      const shouldIncludeDraft = e.detail?.includeDraftInput !== false
+      const shouldIncludeDraft = detail?.includeDraftInput !== false
       const draftInput = shouldIncludeDraft ? consumeInputDraftSnapshot() : ''
       const text = buildPlanApprovalMessage({
-        planPath: e.detail?.planPath,
+        planPath: detail?.planPath,
         draftInput,
       })
 
       onSubmitRef.current(text, undefined)
     }
 
-    window.addEventListener('craft:approve-plan', handleApprovePlan as EventListener)
-    return () => window.removeEventListener('craft:approve-plan', handleApprovePlan as EventListener)
+    window.addEventListener('craft:approve-plan', handleApprovePlan)
+    return () => window.removeEventListener('craft:approve-plan', handleApprovePlan)
   }, [sessionId, enablePlanExecution, consumeInputDraftSnapshot])
 
   // Listen for craft:approve-plan-with-compact events (Accept & Compact option)
   // This compacts the conversation first, then executes the plan.
   // The pending state is persisted to survive page reloads (CMD+R).
   React.useEffect(() => {
-    const handleApprovePlanWithCompact = async (e: CustomEvent<PlanApprovalEventDetail>) => {
+    const handleApprovePlanWithCompact = async (event: Event) => {
+      const detail = (event as CustomEvent<PlanApprovalEventDetail>).detail
       // Only handle if this event is for our session
-      if (e.detail?.sessionId && e.detail.sessionId !== sessionId) {
+      if (detail?.sessionId && detail.sessionId !== sessionId) {
         return
       }
       if (!await enablePlanExecution()) return
 
-      const planPath = e.detail?.planPath
-      const shouldIncludeDraft = e.detail?.includeDraftInput !== false
+      const planPath = detail?.planPath
+      const shouldIncludeDraft = detail?.includeDraftInput !== false
       const draftInputSnapshot = shouldIncludeDraft ? consumeInputDraftSnapshot() : ''
 
       // Persist the pending plan execution state BEFORE sending /compact.
@@ -841,8 +843,8 @@ export function FreeFormInput({
       onSubmitRef.current('/compact', undefined)
     }
 
-    window.addEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
-    return () => window.removeEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
+    window.addEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact)
+    return () => window.removeEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact)
   }, [sessionId, enablePlanExecution, consumeInputDraftSnapshot])
 
   // Reload recovery: Check for pending plan execution on mount.
