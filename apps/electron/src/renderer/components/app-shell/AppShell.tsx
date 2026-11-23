@@ -103,7 +103,7 @@ import { sessionOptionsAtomFamily } from "@/hooks/useSessionOptions"
 import { EscapeInterruptProvider, useEscapeInterruptActions } from "@/context/EscapeInterruptContext"
 import { useTheme } from "@/context/ThemeContext"
 import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
-import { useAction } from "@/actions"
+import { useAction, useHotkeyLabel } from "@/actions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusActions } from "@/context/FocusContext"
 import { createConversationWithFeedback } from "./ActivityRailRows"
@@ -1372,6 +1372,7 @@ function AppShellContent({
   useAction('nav.previousSession', () => cycleSession(-1))
 
   // New chat
+  const newTaskShortcut = useHotkeyLabel('app.newChat')
   useAction('app.newChat', () => handleNewChat())
   useAction('app.newChatInPanel', () => handleNewChat(true))
 
@@ -3317,6 +3318,7 @@ function AppShellContent({
             >
               <ActivityRail
                 activeItem={activeActivityRailItem}
+                newTaskShortcut={newTaskShortcut}
                 width={activityRailWidth}
                 onWidthChange={setActivityRailWidth}
                 onResizeChange={setIsActivityRailResizing}
