@@ -1,5 +1,5 @@
 // input: Workspace sessions and creation sources, Pi product projections, persistence stores, Project lifecycle coordinator, and Host services
-// output: Generation-owned atomic sends, projected Pi events, commands, remembered permission choices, and drained Host teardown
+// output: Generation-owned atomic sends, projected Pi events, composer suggestions, commands, remembered permission choices, and drained Host teardown
 // pos: Storyflow Product Host session boundary; Pi owns Agent turn execution
 
 import type { EventSink } from '@craft-agent/server-core/transport'
@@ -134,6 +134,7 @@ import {
   getLastFinalOutputMessageId,
 } from './session-runtime'
 import { SessionBroadcaster } from './session-broadcaster'
+import { suggestNextMessage } from './next-message-suggestion'
 import { revokeShare } from './share-service'
 import { MessageEdits } from './message-edits'
 import {
@@ -3846,7 +3847,7 @@ export class SessionManager implements ISessionManager {
 
           if (event.usage) sendSpan.setMetadata('usage', event.usage)
           sendSpan.mark('chat.complete')
-          await this.onProcessingStopped(sessionId, 'complete', myGeneration)
+          await this.onProcessingStopped(sessionId, 'complete', myGeneration, event.status === 'completed')
           sendSpan.mark('session.flushed')
           sendSpan.end()
           return  // Exit function, skip finally block (onProcessingStopped handles cleanup)
@@ -4122,6 +4123,7 @@ export class SessionManager implements ISessionManager {
     sessionId: string,
     reason: 'complete' | 'interrupted' | 'error' | 'timeout',
     generation: number,
+    suggestFollowUp = false,
   ): Promise<void> {
     const managed = this.sessions.get(sessionId)
     if (!managed || !managed.isProcessing || managed.processingGeneration !== generation
@@ -4137,6 +4139,7 @@ export class SessionManager implements ISessionManager {
 
       // Keep admission queued until cleanup and the next dispatch are decided together.
       // 1. Cleanup state
+      const wasStopped = managed.stopRequested
       managed.stopRequested = false  // Reset for next turn
 
       const turnStartFinalMessageId = managed.turnStartFinalMessageId
@@ -4221,9 +4224,48 @@ export class SessionManager implements ISessionManager {
           hasUnread: managed.hasUnread,  // Propagate unread state to renderer
         }, managed.workspace.id)
         managed.pendingTurnMetrics = undefined
+        if (suggestFollowUp && !wasStopped && didReceiveNewFinalOutput && isViewing && !managed.hidden) {
+          const reply = managed.messages.findLast(message => message.id === currentFinalMessageId)
+          if (reply?.role === 'assistant' && reply.content.trim()) {
+            void this.publishNextMessageSuggestion(managed, generation, reply.id)
+          }
+        }
       }
     } finally {
       if (this.stoppingGenerations.get(managed) === generation) this.stoppingGenerations.delete(managed)
+    }
+  }
+
+  private async publishNextMessageSuggestion(
+    managed: ManagedSession,
+    generation: number,
+    replyId: string,
+  ): Promise<void> {
+    const epoch = managed.runtimeEpoch
+    const isCurrent = () => !this.shuttingDown
+      && this.sessions.get(managed.id) === managed
+      && !managed.runtimeState && managed.runtimeEpoch === epoch
+      && !managed.isProcessing && managed.processingGeneration === generation
+      && this.isSessionBeingViewed(managed.id, managed.workspace.id)
+      // A new user message is appended before its durable acceptance claims a generation.
+      && managed.messages.findLast(message => message.role === 'user' || message.role === 'error'
+        || message.role === 'plan' || (message.role === 'assistant' && !message.isIntermediate))?.id === replyId
+
+    if (!isCurrent()) return
+    try {
+      const text = await this.withAgentRuntimeLease(managed, async agent =>
+        isCurrent() ? suggestNextMessage(managed.messages, request => agent.queryLlm(request)) : undefined
+      )
+      if (text && isCurrent()) {
+        this.sendEvent({
+          type: 'next_message_suggested',
+          sessionId: managed.id,
+          suggestion: { replyId, text },
+        }, managed.workspace.id)
+      }
+    } catch {
+      // A secondary inference failure must not change the finished chat turn.
+      getSessionLog().debug('Next message suggestion unavailable', { sessionId: managed.id })
     }
   }
 

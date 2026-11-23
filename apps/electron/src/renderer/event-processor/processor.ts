@@ -129,6 +129,12 @@ export function processEvent(
     case 'title_generated':
       return handleTitleGenerated(state, event)
 
+    case 'next_message_suggested':
+      return {
+        state: { ...state, session: { ...state.session, nextMessageSuggestion: event.suggestion } },
+        effects: [],
+      }
+
     case 'async_operation':
       return handleAsyncOperation(state, event)
 

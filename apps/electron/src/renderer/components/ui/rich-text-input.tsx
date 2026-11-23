@@ -109,6 +109,8 @@ export interface RichTextInputProps extends Omit<React.HTMLAttributes<HTMLDivEle
   onChange: (value: string, meta?: RichTextInputChangeMeta) => void
   /** Placeholder text(s) when empty - can be a single string or array for rotation */
   placeholder?: string | string[]
+  /** A draft preview that plain Tab inserts when the editor is empty. */
+  inlineSuggestion?: string
   /** Available skills for mention parsing */
   skills?: LoadedSkill[]
   /** Available sources for mention parsing */
@@ -594,6 +596,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       value,
       onChange,
       placeholder,
+      inlineSuggestion,
       skills = [],
       sources = [],
       mentionFiles = [],
@@ -611,6 +614,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     forwardedRef
   ) {
     const { t } = useTranslation()
+    const suggestionDescriptionId = React.useId()
     const safeValue = React.useMemo(
       () => normalizeContentEditableText(coerceInputText(value)),
       [value],
@@ -767,7 +771,14 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       }
 
       onKeyDown?.(e)
-    }, [onKeyDown])
+      if (inlineSuggestion && !disabled && !lastValueRef.current && !e.defaultPrevented
+        && e.key === 'Tab' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+        && !e.repeat && !isComposing.current && !e.nativeEvent.isComposing) {
+        e.preventDefault()
+        pendingCursorRef.current = inlineSuggestion.length
+        onChange(inlineSuggestion)
+      }
+    }, [onKeyDown, onChange, inlineSuggestion, disabled])
 
     // Handle paste - delegate files to parent, manually insert plain text
     const handlePasteInternal = React.useCallback((e: React.ClipboardEvent) => {
@@ -890,12 +901,18 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
 
     // Keep the IME-owned DOM visible while the parent value catches up.
     const showPlaceholder = shouldShowRichTextPlaceholder(safeValue, isCompositionActive)
+    const showSuggestion = showPlaceholder && !disabled && !!inlineSuggestion
 
     // Normalize placeholder to array for RotatingPlaceholder
     const placeholderArray = React.useMemo(() => {
       if (!placeholder) return [t("chatInput.placeholder.typeMessage")]
       return Array.isArray(placeholder) ? placeholder : [placeholder]
     }, [placeholder])
+
+    const placeholderClassName = cn(
+      'absolute inset-0 text-sm text-muted-foreground pointer-events-none select-none',
+      className
+    )
 
     return (
       <div className="relative">
@@ -927,16 +944,22 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
           role="textbox"
           aria-multiline="true"
           {...restProps}
+          aria-describedby={showSuggestion
+            ? [restProps['aria-describedby'], suggestionDescriptionId].filter(Boolean).join(' ')
+            : restProps['aria-describedby']}
+          aria-keyshortcuts={showSuggestion ? 'Tab' : restProps['aria-keyshortcuts']}
         />
         {/* Rotating placeholder overlay - visible when empty, even when focused */}
-        {showPlaceholder && (
+        {showSuggestion ? (
+          <div id={suggestionDescriptionId} className={cn(placeholderClassName, 'flex items-start gap-2')}>
+            <span className="line-clamp-3 min-w-0 break-words">{inlineSuggestion}</span>
+            <kbd className="shrink-0 rounded border border-border px-1 text-xs">Tab</kbd>
+          </div>
+        ) : showPlaceholder && (
           <RotatingPlaceholder
             placeholders={placeholderArray}
             intervalMs={5000}
-            className={cn(
-              'absolute inset-0 text-sm text-muted-foreground pointer-events-none select-none',
-              className
-            )}
+            className={placeholderClassName}
           />
         )}
       </div>

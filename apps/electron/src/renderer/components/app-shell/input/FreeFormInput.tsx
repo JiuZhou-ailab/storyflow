@@ -1,4 +1,4 @@
-// input: Session draft text, attachments, skill/model/source/permission controls, and processing state
+// input: Session draft text, attachments, reply-scoped suggestions, skill/model/source/permission controls, and processing state
 // output: Free-form chat composer that submits messages and manages chat input affordances
 // pos: Main app-shell message composer above the session transcript
 
@@ -37,6 +37,7 @@ import {
   useInlineLabelMenu,
 } from '@/components/ui/label-menu'
 import type { LabelConfig } from '@craft-agent/shared/labels'
+import type { NextMessageSuggestion } from '@craft-agent/shared/protocol'
 import { parseMentions } from '@/lib/mentions'
 import { RichTextInput, type RichTextInputChangeMeta, type RichTextInputHandle } from '@/components/ui/rich-text-input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
@@ -173,6 +174,7 @@ export interface FollowUpInputItem {
 export interface FreeFormInputProps {
   /** Placeholder text(s) for the textarea - can be array for rotation */
   placeholder?: string | string[]
+  nextMessageSuggestion?: NextMessageSuggestion
   /** Whether input is disabled */
   disabled?: boolean
   /** Whether the session is currently processing */
@@ -299,6 +301,7 @@ export interface FreeFormInputProps {
  */
 export function FreeFormInput({
   placeholder,
+  nextMessageSuggestion,
   disabled = false,
   isProcessing = false,
   onSubmit,
@@ -530,6 +533,7 @@ export function FreeFormInput({
   // Sync TO parent on blur/submit (debounced persistence)
   const [input, setInput] = React.useState(() => coerceInputText(inputValue))
   const [attachments, setAttachments] = React.useState<FileAttachment[]>(attachmentsValue ?? [])
+  const [dismissedSuggestionReplyId, setDismissedSuggestionReplyId] = React.useState<string>()
 
   // Ref to track current attachments for use in event handlers (avoids stale closure issues)
   const attachmentsRef = React.useRef<FileAttachment[]>([])
@@ -1490,6 +1494,7 @@ export function FreeFormInput({
   // Handle input changes from RichTextInput
   const handleInputChange = React.useCallback((value: string) => {
     const nextValue = coerceInputText(value)
+    if (nextValue && nextMessageSuggestion) setDismissedSuggestionReplyId(nextMessageSuggestion.replyId)
     // Get previous input value before updating state
     const prevValue = inputRef.current
 
@@ -1512,7 +1517,13 @@ export function FreeFormInput({
         onSourcesChange(newSlugs)
       }
     }
-  }, [syncToParent, sourceSlugs, optimisticSourceSlugs, onSourcesChange])
+  }, [syncToParent, sourceSlugs, optimisticSourceSlugs, onSourcesChange, nextMessageSuggestion])
+
+  const inlineSuggestion = nextMessageSuggestion && nextMessageSuggestion.replyId !== dismissedSuggestionReplyId
+    && !input && !attachments.length && !disabled && !isProcessing && isFocusedPanel
+    && !inlineSlash.isOpen && !inlineMention.isOpen && !inlineLabel.isOpen
+    ? nextMessageSuggestion.text
+    : undefined
 
   // Handle input with cursor position (for menu detection)
   const handleRichInput = React.useCallback((value: string, cursorPosition: number, meta?: RichTextInputChangeMeta) => {
@@ -2016,6 +2027,7 @@ export function FreeFormInput({
           onChange={handleInputChange}
           onInput={handleRichInput}
           onKeyDown={handleKeyDown}
+          inlineSuggestion={inlineSuggestion}
           onPaste={handlePaste}
           onLongTextPaste={handleLongTextPaste}
           onFocus={() => { setIsFocused(true); onFocusChange?.(true) }}
