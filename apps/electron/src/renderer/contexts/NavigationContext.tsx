@@ -683,7 +683,7 @@ export function NavigationProvider({
   // =========================================================================
 
   const handleActionNavigation = useCallback(
-    async (parsed: ParsedRoute, options?: { newPanel?: boolean }) => {
+    async (parsed: ParsedRoute, options?: NavigateOptions) => {
       if (!workspaceId) return
 
       switch (parsed.name) {
