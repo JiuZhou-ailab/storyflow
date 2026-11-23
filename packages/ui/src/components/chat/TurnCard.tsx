@@ -803,6 +803,7 @@ function ActivityRow({ activity, livePreview, onOpenDetails, isLastChild, sessio
           {isThinking ? (
             <div className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}>
               <Spinner className={SIZE_CONFIG.spinnerSize} />
+              {livePreview && <span className="sr-only">Thinking...</span>}
             </div>
           ) : (
             <MessageCircleDashed className={cn(SIZE_CONFIG.iconSize, "shrink-0")} />
