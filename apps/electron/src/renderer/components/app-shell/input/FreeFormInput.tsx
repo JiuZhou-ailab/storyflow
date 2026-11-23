@@ -769,15 +769,34 @@ export function FreeFormInput({
     source?: string
   }
 
+  const enablePlanExecution = React.useCallback(async () => {
+    if (sessionId && permissionMode === 'safe') {
+      try {
+        await window.electronAPI.sessionCommand(sessionId, {
+          type: 'setPermissionMode',
+          mode: 'allow-all',
+          remember: false,
+        })
+      } catch (error) {
+        toast.error(t('errors.somethingWentWrong'), {
+          description: error instanceof Error ? error.message : String(error),
+        })
+        return false
+      }
+    }
+    return true
+  }, [sessionId, permissionMode, t])
+
   // Listen for craft:approve-plan events (used by ResponseCard's Accept Plan button)
   // This disables safe mode AND submits the message in one action
   // Only process events for this session (sessionId must match)
   React.useEffect(() => {
-    const handleApprovePlan = (e: CustomEvent<PlanApprovalEventDetail>) => {
+    const handleApprovePlan = async (e: CustomEvent<PlanApprovalEventDetail>) => {
       // Only handle if this event is for our session
       if (e.detail?.sessionId && e.detail.sessionId !== sessionId) {
         return
       }
+      if (!await enablePlanExecution()) return
 
       const shouldIncludeDraft = e.detail?.includeDraftInput !== false
       const draftInput = shouldIncludeDraft ? consumeInputDraftSnapshot() : ''
@@ -786,18 +805,12 @@ export function FreeFormInput({
         draftInput,
       })
 
-      // Switch to allow-all (Auto) mode if in Explore mode (allow execution without prompts)
-      // Only switch if currently in safe mode - if user is in 'ask' mode, respect their choice
-      if (permissionMode === 'safe') {
-        onPermissionModeChange?.('allow-all')
-      }
-
       onSubmitRef.current(text, undefined)
     }
 
     window.addEventListener('craft:approve-plan', handleApprovePlan as EventListener)
     return () => window.removeEventListener('craft:approve-plan', handleApprovePlan as EventListener)
-  }, [sessionId, permissionMode, onPermissionModeChange, consumeInputDraftSnapshot])
+  }, [sessionId, enablePlanExecution, consumeInputDraftSnapshot])
 
   // Listen for craft:approve-plan-with-compact events (Accept & Compact option)
   // This compacts the conversation first, then executes the plan.
@@ -808,15 +821,11 @@ export function FreeFormInput({
       if (e.detail?.sessionId && e.detail.sessionId !== sessionId) {
         return
       }
+      if (!await enablePlanExecution()) return
 
       const planPath = e.detail?.planPath
       const shouldIncludeDraft = e.detail?.includeDraftInput !== false
       const draftInputSnapshot = shouldIncludeDraft ? consumeInputDraftSnapshot() : ''
-
-      // Switch to allow-all (Auto) mode if in Explore mode
-      if (permissionMode === 'safe') {
-        onPermissionModeChange?.('allow-all')
-      }
 
       // Persist the pending plan execution state BEFORE sending /compact.
       // This allows reload recovery if CMD+R happens during compaction.
@@ -834,7 +843,7 @@ export function FreeFormInput({
 
     window.addEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
     return () => window.removeEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
-  }, [sessionId, permissionMode, onPermissionModeChange, consumeInputDraftSnapshot])
+  }, [sessionId, enablePlanExecution, consumeInputDraftSnapshot])
 
   // Reload recovery: Check for pending plan execution on mount.
   // If the page reloaded after compaction completed (awaitingCompaction = false),

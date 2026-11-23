@@ -695,6 +695,9 @@ export function NavigationProvider({
             await onActivateWorkspace(targetWorkspaceId)
           }
           const createOptions: import('../../shared/types').CreateSessionOptions = {}
+          if (parsed.params.input && parsed.params.send === 'true') {
+            createOptions.inheritPermissionMode = false
+          }
           if (parsed.params.mode) {
             const parsedMode = parsePermissionMode(parsed.params.mode)
             if (parsedMode) {
@@ -838,7 +841,7 @@ export function NavigationProvider({
             }
             await window.electronAPI.sessionCommand(
               parsed.id,
-              { type: 'setPermissionMode', mode: parsedMode }
+              { type: 'setPermissionMode', mode: parsedMode, remember: false }
             )
           }
           break

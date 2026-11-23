@@ -1644,12 +1644,18 @@ function AppContent() {
     if (updates.permissionMode !== undefined) {
       // Sync permission mode change with backend
       window.electronAPI.sessionCommand(sessionId, { type: 'setPermissionMode', mode: updates.permissionMode })
+        .catch(error => {
+          toast.error(t('errors.somethingWentWrong'), {
+            description: error instanceof Error ? error.message : String(error),
+          })
+          void reconcilePermissionModeState(sessionId)
+        })
     }
     if (updates.thinkingLevel !== undefined) {
       // Sync thinking level change with backend (session-level, persisted)
       window.electronAPI.sessionCommand(sessionId, { type: 'setThinkingLevel', level: updates.thinkingLevel })
     }
-  }, [])
+  }, [reconcilePermissionModeState, t])
 
   // Handle input draft changes per session with debounced persistence
   const draftSaveTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
@@ -1795,9 +1801,16 @@ function AppContent() {
     alwaysAllow: boolean,
     options?: import('../shared/types').PermissionResponseOptions,
   ) => {
-    await window.electronAPI.respondToPermission(sessionId, requestId, allowed, alwaysAllow, options)
+    try {
+      await window.electronAPI.respondToPermission(sessionId, requestId, allowed, alwaysAllow, options)
+    } catch (error) {
+      toast.error(t('errors.somethingWentWrong'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
     setPendingPermissions(prev => removeFirstRequestForSession(prev, sessionId))
-  }, [])
+  }, [t])
 
   const handleRespondToCredential = useCallback(async (sessionId: string, requestId: string, response: CredentialResponse) => {
     await window.electronAPI.respondToCredential(sessionId, requestId, response)

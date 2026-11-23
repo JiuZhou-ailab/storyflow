@@ -1,5 +1,5 @@
 // input: Workspace sessions, Pi product projections, persistence stores, Project lifecycle coordinator, and Host services
-// output: Generation-owned atomic sends with stable interruption/freshness policies and transient facts, projected Pi events, commands, and drained Host teardown
+// output: Generation-owned atomic sends, projected Pi events, commands, remembered permission choices, and drained Host teardown
 // pos: Storyflow Product Host session boundary; Pi owns Agent turn execution
 
 import type { EventSink } from '@craft-agent/server-core/transport'
@@ -105,6 +105,7 @@ import {
   type AgentInstance,
   type ManagedSession,
 } from './managed-session'
+import { isPermissionMode, PermissionModePreferences } from './permission-mode-preferences'
 import { getPiTurnAnchor, loadPiTurnAnchors, requireSdkForkBranchAnchor, savePiTurnAnchor } from './pi-turn-anchors'
 import { resolveToolDisplayMeta } from './tool-display'
 export { consumePendingSdkFork } from './managed-session'
@@ -240,6 +241,7 @@ export class SessionManager implements ISessionManager {
       workspaceId: string,
       managed: ManagedSession,
     ) => Workspace | null = workspaceId => resolveRuntimeWorkspaceById(workspaceId),
+    private readonly permissionModePreferences = new PermissionModePreferences(),
   ) {}
 
   private sessions: Map<string, ManagedSession> = new Map()
@@ -318,6 +320,7 @@ export class SessionManager implements ISessionManager {
     getSession: id => this.sessions.get(id),
     setSession: (id, managed) => this.sessions.set(id, managed),
     deleteSession: id => { this.sessions.delete(id) },
+    hasExecuteGrant: (workspace, session) => this.permissionModePreferences.hasExecuteGrant(workspace, session),
     onQueuedRecovery: sessionId => this.processNextQueuedMessage(sessionId),
     prepareBootServices: async () => {
       await this.reinitializeAuth()
@@ -1927,7 +1930,7 @@ export class SessionManager implements ISessionManager {
     try {
       return await this.projectLifecycle.withProjectLifecycleLock(
         workspaceId,
-        () => this.createSessionLocked(workspaceId, options),
+        () => this.createSessionLocked(workspaceId, options, true),
       )
     } catch (cause) {
       const source = cause instanceof AggregateError ? cause.errors[0] : cause
@@ -1943,7 +1946,11 @@ export class SessionManager implements ISessionManager {
     }
   }
 
-  private async createSessionLocked(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
+  private async createSessionLocked(
+    workspaceId: string,
+    options?: import('@craft-agent/shared/protocol').CreateSessionOptions,
+    useLastSelectedMode = false,
+  ): Promise<Session> {
     const workspace = resolveRuntimeWorkspaceById(workspaceId)
       ?? getWorkspaces().find(candidate => candidate.id === workspaceId)
     if (!workspace) {
@@ -1959,8 +1966,13 @@ export class SessionManager implements ISessionManager {
     const wsConfig = await retryTransientFs(() => loadWorkspaceConfig(workspaceRootPath))
     const globalDefaults = loadConfigDefaults()
 
-    // Executable defaults are Host-owned; Project files cannot self-grant them.
+    // Only ordinary conversations inherit the Host-owned user choice.
+    const rememberedMode = useLastSelectedMode && !options?.hidden && !options?.branchFromSessionId
+      && options?.inheritPermissionMode !== false && options?.permissionMode === undefined
+      ? this.permissionModePreferences.lastSelectedMode
+      : undefined
     const defaultPermissionMode = options?.permissionMode
+      ?? rememberedMode
       ?? resolveWorkspaceDefaultPermissionMode(
         workspace,
         globalDefaults.workspaceDefaults.permissionMode,
@@ -2241,6 +2253,9 @@ export class SessionManager implements ISessionManager {
         await saveStoredSession(branchedStored)
       }
 
+      if (rememberedMode === 'allow-all') {
+        this.permissionModePreferences.save(workspace, storedSession, rememberedMode)
+      }
     } catch (error) {
       await sessionPersistenceQueue.retire(storedSession.id)
       try {
@@ -3101,6 +3116,11 @@ export class SessionManager implements ISessionManager {
         }
         this.sessions.delete(sessionId)
         this.workspaceFreshness.forget(sessionId)
+        try {
+          this.permissionModePreferences.save(claimedSession.workspace, claimedSession, 'ask')
+        } catch (error) {
+          getSessionLog().warn('Failed to clear permission grant for deleted Session', { sessionId, error })
+        }
       })
     } catch (error) {
       if (ownsDeletion()) claimedSession.runtimeState = undefined
@@ -4384,6 +4404,10 @@ export class SessionManager implements ISessionManager {
     const managed = this.getMutableSession(sessionId)
     const requestMeta = this.pendingPermissionRequests.get(requestId)
     if (managed?.agent?.hasPendingPermission(requestId) && requestMeta?.sessionId === sessionId) {
+      const switchToExecute = allowed && options?.permissionMode === 'allow-all' && requestMeta.type !== 'admin_approval'
+      if (switchToExecute) {
+        this.permissionModePreferences.save(managed.workspace, managed, 'allow-all')
+      }
       this.pendingPermissionRequests.delete(requestId)
 
       if (requestMeta?.type === 'admin_approval') {
@@ -4404,7 +4428,7 @@ export class SessionManager implements ISessionManager {
 
       // Reuse the authoritative mode mutation (runtime, UI event, persistence)
       // before releasing Pi's pending tool_call hook. Admin approvals stay separate.
-      if (allowed && options?.permissionMode === 'allow-all' && requestMeta.type !== 'admin_approval') {
+      if (switchToExecute) {
         this.crudMetadata.setSessionPermissionMode(sessionId, 'allow-all')
       }
       getSessionLog().info(`Permission response for ${requestId}: allowed=${allowed}, alwaysAllow=${alwaysAllow}`)
@@ -4471,8 +4495,12 @@ export class SessionManager implements ISessionManager {
   }
 
   /** Set the permission mode for a session (delegates to SessionCrudMetadata). */
-  async setSessionPermissionMode(sessionId: string, mode: PermissionMode): Promise<void> {
-    await this.withSessionOperation(sessionId, undefined, async () => {
+  async setSessionPermissionMode(sessionId: string, mode: PermissionMode, remember = false): Promise<void> {
+    if (!isPermissionMode(mode)) throw new Error('Invalid session permission mode')
+    await this.withSessionOperation(sessionId, undefined, async managed => {
+      if (remember) {
+        this.permissionModePreferences.save(managed.workspace, managed, mode, true)
+      }
       this.crudMetadata.setSessionPermissionMode(sessionId, mode)
     })
   }

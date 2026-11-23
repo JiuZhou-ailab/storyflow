@@ -13,13 +13,15 @@ import type { HandlerFn, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handlers/handler-deps'
 import { registerSessionsHandlers } from '../handlers/rpc/sessions'
 import { SessionManager, createManagedSession } from './SessionManager'
+import { PermissionModePreferences } from './permission-mode-preferences'
 
 it('switches only the approved Session before Pi resumes, through the permission RPC', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'permission-response-')))
   mkdirSync(join(root, '.craft-agent'))
   const workspace = { id: 'permission-workspace', slug: 'permission-workspace', name: 'Test', rootPath: root, createdAt: 1 }
   const managed = createManagedSession({ id: 'permission-session' }, workspace, { messagesLoaded: true })
-  const manager = new SessionManager((_workspaceId, session) => session.workspace)
+  const preferences = new PermissionModePreferences(join(root, 'host'))
+  const manager = new SessionManager((_workspaceId, session) => session.workspace, preferences)
   const agent = new PiAgent({ workspace, session: {
     id: managed.id, workspaceRootPath: root, createdAt: 1, lastUsedAt: 1, workingDirectory: root,
   }, isHeadless: true })
@@ -50,7 +52,7 @@ it('switches only the approved Session before Pi resumes, through the permission
     requestId: id, toolName: 'Write', input: { file_path: join(root, `${id}.txt`), content: id },
   }) as Promise<void>
   try {
-    await manager.setSessionPermissionMode(managed.id, 'ask')
+    await manager.setSessionPermissionMode(managed.id, 'ask', true)
     const first = check('first')
     await Bun.sleep(0)
     expect(requests).toHaveLength(1)
@@ -59,6 +61,8 @@ it('switches only the approved Session before Pi resumes, through the permission
     expect(await respond(context, managed.id, request.requestId, true, false, { permissionMode: 'allow-all' })).toBe(true)
     await first
     expect(manager.getSessionPermissionModeState(managed.id)?.permissionMode).toBe('allow-all')
+    expect(preferences.hasExecuteGrant(workspace, managed)).toBe(true)
+    expect(preferences.lastSelectedMode).toBe('ask')
     expect(order).toEqual(['mode:allow-all', 'resume:allow:allow-all'])
     await check('second')
     expect(requests).toHaveLength(1)
@@ -66,7 +70,8 @@ it('switches only the approved Session before Pi resumes, through the permission
     const header = JSON.parse(readFileSync(getSessionFilePath(root, managed.id), 'utf8').split('\n')[0]!)
     expect(header.permissionMode).toBe('allow-all')
 
-    await manager.setSessionPermissionMode(managed.id, 'ask')
+    await manager.setSessionPermissionMode(managed.id, 'ask', true)
+    expect(preferences.hasExecuteGrant(workspace, managed)).toBe(false)
     // A delayed/duplicate response cannot grant a fresh permission mode.
     expect(await respond(context, managed.id, request.requestId, true, false, { permissionMode: 'allow-all' })).toBe(false)
     expect(agent.getPermissionMode()).toBe('ask')
