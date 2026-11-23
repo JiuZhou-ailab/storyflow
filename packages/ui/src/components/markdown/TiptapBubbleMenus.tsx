@@ -405,6 +405,7 @@ function getEditableBlockMeta(editor: Editor): { label: string; code: string; up
 }
 
 function RichBlockEditMenu({ editor }: { editor: Editor }) {
+  const { t } = useTranslation()
   const [isEditing, setIsEditing] = React.useState(false)
   const [positionReady, setPositionReady] = React.useState(false)
   const [code, setCode] = React.useState('')
@@ -519,7 +520,7 @@ function RichBlockEditMenu({ editor }: { editor: Editor }) {
           className="tiptap-bubble-done-btn"
           onClick={commitEdit}
         >
-          Done
+          {t('common.done')}
         </button>
       </div>
       <div className="tiptap-bubble-textarea-shell">

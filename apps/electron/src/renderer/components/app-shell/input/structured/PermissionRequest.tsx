@@ -55,7 +55,7 @@ export function PermissionRequest({ request, onResponse, unstyled = false }: Per
             <span>{t('chat.permissionRequired')}</span>
           </div>
           <div className="text-xs leading-[18px] text-muted-foreground">
-            <span className="font-medium text-foreground">Tool:</span> {request.toolName}
+            <span className="font-medium text-foreground">{t('chat.permissionToolLabel')}</span> {request.toolName}
             <br />
             {request.description}
           </div>
@@ -79,7 +79,7 @@ export function PermissionRequest({ request, onResponse, unstyled = false }: Per
           data-tutorial="permission-allow-button"
         >
           <Check className="h-3.5 w-3.5" />
-          Allow
+          {t('chat.permissionAllow')}
         </Button>
         <Button
           size="sm"
@@ -89,7 +89,7 @@ export function PermissionRequest({ request, onResponse, unstyled = false }: Per
           data-tutorial="permission-allow-all-button"
         >
           <RefreshCw className="h-3.5 w-3.5" />
-          Allow All
+          {t('chat.permissionAllowAll')}
         </Button>
         <Button
           size="sm"
@@ -98,12 +98,12 @@ export function PermissionRequest({ request, onResponse, unstyled = false }: Per
           onClick={handleDeny}
         >
           <X className="h-3.5 w-3.5" />
-          Deny
+          {t('chat.permissionDeny')}
         </Button>
 
         {/* Tip text */}
         <span className="min-w-0 flex-1 basis-full text-[10px] text-muted-foreground sm:basis-auto sm:text-right">
-          "Allow All" switches this session to execution mode
+          {t('chat.permissionAllowAllHint')}
         </span>
       </div>
     </div>
