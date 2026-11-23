@@ -39,7 +39,7 @@ import { useNotifications } from '@/hooks/useNotifications'
 import { useSession } from '@/hooks/useSession'
 import { NavigationProvider } from '@/contexts/NavigationContext'
 import { GLOBAL_SETTINGS_SUBPAGES, SettingsDialog } from '@/pages/settings/SettingsNavigator'
-import { navigate, routes, type Route } from './lib/navigate'
+import { navigate, routes, type NavigateOptions, type Route } from './lib/navigate'
 import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
 import { stripMarkdown } from './utils/text'
 import { coerceInputText } from './lib/input-text'
@@ -235,7 +235,7 @@ function AppContent() {
     const timeoutId = setTimeout(preloadWorkspaceSurface, 0)
     return () => clearTimeout(timeoutId)
   }, [appState])
-  const [pendingReadyRoute, setPendingReadyRoute] = useState<Route | null>(null)
+  const [pendingReadyRoute, setPendingReadyRoute] = useState<{ route: Route; options?: NavigateOptions } | null>(null)
   const [openGlobalSearchSignal, setOpenGlobalSearchSignal] = useState(0)
   const [openWhatsNewSignal, setOpenWhatsNewSignal] = useState(0)
   const [whatsNewManifest, setWhatsNewManifest] = useState<WhatsNewManifest | null>(null)
@@ -365,7 +365,7 @@ function AppContent() {
   const workspaceSwitchInFlightRef = useRef<string | null>(null)
   const workspaceSelectionGenerationRef = useRef(0)
   const workspaceActivationRequestRef = useRef(0)
-  const workspaceOpenTargetRef = useRef<{ id: string; route?: Route } | null>(null)
+  const workspaceOpenTargetRef = useRef<{ id: string; route?: Route; options?: NavigateOptions } | null>(null)
 
   // Notifications enabled state (from app settings)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
@@ -1643,7 +1643,7 @@ function AppContent() {
     // Handle persistence/backend for specific options
     if (updates.permissionMode !== undefined) {
       // Sync permission mode change with backend
-      window.electronAPI.sessionCommand(sessionId, { type: 'setPermissionMode', mode: updates.permissionMode })
+      window.electronAPI.sessionCommand(sessionId, { type: 'setPermissionMode', mode: updates.permissionMode, remember: true })
         .catch(error => {
           toast.error(t('errors.somethingWentWrong'), {
             description: error instanceof Error ? error.message : String(error),
@@ -1779,7 +1779,7 @@ function AppContent() {
       return
     }
 
-    const session = await handleCreateSession(windowWorkspaceId)
+    const session = await handleCreateSession(windowWorkspaceId, { inheritPermissionMode: true })
 
     if (params.name) {
       await window.electronAPI.sessionCommand(session.id, { type: 'rename', name: params.name })
@@ -1924,6 +1924,7 @@ function AppContent() {
   const activateRuntimeWorkspace = useCallback(async (
     workspaceId: string,
     landingRoute?: Route,
+    navigationOptions?: NavigateOptions,
   ) => {
     const activationRequest = ++workspaceActivationRequestRef.current
     let selectionGeneration: number | undefined
@@ -1932,7 +1933,7 @@ function AppContent() {
       if (activationRequest !== workspaceActivationRequestRef.current || !canLeave) return
       // Only confirmed selections invalidate hydration; pending prompts still keep the latest intent.
       selectionGeneration = ++workspaceSelectionGenerationRef.current
-      workspaceOpenTargetRef.current = { id: workspaceId, route: landingRoute }
+      workspaceOpenTargetRef.current = { id: workspaceId, route: landingRoute, options: navigationOptions }
       setOpeningWorkspace(workspaceOpenTargetRef.current)
       setWorkspaceOpenError(null)
       setStartupError(null)
@@ -1947,7 +1948,7 @@ function AppContent() {
       if (workspaceId === windowWorkspaceId && lastLoadedSessionsWorkspaceRef.current === workspaceId) {
         setRuntimeWorkspace(nextWorkspace)
         if (workspaceId !== FREE_CONVERSATION_WORKSPACE_ID) setActiveProjectId(workspaceId)
-        if (landingRoute) setPendingReadyRoute(landingRoute)
+        if (landingRoute) setPendingReadyRoute({ route: landingRoute, options: navigationOptions })
         setAppState('ready')
         return
       }
@@ -1983,7 +1984,7 @@ function AppContent() {
       if (pendingCreatedWorkspaceRef.current?.id === workspaceId) {
         pendingCreatedWorkspaceRef.current = null
       }
-      if (landingRoute) setPendingReadyRoute(landingRoute)
+      if (landingRoute) setPendingReadyRoute({ route: landingRoute, options: navigationOptions })
       setAppState('ready')
     } catch (error) {
       if (selectionGeneration === undefined
@@ -2280,7 +2281,7 @@ function AppContent() {
       void activateRuntimeWorkspace(targetWorkspaceId, route)
       return
     }
-    setPendingReadyRoute(route)
+    setPendingReadyRoute({ route })
     setAppState('ready')
   }, [activateRuntimeWorkspace, runtimeNavigationWorkspaceId, windowWorkspaceId])
 
@@ -2322,11 +2323,12 @@ function AppContent() {
 
   const handleOpenFreeConversations = useCallback((options?: { createNew?: boolean }) => {
     const targetRoute = options?.createNew ? routes.action.newSession() : routes.view.allSessions()
+    const navigationOptions: NavigateOptions | undefined = options?.createNew ? { inheritPermissionMode: true } : undefined
     if (windowWorkspaceId === FREE_CONVERSATION_WORKSPACE_ID) {
-      navigate(targetRoute)
+      navigate(targetRoute, navigationOptions)
       return
     }
-    return activateRuntimeWorkspace(FREE_CONVERSATION_WORKSPACE_ID, targetRoute)
+    return activateRuntimeWorkspace(FREE_CONVERSATION_WORKSPACE_ID, targetRoute, navigationOptions)
   }, [activateRuntimeWorkspace, windowWorkspaceId])
 
   useEffect(() => {
@@ -2335,7 +2337,7 @@ function AppContent() {
     // NavigationProvider is mounted before this parent effect runs, so dispatch
     // the landing route immediately. Scheduling it in an animation frame made
     // clearing the pending state cancel that same frame during effect cleanup.
-    navigate(pendingReadyRoute)
+    navigate(pendingReadyRoute.route, pendingReadyRoute.options)
     setPendingReadyRoute(null)
   }, [appState, pendingReadyRoute])
 
@@ -2591,7 +2593,7 @@ function AppContent() {
                       setStartupAttempt(attempt => attempt + 1)
                     } else if (workspaceOpenTargetRef.current) {
                       const target = workspaceOpenTargetRef.current
-                      void activateRuntimeWorkspace(target.id, target.route)
+                      void activateRuntimeWorkspace(target.id, target.route, target.options)
                     }
                   }}>{t('common.retry')}</Button>
                 </div>

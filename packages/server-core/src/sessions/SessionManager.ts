@@ -1930,7 +1930,7 @@ export class SessionManager implements ISessionManager {
     try {
       return await this.projectLifecycle.withProjectLifecycleLock(
         workspaceId,
-        () => this.createSessionLocked(workspaceId, options, true),
+        () => this.createSessionLocked(workspaceId, options),
       )
     } catch (cause) {
       const source = cause instanceof AggregateError ? cause.errors[0] : cause
@@ -1949,7 +1949,6 @@ export class SessionManager implements ISessionManager {
   private async createSessionLocked(
     workspaceId: string,
     options?: import('@craft-agent/shared/protocol').CreateSessionOptions,
-    useLastSelectedMode = false,
   ): Promise<Session> {
     const workspace = resolveRuntimeWorkspaceById(workspaceId)
       ?? getWorkspaces().find(candidate => candidate.id === workspaceId)
@@ -1967,8 +1966,8 @@ export class SessionManager implements ISessionManager {
     const globalDefaults = loadConfigDefaults()
 
     // Only ordinary conversations inherit the Host-owned user choice.
-    const rememberedMode = useLastSelectedMode && !options?.hidden && !options?.branchFromSessionId
-      && options?.inheritPermissionMode !== false && options?.permissionMode === undefined
+    const rememberedMode = options?.inheritPermissionMode === true && !options.hidden && !options.branchFromSessionId
+      && options.permissionMode === undefined
       ? this.permissionModePreferences.lastSelectedMode
       : undefined
     const defaultPermissionMode = options?.permissionMode
@@ -2760,7 +2759,7 @@ export class SessionManager implements ISessionManager {
     }
 
     if (managed.permissionMode === 'safe') {
-      await this.setSessionPermissionMode(sessionId, 'allow-all')
+      await this.setSessionPermissionMode(sessionId, 'allow-all', false)
     }
 
     await this.sendMessage(sessionId, PLAN_APPROVAL_MESSAGE)
@@ -4495,11 +4494,11 @@ export class SessionManager implements ISessionManager {
   }
 
   /** Set the permission mode for a session (delegates to SessionCrudMetadata). */
-  async setSessionPermissionMode(sessionId: string, mode: PermissionMode, remember = false): Promise<void> {
+  async setSessionPermissionMode(sessionId: string, mode: PermissionMode, remember: boolean): Promise<void> {
     if (!isPermissionMode(mode)) throw new Error('Invalid session permission mode')
     await this.withSessionOperation(sessionId, undefined, async managed => {
-      if (remember) {
-        this.permissionModePreferences.save(managed.workspace, managed, mode, true)
+      if (mode !== 'allow-all' || remember) {
+        this.permissionModePreferences.save(managed.workspace, managed, mode, remember)
       }
       this.crudMetadata.setSessionPermissionMode(sessionId, mode)
     })

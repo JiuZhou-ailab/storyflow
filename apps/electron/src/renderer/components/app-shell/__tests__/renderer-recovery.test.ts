@@ -291,5 +291,5 @@ it('surfaces startup failure on the hub instead of silently dropping it', async 
   const hub = app.slice(app.indexOf("if (appState === 'project-hub')"))
   expect(hub).toContain('role="alert"')
   expect(hub).toContain('setStartupAttempt(attempt => attempt + 1)')
-  expect(hub).toContain('activateRuntimeWorkspace(target.id, target.route)')
+  expect(hub).toContain('activateRuntimeWorkspace(target.id, target.route, target.options)')
 })

@@ -22,6 +22,8 @@ export type { Route }
 export const NAVIGATE_EVENT = 'craft-agent-navigate'
 
 export interface NavigateOptions {
+  /** Opt in for an ordinary new conversation started in the desktop UI. */
+  inheritPermissionMode?: true
   /** Open the target in a new panel instead of navigating the current one */
   newPanel?: boolean
   /** Skip auto-selecting first item when navigating to a list view (used when closing panels) */

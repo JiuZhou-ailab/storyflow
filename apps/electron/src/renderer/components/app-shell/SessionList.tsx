@@ -779,7 +779,7 @@ export function SessionList({
             const params: { status?: string; label?: string } = {}
             if (currentFilter?.kind === 'state') params.status = currentFilter.stateId
             else if (currentFilter?.kind === 'label') params.label = currentFilter.labelId
-            navigate(routes.action.newSession(Object.keys(params).length > 0 ? params : undefined))
+            navigate(routes.action.newSession(Object.keys(params).length > 0 ? params : undefined), { inheritPermissionMode: true })
           }}
           className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors"
         >

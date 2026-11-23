@@ -24,6 +24,8 @@ it('restores permission modes across Host restarts and applies the latest manual
     import { registerSessionsHandlers } from ${JSON.stringify(join(import.meta.dir, '../handlers/rpc/sessions.ts'))};
     import { RPC_CHANNELS } from '@craft-agent/shared/protocol';
     import { getFreeConversationWorkspace } from '@craft-agent/shared/workspaces';
+    import { readFileSync } from 'node:fs';
+    import { join } from 'node:path';
     const sessionManager = new SessionManager();
     sessionManager.reinitializeAuth = async () => {};
     await sessionManager.initialize();
@@ -42,9 +44,16 @@ it('restores permission modes across Host restarts and applies the latest manual
   try {
     const ids = runHost<Record<'selected' | 'inherited' | 'free' | 'oneOff', string>>(`
       const selected = await create();
-      await select(selected.id, 'allow-all');
-      const inherited = await create();
-      const free = await create(undefined, getFreeConversationWorkspace().id);
+      await select(selected.id, 'allow-all', true);
+      const preferencesPath = join(process.env.CRAFT_CONFIG_DIR, 'session-permission-modes.json');
+      const beforeGateway = readFileSync(preferencesPath, 'utf8');
+      if (JSON.parse(beforeGateway).lastSelectedMode !== 'allow-all') throw new Error('Missing remembered execute mode');
+      const gateway = await sessionManager.createSession('project', { name: 'Gateway /new' });
+      if (gateway.permissionMode !== 'ask' || readFileSync(preferencesPath, 'utf8') !== beforeGateway) {
+        throw new Error('Gateway /new inherited execute mode or wrote an execute grant');
+      }
+      const inherited = await create({ inheritPermissionMode: true });
+      const free = await create({ inheritPermissionMode: true }, getFreeConversationWorkspace().id);
       const oneOff = await create({ permissionMode: 'allow-all' });
       return { selected: selected.id, inherited: inherited.id, free: free.id, oneOff: oneOff.id };
     `)
@@ -55,17 +64,20 @@ it('restores permission modes across Host restarts and applies the latest manual
       const ids = ${JSON.stringify(ids)};
       const restored = Object.values(ids).map(mode);
       const defaultModes = [];
-      for (const options of [undefined, { permissionMode: 'safe' }, { hidden: true }, { inheritPermissionMode: false }]) {
+      for (const options of [{ inheritPermissionMode: true }, { inheritPermissionMode: true, permissionMode: 'safe' }, { inheritPermissionMode: true, hidden: true }, undefined]) {
         defaultModes.push((await create(options)).permissionMode);
       }
-      await select(ids.selected, 'ask');
-      const next = await create();
+      await select(ids.selected, 'safe', false);
+      await select(ids.selected, 'allow-all');
+      defaultModes.push((await create({ inheritPermissionMode: true })).permissionMode);
+      await select(ids.oneOff, 'ask', true);
+      const next = await create({ inheritPermissionMode: true });
       await select(next.id, 'allow-all', false);
-      const ask = await create();
+      const ask = await create({ inheritPermissionMode: true });
       return { restored, defaultModes, ask: ask.id, next: next.permissionMode, temporary: next.id };
     `)
     expect(afterExecute.restored).toEqual(['allow-all', 'allow-all', 'allow-all', 'ask'])
-    expect(afterExecute.defaultModes).toEqual(['allow-all', 'safe', 'ask', 'ask'])
+    expect(afterExecute.defaultModes).toEqual(['allow-all', 'safe', 'ask', 'ask', 'allow-all'])
     expect(afterExecute.next).toBe('ask')
 
     expect(runHost<Record<string, string>>(`
@@ -75,7 +87,7 @@ it('restores permission modes across Host restarts and applies the latest manual
         inherited: mode(ids.inherited),
         ask: mode(${JSON.stringify(afterExecute.ask)}),
         temporary: mode(${JSON.stringify(afterExecute.temporary)}),
-        newConversation: (await create()).permissionMode,
+        newConversation: (await create({ inheritPermissionMode: true })).permissionMode,
       };
     `)).toEqual({ selected: 'ask', inherited: 'allow-all', ask: 'ask', temporary: 'ask', newConversation: 'ask' })
   } finally {

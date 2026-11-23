@@ -402,7 +402,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
         // Track which session user is actively viewing (for unread state machine)
         return sessionManager.setActiveViewingSession(sessionId, command.workspaceId)
       case 'setPermissionMode':
-        return sessionManager.setSessionPermissionMode(sessionId, command.mode, command.remember !== false)
+        return sessionManager.setSessionPermissionMode(sessionId, command.mode, command.remember === true)
       case 'setThinkingLevel':
         // Validate thinking level before passing to session manager
         if (!isValidThinkingLevel(command.level)) {
