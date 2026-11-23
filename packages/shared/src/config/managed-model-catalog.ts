@@ -1,5 +1,5 @@
 // input: Product-managed model capabilities shared by desktop bootstrap and gateway
-// output: Canonical managed model definitions and safe mutable copies
+// output: Versioned managed model definitions and safe mutable copies
 // pos: Single source of truth for the Storyflow managed model catalog
 
 import type { ModelDefinition } from './models.ts';
@@ -10,7 +10,12 @@ export interface ManagedModelDefinition extends ModelDefinition {
   minimumCatalogVersion?: number;
 }
 
-export const MANAGED_MODEL_CATALOG_VERSION = '2';
+export const MANAGED_MODEL_CATALOG_VERSION = '3';
+
+export function getManagedModelCatalogVersion(header: string | null): number {
+  if (header === MANAGED_MODEL_CATALOG_VERSION) return 3;
+  return header === '2' ? 2 : 1;
+}
 
 /**
  * Product policy (2026-11-11): declare 90% of each vendor-documented output ceiling, rounded down.
@@ -208,6 +213,29 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
     minimumCatalogVersion: 2,
     fallbackCapabilities: withOutputHeadroom(65_536),
     name: 'Gemini 4 Argon',
+    shortName: 'Gemini',
+    description: '',
+    provider: 'pi',
+    contextWindow: 1_048_576,
+    supportsThinking: true,
+    thinkingLevelMap: {
+      off: null,
+      minimal: null,
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: null,
+      max: null,
+    },
+    supportsImages: true,
+    api: 'google-generative-ai',
+  },
+  {
+    id: 'gemini-4-hydrogen',
+    // Catalog v3 clients use the native thinkingLevel field for Hydrogen.
+    minimumCatalogVersion: 3,
+    fallbackCapabilities: withOutputHeadroom(65_536),
+    name: 'Gemini 4 Hydrogen',
     shortName: 'Gemini',
     description: '',
     provider: 'pi',

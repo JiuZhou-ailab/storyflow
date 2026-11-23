@@ -5,9 +5,9 @@ import { accessAuthorityReady, currentAccess, accessFailure, accessRequired, tok
 import { normalizeUpstreamError } from './upstream-error'
 import { decodeProtectedHeader, jwtVerify, type JWTPayload } from 'jose'
 import {
+  getManagedModelCatalogVersion,
   isManagedModelAllowed,
   MANAGED_MODEL_CATALOG,
-  MANAGED_MODEL_CATALOG_VERSION,
   mergeManagedModelCatalog,
 } from '@craft-agent/shared/config/managed-model-catalog'
 import type { CustomEndpointApi } from '@craft-agent/shared/config'
@@ -175,11 +175,10 @@ export async function handleRequest(
 
   if (requestUrl.pathname === '/v1/models') {
     const catalog = await resolveManagedModelCatalog(upstreamBaseUrl, newApiKey, fetchImpl)
+    const catalogVersion = getManagedModelCatalogVersion(request.headers.get('x-storyflow-model-catalog-version'))
     return Response.json({
       object: 'list',
-      // Preserve the deployed v2 opt-in for older desktop protocol support.
-      data: catalog.filter(model => !model.minimumCatalogVersion
-        || request.headers.get('x-storyflow-model-catalog-version') === MANAGED_MODEL_CATALOG_VERSION)
+      data: catalog.filter(model => (model.minimumCatalogVersion ?? 1) <= catalogVersion)
         .filter(model => !policy || policy.models === null || policy.models.includes(model.id)).map(model => ({
         id: model.id,
         name: model.name,

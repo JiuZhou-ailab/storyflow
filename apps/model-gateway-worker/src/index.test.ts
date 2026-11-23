@@ -199,7 +199,7 @@ describe('model gateway worker', () => {
 
   it('falls back to the built-in catalog when the upstream catalog times out after five seconds', async () => {
     const token = await signTestJwt(CURRENT_MODEL_SECRET)
-    await Promise.all([undefined, '2'].map(async (version) => {
+    await Promise.all([undefined, '3'].map(async (version) => {
       let upstreamSignal: AbortSignal | undefined
       const startedAt = performance.now()
       const response = await handleRequest(new Request('https://model.storyflow.example.com/v1/models', {
@@ -217,12 +217,12 @@ describe('model gateway worker', () => {
       const body = await response.json() as { object: string; data: Array<{ id: string }> }
       expect(body.object).toBe('list')
       expect(body.data.map(model => model.id)).toEqual(
-        MANAGED_MODEL_CATALOG.filter(model => !model.minimumCatalogVersion || version === '2').map(model => model.id),
+        MANAGED_MODEL_CATALOG.filter(model => !model.minimumCatalogVersion || version === '3').map(model => model.id),
       )
     }))
   }, 10_000)
 
-  it('negotiates v2 without exposing retired IDs or changing legacy desktop visibility', async () => {
+  it('only advertises Hydrogen to v3 clients and preserves the legacy and v2 catalogs', async () => {
     const token = await signTestJwt(CURRENT_MODEL_SECRET)
     const get = async (version?: string) => {
       const response = await handleRequest(new Request('https://model.storyflow.example.com/v1/models', {
@@ -235,9 +235,13 @@ describe('model gateway worker', () => {
     expect(await get()).toEqual(legacy)
     expect(await get('1')).toEqual(legacy)
     expect(await get('99')).toEqual(legacy)
-    expect(await get('2')).toEqual([
+    const v2 = [
       'gpt-6.1-sol', 'gpt-5.6-sol', 'claude-sonnet-5', 'claude-opus-5-5',
       'gemini-3.8-flash', 'gemini-4-argon', 'deepseek-v4-pro', 'deepseek-v4-flash',
+    ]
+    expect(await get('2')).toEqual(v2)
+    expect(await get('3')).toEqual([
+      ...v2.slice(0, 6), 'gemini-4-hydrogen', ...v2.slice(6),
     ])
   })
 
@@ -508,12 +512,12 @@ describe('model gateway worker', () => {
     expect(upstreamRequests[1]?.headers.get('x-goog-api-key')).toBe('server-only-newapi-key')
   })
 
-  it('routes Gemini 4 Argon with the exact model ID and existing GenAI credentials', async () => {
+  it.each(['gemini-4-argon', 'gemini-4-hydrogen'])('routes %s with the exact model ID and existing GenAI credentials', async modelId => {
     const token = await signTestJwt(CURRENT_MODEL_SECRET)
     for (const action of ['generateContent', 'streamGenerateContent?alt=sse']) {
       let forwarded: Request | undefined
       const response = await handleRequest(
-        new Request(`https://model.storyflow.example.com/v1beta/models/gemini-4-argon:${action}`, {
+        new Request(`https://model.storyflow.example.com/v1beta/models/${modelId}:${action}`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hello' }] }] }),
@@ -522,7 +526,7 @@ describe('model gateway worker', () => {
         async request => { forwarded = request; return Response.json({ ok: true }) },
       )
       expect(response.status).toBe(200)
-      expect(forwarded?.url).toBe(`https://jzapi.duanju.com/v1beta/models/gemini-4-argon:${action}`)
+      expect(forwarded?.url).toBe(`https://jzapi.duanju.com/v1beta/models/${modelId}:${action}`)
       expect(forwarded?.headers.get('x-goog-api-key')).toBe('server-only-newapi-key')
       expect(await forwarded?.json()).toEqual({ contents: [{ role: 'user', parts: [{ text: 'hello' }] }] })
     }

@@ -170,6 +170,7 @@ describe('builtin LLM connection defaults', () => {
       ['storyflow-managed-gemini', [
         'gemini-3.8-flash',
         'gemini-4-argon',
+        'gemini-4-hydrogen',
       ]],
       ['storyflow-managed-anthropic', ['claude-sonnet-5', 'claude-opus-5-5']],
     ])
