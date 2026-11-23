@@ -1,7 +1,7 @@
 /**
  * Deep Link Handler
  *
- * input: craftagents:// URLs, active windows, and workspace routing state
+ * input: craftagents:// URLs, active or preselected startup windows, and workspace routing state
  * output: Parsed deep-link targets and window/navigation side effects
  * pos: Main-process bridge from external URLs to renderer navigation
  *
@@ -245,6 +245,7 @@ export async function handleDeepLink(
   sink?: EventSink,
   resolveClientId?: (webContentsId: number) => string | undefined,
   preferredClientId?: string,
+  startupWindow?: BrowserWindow,
 ): Promise<DeepLinkResult> {
   const target = parseDeepLink(url)
 
@@ -257,9 +258,10 @@ export async function handleDeepLink(
   }
 
   mainLog.info('[DeepLink] Handling:', target)
+  const launchedWindow = startupWindow && !startupWindow.isDestroyed() ? startupWindow : undefined
 
-  // If windowMode is set, create a new window instead of navigating in existing
-  if (target.windowMode) {
+  // Cold startup can already have opened the window specifically for this link.
+  if (target.windowMode && !launchedWindow) {
     mainLog.info('[DeepLink] windowMode detected:', target.windowMode)
     // Get workspaceId from target or from current window
     let wsId = target.workspaceId
@@ -299,10 +301,13 @@ export async function handleDeepLink(
     return { success: true, windowId: window.webContents.id }
   }
 
-  // 1. Get target window (existing behavior for non-window-mode links)
-  let window: BrowserWindow | null = null
+  // 1. Get target window
+  let window: BrowserWindow | null
 
-  if (target.workspaceId) {
+  if (launchedWindow) {
+    window = launchedWindow
+    window.focus()
+  } else if (target.workspaceId) {
     // Workspace specified - focus or create window for that workspace
     window = windowManager.focusOrCreateWindow(target.workspaceId, 'external')
   } else {

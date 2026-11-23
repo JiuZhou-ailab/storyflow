@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { launchApp, evalOn, waitFor, type LaunchedApp } from '../perf/launch'
 
@@ -112,6 +112,38 @@ try {
   assert.equal(externalSessions[0].permissionMode, 'ask')
   assert.equal(readFileSync(preferences, 'utf8'), beforeDeepLink)
   console.log('PASS: opening an empty project by deep link uses the project default without changing grants')
+
+  const restoredProjects: Array<{ id: string }> = []
+  for (const name of ['Untargeted restore', 'Targeted restore']) {
+    const folder = join(fixture, name)
+    mkdirSync(folder)
+    restoredProjects.push(await evalOn<{id: string}>(live, `window.electronAPI.createWorkspace(${JSON.stringify(folder)}, ${JSON.stringify(name)})`))
+  }
+  const [untargeted, targeted] = restoredProjects
+  assert.ok(untargeted && targeted)
+  await live.close()
+  const windowStatePath = join(fixture, 'window-state.json')
+  const { bounds } = JSON.parse(readFileSync(windowStatePath, 'utf8')).windows[0]
+  writeFileSync(windowStatePath, JSON.stringify({
+    windows: restoredProjects.map(({ id }) => ({ type: 'main', workspaceId: id, bounds })),
+    lastFocusedWorkspaceId: untargeted.id,
+  }))
+  live = await launchApp(fixture, {
+    userDataDir: join(fixture, 'electron-profile'),
+    deepLink: `craftagents://workspace/${targeted.id}/allSessions`,
+  })
+  await waitForComposer(live)
+  const deadline = Date.now() + 15_000
+  let restoredModes: string[][] = []
+  while (Date.now() < deadline) {
+    restoredModes = await evalOn<string[][]>(live, `Promise.all(${JSON.stringify(restoredProjects.map(({ id }) => id))}.map(async id =>
+      (await window.electronAPI.listSessionsByWorkspace(id)).map(session => session.permissionMode)
+    ))`)
+    if (restoredModes.every(modes => modes.length > 0)) break
+    await pause(150)
+  }
+  assert.deepEqual(restoredModes, [['allow-all'], ['ask']])
+  console.log('PASS: cold deep link applies only to the targeted project among restored windows')
 } finally {
   await live?.close()
   rmSync(fixture, { recursive: true, force: true })

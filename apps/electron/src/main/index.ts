@@ -51,7 +51,7 @@ import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-
 import { ensureToolIcons, ensurePresetThemes } from '@craft-agent/shared/config'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
 import { setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
-import { handleDeepLink, parseDeepLink } from './deep-link'
+import { handleDeepLink, parseDeepLink, type DeepLinkTarget } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
@@ -284,53 +284,60 @@ if (!gotTheLock) {
 }
 
 // Helper to create initial windows on startup
-async function createInitialWindows(startupSource?: 'external'): Promise<void> {
+async function createInitialWindows(deepLink: DeepLinkTarget | null = null): Promise<BrowserWindow | undefined> {
   if (!windowManager) return
 
   // Load saved window state
   const savedState = loadWindowState()
   const workspaces = getWorkspaces()
+  const isRestorable = (workspaceId: string) => isRestorableWindowWorkspace(
+    workspaceId,
+    workspaces,
+    id => Boolean(getCredentialManager().peekRemoteServerToken(id)),
+  )
 
   if (savedState?.windows.length && shouldRestoreWorkspaceWindowsOnOrdinaryStartup({ savedWindowCount: savedState.windows.length })) {
-    // Restore windows from saved state
-    let restoredCount = 0
+    const restored = savedState.windows.filter(saved => isRestorable(saved.workspaceId))
+    const targetWorkspaceId = deepLink?.workspaceId ?? savedState.lastFocusedWorkspaceId
+    const targetWindow = deepLink && !deepLink.windowMode
+      ? restored.find(saved => saved.workspaceId === targetWorkspaceId)
+        ?? (deepLink.workspaceId ? undefined : restored[0])
+      : undefined
+    let deepLinkWindow: BrowserWindow | undefined
 
-    for (const saved of savedState.windows) {
-      // Skip invalid workspaces
-      if (!isRestorableWindowWorkspace(
-        saved.workspaceId,
-        workspaces,
-        workspaceId => Boolean(getCredentialManager().peekRemoteServerToken(workspaceId)),
-      )) continue
-
+    for (const saved of restored) {
       mainLog.info(`Restoring window: workspaceId=${saved.workspaceId}, url=${saved.url ?? 'none'}`)
       const win = windowManager.createWindow({
         workspaceId: saved.workspaceId,
         restoreUrl: saved.url,
-        startupSource,
+        startupSource: saved === targetWindow ? 'external' : undefined,
       })
+      if (saved === targetWindow) deepLinkWindow = win
       const visible = screen.getAllDisplays().some(({ workArea }) =>
         saved.bounds.x + saved.bounds.width > workArea.x && saved.bounds.x < workArea.x + workArea.width
         && saved.bounds.y >= workArea.y && saved.bounds.y < workArea.y + workArea.height - 32)
       if (visible) win.setBounds(saved.bounds)
       else win.center()
-
-      restoredCount++
     }
 
-    if (restoredCount > 0) {
-      mainLog.info(`Restored ${restoredCount} window(s) from saved state`)
+    if (restored.length > 0) {
+      mainLog.info(`Restored ${restored.length} window(s) from saved state`)
       await windowManager.waitForInitialLoads()
-      return
+      return deepLinkWindow
     }
   }
 
-  const startupWorkspaceId = resolveStartupWindowWorkspaceId(workspaces)
-  windowManager.createWindow({ workspaceId: startupWorkspaceId, startupSource })
+  const requestedWorkspaceId = deepLink?.workspaceId
+  const startupWorkspaceId = requestedWorkspaceId && isRestorable(requestedWorkspaceId)
+    ? requestedWorkspaceId
+    : resolveStartupWindowWorkspaceId(workspaces)
+  const opensDeepLink = deepLink && (!requestedWorkspaceId || startupWorkspaceId === requestedWorkspaceId)
+  const win = windowManager.createWindow({ workspaceId: startupWorkspaceId, startupSource: opensDeepLink ? 'external' : undefined })
   mainLog.info(startupWorkspaceId
-    ? `Created window for first workspace: ${workspaces[0].name}`
+    ? `Created startup window for workspace: ${startupWorkspaceId}`
     : 'Created project hub window without a workspace')
   await windowManager.waitForInitialLoads()
+  return opensDeepLink ? win : undefined
 }
 
 async function recoverStartup(error: unknown, stage: string): Promise<void> {
@@ -961,12 +968,14 @@ app.whenReady().then(async () => {
 
     // Create initial windows (restores from saved state or opens first workspace)
     // In headless mode the server runs without any UI — skip window creation.
+    const startupDeepLink = pendingDeepLink
+    let startupDeepLinkWindow: BrowserWindow | undefined
     mainStartupSucceeded = true
     if (shouldCreateWindowsAfterStartup({
       initSucceeded: mainStartupSucceeded,
       isHeadless,
     })) {
-      await createInitialWindows(pendingDeepLink && parseDeepLink(pendingDeepLink) ? 'external' : undefined)
+      startupDeepLinkWindow = await createInitialWindows(startupDeepLink ? parseDeepLink(startupDeepLink) : null)
     }
     if (mainStopping) return
     scheduleDeferredRuntime?.()
@@ -1005,7 +1014,10 @@ app.whenReady().then(async () => {
     // Process pending deep link from cold start
     if (pendingDeepLink) {
       mainLog.info('Processing pending deep link:', pendingDeepLink)
-      await handleDeepLink(pendingDeepLink, windowManager, moduleSink ?? undefined, moduleClientResolver ?? undefined)
+      await handleDeepLink(
+        pendingDeepLink, windowManager, moduleSink ?? undefined, moduleClientResolver ?? undefined, undefined,
+        pendingDeepLink === startupDeepLink ? startupDeepLinkWindow : undefined,
+      )
       pendingDeepLink = null
     }
 
