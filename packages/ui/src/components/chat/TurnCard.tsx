@@ -115,7 +115,7 @@ function stripMarkdown(text: string): string {
     .replace(/^>\s+/gm, '')
     // Remove horizontal rules
     .replace(/^---+$/gm, '')
-    .trim()
+    .trimStart()
 }
 
 /**
@@ -650,12 +650,20 @@ function getPreviewText(
 // Sub-Components
 // ============================================================================
 
-function LiveActivityText({ text }: { text: string }) {
+function LiveActivityText({ text, isStreaming }: { text: string; isStreaming: boolean }) {
+  // Keep paragraph separators from replacing the last complete line with a blank row.
+  const lines = text.replace(/\r\n?/g, '\n').replace(/\n(?:[^\S\n]*\n)+/g, '\n')
+  const content = lines.trimEnd()
+  const endsWithLineBreak = isStreaming && lines.slice(content.length).includes('\n')
   return (
-    // The newest wrapped line stays at the bottom of a one-line viewport.
-    // Older lines overflow above it as text wraps.
     <span dir="auto" className="flex h-[1lh] min-w-0 flex-1 flex-col-reverse overflow-clip">
-      <span className="shrink-0 whitespace-pre-line [overflow-wrap:anywhere]">{text}</span>
+      {/* Move the unfinished last line below the viewport. The previous line is
+          revealed when the browser wraps the text or receives a line break. */}
+      <span className={cn("shrink-0 whitespace-pre-line [overflow-wrap:anywhere]", isStreaming && "translate-y-[1lh]")}>
+        {content}
+        {/* pre-line discards a trailing newline unless it has content after it. */}
+        {endsWithLineBreak && <span aria-hidden="true">{'\n\u200B'}</span>}
+      </span>
     </span>
   )
 }
@@ -805,10 +813,10 @@ function ActivityRow({ activity, isTurnActive, onOpenDetails, isLastChild, sessi
             <MessageCircleDashed className={cn(SIZE_CONFIG.iconSize, "shrink-0")} />
           )}
           {isTurnActive && content ? (
-            <LiveActivityText text={content} />
+            <LiveActivityText text={content} isStreaming={isThinking} />
           ) : (
             <span className={cn("truncate flex-1", onOpenDetails && isComplete && "group-hover/row:underline")}>
-              {isThinking ? 'Thinking...' : content}
+              {isThinking ? 'Thinking...' : content.trimEnd()}
             </span>
           )}
           {/* Open details button */}
@@ -2659,7 +2667,9 @@ export const TurnCard = React.memo(function TurnCard({
             </span>
 
             {/* Preview text with crossfade + inline failure count */}
-            {collapsedProcessText ? <LiveActivityText text={collapsedProcessText} /> : (
+            {collapsedProcess && collapsedProcessText ? (
+              <LiveActivityText text={collapsedProcessText} isStreaming={collapsedProcess.status === 'running'} />
+            ) : (
               <span className="relative flex-1 min-w-0 h-5 flex items-center">
                 <AnimatePresence initial={false}>
                   <motion.span

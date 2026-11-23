@@ -75,6 +75,22 @@ test('keeps live process text in order and shows the completed activity toggle a
   expect(done).toMatch(/<strong\b[^>]*>完成<\/strong>/)
 })
 
+test('clips the unfinished line only while an activity is streaming', async () => {
+  const { groupMessagesByTurn } = await import('../turn-utils')
+  for (const isPending of [true, false]) {
+    const [turn] = groupMessagesByTurn([{
+      id: 'commentary', role: 'assistant', timestamp: 1, content: '第一行\r\n\r\n',
+      isIntermediate: true, isPending,
+    }])
+    if (turn?.type !== 'assistant') throw new Error('Expected assistant turn')
+    for (const isExpanded of [true, false]) {
+      const html = renderToStaticMarkup(<TurnCard {...turn} isExpanded={isExpanded} />)
+      expect(html.includes('translate-y-[1lh]')).toBe(isPending)
+      expect(html.includes('第一行<span aria-hidden="true">\n\u200B</span>')).toBe(isPending)
+    }
+  }
+})
+
 test('completed file links receive the current workspace navigation callback', () => {
   type Props = React.ComponentProps<typeof TurnCard>
   const compare = (TurnCard as unknown as { compare: (prev: Props, next: Props) => boolean }).compare
