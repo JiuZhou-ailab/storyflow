@@ -115,8 +115,6 @@ function stripMarkdown(text: string): string {
     .replace(/^>\s+/gm, '')
     // Remove horizontal rules
     .replace(/^---+$/gm, '')
-    // Collapse whitespace
-    .replace(/\s+/g, ' ')
     .trim()
 }
 
@@ -656,10 +654,10 @@ function getPreviewText(
 
 function LiveActivityText({ text }: { text: string }) {
   return (
-    // Inline-end is the scroll origin. The auto margin aligns short text
-    // to inline-start and disappears when the content overflows.
-    <span dir="auto" className="flex min-w-0 flex-1 flex-row-reverse overflow-hidden whitespace-nowrap">
-      <span className="shrink-0 [margin-inline-end:auto]">{text}</span>
+    // The newest wrapped line stays at the bottom of a one-line viewport.
+    // Older lines overflow above it as text wraps.
+    <span dir="auto" className="flex h-[1lh] min-w-0 flex-1 flex-col-reverse overflow-clip">
+      <span className="shrink-0 whitespace-pre-line [overflow-wrap:anywhere]">{text}</span>
     </span>
   )
 }

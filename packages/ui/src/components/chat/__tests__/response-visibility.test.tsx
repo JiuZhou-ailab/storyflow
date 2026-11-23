@@ -50,7 +50,7 @@ test('renders live Markdown at full length and shows streaming status during a p
   expect(html).toMatch(/<strong\b[^>]*>第一段<\/strong>/)
   expect(html).toContain('最后一段')
   expect(html).toContain('Streaming...')
-  expect(html).not.toContain('flex-row-reverse')
+  expect(html).not.toContain('h-[1lh]')
 })
 
 test('keeps live process text in chronological activity rows and hides the collapsed summary in chat', async () => {
@@ -61,7 +61,9 @@ test('keeps live process text in chronological activity rows and hides the colla
   ])
   if (turn?.type !== 'assistant') throw new Error('Expected assistant turn')
   const live = renderToStaticMarkup(<TurnCard {...turn} isExpanded hideCompletedActivitySummary />)
-  expect(live).toContain('flex-row-reverse')
+  expect(live).toContain('h-[1lh]')
+  expect(live).toContain('flex-col-reverse')
+  expect(live).toContain('先检查原稿\n再读取第三章')
   expect(live.match(/再读取第三章/g)).toHaveLength(1)
   expect(live.indexOf('再读取第三章')).toBeLessThan(live.indexOf('chapter-3.md'))
 
