@@ -1,5 +1,5 @@
 // input: Workspace paths, persisted session JSONL candidates, and session mutations
-// output: Workspace-scoped session CRUD with crash recovery, failed-create cleanup, and root-locator rebasing
+// output: Workspace-scoped session CRUD with completeness-checked temporary recovery, failed-create cleanup, and root-locator rebasing
 // pos: Shared storage boundary for durable session state and session-owned files
 
 /**
@@ -116,17 +116,24 @@ export function setSessionFileReplacementActive(sessionFile: string, active: boo
   else activeSessionFileReplacements.delete(sessionFile);
 }
 
-function getValidSessionFileCandidate(path: string, priority: number): ValidSessionFileCandidate | null {
+function getValidSessionFileCandidate(
+  path: string,
+  priority: number,
+  requireComplete = false,
+): ValidSessionFileCandidate | null {
   try {
     if (!statSync(path).isFile()) return null;
 
     const lines = readFileSync(path, 'utf-8').split('\n');
     if (lines.at(-1) === '') lines.pop();
     if (lines.length === 0 || lines.some(line => line.trim() === '')) return null;
-    for (const line of lines) JSON.parse(line);
+    const header = JSON.parse(lines[0]!) as SessionHeader | null;
+    for (let index = 1; index < lines.length; index++) JSON.parse(lines[index]!);
 
     const session = readSessionJsonl(path);
     if (!session || typeof session.id !== 'string' || !Array.isArray(session.messages)) return null;
+    // A write interrupted at a record boundary can leave only valid JSON lines.
+    if (requireComplete && header?.messageCount !== session.messages.length) return null;
 
     return { path, mtimeMs: statSync(path).mtimeMs, priority };
   } catch (error) {
@@ -136,8 +143,9 @@ function getValidSessionFileCandidate(path: string, priority: number): ValidSess
 }
 
 /**
- * Recover an interrupted session replacement from the newest complete JSONL
- * among the committed file, temporary file, and backup.
+ * Recover an interrupted session replacement from the newest valid JSONL
+ * among the committed file, temporary file, and backup. The temporary file
+ * must also contain the number of messages declared in its header.
  *
  * Returns a readable candidate even if promotion fails, so callers never need
  * to discard the only valid copy.
@@ -170,7 +178,7 @@ export function recoverSessionFile(sessionFile: string, workspaceRootPath: strin
 
   const candidates = [
     getValidSessionFileCandidate(sessionFile, 1),
-    getValidSessionFileCandidate(tmpFile, 2),
+    getValidSessionFileCandidate(tmpFile, 2, true),
     getValidSessionFileCandidate(backupFile, 0),
   ].filter((candidate): candidate is ValidSessionFileCandidate => candidate !== null);
 

@@ -279,6 +279,33 @@ describe('SessionPersistenceQueue', () => {
     expect(loadSession(testDir, 'test-session')?.sdkSessionId).toBe('backup');
   });
 
+  it.each(['main', 'backup'])('recovers the complete %s when the newer temporary file ends at a message boundary', async (fallback) => {
+    const session = createTestSession('test-session', testDir, 'committed');
+    session.messages = [
+      { id: 'message-1', type: 'user', content: 'Question', timestamp: 1 },
+      { id: 'message-2', type: 'assistant', content: 'Answer', timestamp: 2 },
+    ];
+    queue.enqueue(session);
+    await queue.flush(session.id);
+
+    const filePath = getSessionFilePath(testDir, session.id);
+    const committed = readFileSync(filePath, 'utf-8');
+    const fallbackPath = fallback === 'backup' ? filePath + '.bak' : filePath;
+    if (fallback === 'backup') {
+      writeFileSync(fallbackPath, committed);
+      rmSync(filePath);
+    }
+    const [header, firstMessage] = replaceSdkSessionId(committed, 'temporary').split('\n');
+    writeFileSync(filePath + '.tmp', [header, firstMessage, ''].join('\n'));
+
+    const now = Date.now() / 1000;
+    utimesSync(fallbackPath, now - 2, now - 2);
+    utimesSync(filePath + '.tmp', now - 1, now - 1);
+
+    expect(loadSession(testDir, session.id)?.messages.map(message => message.id)).toEqual(['message-1', 'message-2']);
+    expect(readFileSync(filePath, 'utf-8')).toBe(committed);
+  });
+
   it('flush propagates a terminal timer write failure', async () => {
     let writeStarted!: () => void;
     const started = new Promise<void>(resolve => {
