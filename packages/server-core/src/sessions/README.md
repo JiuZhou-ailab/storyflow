@@ -13,6 +13,7 @@ Modules by reason-of-change (all flat in this directory):
 | `session-crud-metadata.ts` | Flag/archive/status/connection/rename/model/labels/thinking/read-state/viewing-session metadata |
 | `auth-flow.ts` | reinitializeAuth, completeAuthRequest, credential input handling |
 | `export-import.ts` | Session export/import incl. remote transfer payloads |
+| `turn-commentary-summary.ts` | On-demand Simplified Chinese summaries of completed commentary via the Session's one-shot model query |
 | `persistence.ts` | Boot/init gate, disk load, debounced persist queue, lazy message load, idle release |
 | `session-init.bench.ts` | Local fresh-process restoration benchmark and FS/JSON/build/yield diagnostics for the 6000-Session fixture |
 | `project-lifecycle-coordinator.ts` | Project/root locks and transition ownership, accepted-operation draining, epoch-owned invalidation restore, post-release queue recovery, and remove/relink orchestration; commit/storage and observer hooks remain on the Facade |

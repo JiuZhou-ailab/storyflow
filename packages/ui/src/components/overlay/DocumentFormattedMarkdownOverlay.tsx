@@ -1,4 +1,4 @@
-// input: Markdown response or plan content, annotations, and overlay callbacks
+// input: Markdown content, optional custom document body, annotations, and overlay callbacks
 // output: Responsive document reader using a desktop modal and narrow-window fullscreen view
 // pos: Shared expanded-reading surface for chat responses, plans, and Markdown files
 /**
@@ -15,6 +15,7 @@
  */
 
 import { ListTodo } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Markdown } from '../markdown'
 import type { AnnotationV1 } from '@craft-agent/core'
 import type { ExternalOpenAnnotationRequest } from '../annotations/use-annotation-interaction-controller'
@@ -26,6 +27,9 @@ import { AnnotatableMarkdownDocument } from './AnnotatableMarkdownDocument'
 export interface DocumentFormattedMarkdownOverlayProps {
   /** The content to display (markdown) */
   content: string
+  /** Override the document body while retaining the Markdown as the copy source. */
+  children?: ReactNode
+  accessibleTitle?: string
   /** Whether the overlay is open */
   isOpen: boolean
   /** Called when overlay should close */
@@ -64,6 +68,8 @@ export interface DocumentFormattedMarkdownOverlayProps {
 
 export function DocumentFormattedMarkdownOverlay({
   content,
+  children,
+  accessibleTitle,
   isOpen,
   onClose,
   variant = 'response',
@@ -90,7 +96,7 @@ export function DocumentFormattedMarkdownOverlay({
       isOpen={isOpen}
       onClose={onClose}
       mode={overlayMode}
-      accessibleTitle={variant === 'plan' ? 'Plan' : 'Response preview'}
+      accessibleTitle={accessibleTitle ?? (variant === 'plan' ? 'Plan' : 'Response preview')}
       filePath={filePath}
       typeBadge={typeBadge}
       copyContent={content}
@@ -115,7 +121,7 @@ export function DocumentFormattedMarkdownOverlay({
           {/* Content area */}
           <div className="px-10 pt-8 pb-8">
             <div className="text-sm">
-              {messageId && onAddAnnotation ? (
+              {children ?? (messageId && onAddAnnotation ? (
                 <AnnotatableMarkdownDocument
                   content={content}
                   sessionId={sessionId}
@@ -140,7 +146,7 @@ export function DocumentFormattedMarkdownOverlay({
                 >
                   {content}
                 </Markdown>
-              )}
+              ))}
             </div>
           </div>
         </div>

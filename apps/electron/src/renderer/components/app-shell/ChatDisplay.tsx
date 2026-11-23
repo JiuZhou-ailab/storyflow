@@ -28,7 +28,6 @@ import {
   extractOverlayCards,
   ActivityCardsOverlay,
   MultiDiffPreviewOverlay,
-  DocumentFormattedMarkdownOverlay,
   type ActivityItem,
   type FileChange,
   type DiffViewerSettings,
@@ -43,7 +42,7 @@ import {
   UserMessageBubble,
   groupMessagesByTurn,
   tryPatchTurnsForStreamingContentChange,
-  formatTurnAsMarkdown,
+  formatTurnDetails,
   getAssistantTurnUiKey,
   asRecord,
   getAnnotationNoteText,
@@ -51,6 +50,7 @@ import {
   extractAnnotationSelectedText,
   normalizeFollowUpText,
   type Turn,
+  type AssistantTurn,
 } from "@craft-agent/ui"
 import { MemoizedAuthRequestCard } from "@/components/chat/AuthRequestCard"
 import { ChatInputZone, type QueuedInputMessage, type StructuredInputState, type StructuredResponse, type PermissionResponse, type AdminApprovalResponse } from "./input"
@@ -72,6 +72,7 @@ import {
 } from "./chat-opening"
 import { getErrorMessageBody, handleErrorMessageAction } from "./error-message-actions"
 import { PromptTableOfContents, buildPromptTocItems } from "./PromptTableOfContents"
+import { loadTurnCommentarySummaries, TurnDetailsOverlay } from "./TurnDetailsOverlay"
 
 // ============================================================================
 // CSS Custom Highlight API helper
@@ -98,18 +99,17 @@ interface MultiDiffOverlayState {
   focusedChangeId?: string
 }
 
-/** State for markdown overlay (pop-out, turn details, generic activities) */
-interface MarkdownOverlayState {
-  type: 'markdown'
-  content: string
-  title: string
+interface TurnDetailsOverlayState {
+  type: 'turn-details'
+  details: ReturnType<typeof formatTurnDetails>
+  summaries: ReadonlyMap<string, string> | null
 }
 
 /** Union of all overlay states, or null for no overlay */
 type OverlayState =
   | { type: 'activity'; activity: ActivityItem }
   | MultiDiffOverlayState
-  | MarkdownOverlayState
+  | TurnDetailsOverlayState
   | null
 
 function getTurnKey(turn: Turn): string {
@@ -1171,6 +1171,30 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Overlay state - controls which overlay is shown (if any)
   const [overlayState, setOverlayState] = useState<OverlayState>(null)
+  const commentarySummaryRequests = React.useRef(new WeakMap<AssistantTurn, Promise<Map<string, string>>>())
+
+  const openTurnDetails = useCallback((turn: AssistantTurn) => {
+    const details = formatTurnDetails(turn)
+    const messageIds = details.parts.flatMap(part =>
+      part.type === 'commentary' && !part.pending && part.content.trim() ? [part.id] : [],
+    )
+    const shouldSummarize = !!session?.id && messageIds.length > 0
+    setOverlayState({ type: 'turn-details', details, summaries: shouldSummarize ? null : new Map() })
+    if (!session?.id || messageIds.length === 0) return
+
+    const requests = commentarySummaryRequests.current
+    let request = requests.get(turn)
+    if (!request) {
+      request = loadTurnCommentarySummaries(session.id, messageIds)
+      requests.set(turn, request)
+    }
+    void request.then(summaries => {
+      if (summaries.size < messageIds.length && requests.get(turn) === request) requests.delete(turn)
+      setOverlayState(current => current?.type === 'turn-details' && current.details === details
+        ? { ...current, summaries }
+        : current)
+    })
+  }, [session?.id])
   const fileChangeBasePath = workingDirectory || sessionFolderPath
   const collectTurnFileChanges = useCallback(
     (activities: ActivityItem[]) => collectFileChangesFromActivities(activities, { basePath: fileChangeBasePath }),
@@ -2132,15 +2156,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             },
                           }))
                         }}
-                        onOpenDetails={() => {
-                          // Open turn details in markdown overlay
-                          const markdown = formatTurnAsMarkdown(turn)
-                          setOverlayState({
-                            type: 'markdown',
-                            content: markdown,
-                            title: 'Turn Details',
-                          })
-                        }}
+                        onOpenDetails={() => openTurnDetails(turn)}
                         onOpenActivityDetails={(activity) => {
                           // Edit/Write tool → Multi-file diff overlay (ungrouped, focused on this change)
                           if (activity.toolName === 'Edit' || activity.toolName === 'Write') {
@@ -2305,12 +2321,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         />
       )}
 
-      {/* Markdown preview overlay (turn details) */}
-      {overlayState?.type === 'markdown' && (
-        <DocumentFormattedMarkdownOverlay
-          isOpen={true}
+      {overlayState?.type === 'turn-details' && (
+        <TurnDetailsOverlay
           onClose={handleCloseOverlay}
-          content={overlayState.content}
+          details={overlayState.details}
+          summaries={overlayState.summaries}
           onOpenUrl={onOpenUrl}
           onOpenFile={onOpenFile}
         />

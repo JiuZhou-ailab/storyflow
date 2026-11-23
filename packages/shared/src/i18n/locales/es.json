@@ -149,6 +149,8 @@
   "chat.clearDraft": "Borrar borrador",
   "chat.clickForTaskActions": "Haz clic para acciones de tarea",
   "chat.clickToOpen": "Clic para abrir {{name}}",
+  "chat.commentarySummaryLoading": "Resumiendo el comentario…",
+  "chat.commentarySummaryUnavailable": "Ver el comentario del modelo",
   "chat.connectionDefault": "Predeterminado de esta conexión",
   "chat.connectionUnavailable": "Conexión no disponible",
   "chat.connectionUnavailableDescription": "La conexión usada por esta sesión se ha eliminado. Crea una nueva sesión para continuar.",

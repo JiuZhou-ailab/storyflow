@@ -21,6 +21,8 @@ import { TooltipProvider } from '../../tooltip'
 import {
   groupActivitiesByParent,
   groupMessagesByTurn,
+  formatTurnDetails,
+  formatTurnAsMarkdown,
   computeLastChildSet,
   isActivityGroup,
   type ActivityGroup,
@@ -39,6 +41,40 @@ await testI18n.init({
 
 beforeAll(async () => {
   TurnCard = (await import('../TurnCard')).TurnCard
+})
+
+it('keeps complete commentary and tool Markdown in their original turn order', () => {
+  const first = 'Review **the draft**.\n\nKeep both names.'
+  const second = 'Verify the result.\n\n- First name\n- Second name'
+  const turn = {
+    type: 'assistant' as const,
+    turnId: 'turn',
+    timestamp: 0,
+    isStreaming: false,
+    isComplete: true,
+    activities: [
+      { id: 'c1', type: 'intermediate', status: 'completed', timestamp: 1, content: first },
+      { id: 't1', type: 'tool', status: 'completed', timestamp: 2, toolName: 'Read', toolInput: { path: 'draft.md' }, content: '{"ok":true}' },
+      { id: 'c2', type: 'intermediate', status: 'completed', timestamp: 3, content: second },
+    ] satisfies ActivityItem[],
+    response: { text: 'Done.', isStreaming: false },
+  }
+  const { parts, markdown } = formatTurnDetails(turn)
+  expect(parts).toEqual([
+    { type: 'markdown', content: '# Turn Details\n\n**Status:** Complete · 3 completed\n\n---\n\n## Activities\n' },
+    { type: 'commentary', id: 'c1', pending: false, content: first },
+    { type: 'markdown', content: '### ✅ Read\n\n**Input:**\n```json\n{\n  "path": "draft.md"\n}\n```\n\n**Result:**\n```json\n{\n  "ok": true\n}\n```\n' },
+    { type: 'commentary', id: 'c2', pending: false, content: second },
+    { type: 'markdown', content: '---\n\n## Response\n\nDone.' },
+  ])
+  expect(markdown).toBe([
+    parts[0]!.content,
+    `### 💭 Commentary\n\n${first}\n`,
+    parts[2]!.content,
+    `### 💭 Commentary\n\n${second}\n`,
+    parts[4]!.content,
+  ].join('\n'))
+  expect(formatTurnAsMarkdown(turn)).toBe(markdown)
 })
 
 // ============================================================================
