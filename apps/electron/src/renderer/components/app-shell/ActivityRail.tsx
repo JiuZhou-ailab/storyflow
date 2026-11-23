@@ -1,4 +1,4 @@
-// input: Workspace catalog, scoped session metadata, session actions, update status, profile, and window chrome inset
+// input: Workspace catalog, scoped session metadata, session actions, new-task shortcut label, update status, profile, and window chrome inset
 // output: Peer pinned/free/project sections, scoped conversation actions, resize lifecycle, runtime status, and homepage-link sharing
 // pos: Global navigation surface; every project subtree is fetched and selected through its own runtime domain (ADR 0006)
 
@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/styled-dropdown'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { CrossfadeAvatar } from '@/components/ui/avatar'
+import { Kbd } from '@/components/ui/kbd'
 import { FeedbackDialog } from './FeedbackDialog'
 import {
   ProjectFolderRow,
@@ -77,6 +78,7 @@ export type ActivityRailItemId =
 
 export interface ActivityRailProps {
   activeItem: ActivityRailItemId
+  newTaskShortcut?: string | null
   workspaces?: Workspace[]
   /** Runtime whose local session atom is authoritative for immediate lifecycle updates. */
   runtimeWorkspaceId?: string | null
@@ -162,6 +164,7 @@ export function resolveActivityWorkspaceSessionMetas(
 
 export function ActivityRail({
   activeItem,
+  newTaskShortcut,
   workspaces = [],
   runtimeWorkspaceId = null,
   activeWorkspaceId = null,
@@ -194,6 +197,7 @@ export function ActivityRail({
   sessionActions,
 }: ActivityRailProps) {
   const { t } = useTranslation()
+  const newTaskShortcutId = React.useId()
   const { focusZone } = useFocusActions()
   const { zoneRef: navigatorRef } = useFocusZone({ zoneId: 'navigator' })
   const activityStore = useStore()
@@ -239,6 +243,7 @@ export function ActivityRail({
     (activeWorkspaceId && onCreateConversationInProject)
     || onOpenFreeConversations,
   )
+  const visibleNewTaskShortcut = canCreateTask ? newTaskShortcut : null
   const selectedSessionId = activeItem === 'recent' ? activeSessionId : null
   const selectedProjectSessionId = activeItem === 'recent' ? activeProjectSessionId : null
   const selectedWorkspaceId = activeItem === 'recent' || activeItem === 'writing'
@@ -624,6 +629,7 @@ export function ActivityRail({
         <button
           type="button"
           aria-label="新建任务"
+          aria-describedby={visibleNewTaskShortcut ? newTaskShortcutId : undefined}
           disabled={!canCreateTask}
           className={cn(
             'mb-0.5 flex h-8 w-full items-center gap-2 rounded-[8px] px-2.5 text-left text-[13px] font-medium text-foreground/90 outline-none transition-colors',
@@ -634,6 +640,11 @@ export function ActivityRail({
         >
           <SquarePen className="h-4 w-4" />
           <span>新建任务</span>
+          {visibleNewTaskShortcut && (
+            <Kbd id={newTaskShortcutId} className="ml-auto shrink-0">
+              {visibleNewTaskShortcut}
+            </Kbd>
+          )}
         </button>
 
         <nav className="shrink-0 space-y-0.5 pb-4" aria-label="插件导航">
