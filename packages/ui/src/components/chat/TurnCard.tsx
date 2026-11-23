@@ -289,8 +289,6 @@ export interface TurnCardProps {
   metrics?: TurnMetrics
   /** Start in expanded state */
   defaultExpanded?: boolean
-  /** Show the response without a separate activity summary when the completed turn is collapsed. */
-  hideCompletedActivitySummary?: boolean
   /** Controlled expansion state (overrides internal state) */
   isExpanded?: boolean
   /** Callback when expansion state changes */
@@ -1303,8 +1301,6 @@ export interface ResponseCardProps {
   showAcceptPlan?: boolean
   /** Hide footer for compact embedding (EditPopover) */
   compactMode?: boolean
-  /** Turn actions presented alongside the response when the activity section is hidden. */
-  activityActions?: React.ReactNode
   /** Durable elapsed time and token usage shown in the response action footer */
   metrics?: TurnMetrics
   /** Callback to branch the session from this response */
@@ -1467,7 +1463,6 @@ export function ResponseCard({
   isLastResponse = true,
   showAcceptPlan = true,
   compactMode = false,
-  activityActions,
   metrics,
   onBranch,
   onAddAnnotation,
@@ -2226,9 +2221,6 @@ export function ResponseCard({
           "relative group",
           isPlan && "bg-background shadow-minimal rounded-[8px] overflow-hidden"
         )}>
-          {compactMode && activityActions && (
-            <div className="absolute top-2 right-2 z-10">{activityActions}</div>
-          )}
           {/* Fullscreen button - desktop only; compact mode keeps message chrome minimal */}
           {!compactMode && (
           <button
@@ -2348,7 +2340,6 @@ export function ResponseCard({
                 {model && <span className="text-xs text-muted-foreground">{model}</span>}
                 {metrics && <TurnUsageTooltip metrics={metrics} />}
                 {onBranch && <BranchDropdown onBranch={onBranch} />}
-                {activityActions}
               </div>
             </div>
           )}
@@ -2439,7 +2430,6 @@ export const TurnCard = React.memo(function TurnCard({
   isComplete,
   metrics,
   defaultExpanded = false,
-  hideCompletedActivitySummary = false,
   isExpanded: externalIsExpanded,
   onExpandedChange,
   expandedActivityGroups: externalExpandedActivityGroups,
@@ -2618,8 +2608,6 @@ export const TurnCard = React.memo(function TurnCard({
 
   // Only count non-plan activities for the collapsible section
   const hasActivities = sortedActivities.length > 0
-  const showResponseOnly = hideCompletedActivitySummary && hasActivities && isComplete
-    && !isExpanded && !isAwaitingContent && !!response && !response.isPlan
   const collapsedProcess = !isComplete && !isExpanded
     ? sortedActivities.findLast(activity => activity.type === 'intermediate' && activity.content?.trim())
     : undefined
@@ -2627,7 +2615,6 @@ export const TurnCard = React.memo(function TurnCard({
   const activityActions = renderActionsMenu ? renderActionsMenu() : (
     <TurnCardActionsMenu
       onOpenDetails={onOpenDetails}
-      onExpandActivities={showResponseOnly ? toggleExpanded : undefined}
       onOpenMultiFileDiff={onOpenMultiFileDiff}
       hasEditOrWriteActivities={effectiveHasEditOrWriteActivities}
     />
@@ -2642,7 +2629,7 @@ export const TurnCard = React.memo(function TurnCard({
   return (
     <div className="space-y-1">
       {/* Activity Section - excluded from search highlighting (matches ripgrep behavior) */}
-      {hasActivities && !showResponseOnly && (
+      {hasActivities && (
         <div className="group select-none" data-search-exclude="true">
           {/* Collapsed Header / Toggle */}
           <button
@@ -2854,7 +2841,7 @@ export const TurnCard = React.memo(function TurnCard({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className={cn("select-text", hasActivities && !showResponseOnly && "mt-2")}
+              className={cn("select-text", hasActivities && "mt-2")}
             >
               <ResponseCard
                 text={response.text}
@@ -2875,7 +2862,6 @@ export const TurnCard = React.memo(function TurnCard({
                 onAcceptWithCompact={onAcceptPlanWithCompact}
                 isLastResponse={isLastResponse}
                 compactMode={compactMode}
-                activityActions={showResponseOnly ? activityActions : undefined}
                 metrics={isComplete ? metrics : undefined}
                 onBranch={onBranch && response.messageId && response.canBranch !== false ? (options?: { newPanel?: boolean }) => onBranch(response.messageId!, options) : undefined}
                 sendMessageKey={sendMessageKey}
@@ -2889,7 +2875,7 @@ export const TurnCard = React.memo(function TurnCard({
       )}
       {/* Non-animated version for regular app use */}
       {!animateResponse && response && !isAwaitingContent && (
-        <div className={cn("select-text", hasActivities && !showResponseOnly && "mt-2")}>
+        <div className={cn("select-text", hasActivities && "mt-2")}>
           <ResponseCard
             text={response.text}
             model={response.model}
@@ -2909,7 +2895,6 @@ export const TurnCard = React.memo(function TurnCard({
             onAcceptWithCompact={onAcceptPlanWithCompact}
             isLastResponse={isLastResponse}
             compactMode={compactMode}
-            activityActions={showResponseOnly ? activityActions : undefined}
             metrics={isComplete ? metrics : undefined}
             onBranch={onBranch && response.messageId && response.canBranch !== false ? (options?: { newPanel?: boolean }) => onBranch(response.messageId!, options) : undefined}
             sendMessageKey={sendMessageKey}
@@ -2936,7 +2921,7 @@ export const TurnCard = React.memo(function TurnCard({
   if (!prev.isComplete || !next.isComplete) return false
 
   // Re-render if expansion state changed
-  if (prev.isExpanded !== next.isExpanded || prev.hideCompletedActivitySummary !== next.hideCompletedActivitySummary) return false
+  if (prev.isExpanded !== next.isExpanded) return false
   if (hasRelevantActivityGroupExpansionChanged(prev.activities, prev.expandedActivityGroups, next.expandedActivityGroups)) return false
 
   // Re-render if isLastResponse changed (for Accept Plan button visibility)
