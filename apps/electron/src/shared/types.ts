@@ -284,6 +284,7 @@ import type {
   SessionCommand,
   ShareResult,
   RefreshTitleResult,
+  TurnCommentarySummaryResult,
   FileSearchResult,
   WorkspaceFileListResult,
   FileSearchBatchRequest,
@@ -354,7 +355,7 @@ export interface ElectronAPI {
 
   // Consolidated session command handler
   /** Owner scope is handled by transport without switching the focused workspace. */
-  sessionCommand(sessionId: string, command: SessionCommand, workspaceId?: string): Promise<void | ShareResult | RefreshTitleResult | NovelSelectionRewriteResult | { count: number } | { deleted: boolean }>
+  sessionCommand(sessionId: string, command: SessionCommand, workspaceId?: string): Promise<void | ShareResult | RefreshTitleResult | NovelSelectionRewriteResult | TurnCommentarySummaryResult | { count: number } | { deleted: boolean }>
 
   // Server info (REMOTE_ELIGIBLE — returns data from whichever server owns the workspace)
   getServerHomeDir(): Promise<string>

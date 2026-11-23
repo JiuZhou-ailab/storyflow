@@ -149,6 +149,8 @@
   "chat.clearDraft": "Wyczyść szkic",
   "chat.clickForTaskActions": "Kliknij, aby zobaczyć akcje zadania",
   "chat.clickToOpen": "Kliknij, aby otworzyć {{name}}",
+  "chat.commentarySummaryLoading": "Trwa podsumowywanie komentarza…",
+  "chat.commentarySummaryUnavailable": "Pokaż komentarz modelu",
   "chat.connectionDefault": "Domyślne dla tego połączenia",
   "chat.connectionUnavailable": "Połączenie niedostępne",
   "chat.connectionUnavailableDescription": "Połączenie używane przez tę sesję zostało usunięte. Utwórz nową sesję, aby kontynuować.",

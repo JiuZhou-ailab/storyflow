@@ -1,5 +1,5 @@
 // input: Flat persisted or live chat messages from agent sessions
-// output: Grouped user, assistant, system, and auth turns with render metadata
+// output: Grouped turns, render metadata, and structured Markdown for turn details
 // pos: Shared transcript normalization layer before TurnCard rendering
 
 import type { Message, TurnMetrics } from '@craft-agent/core'
@@ -755,7 +755,21 @@ export function getActivitySummary(turn: AssistantTurn): string {
  * Shows full tool inputs, results, and response
  */
 export function formatTurnAsMarkdown(turn: AssistantTurn): string {
-  const lines: string[] = []
+  return formatTurnDetails(turn).markdown
+}
+
+export type TurnDetailsPart =
+  | { type: 'markdown'; content: string }
+  | { type: 'commentary'; id: string; content: string; pending: boolean }
+
+/** Keep commentary boundaries separate from the Markdown for the surrounding steps. */
+export function formatTurnDetails(turn: AssistantTurn): { parts: TurnDetailsPart[]; markdown: string } {
+  const parts: TurnDetailsPart[] = []
+  let lines: string[] = []
+  const flushMarkdown = () => {
+    if (lines.length) parts.push({ type: 'markdown', content: lines.join('\n') })
+    lines = []
+  }
 
   // Header with intent if available
   if (turn.intent) {
@@ -779,13 +793,13 @@ export function formatTurnAsMarkdown(turn: AssistantTurn): string {
 
     for (const activity of turn.activities) {
       if (activity.type === 'intermediate') {
-        // Intermediate text (thinking/commentary)
-        lines.push(`### 💭 Commentary`)
-        lines.push('')
-        if (activity.content) {
-          lines.push(activity.content)
-        }
-        lines.push('')
+        flushMarkdown()
+        parts.push({
+          type: 'commentary',
+          id: activity.id,
+          content: activity.content ?? '',
+          pending: activity.status === 'running',
+        })
       } else if (activity.toolName) {
         // Tool call
         const statusEmoji = activity.status === 'completed' ? '✅' :
@@ -856,7 +870,12 @@ export function formatTurnAsMarkdown(turn: AssistantTurn): string {
     lines.push(turn.response.text)
   }
 
-  return lines.join('\n')
+  flushMarkdown()
+  const markdown = parts.map(part => {
+    if (part.type === 'markdown') return part.content
+    return part.content ? `### 💭 Commentary\n\n${part.content}\n` : '### 💭 Commentary\n\n'
+  }).join('\n')
+  return { parts, markdown }
 }
 
 // ============================================================================

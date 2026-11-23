@@ -270,6 +270,12 @@ export interface NovelSelectionRewriteResult {
   replacement: string
 }
 
+export const TURN_COMMENTARY_SUMMARY_BATCH_SIZE = 12
+
+export interface TurnCommentarySummaryResult {
+  commentarySummaries: Array<{ messageId: string; summary: string }>
+}
+
 // ---------------------------------------------------------------------------
 // Session commands (consolidated operations)
 // ---------------------------------------------------------------------------
@@ -296,6 +302,7 @@ export type SessionCommand =
   | { type: 'copyPath' }
   | { type: 'revokeShare' }
   | { type: 'refreshTitle' }
+  | { type: 'summarizeTurnCommentary'; messageIds: string[] }
   | { type: 'setConnection'; connectionSlug: string }
   | { type: 'setPendingPlanExecution'; planPath: string; draftInputSnapshot?: string }
   | { type: 'markCompactionComplete' }
