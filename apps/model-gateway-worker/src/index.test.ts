@@ -222,12 +222,12 @@ describe('model gateway worker', () => {
     }))
   }, 10_000)
 
-  it('only advertises Hydrogen to v3 clients and preserves the legacy and v2 catalogs', async () => {
+  it('preserves the legacy and v2 catalogs and excludes Hydrogen from v3', async () => {
     const token = await signTestJwt(CURRENT_MODEL_SECRET)
     const get = async (version?: string) => {
       const response = await handleRequest(new Request('https://model.storyflow.example.com/v1/models', {
         headers: { Authorization: `Bearer ${token}`, ...(version ? { 'x-storyflow-model-catalog-version': version } : {}) },
-      }), makeEnv(), async () => Response.json({ data: [] }))
+      }), makeEnv(), async () => Response.json({ data: [{ id: 'gemini-4-hydrogen' }] }))
       expect(response.status).toBe(200)
       return (await response.json() as { data: Array<{ id: string }> }).data.map(model => model.id)
     }
@@ -240,9 +240,7 @@ describe('model gateway worker', () => {
       'gemini-3.8-flash', 'gemini-4-argon', 'deepseek-v4-pro', 'deepseek-v4-flash',
     ]
     expect(await get('2')).toEqual(v2)
-    expect(await get('3')).toEqual([
-      ...v2.slice(0, 6), 'gemini-4-hydrogen', ...v2.slice(6),
-    ])
+    expect(await get('3')).toEqual(v2)
   })
 
   it('rejects missing or invalid model access tokens before calling NewAPI', async () => {
@@ -512,7 +510,8 @@ describe('model gateway worker', () => {
     expect(upstreamRequests[1]?.headers.get('x-goog-api-key')).toBe('server-only-newapi-key')
   })
 
-  it.each(['gemini-4-argon', 'gemini-4-hydrogen'])('routes %s with the exact model ID and existing GenAI credentials', async modelId => {
+  it('routes Gemini 4 Argon with the exact model ID and existing GenAI credentials', async () => {
+    const modelId = 'gemini-4-argon'
     const token = await signTestJwt(CURRENT_MODEL_SECRET)
     for (const action of ['generateContent', 'streamGenerateContent?alt=sse']) {
       let forwarded: Request | undefined

@@ -14,6 +14,8 @@ export async function verifyManagedModelsLive(token: string, fetchImpl: Fetch = 
   if (!response.ok) throw new Error(`v${MANAGED_MODEL_CATALOG_VERSION} catalog HTTP ${response.status}`)
   const catalog = await response.json() as { data: Array<{ id: string; api: string }> }
   verifyManagedModelCatalog(catalog)
+  const retiredModel = catalog.data.find(model => isRetiredManagedModel(model.id))
+  if (retiredModel) throw new Error(`Retired model exposed: ${retiredModel.id}`)
   for (const version of [1, 2]) {
     const oldHeaders = new Headers({ Authorization: `Bearer ${token}` })
     if (version === 2) oldHeaders.set('x-storyflow-model-catalog-version', '2')
@@ -31,7 +33,6 @@ export async function verifyManagedModelsLive(token: string, fetchImpl: Fetch = 
     }
   }
   for (const model of catalog.data) {
-    if (isRetiredManagedModel(model.id)) throw new Error(`Retired model exposed: ${model.id}`)
     const api = model.api as CustomEndpointApi
     const raw = catalog.data.find(entry => entry.id === model.id)! as unknown as Record<string, unknown>
     const definition: ModelDefinition = {
@@ -55,8 +56,7 @@ export async function verifyManagedModelsLive(token: string, fetchImpl: Fetch = 
       messages: [{ role: 'user', content: 'Reply with OK.', timestamp: Date.now() }],
     }, {
       reasoning: 'low',
-      // Verify the relay accepts the newly declared Hydrogen ceiling used by desktop sessions.
-      maxTokens: model.id === 'gemini-4-hydrogen' ? native.maxTokens : 4096,
+      maxTokens: 4096,
       maxRetries: 0,
       signal: AbortSignal.timeout(90_000),
     })
