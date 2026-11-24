@@ -7,7 +7,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileS
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AUTOMATIONS_RETRY_QUEUE_FILE } from './constants.ts';
+import { AUTOMATIONS_HISTORY_FILE, AUTOMATIONS_RETRY_QUEUE_FILE } from './constants.ts';
 import { AutomationEventLogger } from './event-logger.ts';
 import { RetryScheduler, type RetryQueueEntry } from './retry-scheduler.ts';
 
@@ -69,7 +69,7 @@ describe('automation storage boundary', () => {
     expect(readFileSync(queuePath, 'utf-8')).toBe(original);
   });
 
-  it.each(['write', 'rename'] as const)('keeps the original retry queue when %s fails', async (operation) => {
+  it.each(['write', 'rename'] as const)('recovers successful retries without redelivery after %s failures', async (operation) => {
     const projectRoot = tempRoot('automation-retry-failure-');
     const queuePath = join(projectRoot, AUTOMATIONS_RETRY_QUEUE_FILE);
     const future = Date.now() + 60_000;
@@ -91,16 +91,80 @@ describe('automation storage boundary', () => {
       })
       : spyOn(fs, 'rename').mockRejectedValue(Object.assign(new Error('Rename failed'), { code: 'EIO' }));
 
+    const scheduler = new RetryScheduler({ workspaceRootPath: projectRoot });
+    const replacement = new RetryScheduler({ workspaceRootPath: projectRoot });
     try {
-      await processRetryQueue(new RetryScheduler({ workspaceRootPath: projectRoot }));
+      await processRetryQueue(scheduler);
+      await scheduler.dispose();
+      await processRetryQueue(replacement);
 
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(readFileSync(queuePath, 'utf-8')).toBe(original);
-      expect(failure).toHaveBeenCalledTimes(1);
+      expect(failure).toHaveBeenCalledTimes(2);
       expect(readdirSync(projectRoot).filter(name => name.endsWith('.tmp'))).toEqual([]);
+
+      failure.mockRestore();
+      // Another queue mutation lands between the failed write and the recovery tick.
+      const url = 'https://example.test/enqueued';
+      await scheduler.enqueue('enqueued', { type: 'webhook', url }, url);
+      await processRetryQueue(replacement);
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+      const recovered = readFileSync(queuePath, 'utf-8').trim().split('\n')
+        .map(line => JSON.parse(line) as RetryQueueEntry);
+      expect(recovered.slice(0, 2)).toEqual(entries.slice(1));
+      expect(recovered.map(entry => entry.matcherId)).toEqual(['first-matcher', 'second-matcher', 'enqueued']);
+      expect(readFileSync(join(projectRoot, AUTOMATIONS_HISTORY_FILE), 'utf-8').trim().split('\n')).toHaveLength(1);
     } finally {
       failure.mockRestore();
       fetch.mockRestore();
+    }
+  });
+
+  it('honors backoff and the attempt limit while queue replacement keeps failing', async () => {
+    const projectRoot = tempRoot('automation-retry-backoff-');
+    const queuePath = join(projectRoot, AUTOMATIONS_RETRY_QUEUE_FILE);
+    const original = `${JSON.stringify(queueEntry('due', 0))}\n`;
+    writeFileSync(queuePath, original);
+
+    const scheduler = new RetryScheduler({ workspaceRootPath: projectRoot });
+    let now = Date.now();
+    const clock = spyOn(Date, 'now').mockImplementation(() => now);
+    const fetch = spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('', { status: 503 }));
+    const rename = spyOn(fs, 'rename').mockRejectedValue(Object.assign(new Error('Rename failed'), { code: 'EIO' }));
+    const minute = 60_000;
+    try {
+      await processRetryQueue(scheduler);
+      now += 29 * minute;
+      await processRetryQueue(scheduler);
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      now += minute;
+      await processRetryQueue(scheduler);
+      now += 59 * minute;
+      await processRetryQueue(scheduler);
+      expect(fetch).toHaveBeenCalledTimes(2);
+
+      now += minute;
+      await processRetryQueue(scheduler);
+      now += minute;
+      await processRetryQueue(scheduler);
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(rename).toHaveBeenCalledTimes(6);
+      expect(readFileSync(queuePath, 'utf-8')).toBe(original);
+
+      const history = readFileSync(join(projectRoot, AUTOMATIONS_HISTORY_FILE), 'utf-8').trim().split('\n');
+      expect(history).toHaveLength(1);
+      expect(JSON.parse(history[0]!)).toMatchObject({ ok: false, webhook: { attempts: 3 } });
+
+      rename.mockRestore();
+      await processRetryQueue(scheduler);
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(readFileSync(queuePath, 'utf-8')).toBe('');
+    } finally {
+      rename.mockRestore();
+      fetch.mockRestore();
+      clock.mockRestore();
     }
   });
 
