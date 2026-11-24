@@ -170,7 +170,6 @@ describe('builtin LLM connection defaults', () => {
       ['storyflow-managed-gemini', [
         'gemini-3.8-flash',
         'gemini-4-argon',
-        'gemini-4-hydrogen',
       ]],
       ['storyflow-managed-anthropic', ['claude-sonnet-5', 'claude-opus-5-5']],
     ])
@@ -436,8 +435,8 @@ describe('builtin LLM connection defaults', () => {
 })
 
 // Retired models must not return through upstream discovery or remain routable.
-it('excludes retired Gemini Flash models and retains the DeepSeek API identity', () => {
-  const retired = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-2.5-flash']
+it('excludes retired Gemini models and retains the DeepSeek API identity', () => {
+  const retired = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-4-hydrogen']
   const catalog = mergeManagedModelCatalog(retired)
   for (const id of retired) {
     expect(catalog.some(model => model.id === id)).toBe(false)
@@ -446,14 +445,14 @@ it('excludes retired Gemini Flash models and retains the DeepSeek API identity',
   expect(catalog.find(model => model.id === 'deepseek-v4-flash')?.name).toBe('DeepSeek V4.1 Flash')
 })
 
-it('retires cached managed models offline without expanding an account-scoped catalog', () => {
+it.each(['gemini-3.6-flash', 'gemini-4-hydrogen'])('retires cached %s offline without expanding an account-scoped catalog', (id) => {
   const defaults = JSON.parse(readFileSync(BUNDLED_DEFAULTS_PATH, 'utf8')) as ConfigDefaults
   const config = makeConfig()
   applyBuiltinLlmConnectionDefaults(config, defaults)
   const gemini = config.llmConnections!.find(connection => connection.slug === 'storyflow-managed-gemini')!
   const model = cloneManagedModelCatalog('google-generative-ai')[0]!
-  gemini.models = [{ ...model, id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash' }]
-  gemini.defaultModel = 'gemini-3.6-flash'
+  gemini.models = [{ ...model, id }]
+  gemini.defaultModel = id
   applyBuiltinLlmConnectionDefaults(config, defaults)
   expect(gemini.models).toEqual([])
   expect(gemini.defaultModel).toBeUndefined()

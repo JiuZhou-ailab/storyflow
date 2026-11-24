@@ -231,29 +231,6 @@ const DEPLOYED_MANAGED_MODEL_DEFINITIONS: readonly ManagedModelDefinition[] = [
     api: 'google-generative-ai',
   },
   {
-    id: 'gemini-4-hydrogen',
-    // Catalog v3 clients use the native thinkingLevel field for Hydrogen.
-    minimumCatalogVersion: 3,
-    fallbackCapabilities: withOutputHeadroom(65_536),
-    name: 'Gemini 4 Hydrogen',
-    shortName: 'Gemini',
-    description: '',
-    provider: 'pi',
-    contextWindow: 1_048_576,
-    supportsThinking: true,
-    thinkingLevelMap: {
-      off: null,
-      minimal: null,
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      xhigh: null,
-      max: null,
-    },
-    supportsImages: true,
-    api: 'google-generative-ai',
-  },
-  {
     id: 'gemini-3.1-pro-preview',
     name: 'Gemini 3.1 Pro Preview',
     shortName: 'Gemini',
@@ -335,7 +312,7 @@ export function getRetiredManagedModelReplacement(id: string, availableModelIds:
 export function isRetiredManagedModel(id: string): boolean {
   return /^gemini-(?:3\.[567]|2\.5)-flash$/i.test(id) || [
     'gpt-5.5', 'gpt-5.6-terra', 'gpt-5.6-luna', 'claude-opus-5',
-    'gemini-3.1-pro-preview', 'gemini-2.5-pro',
+    'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-4-hydrogen',
   ].includes(id);
 }
 

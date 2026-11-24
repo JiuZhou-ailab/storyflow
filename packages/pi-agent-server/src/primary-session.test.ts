@@ -151,12 +151,14 @@ test('selecting Gemini 4 Argon preserves its exact ID through a native Pi reques
   { api: 'google-generative-ai', models: ['gemini-4-argon'] });
 });
 
-test('selecting Gemini 4 Hydrogen produces a native streamed reply with discrete thinking', async () => {
+test('an explicitly configured Gemini 4 Hydrogen endpoint uses native discrete thinking', async () => {
   const modelId = 'gemini-4-hydrogen';
   const catalog = cloneManagedModelCatalog('google-generative-ai');
+  const argon = catalog.find(model => model.id === 'gemini-4-argon')!;
+  catalog.push({ ...argon, id: modelId, name: 'Gemini 4 Hydrogen' });
   await fixture(async f => {
     const selectedId = resolveModelForConnection(modelId, {
-      slug: 'storyflow-managed-gemini', name: 'Gemini', providerType: 'pi_compat', authType: 'api_key_with_endpoint',
+      slug: 'custom-gemini', name: 'Gemini', providerType: 'pi_compat', authType: 'api_key_with_endpoint',
       models: catalog, defaultModel: 'gemini-3.8-flash', createdAt: 1,
     });
     expect(selectedId).toBe(modelId);
@@ -173,5 +175,5 @@ test('selecting Gemini 4 Hydrogen produces a native streamed reply with discrete
     });
     expect(f.requests[0]?.body.generationConfig).not.toHaveProperty('thinkingConfig.thinkingBudget');
   }, model => protocolCompletion('google-generative-ai', model), undefined,
-  { api: 'google-generative-ai', models: ['gemini-3.8-flash', modelId], catalog });
+  { api: 'google-generative-ai', models: ['gemini-3.8-flash', modelId], catalog, custom: true });
 });

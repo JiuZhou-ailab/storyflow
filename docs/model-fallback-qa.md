@@ -18,7 +18,6 @@ Capability evidence checked 2026-09-16 (output limits and function/tool calling)
 | GPT-5.5, GPT-5.6 Sol/Terra/Luna | 128,000 | [5.5](https://developers.openai.com/api/docs/models/gpt-5.5), [Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol), [Terra](https://developers.openai.com/api/docs/models/compare), [Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) |
 | Claude Sonnet 5 / Opus 5 | 128,000 | [Sonnet](https://platform.claude.com/docs/en/models/sonnet-5/whats-new-sonnet-5), [Opus](https://platform.claude.com/docs/en/models/opus-5/whats-new-opus-5), [tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview) |
 | Gemini 3.5 / 3.6 / 3.7 / 3.8 Flash | 65,536 | [3.5](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash), [3.6](https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash), [3.7](https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash), [3.8](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) |
-| Gemini 4 Hydrogen | 65,536 per GenerateContent segment | [Hydrogen developer guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-4-hydrogen) (checked 2026-11-24) |
 | DeepSeek V4 Flash / Pro | 384,000 | [API model details](https://api-docs.deepseek.com/quick_start/pricing/) (conservative interpretation of 384K) |
 
 DeepSeek documents `deepseek-v4-flash` as a retained alias now served by V4.1
