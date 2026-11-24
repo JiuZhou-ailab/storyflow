@@ -1,5 +1,5 @@
 // input: Project-owned JSONL retry queue, clock, and webhook results
-// output: Deferred retry execution, atomic queue updates, and terminal attempt history
+// output: Deferred retry execution, in-process recovery of failed queue writes, and terminal attempt history
 // pos: Owns scheduled webhook retries and serializes Project retry queue mutations
 
 /**
@@ -41,6 +41,11 @@ const MAX_DEFERRED_ATTEMPTS = DEFERRED_DELAYS_MS.length;
 const TICK_INTERVAL_MS = 60_000; // 1 minute
 
 const queueMutations = new Map<string, Promise<void>>();
+
+// Share uncommitted results by Project so they survive scheduler recreation within a Host.
+// Across process restarts delivery is still at least once, so receivers must be idempotent.
+// A null result removes a terminal entry. Access is serialized by the queue lock.
+const pendingQueueResults = new Map<string, Map<string, RetryQueueEntry | null>>();
 
 /** Serialize every read-modify-write and append for one durable retry queue. */
 export function withRetryQueueMutation<T>(
@@ -176,7 +181,8 @@ export class RetryScheduler {
     // split read/commit only if concurrent enqueue timings show user-visible waits caused
     // by this lock, preserving durable entries and preventing duplicate retry execution.
     return withRetryQueueMutation(this.workspaceRootPath, async () => {
-      try {
+      const key = resolve(this.workspaceRootPath);
+      const pending = pendingQueueResults.get(key) ?? new Map<string, RetryQueueEntry | null>();
       const queuePath = resolveAutomationOwnedPath(
         this.workspaceRootPath,
         join(this.workspaceRootPath, AUTOMATIONS_RETRY_QUEUE_FILE),
@@ -186,13 +192,13 @@ export class RetryScheduler {
       let raw: string;
       try {
         raw = await readFile(queuePath, 'utf-8');
-      } catch {
-        // No queue file — nothing to do
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        pendingQueueResults.delete(key);
         return;
       }
 
       const lines = raw.trim().split('\n').filter(Boolean);
-      if (lines.length === 0) return;
 
       const entries: RetryQueueEntry[] = [];
       for (const line of lines) {
@@ -203,13 +209,18 @@ export class RetryScheduler {
         }
       }
 
-      if (entries.length === 0) return;
-
       const now = Date.now();
       const remaining: RetryQueueEntry[] = [];
       let changed = false;
 
-      for (const entry of entries) {
+      for (const queued of entries) {
+        // Apply results only to IDs in the latest queue. Imports can remove entries,
+        // and enqueues between ticks can add entries that must survive this rewrite.
+        const previousResult = pending.get(queued.id);
+        changed ||= previousResult !== undefined;
+        if (previousResult === null) continue;
+
+        const entry = previousResult ?? queued;
         if (entry.nextRetryAt > now) {
           // Not due yet — keep in queue
           remaining.push(entry);
@@ -217,7 +228,6 @@ export class RetryScheduler {
         }
 
         // Attempt retry
-        changed = true;
         log.debug(`[RetryScheduler] Retrying ${entry.id} (deferred attempt ${entry.deferredAttempt + 1}/${MAX_DEFERRED_ATTEMPTS})`);
         let result: WebhookActionResult;
         try {
@@ -232,7 +242,10 @@ export class RetryScheduler {
           };
         }
 
+        changed = true;
+        pendingQueueResults.set(key, pending);
         if (result.success) {
+          pending.set(entry.id, null);
           // Success — write history entry and drop from queue
           log.debug(`[RetryScheduler] ${entry.id} succeeded on deferred attempt ${entry.deferredAttempt + 1}`);
           const historyEntry = createWebhookHistoryEntry({
@@ -249,8 +262,8 @@ export class RetryScheduler {
           } catch (e) {
             log.debug(`[RetryScheduler] Failed to write history: ${e}`);
           }
-          // Don't add to remaining — drop from queue
         } else if (entry.deferredAttempt + 1 >= MAX_DEFERRED_ATTEMPTS) {
+          pending.set(entry.id, null);
           // Final attempt failed — write permanent failure to history
           log.debug(`[RetryScheduler] ${entry.id} permanently failed after ${MAX_DEFERRED_ATTEMPTS} deferred attempts`);
           const historyEntry = createWebhookHistoryEntry({
@@ -268,27 +281,28 @@ export class RetryScheduler {
           } catch (e) {
             log.debug(`[RetryScheduler] Failed to write history: ${e}`);
           }
-          // Don't add to remaining — drop from queue
         } else {
           // Still retryable — schedule next deferred attempt
           const nextDelay = DEFERRED_DELAYS_MS[entry.deferredAttempt + 1]!;
-          remaining.push({
+          const nextEntry = {
             ...entry,
             deferredAttempt: entry.deferredAttempt + 1,
             nextRetryAt: Date.now() + nextDelay,
             lastError: result.error,
-          });
+          };
+          pending.set(entry.id, nextEntry);
+          remaining.push(nextEntry);
           log.debug(`[RetryScheduler] ${entry.id} failed — next retry in ${nextDelay / 60_000}m`);
         }
       }
 
-      if (!changed) return;
-
-      const content = remaining.map(entry => JSON.stringify(entry) + '\n').join('');
-      await this.replaceQueue(queuePath, content);
-      } catch (err) {
-        log.debug(`[RetryScheduler] Tick error: ${err}`);
+      if (changed) {
+        const content = remaining.map(entry => JSON.stringify(entry) + '\n').join('');
+        await this.replaceQueue(queuePath, content);
       }
+      pendingQueueResults.delete(key);
+    }).catch(err => {
+      log.debug(`[RetryScheduler] Tick error: ${err}`);
     });
   }
 
