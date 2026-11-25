@@ -240,7 +240,7 @@ export default function ServerSettingsPage() {
                 <SettingsRow label={t("settings.server.certificate")}>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                      {form.tlsCertPath || 'Not configured'}
+                      {form.tlsCertPath || t('settings.server.tlsNotConfigured')}
                     </span>
                     <Button variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={handleBrowseCert}>
                       {t('common.browse')}
@@ -251,7 +251,7 @@ export default function ServerSettingsPage() {
                 <SettingsRow label={t("settings.server.privateKey")}>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                      {form.tlsKeyPath || 'Not configured'}
+                      {form.tlsKeyPath || t('settings.server.tlsNotConfigured')}
                     </span>
                     <Button variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={handleBrowseKey}>
                       {t('common.browse')}

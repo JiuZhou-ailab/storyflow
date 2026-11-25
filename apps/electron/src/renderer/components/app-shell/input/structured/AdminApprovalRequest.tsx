@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import { ShieldAlert, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -59,14 +59,17 @@ export function AdminApprovalRequest({
             <span>{t('chat.adminApprovalRequired')}</span>
           </div>
           <div className="text-xs leading-[18px] text-muted-foreground">
-            Installing <span className="font-medium text-foreground">{request.appName}</span> needs your Mac admin approval.
-            {request.requiresSystemPrompt ? " You’ll see your regular macOS password/Touch ID prompt." : ''}
+            <Trans
+              i18nKey="chat.adminApprovalInstallDescription"
+              components={{ appName: <span className="font-medium text-foreground">{request.appName}</span> }}
+            />
+            {request.requiresSystemPrompt && <> {t('chat.adminApprovalSystemPrompt')}</>}
             <br />
-            <span className="font-medium text-foreground">Why:</span> {request.reason}
+            <span className="font-medium text-foreground">{t('chat.adminApprovalReason')}</span> {request.reason}
             {request.impact && (
               <>
                 <br />
-                <span className="font-medium text-foreground">Impact:</span> {request.impact}
+                <span className="font-medium text-foreground">{t('chat.adminApprovalImpact')}</span> {request.impact}
               </>
             )}
           </div>
