@@ -95,12 +95,11 @@ export function handleComplete(
   // AND a taskId, so they're excluded — task_completed will finalize them.
   let updatedMessages = session.messages
 
-  // Clear isQueued from any user messages once the turn completes. Pi's steer
-  // path never emits a 'processing' status update to clear it (the message is
-  // injected mid-stream and absorbed into the current response), so this is
-  // the natural place to drop the indicator. Claude's queued path has already
-  // cleared via the 'processing' status update before this fires; this is
-  // a safe no-op for that case.
+  // Completion clears queue indicators for messages absorbed by steer. The
+  // Host identifies entries that still need dispatch after a save failure.
+  const pendingQueuedMessageIds = event.pendingQueuedMessageIds?.length
+    ? new Set(event.pendingQueuedMessageIds)
+    : undefined
   const turnMetricsByMessageId = event.turnMetrics?.length
     ? new Map(event.turnMetrics.map(({ messageId, metrics }) => [messageId, metrics]))
     : undefined
@@ -111,6 +110,7 @@ export function handleComplete(
       && message.toolStatus !== 'error'
       && !(message.isBackground && message.taskId)  // Don't force-complete genuine background tasks
     const shouldClearQueuedUser = message.role === 'user' && message.isQueued
+      && !pendingQueuedMessageIds?.has(message.id)
     const turnMetrics = turnMetricsByMessageId?.get(message.id)
     const shouldUpdateTurnMetrics = turnMetrics !== undefined && message.turnMetrics !== turnMetrics
 

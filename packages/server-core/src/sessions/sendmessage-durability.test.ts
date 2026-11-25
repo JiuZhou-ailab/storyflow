@@ -417,15 +417,68 @@ describe('sendMessage durability', () => {
     }
   })
 
+  it('cancels a queued send whose durable publication is still in progress', async () => {
+    const managed = buildSession('stop-during-queue-write')
+    const { entered, resume, chats } = blockFirstChat()
+    const writing = Promise.withResolvers<void>()
+    const finishWrite = Promise.withResolvers<void>()
+    const completionQueued = Promise.withResolvers<void>()
+    const queuedTexts: string[] = []
+    sm.setEventSink((_channel, _target, event) => {
+      if (event?.type === 'interrupted') queuedTexts.push(...(event.queuedMessages ?? []))
+    })
+    const first = sm.sendMessage(managed.id, 'first')
+    await entered
+    const writer = injectDiskFull(async () => {
+      writing.resolve()
+      await finishWrite.promise
+      return false
+    })
+    const queued = sendViaRpc(managed.id, 'cancel this', 'cancel-this')
+    const lease = (sm as any).agentLease
+    const acquireAdmission = lease.acquireSendAdmission.bind(lease)
+    const replay = spyOn(sm as any, 'processNextQueuedMessage')
+    const admission = spyOn(lease, 'acquireSendAdmission').mockImplementation((sessionId: string) => {
+      completionQueued.resolve()
+      return acquireAdmission(sessionId)
+    })
+    try {
+      await writing.promise
+      resume()
+      await completionQueued.promise
+      // Completion is already waiting for the write. Stop must still clear
+      // the queued message before the completion can dispatch it.
+      const stop = sm.cancelProcessing(managed.id)
+      finishWrite.resolve()
+      await Promise.all([first, queued, stop])
+      await lease.waitForAgentRuntimeLeases(managed.id)
+      expect(replay).not.toHaveBeenCalled()
+      expect(chats).toEqual(['first'])
+      expect(queuedTexts).toEqual(['cancel this'])
+      expect(managed.messageQueue).toEqual([])
+      expect(managed.stopRequested).toBe(false)
+      expect(readPersistedMessageIds(managed.id)).not.toContain('cancel-this')
+    } finally {
+      resume()
+      finishWrite.resolve()
+      await Promise.allSettled([first, queued])
+      replay.mockRestore()
+      admission.mockRestore()
+      writer.mockRestore()
+    }
+  })
+
   it('ends processing on persistent ENOSPC and recovers the reply and accepted queue on the next send', async () => {
     const managed = buildSession('completion-write-enospc')
     const { entered, resume, chats } = blockFirstChat()
     const events: string[] = []
+    const pendingQueues: Array<string[] | undefined> = []
     const recovered = Promise.withResolvers<void>()
     sm.setEventSink((_channel, _target, event) => {
       if (event?.type === 'error') events.push(event.error)
       if (event?.type === 'complete') {
         events.push('complete')
+        pendingQueues.push(event.pendingQueuedMessageIds)
         if (chats.length === 3) recovered.resolve()
       }
     })
@@ -441,6 +494,7 @@ describe('sendMessage durability', () => {
       expect(managed.isProcessing).toBe(false)
       expect(finished.status).toBe('fulfilled')
       expect(events).toEqual([expect.stringContaining('Could not save the session'), 'complete'])
+      expect(pendingQueues).toEqual([accepted])
       expect(chats).toEqual(['first'])
       expect(managed.messageQueue.map(entry => entry.messageId)).toEqual(accepted)
       const reply = managed.messages.find(message => message.content === 'reply:first')!

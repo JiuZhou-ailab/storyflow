@@ -67,6 +67,24 @@ describe('handleComplete performance contracts', () => {
     expect(next.state.session.messages[1]).toBe(state.session.messages[1])
   })
 
+  it('ends processing after a save failure while retaining Host-queued messages', () => {
+    const state = makeState([
+      { id: 'retained', role: 'user', content: 'still waiting', isQueued: true, timestamp: 1 },
+      { id: 'steered', role: 'user', content: 'already handled', isQueued: true, timestamp: 2 },
+    ])
+    const event = {
+      type: 'complete' as const,
+      sessionId: 'session-1',
+      pendingQueuedMessageIds: ['retained'],
+    }
+
+    const next = handleComplete(state, event)
+
+    expect(next.state.session.isProcessing).toBe(false)
+    expect(next.state.streaming).toBeNull()
+    expect(next.state.session.messages.map(message => message.isQueued)).toEqual([true, false])
+  })
+
   it('does not pre-scan messages before applying complete-event message updates', () => {
     const functionStart = sessionHandlerSource.indexOf('export function handleComplete(')
     const functionEnd = sessionHandlerSource.indexOf('/**\n * Handle error', functionStart)

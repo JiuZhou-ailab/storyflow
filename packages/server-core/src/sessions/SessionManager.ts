@@ -250,6 +250,7 @@ export class SessionManager implements ISessionManager {
   private readonly workspaceFreshness = new WorkspaceFreshness()
   private stoppingGenerations = new WeakMap<ManagedSession, number>()
   private queuedReplays = new WeakMap<ManagedSession, object>()
+  private queuedSendPublications = new WeakMap<ManagedSession, Promise<void>>()
   private unsavedSessionSnapshots = new WeakSet<ManagedSession>()
   private turnDrains = new WeakMap<ManagedSession, Promise<void>>()
 
@@ -3286,6 +3287,7 @@ export class SessionManager implements ISessionManager {
 
     const releaseSessionOperation = this.beginSessionOperationLease(managed)
     let releaseAdmission: (() => void) | undefined
+    let resolveQueuedPublication: (() => void) | undefined
     try {
     releaseAdmission = await this.agentLease.acquireSendAdmission(sessionId)
 
@@ -3341,6 +3343,9 @@ export class SessionManager implements ISessionManager {
         isQueued: true,
       }
 
+      const publication = Promise.withResolvers<void>()
+      this.queuedSendPublications.set(managed, publication.promise)
+      resolveQueuedPublication = publication.resolve
       try {
         await this.persistence.commitQueuedSend(managed, {
           message, attachments, storedAttachments, options,
@@ -3956,6 +3961,11 @@ export class SessionManager implements ISessionManager {
       void this.generateTitle(managed, titleMessageToGenerate)
     }
     } finally {
+      if (resolveQueuedPublication) {
+        this.queuedSendPublications.delete(managed)
+        // Wake Stop waiters before releasing admission to completion or another send.
+        resolveQueuedPublication()
+      }
       releaseAdmission?.()
       releaseSessionOperation()
     }
@@ -3965,6 +3975,12 @@ export class SessionManager implements ISessionManager {
     const managed = this.sessions.get(sessionId)
     if (!managed?.isProcessing) {
       return // Not processing, nothing to cancel
+    }
+    const generation = managed.processingGeneration
+    const publication = this.queuedSendPublications.get(managed)
+    if (publication) {
+      await publication
+      if (this.sessions.get(sessionId) !== managed || managed.processingGeneration !== generation || !managed.isProcessing) return
     }
 
     getSessionLog().info('Cancelling processing for session:', sessionId, silent ? '(silent)' : '')
@@ -4029,7 +4045,6 @@ export class SessionManager implements ISessionManager {
 
     // Safety timeout: if event loop doesn't complete within 5 seconds, force cleanup
     // This handles cases where the generator gets stuck
-    const generation = managed.processingGeneration
     this.clearStopTimer(managed)
     const timer = setTimeout(() => {
       if (managed.processingGeneration === generation && managed.stopRequested && managed.isProcessing) {
@@ -4148,8 +4163,8 @@ export class SessionManager implements ISessionManager {
         void this.workspaceFreshness.checkpoint(sessionId, managed.workspace.rootPath)
       }
 
-      const wasStopped = managed.stopRequested
-      managed.stopRequested = false  // Reset for next turn
+      let wasStopped = managed.stopRequested
+      managed.stopRequested = false
 
       const turnStartFinalMessageId = managed.turnStartFinalMessageId
       managed.turnStartFinalMessageId = undefined
@@ -4213,6 +4228,9 @@ export class SessionManager implements ISessionManager {
       }
 
       if (this.sessions.get(sessionId) !== managed || managed.processingGeneration !== generation) return
+      // Stop may have cleared a queued send while completion awaited admission.
+      wasStopped ||= managed.stopRequested
+      managed.stopRequested = false
       this.setProcessing(managed, false)
       if (saved && managed.messageQueue.length > 0) {
         // Has queued messages - process next
@@ -4241,6 +4259,9 @@ export class SessionManager implements ISessionManager {
             ? Array.from(managed.pendingTurnMetrics, ([messageId, metrics]) => ({ messageId, metrics }))
             : undefined,
           hasUnread: managed.hasUnread,  // Propagate unread state to renderer
+          ...(!saved && {
+            pendingQueuedMessageIds: managed.messageQueue.flatMap(entry => entry.messageId ? [entry.messageId] : []),
+          }),
         }, managed.workspace.id)
         managed.pendingTurnMetrics = undefined
         if (saved && suggestFollowUp && !wasStopped && didReceiveNewFinalOutput && isViewing && !managed.hidden) {

@@ -194,6 +194,8 @@ export type SessionEvent =
       tokenUsage?: Session['tokenUsage']
       turnMetrics?: Array<{ messageId: string; metrics: NonNullable<Message['turnMetrics']> }>
       hasUnread?: boolean
+      /** Host queue entries that are still pending after processing ends. */
+      pendingQueuedMessageIds?: string[]
     }
   | { type: 'interrupted'; sessionId: string; message?: Message; queuedMessages?: string[]; reason?: 'queued_handoff' }
   | { type: 'status'; sessionId: string; message: string; statusType?: 'compacting' | 'retrying' }
