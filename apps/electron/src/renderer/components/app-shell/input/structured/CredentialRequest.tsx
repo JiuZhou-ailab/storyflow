@@ -130,7 +130,7 @@ export function CredentialRequest({ request, onResponse, unstyled = false }: Cre
             <div className="flex-1 min-w-0 space-y-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-foreground">
-                  Authentication Required
+                  {t('chat.credentialAuthenticationRequired')}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   ({request.sourceName})
@@ -303,7 +303,7 @@ export function CredentialRequest({ request, onResponse, unstyled = false }: Cre
           </Button>
 
           <span className="min-w-0 flex-1 basis-full text-[10px] text-muted-foreground sm:basis-auto sm:text-right">
-            Credentials are encrypted at rest
+            {t('chat.credentialEncryptedAtRest')}
           </span>
         </div>
       </form>

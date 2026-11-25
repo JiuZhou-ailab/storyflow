@@ -259,7 +259,10 @@ export function DataTable<TData, TValue>({
           {t('table.previousPage')}
         </Button>
         <span className="text-sm text-muted-foreground">
-          Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+          {t('table.pagePosition', {
+            page: table.getState().pagination.pageIndex + 1,
+            totalPages: table.getPageCount(),
+          })}
         </span>
         <Button
           variant="outline"
