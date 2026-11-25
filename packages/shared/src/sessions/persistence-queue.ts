@@ -1,4 +1,4 @@
-// input: Stored session snapshots and session JSONL metadata from disk
+// input: Stored session snapshots (including deferred snapshots) and session JSONL metadata from disk
 // output: Debounced, serialized persistence with bounded transient retries and backup rollback
 // pos: Shared persistence queue used by server-core session lifecycle code
 
@@ -18,8 +18,10 @@ import { debug } from '../utils/debug.js'
 import { perf } from '../utils/perf.js'
 import { retryTransientFs } from '../utils/files.js'
 
+type SessionSnapshot = StoredSession | { id: string; snapshot: () => Promise<StoredSession> }
+
 interface PendingWrite {
-  data: StoredSession
+  data: SessionSnapshot
   timer: ReturnType<typeof setTimeout>
 }
 
@@ -113,7 +115,7 @@ class SessionPersistenceQueue {
    * Queue a session for persistence. If a write is already pending for this
    * session, it will be replaced with the new data and the timer reset.
    */
-  enqueue(session: StoredSession): void {
+  enqueue(session: SessionSnapshot): void {
     const existing = this.pending.get(session.id)
     if (existing) {
       clearTimeout(existing.timer)
@@ -139,7 +141,7 @@ class SessionPersistenceQueue {
 
     const previous = this.writeInProgress.get(sessionId)
     const write = (previous ? previous.catch(() => undefined) : Promise.resolve())
-      .then(() => this.write(entry.data))
+      .then(async () => this.write('snapshot' in entry.data ? await entry.data.snapshot() : entry.data))
 
     this.writeInProgress.set(sessionId, write)
     void write.then(() => {

@@ -2,12 +2,17 @@
 // output: Regression coverage for durable messages, compatible leases, exclusive mutations, and deletion tombstones
 // pos: Guards send acceptance and runtime ownership across concurrent session operations
 
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
+import { writeFile } from 'fs/promises'
 import { join } from 'path'
+import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getSessionFilePath, sessionPersistenceQueue } from '@craft-agent/shared/sessions/storage'
 import { clearMetrics, configurePerfTracking } from '@craft-agent/shared/utils'
+import type { HandlerFn, RpcServer } from '@craft-agent/server-core/transport'
+import type { HandlerDeps } from '../handlers/handler-deps'
+import { registerSessionsHandlers } from '../handlers/rpc/sessions'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
 
 interface CapturedPerfMetric {
@@ -91,6 +96,52 @@ describe('sendMessage durability', () => {
     if (!existsSync(path)) return undefined
     const [header] = readFileSync(path, 'utf-8').trim().split('\n')
     return JSON.parse(header).name as string | undefined
+  }
+
+  function blockFirstChat() {
+    const entered = Promise.withResolvers<void>()
+    const resume = Promise.withResolvers<void>()
+    const chats: string[] = []
+    ;(sm as any).getOrCreateAgentLocked = async () => ({
+      getModel: () => 'test-model', setAllSources() {}, getSessionId: () => undefined, dispose() {},
+      async *chat(message: string) {
+        chats.push(message)
+        if (chats.length === 1) {
+          entered.resolve()
+          await resume.promise
+        }
+        yield { type: 'text_complete', text: `reply:${message}` }
+        yield { type: 'complete' }
+      },
+    })
+    return { entered: entered.promise, resume: resume.resolve, chats }
+  }
+
+  function injectDiskFull(shouldFail: () => boolean | Promise<boolean>) {
+    // Fault the atomic writer's temp-file I/O, keeping the real write queue and rollback path.
+    return spyOn(sessionPersistenceQueue as unknown as { writeFile: typeof writeFile }, 'writeFile')
+      .mockImplementation(async (path, data, encoding) => {
+        if (await shouldFail()) throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+        await writeFile(path, data, encoding)
+      })
+  }
+
+  function sendViaRpc(sessionId: string, content: string, optimisticMessageId?: string) {
+    const handlers = new Map<string, HandlerFn>()
+    const server: RpcServer = {
+      handle: (channel, handler) => { handlers.set(channel, handler) },
+      push() {},
+      async invokeClient() { return undefined },
+    }
+    registerSessionsHandlers(server, {
+      sessionManager: sm,
+      oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
+      platform: { logger: { error() {} } } as HandlerDeps['platform'],
+    })
+    return handlers.get(RPC_CHANNELS.sessions.SEND_MESSAGE)!(
+      { clientId: 'durability-test-client', workspaceId: 'ws_test', webContentsId: 1 },
+      sessionId, content, undefined, undefined, { optimisticMessageId },
+    )
   }
 
   function findAcceptMetric(metrics: CapturedPerfMetric[], status: string): CapturedPerfMetric | undefined {
@@ -277,10 +328,14 @@ describe('sendMessage durability', () => {
   it('user message is on disk before onAck fires (mid-stream / queued branch)', async () => {
     const sessionId = 'durability-midstream'
     const managed = buildSession(sessionId)
-    // Force the mid-stream branch. Agent is null, so redirect() falls back to
-    // false and the queue path runs.
     managed.isProcessing = true
     const metrics = capturePerfMetrics()
+    const queuedOnDiskAtEvent: boolean[] = []
+    sm.setEventSink((_channel, _target, event) => {
+      if (event?.type === 'user_message' && event.status === 'queued') {
+        queuedOnDiskAtEvent.push(readPersistedMessageIds(sessionId).includes(event.message.id))
+      }
+    })
 
     let ackedMessageId: string | null = null
     let onDiskAtAck = false
@@ -302,6 +357,7 @@ describe('sendMessage durability', () => {
 
     expect(ackedMessageId).not.toBeNull()
     expect(onDiskAtAck).toBe(true)
+    expect(queuedOnDiskAtEvent).toEqual([true])
     expectAcceptMetric(acceptMetricAtAck, 'queued')
 
     const restoredManager = new SessionManager((_workspaceId, managed) => managed.workspace)
@@ -316,6 +372,93 @@ describe('sendMessage durability', () => {
       persistence: { loadMessagesFromDisk(session: typeof restored): Promise<void> }
     }).persistence).loadMessagesFromDisk(restored)
     expect(restored.messageQueue.map(entry => entry.messageId as string | null)).toEqual([ackedMessageId])
+  })
+
+  it('discards a failed queued send even if the active turn completes while that write is pending', async () => {
+    const managed = buildSession('queue-write-enospc')
+    const { entered, resume, chats } = blockFirstChat()
+    const writing = Promise.withResolvers<void>()
+    const failWrite = Promise.withResolvers<void>()
+    const replyPublished = Promise.withResolvers<void>()
+    const queuedEvents: string[] = []
+    sm.setEventSink((_channel, _target, event) => {
+      if (event?.type === 'user_message' && event.status === 'queued') queuedEvents.push(event.message.id)
+      if (event?.type === 'text_complete') replyPublished.resolve()
+    })
+    const first = sm.sendMessage(managed.id, 'first')
+    await entered
+    let writes = 0
+    const writer = injectDiskFull(async () => {
+      if (++writes !== 1) return false
+      writing.resolve()
+      await failWrite.promise
+      return true
+    })
+    const rejected = sendViaRpc(managed.id, 'rejected', 'rejected')
+    try {
+      await writing.promise
+      resume()
+      await replyPublished.promise
+      const flushingReply = sm.flushSession(managed.id)
+      failWrite.resolve()
+      await expect(rejected).rejects.toThrow('ENOSPC')
+      await flushingReply
+      await first
+      expect(queuedEvents).toEqual([])
+      expect(chats).toEqual(['first'])
+      expect(managed.messageQueue).toEqual([])
+      expect(managed.messages.map(message => message.content)).toEqual(['first', 'reply:first'])
+      expect(readPersistedMessageIds(managed.id)).not.toContain('rejected')
+    } finally {
+      resume()
+      failWrite.resolve()
+      await Promise.allSettled([first, rejected])
+      writer.mockRestore()
+    }
+  })
+
+  it('ends processing on persistent ENOSPC and recovers the reply and accepted queue on the next send', async () => {
+    const managed = buildSession('completion-write-enospc')
+    const { entered, resume, chats } = blockFirstChat()
+    const events: string[] = []
+    const recovered = Promise.withResolvers<void>()
+    sm.setEventSink((_channel, _target, event) => {
+      if (event?.type === 'error') events.push(event.error)
+      if (event?.type === 'complete') {
+        events.push('complete')
+        if (chats.length === 3) recovered.resolve()
+      }
+    })
+    const first = sm.sendMessage(managed.id, 'first')
+    await entered
+    const accepted: string[] = []
+    await sm.sendMessage(managed.id, 'already queued', undefined, undefined, undefined, undefined, id => accepted.push(id))
+    let diskFull = true
+    const writer = injectDiskFull(() => diskFull)
+    try {
+      resume()
+      const [finished] = await Promise.allSettled([first])
+      expect(managed.isProcessing).toBe(false)
+      expect(finished.status).toBe('fulfilled')
+      expect(events).toEqual([expect.stringContaining('Could not save the session'), 'complete'])
+      expect(chats).toEqual(['first'])
+      expect(managed.messageQueue.map(entry => entry.messageId)).toEqual(accepted)
+      const reply = managed.messages.find(message => message.content === 'reply:first')!
+      expect(readPersistedMessageIds(managed.id)).not.toContain(reply.id)
+
+      await expect(sendViaRpc(managed.id, 'still no space')).rejects.toThrow('ENOSPC')
+      diskFull = false
+      await expect(sendViaRpc(managed.id, 'next')).resolves.toMatchObject({ accepted: true })
+      expect(readPersistedMessageIds(managed.id)).toContain(reply.id)
+      await recovered.promise
+      expect(chats).toEqual(['first', 'already queued', 'next'])
+      expect(managed.messages.some(message => message.content === 'still no space')).toBe(false)
+      expect(managed.isProcessing).toBe(false)
+    } finally {
+      writer.mockRestore()
+      // Allow teardown to flush even when this test is run against the unfixed Host.
+      ;(sm as any).persistSession(managed)
+    }
   })
 
   it('dequeues a replay only inside the durable send transaction', async () => {

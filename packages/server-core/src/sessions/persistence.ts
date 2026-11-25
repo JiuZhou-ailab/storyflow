@@ -1,5 +1,5 @@
 // input: Session registry access, disk session stores, Host execute grants, boot-service hooks, and a queue-recovery callback
-// output: Startup gating, disk→memory loading, debounced and invalidation-deferred writes, lazy hydration, idle-release
+// output: Startup gating, lazy hydration, debounced writes, and durable queued-send acceptance
 // pos: Persistence subdomain under the SessionManager facade; owns initGate and message-loading dedup state
 
 import { mkdirSync } from 'node:fs'
@@ -10,7 +10,7 @@ import {
   pickSessionFields,
   type StoredSession,
 } from '@craft-agent/shared/sessions'
-import { storedToMessage, messageToStored } from '@craft-agent/core/types'
+import { storedToMessage, messageToStored, type Message } from '@craft-agent/core/types'
 import {
   setPermissionMode,
   hydratePreviousPermissionMode,
@@ -67,6 +67,7 @@ export class SessionPersistence {
   private queuedRecoveryScheduled = new Set<string>()
   // A live session still owes its deferred write when invalidation ownership changes epochs.
   private deferredInvalidationWrites = new WeakSet<ManagedSession>()
+  private queuedSendWrites = new WeakMap<ManagedSession, Promise<StoredSession['messages'][number] | undefined>>()
   // Coordinates startup initialization waiters from IPC handlers.
   private initGate = new InitGate()
 
@@ -358,8 +359,48 @@ export class SessionPersistence {
    */
   enqueuePersistStrict(managed: ManagedSession): void {
     if (managed.runtimeState === 'deleting') return
-    const persistableMessages = managed.messages.filter(m => m.role !== 'status')
-    const storedSession: StoredSession = {
+    const queuedSend = this.queuedSendWrites.get(managed)
+    const snapshot = this.snapshot(managed, managed.messages)
+    // A concurrent stream or metadata update must neither save an unaccepted
+    // message nor overwrite an accepted one with an older transcript.
+    sessionPersistenceQueue.enqueue(queuedSend ? {
+      id: managed.id,
+      snapshot: async () => {
+        const accepted = await queuedSend
+        if (accepted) snapshot.messages.push(accepted)
+        return snapshot
+      },
+    } : snapshot)
+  }
+
+  /** Stage the queued message in the disk snapshot and publish it to Host state after commit. */
+  async commitQueuedSend(
+    managed: ManagedSession,
+    entry: ManagedSession['messageQueue'][number],
+    userMessage: Message | undefined,
+  ): Promise<void> {
+    if (managed.runtimeState) throw new Error(`Session ${managed.id} is closing`)
+    const snapshot = this.snapshot(managed, managed.messages)
+    const storedMessage = userMessage && messageToStored(userMessage)
+    if (storedMessage) snapshot.messages.push(storedMessage)
+    const settled = Promise.withResolvers<typeof storedMessage>()
+    this.queuedSendWrites.set(managed, settled.promise)
+    let committed = false
+    try {
+      sessionPersistenceQueue.enqueue(snapshot)
+      await this.flushSession(managed.id)
+      if (userMessage) managed.messages.push(userMessage)
+      managed.messageQueue.push(entry)
+      committed = true
+    } finally {
+      this.queuedSendWrites.delete(managed)
+      settled.resolve(committed ? storedMessage : undefined)
+    }
+  }
+
+  private snapshot(managed: ManagedSession, messages: readonly Message[]): StoredSession {
+    const persistableMessages = messages.filter(m => m.role !== 'status')
+    return {
       ...pickSessionFields(managed),
       workspaceRootPath: managed.workspace.rootPath,
       createdAt: managed.createdAt ?? Date.now(),
@@ -367,7 +408,6 @@ export class SessionPersistence {
       messages: persistableMessages.map(messageToStored),
       tokenUsage: managed.tokenUsage ?? DEFAULT_TOKEN_USAGE,
     } as StoredSession
-    sessionPersistenceQueue.enqueue(storedSession)
   }
 
   /** Persist the lifecycle owner's final snapshot while ordinary invalidating writes are fenced. */
