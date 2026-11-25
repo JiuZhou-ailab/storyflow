@@ -98,14 +98,7 @@ export interface ToolResultEvent {
 /**
  * Complete event - agent loop finished
  */
-export interface CompleteEvent {
-  type: 'complete'
-  sessionId: string
-  tokenUsage?: Session['tokenUsage']
-  turnMetrics?: Array<{ messageId: string; metrics: NonNullable<Message['turnMetrics']> }>
-  /** Explicit unread flag - set by main process based on viewing state */
-  hasUnread?: boolean
-}
+export type CompleteEvent = Extract<SessionEvent, { type: 'complete' }>
 
 /**
  * Error event - agent error occurred

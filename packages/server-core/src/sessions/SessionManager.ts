@@ -250,6 +250,8 @@ export class SessionManager implements ISessionManager {
   private readonly workspaceFreshness = new WorkspaceFreshness()
   private stoppingGenerations = new WeakMap<ManagedSession, number>()
   private queuedReplays = new WeakMap<ManagedSession, object>()
+  private queuedSendPublications = new WeakMap<ManagedSession, Promise<void>>()
+  private unsavedSessionSnapshots = new WeakSet<ManagedSession>()
   private turnDrains = new WeakMap<ManagedSession, Promise<void>>()
 
   private clearStopTimer(managed: ManagedSession): void {
@@ -3285,8 +3287,17 @@ export class SessionManager implements ISessionManager {
 
     const releaseSessionOperation = this.beginSessionOperationLease(managed)
     let releaseAdmission: (() => void) | undefined
+    let resolveQueuedPublication: (() => void) | undefined
     try {
     releaseAdmission = await this.agentLease.acquireSendAdmission(sessionId)
+
+    if (this.unsavedSessionSnapshots.has(managed)) {
+      // Replace the failed persistence tail from live state, which still owns
+      // completed replies and excludes any rejected queued send.
+      this.persistSession(managed)
+      await this.flushSession(sessionId)
+      this.unsavedSessionSnapshots.delete(managed)
+    }
 
     // Clear any pending plan execution state when a new user message is sent.
     // This acts as a safety valve - if the user moves on, we don't want to
@@ -3313,7 +3324,7 @@ export class SessionManager implements ISessionManager {
     if (managed.isProcessing && isQueuedReplay) {
       throw new Error('Cannot replay a queued message while this conversation is processing')
     }
-    if (managed.isProcessing || (!isQueuedReplay && this.queuedReplays.has(managed))) {
+    if (managed.isProcessing || (!isQueuedReplay && managed.messageQueue.length > 0)) {
       getSessionLog().info('mid-stream send', {
         sessionId,
         behavior: 'queue',
@@ -3332,9 +3343,20 @@ export class SessionManager implements ISessionManager {
         isQueued: true,
       }
 
-      if (!hideUserMessage && userMessage) {
-        managed.messages.push(userMessage)
-
+      const publication = Promise.withResolvers<void>()
+      this.queuedSendPublications.set(managed, publication.promise)
+      resolveQueuedPublication = publication.resolve
+      try {
+        await this.persistence.commitQueuedSend(managed, {
+          message, attachments, storedAttachments, options,
+          messageId: userMessage?.id, optimisticMessageId: options?.optimisticMessageId,
+        }, userMessage)
+      } catch (error) {
+        this.unsavedSessionSnapshots.add(managed)
+        throw error
+      }
+      acceptSpan.mark('session.flushed')
+      if (userMessage) {
         this.sendEvent({
           type: 'user_message',
           sessionId,
@@ -3344,15 +3366,8 @@ export class SessionManager implements ISessionManager {
         }, managed.workspace.id)
       }
 
-      managed.messageQueue.push({ message, attachments, storedAttachments, options, messageId: userMessage?.id, optimisticMessageId: options?.optimisticMessageId })
-
-      this.persistSession(managed)
-      // Force a synchronous flush so the user message is genuinely on disk
-      // before we tell the renderer "accepted" — `persistSession` only
-      // enqueues with a 500ms debounce. (#616 reliability fix.)
-      await this.flushSession(managed.id)
-      acceptSpan.mark('session.flushed')
       ackAccepted(userMessage?.id ?? generateMessageId(), 'queued')
+      if (!managed.isProcessing) this.processNextQueuedMessage(sessionId)
       return
     }
 
@@ -3847,8 +3862,8 @@ export class SessionManager implements ISessionManager {
 
           if (event.usage) sendSpan.setMetadata('usage', event.usage)
           sendSpan.mark('chat.complete')
-          await this.onProcessingStopped(sessionId, 'complete', myGeneration, event.status === 'completed')
-          sendSpan.mark('session.flushed')
+          const saved = await this.onProcessingStopped(sessionId, 'complete', myGeneration, event.status === 'completed')
+          if (saved) sendSpan.mark('session.flushed')
           sendSpan.end()
           return  // Exit function, skip finally block (onProcessingStopped handles cleanup)
         }
@@ -3946,6 +3961,11 @@ export class SessionManager implements ISessionManager {
       void this.generateTitle(managed, titleMessageToGenerate)
     }
     } finally {
+      if (resolveQueuedPublication) {
+        this.queuedSendPublications.delete(managed)
+        // Wake Stop waiters before releasing admission to completion or another send.
+        resolveQueuedPublication()
+      }
       releaseAdmission?.()
       releaseSessionOperation()
     }
@@ -3955,6 +3975,12 @@ export class SessionManager implements ISessionManager {
     const managed = this.sessions.get(sessionId)
     if (!managed?.isProcessing) {
       return // Not processing, nothing to cancel
+    }
+    const generation = managed.processingGeneration
+    const publication = this.queuedSendPublications.get(managed)
+    if (publication) {
+      await publication
+      if (this.sessions.get(sessionId) !== managed || managed.processingGeneration !== generation || !managed.isProcessing) return
     }
 
     getSessionLog().info('Cancelling processing for session:', sessionId, silent ? '(silent)' : '')
@@ -4019,7 +4045,6 @@ export class SessionManager implements ISessionManager {
 
     // Safety timeout: if event loop doesn't complete within 5 seconds, force cleanup
     // This handles cases where the generator gets stuck
-    const generation = managed.processingGeneration
     this.clearStopTimer(managed)
     const timer = setTimeout(() => {
       if (managed.processingGeneration === generation && managed.stopRequested && managed.isProcessing) {
@@ -4124,12 +4149,13 @@ export class SessionManager implements ISessionManager {
     reason: 'complete' | 'interrupted' | 'error' | 'timeout',
     generation: number,
     suggestFollowUp = false,
-  ): Promise<void> {
+  ): Promise<boolean | undefined> {
     const managed = this.sessions.get(sessionId)
     if (!managed || !managed.isProcessing || managed.processingGeneration !== generation
       || this.stoppingGenerations.get(managed) === generation) return
     this.stoppingGenerations.set(managed, generation)
     this.clearStopTimer(managed)
+    let releaseAdmission: (() => void) | undefined
     try {
       getSessionLog().info(`Processing stopped for session ${sessionId}: ${reason}`)
       // Whatever the stop reason, the agent may have written files during the turn.
@@ -4137,10 +4163,8 @@ export class SessionManager implements ISessionManager {
         void this.workspaceFreshness.checkpoint(sessionId, managed.workspace.rootPath)
       }
 
-      // Keep admission queued until cleanup and the next dispatch are decided together.
-      // 1. Cleanup state
-      const wasStopped = managed.stopRequested
-      managed.stopRequested = false  // Reset for next turn
+      let wasStopped = managed.stopRequested
+      managed.stopRequested = false
 
       const turnStartFinalMessageId = managed.turnStartFinalMessageId
       managed.turnStartFinalMessageId = undefined
@@ -4154,7 +4178,7 @@ export class SessionManager implements ISessionManager {
         if (managed.processingGeneration !== generation) return
       }
 
-      // 2. Handle unread state based on whether user is viewing this session
+      // Handle unread state based on whether user is viewing this session
       //    This is the explicit state machine for NEW badge:
       //    - If user is viewing: mark as read (they saw it complete)
       //    - If user is NOT viewing: mark as unread (they have new content)
@@ -4177,32 +4201,38 @@ export class SessionManager implements ISessionManager {
         }
       }
 
-      // 3. Auto-complete mini agent sessions to avoid session list clutter
-      //    Mini agents are spawned from EditPopovers for quick config edits
-      //    and should automatically move to 'done' when finished
-      if (reason === 'complete' && managed.systemPromptPreset === 'mini' && managed.sessionStatus !== 'done') {
-        getSessionLog().info(`Auto-completing mini agent session ${sessionId}`)
-        await this.setSessionStatus(sessionId, 'done')
-        if (managed.processingGeneration !== generation) return
+      // Keep accepting queued sends during async cleanup above, then serialize
+      // the final snapshot and replay decision with send admission.
+      releaseAdmission = await this.agentLease.acquireSendAdmission(sessionId)
+      if (this.sessions.get(sessionId) !== managed || managed.processingGeneration !== generation || !managed.isProcessing) return
+      let saved = false
+      try {
+        if (reason === 'complete' && managed.systemPromptPreset === 'mini' && managed.sessionStatus !== 'done') {
+          await this.setSessionStatus(sessionId, 'done')
+          if (managed.processingGeneration !== generation) return
+        }
+        if (managed.pendingExternalMetadata) {
+          const pendingHeader = readSessionHeader(getSessionFilePath(managed.workspace.rootPath, managed.id))
+            ?? managed.pendingExternalMetadata
+          managed.pendingExternalMetadata = undefined
+          getSessionLog().info(`Applying deferred external metadata for session ${sessionId} after processing stop`)
+          this.applyExternalSessionMetadata(managed, pendingHeader)
+        }
+        this.persistSession(managed)
+        await this.flushSession(sessionId)
+        this.unsavedSessionSnapshots.delete(managed)
+        saved = true
+      } catch (error) {
+        this.unsavedSessionSnapshots.add(managed)
+        getSessionLog().error(`Failed to save completed turn for session ${sessionId}:`, error)
       }
-
-      // 4. Apply deferred external metadata updates captured while processing.
-      if (managed.pendingExternalMetadata) {
-        const pendingHeader = readSessionHeader(getSessionFilePath(managed.workspace.rootPath, managed.id))
-          ?? managed.pendingExternalMetadata
-        managed.pendingExternalMetadata = undefined
-        getSessionLog().info(`Applying deferred external metadata for session ${sessionId} after processing stop`)
-        this.applyExternalSessionMetadata(managed, pendingHeader)
-      }
-
-      // 5. Commit the complete in-memory snapshot before announcing completion.
-      this.persistSession(managed)
-      await this.flushSession(sessionId)
 
       if (this.sessions.get(sessionId) !== managed || managed.processingGeneration !== generation) return
-      // 6. Check queue and process or complete without yielding admission.
+      // Stop may have cleared a queued send while completion awaited admission.
+      wasStopped ||= managed.stopRequested
+      managed.stopRequested = false
       this.setProcessing(managed, false)
-      if (managed.messageQueue.length > 0) {
+      if (saved && managed.messageQueue.length > 0) {
         // Has queued messages - process next
         this.processNextQueuedMessage(sessionId)
       } else {
@@ -4213,7 +4243,14 @@ export class SessionManager implements ISessionManager {
           this.browserPaneManager.unbindAllForSession(sessionId)
         }
 
-        // No queue - emit complete to UI (include tokenUsage and hasUnread for state updates)
+        if (!saved) {
+          this.sendEvent({
+            type: 'error',
+            sessionId,
+            error: 'Could not save the session. The reply and queued messages are still in memory. Check available disk space and try sending again.',
+          }, managed.workspace.id)
+        }
+        // Emit complete to UI (include tokenUsage and hasUnread for state updates).
         this.sendEvent({
           type: 'complete',
           sessionId,
@@ -4222,17 +4259,22 @@ export class SessionManager implements ISessionManager {
             ? Array.from(managed.pendingTurnMetrics, ([messageId, metrics]) => ({ messageId, metrics }))
             : undefined,
           hasUnread: managed.hasUnread,  // Propagate unread state to renderer
+          ...(!saved && {
+            pendingQueuedMessageIds: managed.messageQueue.flatMap(entry => entry.messageId ? [entry.messageId] : []),
+          }),
         }, managed.workspace.id)
         managed.pendingTurnMetrics = undefined
-        if (suggestFollowUp && !wasStopped && didReceiveNewFinalOutput && isViewing && !managed.hidden) {
+        if (saved && suggestFollowUp && !wasStopped && didReceiveNewFinalOutput && isViewing && !managed.hidden) {
           const reply = managed.messages.findLast(message => message.id === currentFinalMessageId)
           if (reply?.role === 'assistant' && reply.content.trim()) {
             void this.publishNextMessageSuggestion(managed, generation, reply.id)
           }
         }
       }
+      return saved
     } finally {
       if (this.stoppingGenerations.get(managed) === generation) this.stoppingGenerations.delete(managed)
+      releaseAdmission?.()
     }
   }
 
