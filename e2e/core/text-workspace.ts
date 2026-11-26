@@ -3,7 +3,7 @@
 // pos: Offline Electron acceptance for the file workspace; no provider calls
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, readdirSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { launchApp, evalOn, waitFor, type LaunchedApp } from '../perf/launch'
@@ -218,7 +218,7 @@ try {
     await waitFor(live, `document.querySelector('[data-testid="text-source"]')?.value === 'Project 已保存\\n'`)
     assert.equal(readFileSync(chapterFile, 'utf8'), '', 'Clearing a chapter must save zero bytes')
     await evalOn(live, `${projectFileRow('chapter.md')}.click()`)
-    await waitFor(live, `${writingEditor}?.textContent === '' && ${doc}.querySelector('[data-editor-synced-path]')?.dataset.editorSyncedPath === ${JSON.stringify(chapterFile)}`)
+    await waitFor(live, `${writingEditor}?.textContent === '' && ${doc}.querySelector('[data-editor-synced-path]')?.dataset.editorSyncedPath === ${JSON.stringify(realpathSync(chapterFile))}`)
   }
   console.log('PASS: clearing Markdown persists on immediate switch and autosave, and reopening reads an empty file')
 

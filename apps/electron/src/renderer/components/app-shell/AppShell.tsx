@@ -2214,6 +2214,7 @@ function AppShellContent({
     if (requestedCompact === isAutoCompact) return
     // Capture the live editor before the layout moves it between dock and dialog.
     // Autosave keeps its normal cadence; the new surface receives the unsaved text.
+    // Retry the pending layout change when the editor snapshot becomes readable again.
     if (!flushSelectedNovelDocument()) return
     // A desktop-width rail would leave the compact conversation only a few characters wide.
     if (requestedCompact) setIsActivityRailVisible(false)
