@@ -2185,9 +2185,9 @@ function AppShellContent({
     view: selectedNovelDocumentView,
     refresh: `${selectedNovelFile?.modifiedAt ?? ''}:${novelDocumentReloadVersion}`,
     editorRef: novelDocumentEditorRef,
-    emptySnapshotBlockedMessage: t(
-      'writing.emptySnapshotSaveBlocked',
-      '已阻止一次空内容覆盖。请重新打开该文件后再保存。'
+    snapshotBlockedMessage: t(
+      'writing.snapshotSaveBlocked',
+      '无法读取编辑器中的最新内容，请重试保存。'
     ),
     onLoaded: (filePath, content, durationMs) => {
       rendererPerf.recordNovelDocumentEvent({ filePath, phase: 'readFile', durationMs, contentLength: content.length })
@@ -2214,11 +2214,11 @@ function AppShellContent({
     if (requestedCompact === isAutoCompact) return
     // Capture the live editor before the layout moves it between dock and dialog.
     // Autosave keeps its normal cadence; the new surface receives the unsaved text.
-    flushSelectedNovelDocument()
+    if (!flushSelectedNovelDocument()) return
     // A desktop-width rail would leave the compact conversation only a few characters wide.
     if (requestedCompact) setIsActivityRailVisible(false)
     setIsAutoCompact(requestedCompact)
-  }, [requestedCompact, isAutoCompact, flushSelectedNovelDocument])
+  }, [requestedCompact, isAutoCompact, flushSelectedNovelDocument, selectedNovelDocumentState?.snapshotError])
 
   const novelDocumentDirty = !!selectedNovelDocumentState
     && selectedNovelDocumentState.content !== selectedNovelDocumentState.baseline
@@ -2238,7 +2238,7 @@ function AppShellContent({
   const ensureNovelDocumentSaved = React.useCallback(async (): Promise<boolean> => {
     // The Project draft saves silently; other open documents go through the shared leave gate.
     if (!await saveSelectedNovelDocument()) {
-      const error = selectedNovelDocumentModel?.state.error
+      const error = selectedNovelDocumentModel?.state.snapshotError ?? selectedNovelDocumentModel?.state.error
       toast.error(t('writing.autoSaveFailed', 'Failed to save document'), {
         description: error === 'conflict' || error === 'missing' ? t(`textDocument.${error}`) : error ?? undefined,
       })
@@ -3157,6 +3157,7 @@ function AppShellContent({
                         className="ml-1"
                         value={selectedNovelDocumentView}
                         onValueChange={(view) => {
+                          if (!flushSelectedNovelDocument()) return
                           const path = selectedNovelFile.path
                           setNovelSourceViewPaths(current => {
                             const next = new Set(current)

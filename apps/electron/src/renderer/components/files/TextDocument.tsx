@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import type { DocumentSearchTarget } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { TextSource } from './TextSource'
-import { documentModel, dirtyDocument, keepDraft, releaseDocument, retainDocument, reloadDocument, saveDocument, updateDocument, type DocumentModel, type DocumentState } from './text-document-state'
+import { documentModel, dirtyDocument, flushDocument, keepDraft, releaseDocument, retainDocument, reloadDocument, saveDocument, updateDocument, type DocumentModel, type DocumentState } from './text-document-state'
 
 export function useDocumentState(model: DocumentModel): DocumentState {
   const subscribe = useMemo(() => (listener: () => void) => {
@@ -16,8 +16,6 @@ export function useDocumentState(model: DocumentModel): DocumentState {
   }, [model])
   return useSyncExternalStore(subscribe, () => model.state)
 }
-
-export const saveDocumentFromView = (model: DocumentModel) => { model.flush?.(); return saveDocument(model) }
 
 const AUTOSAVE_DELAY_MS = 800
 
@@ -38,8 +36,8 @@ export function TextDocumentBar({ model, state, leading, trailing }: {
   model: DocumentModel; state: DocumentState; leading?: ReactNode; trailing?: ReactNode
 }) {
   const { t } = useTranslation()
-  const error = state.error === 'conflict' || state.error === 'missing' || state.error === 'readOnly' ? t(`textDocument.${state.error}`) : state.error
-  const dirty = dirtyDocument(model)
+  const error = state.snapshotError ?? (state.error === 'conflict' || state.error === 'missing' || state.error === 'readOnly' ? t(`textDocument.${state.error}`) : state.error)
+  const dirty = !!state.snapshotError || dirtyDocument(model)
   const status = state.saving ? 'saving' : state.readOnly ? 'readOnly' : dirty ? 'unsaved' : 'saved'
   return <>
     <div className="flex h-9 shrink-0 items-center gap-1 border-b border-foreground/[0.06] px-3 text-xs">
@@ -50,10 +48,10 @@ export function TextDocumentBar({ model, state, leading, trailing }: {
     {error && <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-1.5 text-xs text-destructive">
       <span className="mr-auto">{error}</span>
       {state.conflict && <>
-        <button type="button" className={barButton} disabled={state.saving} onClick={() => { model.flush?.(); void keepDraft(model) }}>{t('textDocument.keepDraft')}</button>
+        <button type="button" className={barButton} disabled={state.saving} onClick={() => { void keepDraft(model) }}>{t('textDocument.keepDraft')}</button>
         <button type="button" className={barButton} disabled={state.saving} onClick={() => {
-          if (window.confirm(t('textDocument.discardQuestion'))) {
-            updateDocument(model, { content: state.baseline }); void reloadDocument(model)
+          if (window.confirm(t('textDocument.discardQuestion')) && flushDocument(model)) {
+            updateDocument(model, { content: model.state.baseline }); void reloadDocument(model)
           }
         }}>{t('textDocument.reload')}</button>
       </>}
@@ -74,7 +72,7 @@ export function TextDocument({ path, workspaceId, sessionId, refresh, searchTarg
 }) {
   const model = useMemo(() => documentModel(workspaceId, { path, sessionId }), [workspaceId, path, sessionId])
   const state = useDocumentState(model)
-  const save = useCallback(() => saveDocumentFromView(model), [model])
+  const save = useCallback(() => saveDocument(model), [model])
   useEffect(() => { model.autosave = true }, [model])
   useEffect(() => { void reloadDocument(model) }, [model, refresh])
   useDocumentAutosave(state, save)

@@ -53,7 +53,7 @@ describe('getIncomingContentSyncAction', () => {
     const source = readFileSync(new URL('../TiptapMarkdownEditor.tsx', import.meta.url), 'utf-8')
 
     expect(source).toContain('export interface TiptapMarkdownEditorHandle')
-    expect(source).toContain('getMarkdownSnapshot(): string')
+    expect(source).toContain('getMarkdownSnapshot(): string | null')
     expect(source).toContain('onDocumentChanged?: () => void')
     expect(source).toContain('React.useImperativeHandle')
     expect(source).toContain('onDocumentChangedRef.current?.()')

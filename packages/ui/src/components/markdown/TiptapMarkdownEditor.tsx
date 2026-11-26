@@ -1,5 +1,5 @@
 // input: Markdown content, editor configuration, and optional document actions
-// output: TipTap-powered Markdown editing surface with toolbar and bubble menus
+// output: TipTap editing surface, change notifications and nullable live Markdown snapshots
 // pos: Shared Markdown editor used by app document and writing surfaces
 
 import { locateDocumentSearch, type DocumentSearchTarget, type DocumentSearchLocation } from './document-search'
@@ -190,7 +190,8 @@ function ToolbarButton({
 export type IncomingContentSyncAction = 'ignore' | 'record' | 'sync'
 
 export interface TiptapMarkdownEditorHandle {
-  getMarkdownSnapshot(): string
+  /** Null means the live editor cannot provide a reliable snapshot. */
+  getMarkdownSnapshot(): string | null
 }
 
 export function getIncomingContentSyncAction({
@@ -296,8 +297,14 @@ function TiptapFixedToolbar({
 }
 
 
-function getOfficialMarkdown(editor: { getMarkdown?: () => string }): string {
-  return editor.getMarkdown?.() ?? ''
+function getOfficialMarkdown(editor: Editor): string | null {
+  if (editor.isDestroyed) return null
+  try {
+    const markdown = editor.getMarkdown?.()
+    return typeof markdown === 'string' ? postprocessMarkdownFromOfficial(markdown) : null
+  } catch {
+    return null
+  }
 }
 
 function forceShikiDecorations(editor: any) {
@@ -599,16 +606,6 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
 
   const initialContent = preprocessMarkdownForOfficial(content)
 
-  const getMarkdownSnapshot = React.useCallback((): string => {
-    const activeEditor = editorRef.current
-    if (!activeEditor) return content
-    return postprocessMarkdownFromOfficial(getOfficialMarkdown(activeEditor as { getMarkdown?: () => string }))
-  }, [content])
-
-  React.useImperativeHandle(ref, () => ({
-    getMarkdownSnapshot,
-  }), [getMarkdownSnapshot])
-
   const editor = useEditor({
     extensions,
     content: initialContent,
@@ -653,13 +650,13 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
     onUpdate: ({ editor }) => {
       if (isApplyingExternalContentRef.current || !editor.isFocused) return
       hasLocalEditsRef.current = true
-      if (!onUpdateRef.current) {
-        onDocumentChangedRef.current?.()
-        return
+      if (onUpdateRef.current) {
+        const md = getOfficialMarkdown(editor)
+        if (md !== null) {
+          lastEmittedMarkdownRef.current = md
+          onUpdateRef.current(md)
+        }
       }
-      const md = postprocessMarkdownFromOfficial(getOfficialMarkdown(editor as { getMarkdown?: () => string }))
-      lastEmittedMarkdownRef.current = md
-      onUpdateRef.current?.(md)
       onDocumentChangedRef.current?.()
     },
   }, [extensions])
@@ -678,6 +675,15 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
   // but as a safety net for direct content prop changes)
   const prevContentRef = React.useRef(content)
   const [syncedContent, setSyncedContent] = React.useState<{ identity: string; content: string } | null>(null)
+  React.useImperativeHandle(ref, () => ({
+    getMarkdownSnapshot() {
+      if (!editor || syncedContent?.identity !== contentIdentity) return null
+      const markdown = getOfficialMarkdown(editor)
+      // The serializer also emits an empty string for whitespace-only output.
+      return markdown === '' && !editor.isEmpty ? null : markdown
+    },
+  }), [editor, contentIdentity, syncedContent?.identity])
+
   React.useEffect(() => {
     const acknowledgeContent = () => {
       if (contentIdentity !== undefined) setSyncedContent({ identity: contentIdentity, content })
@@ -696,11 +702,11 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
         return
       }
 
-      const currentMd = postprocessMarkdownFromOfficial(getOfficialMarkdown(editor as { getMarkdown?: () => string }))
+      const currentMd = getOfficialMarkdown(editor)
       const syncAction = getIncomingContentSyncAction({
         previousContent: prevContentRef.current,
         incomingContent: content,
-        currentMarkdown: currentMd,
+        currentMarkdown: currentMd ?? undefined,
       })
 
       if (syncAction === 'ignore') { acknowledgeContent(); return }
@@ -751,10 +757,11 @@ export const TiptapMarkdownEditor = React.forwardRef<TiptapMarkdownEditorHandle,
 
   React.useEffect(() => {
     if (!editor || !editable || !searchTarget || handledSearchRef.current === searchTarget.requestId) return
-    handledSearchRef.current = searchTarget.requestId
     const source = hasLocalEditsRef.current
-      ? postprocessMarkdownFromOfficial(getOfficialMarkdown(editor))
+      ? getOfficialMarkdown(editor)
       : content
+    if (source === null) return
+    handledSearchRef.current = searchTarget.requestId
     const location = locateDocumentSearch(source, searchTarget, editor.state.doc, value =>
       editor.schema.nodeFromJSON(editor.markdown!.parse(preprocessMarkdownForOfficial(value))))
     if (location.from !== undefined && location.to !== undefined) {

@@ -7,6 +7,7 @@ import { classifyFile } from '@craft-agent/ui/file-classification'
 import {
   dirtyDocument,
   documentModel,
+  flushDocument,
   releaseDocument,
   reloadDocument,
   retainDocument,
@@ -16,6 +17,7 @@ import {
   type DocumentState,
 } from '@/components/files/text-document-state'
 import { useDocumentAutosave } from '@/components/files/TextDocument'
+import type { NovelDocumentEditorPanelHandle } from './NovelDocumentEditorPanel'
 
 export type WritingDocumentView = 'writing' | 'source'
 
@@ -38,8 +40,8 @@ export interface UseWritingDocumentOptions {
   view: WritingDocumentView
   /** Changes when the file may have changed on disk (watcher mtime, explicit refresh). */
   refresh: string
-  editorRef: React.RefObject<{ getMarkdownSnapshot(): string } | null>
-  emptySnapshotBlockedMessage: string
+  editorRef: React.RefObject<NovelDocumentEditorPanelHandle | null>
+  snapshotBlockedMessage: string
   onLoaded?: (path: string, content: string, durationMs: number) => void
   onBeforeSave?: (path: string) => void
   onSaved?: (path: string, content: string) => void
@@ -54,7 +56,7 @@ export function useWritingDocument({
   view,
   refresh,
   editorRef,
-  emptySnapshotBlockedMessage,
+  snapshotBlockedMessage,
   onLoaded,
   onBeforeSave,
   onSaved,
@@ -75,65 +77,66 @@ export function useWritingDocument({
   }, [model])
   const state: DocumentState | null = React.useSyncExternalStore(subscribe, model ? () => model.state : getNothing)
 
-  const callbacksRef = React.useRef({ onLoaded, onBeforeSave, onSaved, emptySnapshotBlockedMessage })
-  callbacksRef.current = { onLoaded, onBeforeSave, onSaved, emptySnapshotBlockedMessage }
+  const callbacksRef = React.useRef({ onLoaded, onBeforeSave, onSaved, snapshotBlockedMessage })
+  callbacksRef.current = { onLoaded, onBeforeSave, onSaved, snapshotBlockedMessage }
 
   // Serializing the rich-text document is costly, so edits are pulled into the
   // draft on idle and before anything reads it (save, leave, view switch).
-  const pendingEditsRef = React.useRef(false)
   const flushTimerRef = React.useRef<number | null>(null)
   const flush = React.useCallback(() => {
+    const current = modelRef.current
+    return !current || flushDocument(current)
+  }, [])
+
+  const clearFlushTimer = React.useCallback(() => {
     if (flushTimerRef.current != null) {
       window.clearTimeout(flushTimerRef.current)
       flushTimerRef.current = null
     }
-    const current = modelRef.current
-    const editor = editorRef.current
-    if (!current || !editor || !pendingEditsRef.current) return
-    pendingEditsRef.current = false
-    const snapshot = editor.getMarkdownSnapshot()
-    if (snapshot === current.state.content) return
-    // An empty serialization of a non-empty, untouched file is an editor fault, not an edit.
-    if (snapshot === '' && current.state.baseline !== '' && current.state.content === current.state.baseline) {
-      updateDocument(current, { error: callbacksRef.current.emptySnapshotBlockedMessage })
-      return
-    }
-    updateDocument(current, { content: snapshot })
-  }, [editorRef])
+  }, [])
 
   const handleEditorChanged = React.useCallback(() => {
     const current = modelRef.current
     if (!current) return
-    pendingEditsRef.current = true
     // A disk read started before this keystroke must not replace the buffer.
     current.generation += 1
-    if (flushTimerRef.current != null) window.clearTimeout(flushTimerRef.current)
-    flushTimerRef.current = window.setTimeout(flush, EDITOR_FLUSH_DELAY_MS)
-  }, [flush])
+    const editor = editorRef.current
+    current.flush = () => {
+      const snapshot = modelRef.current === current && editor === editorRef.current
+        ? editor?.getMarkdownSnapshot() ?? null
+        : null
+      const message = callbacksRef.current.snapshotBlockedMessage
+      if (snapshot === null) {
+        if (current.state.snapshotError !== message) updateDocument(current, { snapshotError: message })
+        return false
+      }
+
+      current.flush = undefined
+      if (snapshot !== current.state.content || current.state.snapshotError) {
+        updateDocument(current, { content: snapshot, snapshotError: undefined })
+      }
+      return true
+    }
+    clearFlushTimer()
+    flushTimerRef.current = window.setTimeout(() => {
+      flushTimerRef.current = null
+      flushDocument(current)
+    }, EDITOR_FLUSH_DELAY_MS)
+  }, [clearFlushTimer, editorRef])
 
   React.useEffect(() => {
-    if (!model) return
-    model.autosave = true
-    if (view !== 'writing') return
-    model.flush = flush
-    return () => {
-      flush()
-      if (model.flush === flush) model.flush = undefined
-    }
-  }, [flush, model, view])
-
-  React.useEffect(() => () => {
-    if (flushTimerRef.current != null) window.clearTimeout(flushTimerRef.current)
-  }, [])
+    if (model) model.autosave = true
+    return clearFlushTimer
+  }, [clearFlushTimer, model, view])
 
   const isDirty = React.useCallback(() => {
-    flush()
+    if (!flush()) return true
     const current = modelRef.current
     return !!current && dirtyDocument(current)
   }, [flush])
 
   const save = React.useCallback(async (): Promise<boolean> => {
-    flush()
+    if (!flush()) return false
     const current = modelRef.current
     if (!current || !dirtyDocument(current)) return true
     const content = current.state.content
@@ -146,19 +149,17 @@ export function useWritingDocument({
   const reload = React.useCallback(async () => {
     const current = modelRef.current
     if (!current) return
-    flush()
     await reloadDocument(current)
-  }, [flush])
+  }, [])
 
   React.useEffect(() => {
     if (!model) return
-    flush()
     const startedAt = performance.now()
     void reloadDocument(model).then(() => {
       if (modelRef.current !== model || model.state.loading) return
       callbacksRef.current.onLoaded?.(model.target.path, model.state.content, performance.now() - startedAt)
     })
-  }, [flush, model, refresh])
+  }, [model, refresh])
 
   useDocumentAutosave(state, save)
 

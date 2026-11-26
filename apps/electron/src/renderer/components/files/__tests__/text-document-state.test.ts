@@ -5,6 +5,7 @@ import {
   getLeavePrompt,
   hasDirtyDocuments,
   keepDraft,
+  releaseDocument,
   reloadDocument,
   requestDocumentLeave,
   saveDocument,
@@ -88,11 +89,34 @@ describe('text document lifecycle', () => {
     disk = { content: 'a', version: 'v0' }
     installApi()
     const model = await loadedModel('/p/flush.md')
-    model.flush = () => updateDocument(model, { content: 'typed' })
+    model.flush = () => {
+      model.flush = undefined
+      updateDocument(model, { content: 'typed' })
+      return true
+    }
 
     expect(hasDirtyDocuments()).toBe(true)
     expect(model.state.content).toBe('typed')
-    model.flush = undefined
     updateDocument(model, { content: model.state.baseline })
+  })
+
+  it('blocks saving and leaving while a view holds edits it cannot flush', async () => {
+    disk = { content: 'saved', version: 'v0' }
+    const { saveTextDocument } = installApi()
+    const model = await loadedModel('/p/unavailable.md')
+    model.autosave = true
+    model.flush = () => false
+
+    try {
+      releaseDocument(model)
+      expect(documentModel('ws', model.target)).toBe(model)
+      expect(await saveDocument(model)).toBe(false)
+      expect(await requestDocumentLeave()).toBe(false)
+      expect(hasDirtyDocuments()).toBe(true)
+      expect(saveTextDocument).not.toHaveBeenCalled()
+    } finally {
+      model.flush = undefined
+      releaseDocument(model)
+    }
   })
 })
