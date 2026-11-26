@@ -1,9 +1,9 @@
 // input: Built Electron app and an isolated conversation with real text files
-// output: Raw text, autosave, conflict choice, multi-file navigation and writing/source view acceptance
+// output: Raw text, autosave, conflict choice, multi-file navigation and Markdown snapshot acceptance
 // pos: Offline Electron acceptance for the file workspace; no provider calls
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, readdirSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { launchApp, evalOn, waitFor, type LaunchedApp } from '../perf/launch'
@@ -193,6 +193,56 @@ try {
   await evalOn(live, `Array.from(${doc}.querySelectorAll('[role="radio"]')).find(e=>e.textContent==='写作').click()`)
   await waitFor(live, `${doc}.querySelector('[contenteditable="true"]')?.textContent.includes('agent 改写')`)
   console.log('PASS: Markdown writing and source views share one autosaved draft that follows disk changes')
+
+  const writingEditor = `${doc}?.querySelector('[contenteditable="true"]')`
+  const projectFileRow = (name: string) =>
+    `Array.from(document.querySelectorAll('[role="treeitem"]')).find(e=>e.textContent.includes(${JSON.stringify(name)}))`
+  const clearChapter = `(() => {
+    const editor = ${writingEditor}.editor;
+    editor.view.dom.focus();
+    if (!editor.isFocused || !editor.chain().selectAll().deleteSelection().run() || !editor.isEmpty) {
+      throw new Error('Could not clear chapter with the writing editor focused');
+    }
+  })()`
+  // Issue #168: repeat the first edit of a saved chapter via both persistence paths.
+  for (const saveBeforeSwitch of [true, false]) {
+    const originalChapter = '# 第一章\n\n清空前有正文\n'
+    writeFileSync(chapterFile, originalChapter)
+    await evalOn(live, `window.dispatchEvent(new Event('focus'))`)
+    await waitFor(live, `${writingEditor}?.textContent.includes('清空前有正文')`)
+    await evalOn(live, saveBeforeSwitch ? `${clearChapter}; ${projectFileRow('editor-acceptance.txt')}.click()` : clearChapter)
+    if (!saveBeforeSwitch) {
+      await waitDisk(chapterFile, '')
+      await evalOn(live, `${projectFileRow('editor-acceptance.txt')}.click()`)
+    }
+    await waitFor(live, `document.querySelector('[data-testid="text-source"]')?.value === 'Project 已保存\\n'`)
+    assert.equal(readFileSync(chapterFile, 'utf8'), '', 'Clearing a chapter must save zero bytes')
+    await evalOn(live, `${projectFileRow('chapter.md')}.click()`)
+    await waitFor(live, `${writingEditor}?.textContent === '' && ${doc}.querySelector('[data-editor-synced-path]')?.dataset.editorSyncedPath === ${JSON.stringify(realpathSync(chapterFile))}`)
+  }
+  console.log('PASS: clearing Markdown persists on immediate switch and autosave, and reopening reads an empty file')
+
+  // A live draft must survive a failed Markdown serialization and remain retryable.
+  await evalOn(live, `(() => {
+    const editor = ${writingEditor}.editor;
+    const original = editor.getMarkdown;
+    window.__restoreMarkdownSerializer = () => { editor.getMarkdown = original; delete window.__restoreMarkdownSerializer };
+    editor.getMarkdown = () => { throw new Error('snapshot unavailable') };
+    editor.view.dom.focus();
+  })()`)
+  await live.cdp.send('Input.insertText', {text:'序列化失败时的草稿'}, live.sid)
+  await evalOn(live, `${writingEditor}.dispatchEvent(new KeyboardEvent('keydown', {key: 's', metaKey: true, bubbles: true}))`)
+  await waitFor(live, `${alertText}?.includes('无法读取编辑器中的最新内容')`)
+  assert.equal(await evalOn(live, `window.requestDocumentLeave()`), false)
+  await evalOn(live, `${projectFileRow('editor-acceptance.txt')}.click()`)
+  await waitFor(live, `${status} === '未保存修改'`)
+  assert.equal(await evalOn(live, `${writingEditor}?.textContent`), '序列化失败时的草稿')
+  assert.equal(readFileSync(chapterFile, 'utf8'), '')
+  await evalOn(live, `window.__restoreMarkdownSerializer()`)
+  assert.equal(await evalOn(live, `window.requestDocumentLeave()`), true)
+  assert.equal(readFileSync(chapterFile, 'utf8'), '序列化失败时的草稿')
+  await waitFor(live, `!${alertText} && ${status} === '已保存'`)
+  console.log('PASS: an unavailable Markdown snapshot blocks save and leave, retains the draft and can be retried')
 
   // Opening, switching views and following a disk change must never rewrite untouched bytes.
   const irregular = 'Setext 标题\n===\n\n* 星号列表\n+ 加号列表\n\n*强调* 与 __粗体__  \n行尾两个空格\n\n| a | b |\n|---|:-:|\n| 1 | 2 |\n\n<div>原样 HTML</div>\n'

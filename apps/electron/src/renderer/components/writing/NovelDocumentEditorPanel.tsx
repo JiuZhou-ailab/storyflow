@@ -1,5 +1,5 @@
 // input: Selected document content, read readiness, and save/open callbacks
-// output: Markdown document editor or read-only document rendering
+// output: Markdown document editor, selection actions and nullable live snapshots
 // pos: Shared document surface for project workspaces and conversation file previews
 
 import * as React from 'react'
@@ -57,9 +57,7 @@ export interface NovelDocumentEditorPanelProps {
   className?: string
 }
 
-export interface NovelDocumentEditorPanelHandle {
-  getMarkdownSnapshot(): string
-}
+export type NovelDocumentEditorPanelHandle = TiptapMarkdownEditorHandle
 
 export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPanelHandle, NovelDocumentEditorPanelProps>(function NovelDocumentEditorPanel({
   file,
@@ -87,8 +85,8 @@ export const NovelDocumentEditorPanel = React.forwardRef<NovelDocumentEditorPane
     [content]
   )
   React.useImperativeHandle(ref, () => ({
-    getMarkdownSnapshot,
-  }), [getMarkdownSnapshot])
+    getMarkdownSnapshot: () => editorRef.current?.getMarkdownSnapshot() ?? null,
+  }), [])
   const characterCount = React.useMemo(() => countMarkdownTextCharacters(content), [content])
   const handleAddSelectionToChat = React.useCallback(({ selectedText }: NovelSelectionChatRequest) => {
     if (!file || !onAddSelectionToChat) return

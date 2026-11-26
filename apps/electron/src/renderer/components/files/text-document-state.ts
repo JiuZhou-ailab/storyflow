@@ -11,6 +11,7 @@ export interface DocumentState {
   readOnly: boolean
   saving: boolean
   error: string | null
+  snapshotError?: string
   conflict: boolean
 }
 export interface DocumentModel {
@@ -24,12 +25,12 @@ export interface DocumentModel {
   savePromise?: Promise<boolean>
   /** The view saves on its own cadence; leaving saves instead of asking. */
   autosave?: boolean
-  /** Pushes edits a view still holds (e.g. rich-text serialization) into `state.content`. */
-  flush?: () => void
+  /** Present while the view holds edits. Clears itself once it pushes them into `state.content`. */
+  flush?: () => boolean
 }
 const documents = new Map<string, DocumentModel>()
 export const dirtyDocument = (model: DocumentModel) => model.state.content !== model.state.baseline
-const flushDocuments = () => { for (const model of documents.values()) model.flush?.() }
+export const flushDocument = (model: DocumentModel) => model.flush?.() ?? true
 export function documentModel(workspaceId: string, target: TextDocumentTarget): DocumentModel {
   const key = JSON.stringify([workspaceId, target.sessionId, target.path])
   let model = documents.get(key)
@@ -42,7 +43,7 @@ export function documentModel(workspaceId: string, target: TextDocumentTarget): 
 export function retainDocument(model: DocumentModel) { documents.set(model.key, model) }
 export function releaseDocument(model: DocumentModel) {
   // Dirty drafts survive responsive/unexpected view replacement and remain in the leave gate.
-  if (!model.listeners.size && !dirtyDocument(model) && !model.state.saving) {
+  if (!model.listeners.size && !model.flush && !dirtyDocument(model) && !model.state.saving) {
     for (const [key, candidate] of documents) if (candidate === model) documents.delete(key)
   }
 }
@@ -52,7 +53,7 @@ export function updateDocument(model: DocumentModel, change: Partial<DocumentSta
   for (const listener of model.listeners) listener()
 }
 export async function reloadDocument(model: DocumentModel) {
-  if (model.state.saving) return
+  if (model.state.saving || !flushDocument(model)) return
   const generation = ++model.generation
   try {
     const result: TextDocumentSnapshot = await window.electronAPI.readTextDocument(model.target)
@@ -69,6 +70,7 @@ export async function reloadDocument(model: DocumentModel) {
 }
 export async function saveDocument(model: DocumentModel): Promise<boolean> {
   if (model.savePromise) { await model.savePromise; return saveDocument(model) }
+  if (!flushDocument(model)) return false
   if (!dirtyDocument(model)) return true
   if (model.state.loading || model.state.readOnly) return false
   model.generation += 1
@@ -96,6 +98,7 @@ export async function saveDocument(model: DocumentModel): Promise<boolean> {
  * or recreates a deleted file. A write landing in between still conflicts.
  */
 export async function keepDraft(model: DocumentModel): Promise<boolean> {
+  if (!flushDocument(model)) return false
   let version = ''
   try {
     const current: TextDocumentSnapshot = await window.electronAPI.readTextDocument(model.target)
@@ -105,6 +108,7 @@ export async function keepDraft(model: DocumentModel): Promise<boolean> {
   } catch (error) {
     if (!String(error).includes('ENOENT')) { updateDocument(model, { error: String(error) }); return false }
   }
+  if (!flushDocument(model)) return false
   updateDocument(model, { version, conflict: false, error: null })
   return saveDocument(model)
 }
@@ -119,11 +123,15 @@ export const answerLeavePrompt = (value: 'save' | 'discard' | 'cancel') => answe
 export function requestDocumentLeave(): Promise<boolean> {
   if (leavePromise) return leavePromise
   leavePromise = (async () => {
-    flushDocuments()
     for (const model of documents.values()) {
       if (model.savePromise) await model.savePromise
+      if (!flushDocument(model)) return false
       if (!dirtyDocument(model)) continue
-      if (model.autosave && !model.state.conflict && await saveDocument(model) && !dirtyDocument(model)) continue
+      if (model.autosave && !model.state.conflict) {
+        const saved = await saveDocument(model)
+        if (!flushDocument(model)) return false
+        if (saved && !dirtyDocument(model)) continue
+      }
       const choice = await new Promise<'save' | 'discard' | 'cancel'>(resolve => {
         answer = resolve; prompt = model
         for (const listener of promptListeners) listener()
@@ -138,8 +146,8 @@ export function requestDocumentLeave(): Promise<boolean> {
       }
       releaseDocument(model)
     }
-    return true
+    return !hasDirtyDocuments()
   })().finally(() => { leavePromise = undefined })
   return leavePromise
 }
-export const hasDirtyDocuments = () => (flushDocuments(), [...documents.values()]).some(model => dirtyDocument(model) || model.state.saving)
+export const hasDirtyDocuments = () => [...documents.values()].some(model => !flushDocument(model) || dirtyDocument(model) || model.state.saving)
