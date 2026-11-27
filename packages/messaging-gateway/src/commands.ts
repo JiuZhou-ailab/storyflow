@@ -1,5 +1,7 @@
 /**
- * Commands — handles chat commands from unbound or bound channels.
+ * input: Incoming chat commands, workspace access policy, session manager, and binding store
+ * output: Chat replies, session and binding changes, and recovery instructions for partial success
+ * pos: Messaging gateway command handler for bound and unbound chats
  *
  * /new [name]    — create session + bind
  * /bind          — list recent sessions (or by id / index)
@@ -276,33 +278,9 @@ export class Commands {
     const name = parseCommand(msg.text).args || undefined
     const replyOpts = msg.threadId !== undefined ? { threadId: msg.threadId } : {}
 
+    let session: Awaited<ReturnType<ISessionManager['createSession']>>
     try {
-      const session = await this.sessionManager.createSession(this.workspaceId, { name })
-
-      this.bindingStore.bind(
-        this.workspaceId,
-        session.id,
-        adapter.platform,
-        msg.channelId,
-        msg.senderName,
-        undefined,
-        msg.threadId,
-      )
-
-      const displayName = session.name || session.id
-      await adapter.sendText(
-        msg.channelId,
-        `Created "${displayName}" — you're connected. Just type to start.`,
-        replyOpts,
-      )
-      this.log.info('session created and bound from chat', {
-        event: 'session_created_from_chat',
-        workspaceId: this.workspaceId,
-        sessionId: session.id,
-        platform: adapter.platform,
-        channelId: msg.channelId,
-        threadId: msg.threadId,
-      })
+      session = await this.sessionManager.createSession(this.workspaceId, { name })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error'
       this.log.error('failed to create session from chat', {
@@ -313,7 +291,61 @@ export class Commands {
         error: err,
       })
       await adapter.sendText(msg.channelId, `Failed to create session: ${errorMsg}`, replyOpts)
+      return
     }
+
+    const displayName = session.name || session.id
+    try {
+      this.bindingStore.bind(
+        this.workspaceId,
+        session.id,
+        adapter.platform,
+        msg.channelId,
+        msg.senderName,
+        undefined,
+        msg.threadId,
+      )
+    } catch (err) {
+      this.log.error('failed to bind newly created session from chat', {
+        event: 'new_session_bind_failed',
+        workspaceId: this.workspaceId,
+        sessionId: session.id,
+        platform: adapter.platform,
+        channelId: msg.channelId,
+        threadId: msg.threadId,
+        error: err,
+      })
+      await adapter.sendText(
+        msg.channelId,
+        `Created "${displayName}", but could not bind this chat. Once the issue is resolved, use /bind ${session.id} to connect to the existing session.`,
+        replyOpts,
+      )
+      return
+    }
+
+    this.log.info('session created and bound from chat', {
+      event: 'session_created_from_chat',
+      workspaceId: this.workspaceId,
+      sessionId: session.id,
+      platform: adapter.platform,
+      channelId: msg.channelId,
+      threadId: msg.threadId,
+    })
+    await adapter.sendText(
+      msg.channelId,
+      `Created "${displayName}" — you're connected. Just type to start.`,
+      replyOpts,
+    ).catch((error) => {
+      this.log.warn('failed to deliver new session confirmation', {
+        event: 'new_session_confirmation_failed',
+        workspaceId: this.workspaceId,
+        sessionId: session.id,
+        platform: adapter.platform,
+        channelId: msg.channelId,
+        threadId: msg.threadId,
+        error,
+      })
+    })
   }
 
   private async handleBind(adapter: PlatformAdapter, msg: IncomingMessage): Promise<void> {

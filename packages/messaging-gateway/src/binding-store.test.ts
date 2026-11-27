@@ -39,7 +39,7 @@ afterEach(() => {
 })
 
 describe('BindingStore.save() failure semantics', () => {
-  it('does not fire changeListener when the write fails', () => {
+  it('reports write failures without publishing a new binding', () => {
     const storageDir = makeStorageDirWhereWritesFail()
     const store = new BindingStore(storageDir)
 
@@ -48,9 +48,11 @@ describe('BindingStore.save() failure semantics', () => {
 
     // Trigger a save through `bind()`. The write must fail because
     // storageDir cannot be created (ENOTDIR on a path nested under a file).
-    store.bind('ws-1', 'sess-1', 'telegram', 'chan-1')
+    expect(() => store.bind('ws-1', 'sess-1', 'telegram', 'chan-1'))
+      .toThrow('Failed to save messaging bindings.')
 
     expect(fired).toBe(0)
+    expect(store.getAll()).toEqual([])
   })
 
   it('fires changeListener when the write succeeds', () => {

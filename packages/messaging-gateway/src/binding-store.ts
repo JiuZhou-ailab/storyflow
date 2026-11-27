@@ -1,5 +1,7 @@
 /**
- * BindingStore — workspace-scoped persistence for channel bindings.
+ * input: Workspace storage directory, optional legacy directory, and binding mutations
+ * output: Persisted channel bindings and change notifications on successful writes
+ * pos: Workspace messaging bindings.json persistence
  *
  * Stores bindings in an explicit storage directory (passed by the caller).
  * In Electron this is `~/.craft-agent/workspaces/{wsId}/messaging/`, but tests
@@ -11,13 +13,13 @@
 
 import {
   readFileSync,
-  writeFileSync,
   mkdirSync,
   existsSync,
   copyFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { atomicWriteFileSync } from '@craft-agent/shared/utils'
 import type { ChannelBinding, MessagingLogger, PlatformType } from './types'
 import { normalizeBindingConfig } from './types'
 
@@ -99,7 +101,7 @@ export class BindingStore {
     // One channel → one session: evict any existing binding for the
     // (platform, channelId, threadId) tuple. Different topics in the same
     // supergroup are independently bindable.
-    this.bindings = this.bindings.filter(
+    const remaining = this.bindings.filter(
       (b) => !(b.platform === platform && b.channelId === channelId && (b.threadId ?? undefined) === threadId),
     )
 
@@ -116,8 +118,7 @@ export class BindingStore {
       config: normalizeBindingConfig(platform, config),
     }
 
-    this.bindings.push(binding)
-    this.save()
+    this.commit([...remaining, binding])
     this.log.info('binding created', {
       event: 'binding_created',
       workspaceId,
@@ -132,7 +133,7 @@ export class BindingStore {
   }
 
   /**
-   * Update a binding's `BindingConfig` in place — preserves `id`,
+   * Update a binding's `BindingConfig` while preserving `id`,
    * `createdAt`, `channelId`, etc. Returns the updated binding (or null
    * if the id wasn't found).
    *
@@ -145,27 +146,39 @@ export class BindingStore {
   updateBindingConfig(bindingId: string, patch: Partial<ChannelBinding['config']>): ChannelBinding | null {
     const binding = this.bindings.find((b) => b.id === bindingId)
     if (!binding) return null
-    binding.config = normalizeBindingConfig(binding.platform, {
-      ...binding.config,
-      ...patch,
-    })
-    this.save()
+    const next = {
+      ...binding,
+      config: normalizeBindingConfig(binding.platform, { ...binding.config, ...patch }),
+    }
+    this.commit(this.bindings.map((b) => b === binding ? next : b))
     this.log.info('binding config updated', {
       event: 'binding_config_updated',
       bindingId,
       platform: binding.platform,
       patchedKeys: Object.keys(patch),
     })
-    return binding
+    return next
+  }
+
+  /** Persist the lock-down migration in one write. The registry publishes
+   * the change after committing the workspace access mode. */
+  migrateOpenBindingsToInherit(platform: PlatformType): void {
+    let changed = false
+    const next = this.bindings.map<ChannelBinding>((binding) => {
+      if (binding.platform !== platform || binding.config.accessMode !== 'open') return binding
+      changed = true
+      return { ...binding, config: { ...binding.config, accessMode: 'inherit', allowedSenderIds: [] } }
+    })
+    if (changed) this.save(next)
   }
 
   unbind(platform: PlatformType, channelId: string, threadId?: number): boolean {
     const before = this.bindings.length
-    this.bindings = this.bindings.filter(
+    const remaining = this.bindings.filter(
       (b) => !(b.platform === platform && b.channelId === channelId && (b.threadId ?? undefined) === threadId),
     )
-    if (this.bindings.length !== before) {
-      this.save()
+    if (remaining.length !== before) {
+      this.commit(remaining)
       this.log.info('binding removed by channel', {
         event: 'binding_removed',
         platform,
@@ -180,8 +193,7 @@ export class BindingStore {
   unbindById(bindingId: string): boolean {
     const binding = this.bindings.find((b) => b.id === bindingId)
     if (!binding) return false
-    this.bindings = this.bindings.filter((b) => b.id !== bindingId)
-    this.save()
+    this.commit(this.bindings.filter((b) => b.id !== bindingId))
     this.log.info('binding removed by id', {
       event: 'binding_removed',
       bindingId,
@@ -201,8 +213,7 @@ export class BindingStore {
     })
     if (removedBindings.length === 0) return 0
 
-    this.bindings = this.bindings.filter((b) => !removedBindings.includes(b))
-    this.save()
+    this.commit(this.bindings.filter((b) => !removedBindings.includes(b)))
     this.log.info('bindings removed by session', {
       event: 'binding_removed',
       sessionId,
@@ -261,23 +272,26 @@ export class BindingStore {
     }
   }
 
-  private save(): void {
+  private commit(bindings: ChannelBinding[]): void {
+    this.save(bindings)
+    this.changeListener?.()
+  }
+
+  private save(bindings: ChannelBinding[]): void {
     try {
       if (!existsSync(this.dirPath)) {
         mkdirSync(this.dirPath, { recursive: true })
       }
-      writeFileSync(this.filePath, JSON.stringify(this.bindings, null, 2), 'utf-8')
-      // Fire the listener only after the write succeeds — otherwise the UI
-      // shows a "binding added" event for state that will disappear on
-      // restart.
-      this.changeListener?.()
+      atomicWriteFileSync(this.filePath, JSON.stringify(bindings, null, 2))
     } catch (err) {
       this.log.error('failed to save bindings store', {
         event: 'bindings_save_failed',
         filePath: this.filePath,
         error: err,
       })
+      throw new Error('Failed to save messaging bindings.', { cause: err })
     }
+    this.bindings = bindings
   }
 }
 

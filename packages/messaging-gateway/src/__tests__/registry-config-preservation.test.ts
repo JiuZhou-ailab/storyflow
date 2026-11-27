@@ -13,12 +13,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { CredentialManager } from '@craft-agent/shared/credentials'
 import type { ISessionManager } from '@craft-agent/server-core/handlers'
-import { MessagingGatewayRegistry } from '../registry'
+import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { BindingStore } from '../binding-store'
+import { ConfigStore } from '../config-store'
+import { MessagingGatewayRegistry, type MessagingGatewayRegistryOptions } from '../registry'
 import type { PlatformAdapter } from '../types'
 
 let dir: string
@@ -43,13 +46,14 @@ function stubCredentialManager(): CredentialManager {
   } as unknown as CredentialManager
 }
 
-function makeRegistry() {
+function makeRegistry(publishEvent?: MessagingGatewayRegistryOptions['publishEvent']) {
   const registry = new MessagingGatewayRegistry({
     sessionManager: stubSessionManager(),
     credentialManager: stubCredentialManager(),
     getMessagingDir: (workspaceId: string) =>
       join(dir, 'workspaces', workspaceId, 'messaging'),
     whatsapp: { workerEntry: '/dev/null' },
+    publishEvent,
   })
   return { registry, workspaceId: 'ws-test' }
 }
@@ -147,6 +151,48 @@ describe('MessagingGatewayRegistry — config preservation across writes', () =>
 })
 
 describe('MessagingGatewayRegistry — lock-down migrates open bindings', () => {
+  it.each([
+    ['bindings.json', 'Failed to save messaging bindings.', 'open'],
+    ['config.json', 'Failed to save messaging config.', 'inherit'],
+  ] as const)('reports a blocked %s write and recovers on retry', (file, message, bindingModeAfterFailure) => {
+    const events: string[] = []
+    const { registry, workspaceId } = makeRegistry((channel) => events.push(channel))
+    const storageDir = join(dir, 'workspaces', workspaceId, 'messaging')
+    const bindings = new BindingStore(storageDir)
+    const first = bindings.bind(workspaceId, 'sess-A', 'telegram', 'chat-1', undefined, { accessMode: 'open' })
+    const second = bindings.bind(workspaceId, 'sess-B', 'telegram', 'chat-2', undefined, { accessMode: 'open' })
+    new ConfigStore(storageDir).update({ platforms: { telegram: { enabled: true, accessMode: 'open' } } })
+    expect(registry.getPlatformAccessMode(workspaceId, 'telegram')).toBe('open')
+
+    const target = join(storageDir, file)
+    const backup = `${target}.saved`
+    renameSync(target, backup)
+    mkdirSync(target)
+    expect(() => registry.setPlatformAccessMode(workspaceId, 'telegram', 'owner-only')).toThrow(message)
+    expect(events).toEqual([])
+    expect(registry.getPlatformAccessMode(workspaceId, 'telegram')).toBe('open')
+    expect(registry.getBindings(workspaceId).map((binding) => binding.accessMode)).toEqual([
+      bindingModeAfterFailure, bindingModeAfterFailure,
+    ])
+
+    rmSync(target, { recursive: true })
+    renameSync(backup, target)
+    const afterFailure = makeRegistry().registry
+    expect(afterFailure.getPlatformAccessMode(workspaceId, 'telegram')).toBe('open')
+    expect(afterFailure.getBindings(workspaceId).map((binding) => binding.accessMode)).toEqual([
+      bindingModeAfterFailure, bindingModeAfterFailure,
+    ])
+
+    registry.setPlatformAccessMode(workspaceId, 'telegram', 'owner-only')
+    expect(events).toEqual([RPC_CHANNELS.messaging.BINDING_CHANGED])
+    const restarted = makeRegistry().registry
+    expect(restarted.getPlatformAccessMode(workspaceId, 'telegram')).toBe('owner-only')
+    expect(restarted.getBindings(workspaceId).map(({ id, accessMode }) => ({ id, accessMode }))).toEqual([
+      { id: first.id, accessMode: 'inherit' },
+      { id: second.id, accessMode: 'inherit' },
+    ])
+  })
+
   it('setPlatformAccessMode("owner-only") flips legacy open bindings to inherit', () => {
     const { registry, workspaceId } = makeRegistry()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

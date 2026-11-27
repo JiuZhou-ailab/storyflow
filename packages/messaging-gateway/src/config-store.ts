@@ -1,18 +1,17 @@
 /**
- * ConfigStore — workspace-scoped messaging config.json persistence.
- *
- * Stored at `{storageDir}/config.json`. Shape is `MessagingConfig`.
- * One-shot migration from a legacy directory is supported (mirrors BindingStore).
+ * input: Workspace storage directory, optional legacy directory, and config updates
+ * output: MessagingConfig snapshots with write failures reported to callers
+ * pos: Workspace messaging config.json persistence and legacy path migration
  */
 
 import {
   readFileSync,
-  writeFileSync,
   mkdirSync,
   existsSync,
   copyFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import { atomicWriteFileSync } from '@craft-agent/shared/utils'
 import { DEFAULT_MESSAGING_CONFIG, type MessagingConfig, type MessagingLogger } from './types'
 
 const NOOP_LOGGER: MessagingLogger = {
@@ -48,8 +47,8 @@ export class ConfigStore {
         ...(partial.platforms ?? {}),
       },
     }
+    this.save(next)
     this.config = next
-    this.save()
     return this.get()
   }
 
@@ -96,16 +95,17 @@ export class ConfigStore {
     return { ...DEFAULT_MESSAGING_CONFIG, platforms: {} }
   }
 
-  private save(): void {
+  private save(config: MessagingConfig): void {
     try {
       if (!existsSync(this.dirPath)) mkdirSync(this.dirPath, { recursive: true })
-      writeFileSync(this.filePath, JSON.stringify(this.config, null, 2), 'utf-8')
+      atomicWriteFileSync(this.filePath, JSON.stringify(config, null, 2))
     } catch (err) {
       this.log.error('failed to save messaging config', {
         event: 'config_save_failed',
         filePath: this.filePath,
         error: err,
       })
+      throw new Error('Failed to save messaging config.', { cause: err })
     }
   }
 }
