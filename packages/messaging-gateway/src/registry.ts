@@ -716,19 +716,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     const state = this.workspaces.get(workspaceId)
     if (!state) return
 
-    if (platform === 'whatsapp') {
-      state.whatsappOffEvent?.()
-      state.whatsappOffEvent = undefined
-      if (state.whatsapp) {
-        await state.whatsapp.destroy().catch(() => {})
-        state.whatsapp = null
-      }
-    }
-
-    await state.gateway.unregisterAdapter(platform).catch(() => {})
-    state.botUsernames[platform] = undefined
-    this.pairing.clearWorkspace(workspaceId)
-
+    // Commit the disabled config before tearing down the live connection.
     // Preserve per-platform fields (owners / accessMode / supergroup for
     // telegram, selfChatMode for whatsapp, domain for lark) so reconnecting
     // doesn't surprise the operator with a reset to public. Use
@@ -744,6 +732,19 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
       enabled: anyPlatformEnabled,
       platforms: nextPlatforms,
     })
+
+    if (platform === 'whatsapp') {
+      state.whatsappOffEvent?.()
+      state.whatsappOffEvent = undefined
+      if (state.whatsapp) {
+        await state.whatsapp.destroy().catch(() => {})
+        state.whatsapp = null
+      }
+    }
+
+    await state.gateway.unregisterAdapter(platform).catch(() => {})
+    state.botUsernames[platform] = undefined
+    this.pairing.clearWorkspace(workspaceId)
 
     if (platform !== 'whatsapp') {
       await this.opts.credentialManager

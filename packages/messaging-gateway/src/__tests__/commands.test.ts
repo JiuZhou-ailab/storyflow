@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Session } from '@craft-agent/shared/protocol'
@@ -86,19 +86,48 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-function makeStore(): BindingStore {
+function makeStore(): { store: BindingStore; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), 'commands-bind-'))
   tempDirs.push(dir)
-  return new BindingStore(dir)
+  return { store: new BindingStore(dir), dir }
 }
 
 describe('Commands', () => {
+  it('reports a created session when binding fails and lets /bind recover it', async () => {
+    const { store, dir } = makeStore()
+    const sessions: Session[] = []
+    const sessionManager = makeSessionManager(sessions)
+    sessionManager.createSession = async () => {
+      const session = makeSession(`sess-${sessions.length + 1}`, 'Reports', 100)
+      sessions.push(session)
+      return session
+    }
+    const commands = new Commands(sessionManager, store, 'ws1')
+    const adapter = makeAdapter('whatsapp', false)
+    const path = join(dir, 'bindings.json')
+    mkdirSync(path)
+
+    await commands.handleCommand(adapter, makeMessage('/new Reports'))
+
+    expect(sessions.map(session => session.id)).toEqual(['sess-1'])
+    expect(store.findByChannel('whatsapp', 'chan-1')).toBeUndefined()
+    expect(adapter.sent).toEqual([
+      'Created "Reports", but could not bind this chat. Once the issue is resolved, use /bind sess-1 to connect to the existing session.',
+    ])
+
+    rmSync(path, { recursive: true })
+    await commands.handleCommand(adapter, makeMessage('/bind sess-1'))
+    expect(sessions).toHaveLength(1)
+    expect(new BindingStore(dir).findByChannel('whatsapp', 'chan-1')?.sessionId).toBe('sess-1')
+    expect(adapter.sent.at(-1)).toBe('Bound to "Reports"')
+  })
+
   it('binds by numbered recent-session index on non-inline platforms', async () => {
     const sessions = [
       makeSession('sess-1', 'Old', 100),
       makeSession('sess-2', 'Newest', 200),
     ]
-    const store = makeStore()
+    const { store } = makeStore()
     const commands = new Commands(makeSessionManager(sessions), store, 'ws1')
     const adapter = makeAdapter('whatsapp', false)
 
@@ -113,7 +142,7 @@ describe('Commands', () => {
       makeSession('sess-1', 'Alpha', 100),
       makeSession('sess-2', 'Beta', 200),
     ]
-    const store = makeStore()
+    const { store } = makeStore()
     const commands = new Commands(makeSessionManager(sessions), store, 'ws1')
     const adapter = makeAdapter('whatsapp', false)
 

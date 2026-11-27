@@ -9,8 +9,8 @@
  *   - success path: creates topic, persists binding, returns reused=false
  *   - second success: reused=true, no second createForumTopic call
  */
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type {
@@ -18,6 +18,7 @@ import type {
 } from '@craft-agent/shared/credentials'
 import type { ISessionManager } from '@craft-agent/server-core/handlers'
 
+import { ConfigStore } from '../config-store'
 import { MessagingGatewayRegistry } from '../registry'
 import type { TelegramChatInfo } from '../adapters/telegram/index'
 import type { PlatformAdapter, PlatformType } from '../types'
@@ -137,6 +138,38 @@ function injectAdapter(harness: Harness, adapter: PlatformAdapter): void {
   if (!state) throw new Error('workspace state missing — call pairSupergroup first')
   state.gateway.registerAdapter(adapter)
 }
+
+describe('MessagingGatewayRegistry.disconnectPlatform', () => {
+  it('keeps the live connection on a failed config write and disconnects after retry', async () => {
+    const h = makeRegistry()
+    const storageDir = join(dir, 'workspaces', h.workspaceId, 'messaging')
+    const configPath = join(storageDir, 'config.json')
+    const telegram = { enabled: true, accessMode: 'owner-only' as const }
+    new ConfigStore(storageDir).update({ enabled: true, platforms: { telegram } })
+    h.registry.getConfig(h.workspaceId)
+    const { adapter } = makeFakeTelegramAdapter()
+    const destroy = mock(async () => {})
+    adapter.destroy = destroy
+    injectAdapter(h, adapter)
+    const state = h.registry['workspaces'].get(h.workspaceId)!
+    state.runtime.telegram = { ...state.runtime.telegram, connected: true, state: 'connected' }
+
+    renameSync(configPath, `${configPath}.saved`)
+    mkdirSync(configPath)
+    await expect(h.registry.disconnectPlatform(h.workspaceId, 'telegram'))
+      .rejects.toThrow('Failed to save messaging config.')
+    expect(h.registry.getConfig(h.workspaceId)?.runtime.telegram.connected).toBe(true)
+    expect(destroy).not.toHaveBeenCalled()
+    expect(h.registry.generatePairingCode(h.workspaceId, 's1', 'telegram').code).toBeTruthy()
+
+    rmSync(configPath, { recursive: true })
+    renameSync(`${configPath}.saved`, configPath)
+    await h.registry.disconnectPlatform(h.workspaceId, 'telegram')
+    expect(destroy).toHaveBeenCalledTimes(1)
+    expect(h.registry.getConfig(h.workspaceId)?.runtime.telegram.connected).toBe(false)
+    expect(new ConfigStore(storageDir).get().platforms.telegram).toEqual({ ...telegram, enabled: false })
+  })
+})
 
 describe('MessagingGatewayRegistry.bindAutomationSession', () => {
   it('returns invalid-name for empty / whitespace / overlong topic names', async () => {
