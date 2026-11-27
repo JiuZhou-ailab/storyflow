@@ -263,34 +263,35 @@ function copyDependencyTree(
   srcModules: string,
   destModules: string,
   visited: Set<string>,
+  searchPaths = [''],
 ): void {
-  if (visited.has(dep)) return;
-  visited.add(dep);
+  const index = searchPaths.findIndex(path => existsSync(join(srcModules, path, dep, 'package.json')));
+  if (index === -1) return;
 
-  const src = join(srcModules, dep);
-  if (!existsSync(src)) return;
+  const packagePath = join(searchPaths[index]!, dep);
+  if (visited.has(packagePath)) return;
+  visited.add(packagePath);
 
-  // Ensure scope directory exists
-  if (dep.startsWith('@')) {
-    const scope = dep.split('/')[0]!;
-    mkdirSync(join(destModules, scope), { recursive: true });
+  const src = join(srcModules, packagePath);
+  const dest = join(destModules, packagePath);
+  if (!existsSync(dest)) {
+    mkdirSync(dirname(dest), { recursive: true });
+    cpSync(src, dest, { recursive: true, dereference: true });
   }
 
-  const dest = join(destModules, dep);
-  mkdirSync(dirname(dest), { recursive: true });
-  cpSync(src, dest, { recursive: true, dereference: true });
+  let dependencies: Record<string, string>;
+  try {
+    dependencies = JSON.parse(readFileSync(join(src, 'package.json'), 'utf-8')).dependencies ?? {};
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return;
+  }
 
-  // Recurse into dependencies
-  const pkgPath = join(src, 'package.json');
-  if (existsSync(pkgPath)) {
-    try {
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-      for (const childDep of Object.keys(pkg.dependencies || {})) {
-        copyDependencyTree(childDep, srcModules, destModules, visited);
-      }
-    } catch {
-      // Skip if package.json is malformed
-    }
+  // Resolve children from the selected package's location. In a hoisted
+  // install, a nested package such as ajv can still depend on root fast-uri.
+  const childSearchPaths = [join(packagePath, 'node_modules'), ...searchPaths.slice(index)];
+  for (const childDep of Object.keys(dependencies)) {
+    copyDependencyTree(childDep, srcModules, destModules, visited, childSearchPaths);
   }
 }
 
