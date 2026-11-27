@@ -1,5 +1,5 @@
 // input: Session registry access, disk session stores, Host execute grants, boot-service hooks, and a queue-recovery callback
-// output: Startup gating, lazy hydration, debounced writes, and durable queued-send acceptance
+// output: Startup gating, lazy hydration, debounced writes, and durable queued-send acceptance and replay
 // pos: Persistence subdomain under the SessionManager facade; owns initGate and message-loading dedup state
 
 import { mkdirSync } from 'node:fs'
@@ -67,7 +67,10 @@ export class SessionPersistence {
   private queuedRecoveryScheduled = new Set<string>()
   // A live session still owes its deferred write when invalidation ownership changes epochs.
   private deferredInvalidationWrites = new WeakSet<ManagedSession>()
-  private queuedSendWrites = new WeakMap<ManagedSession, Promise<StoredSession['messages'][number] | undefined>>()
+  private queuedMessageWrites = new WeakMap<ManagedSession, {
+    committed: Promise<boolean>
+    project: (messages: StoredSession['messages']) => void
+  }>()
   // Coordinates startup initialization waiters from IPC handlers.
   private initGate = new InitGate()
 
@@ -359,15 +362,13 @@ export class SessionPersistence {
    */
   enqueuePersistStrict(managed: ManagedSession): void {
     if (managed.runtimeState === 'deleting') return
-    const queuedSend = this.queuedSendWrites.get(managed)
+    const staged = this.queuedMessageWrites.get(managed)
     const snapshot = this.snapshot(managed, managed.messages)
-    // A concurrent stream or metadata update must neither save an unaccepted
-    // message nor overwrite an accepted one with an older transcript.
-    sessionPersistenceQueue.enqueue(queuedSend ? {
+    // Snapshots taken during admission must reflect its outcome before writing.
+    sessionPersistenceQueue.enqueue(staged ? {
       id: managed.id,
       snapshot: async () => {
-        const accepted = await queuedSend
-        if (accepted) snapshot.messages.push(accepted)
+        if (await staged.committed) staged.project(snapshot.messages)
         return snapshot
       },
     } : snapshot)
@@ -379,22 +380,53 @@ export class SessionPersistence {
     entry: ManagedSession['messageQueue'][number],
     userMessage: Message | undefined,
   ): Promise<void> {
+    const storedMessage = userMessage && messageToStored(userMessage)
+    await this.commitQueuedMessageWrite(managed, messages => {
+      if (storedMessage) messages.push(storedMessage)
+    }, () => {
+      if (userMessage) managed.messages.push(userMessage)
+      managed.messageQueue.push(entry)
+    })
+  }
+
+  /** Commit the replay transition before taking the head out of the live queue. */
+  async commitQueuedReplay(managed: ManagedSession, messageId: string | null, timestamp: number): Promise<void> {
+    function moveToEnd<T extends Pick<Message, 'id' | 'isQueued'> & { timestamp?: number }>(messages: T[]): void {
+      if (messageId === null) return
+      const index = messages.findIndex(message => message.id === messageId)
+      if (index < 0) return
+      const message = messages[index]!
+      message.isQueued = false
+      message.timestamp = timestamp
+      messages.splice(index, 1)
+      messages.push(message)
+    }
+
+    await this.commitQueuedMessageWrite(managed, moveToEnd, () => {
+      moveToEnd(managed.messages)
+      managed.messageQueue.shift()
+    })
+  }
+
+  private async commitQueuedMessageWrite(
+    managed: ManagedSession,
+    project: (messages: StoredSession['messages']) => void,
+    publish: () => void,
+  ): Promise<void> {
     if (managed.runtimeState) throw new Error(`Session ${managed.id} is closing`)
     const snapshot = this.snapshot(managed, managed.messages)
-    const storedMessage = userMessage && messageToStored(userMessage)
-    if (storedMessage) snapshot.messages.push(storedMessage)
-    const settled = Promise.withResolvers<typeof storedMessage>()
-    this.queuedSendWrites.set(managed, settled.promise)
+    project(snapshot.messages)
+    const settled = Promise.withResolvers<boolean>()
+    this.queuedMessageWrites.set(managed, { committed: settled.promise, project })
     let committed = false
     try {
       sessionPersistenceQueue.enqueue(snapshot)
       await this.flushSession(managed.id)
-      if (userMessage) managed.messages.push(userMessage)
-      managed.messageQueue.push(entry)
+      publish()
       committed = true
     } finally {
-      this.queuedSendWrites.delete(managed)
-      settled.resolve(committed ? storedMessage : undefined)
+      this.queuedMessageWrites.delete(managed)
+      settled.resolve(committed)
     }
   }
 
