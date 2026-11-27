@@ -1,5 +1,8 @@
 /**
  * MessagingGatewayRegistry — owns per-workspace MessagingGateway instances.
+ * input: Workspace paths, session and credential managers, and messaging commands
+ * output: Workspace messaging operations, including persisted access changes and events
+ * pos: Workspace messaging lifecycle and RPC-facing coordination
  *
  * Responsibilities:
  *   - Satisfies IMessagingGatewayRegistry for the RPC handlers in server-core.
@@ -1306,34 +1309,19 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     if (platform !== 'telegram') {
       throw new Error('Access mode is only supported on Telegram in this build.')
     }
-    this.patchTelegramConfig(workspaceId, { accessMode: mode })
-
-    // Lock-down semantics: switching the workspace to `owner-only` must
-    // also close any binding that's still in `open` mode, otherwise the
-    // operator clicks "Lock down", the banner disappears, but legacy
-    // bindings remain public — exactly the false-sense-of-security UX
-    // the feature is supposed to prevent.
+    // Commit bindings before the workspace mode so interrupted lock-downs
+    // leave migrated bindings inheriting the previous workspace policy.
     if (mode === 'owner-only') {
-      this.migrateOpenBindingsToInherit(workspaceId)
+      const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
+      state.gateway.getBindingStore().migrateOpenBindingsToInherit(platform)
     }
 
+    // An already locked workspace may only need the binding migration.
+    // Always persist explicit 'open' so first-owner pairing respects it.
+    if (mode === 'open' || this.getPlatformAccessMode(workspaceId, platform) !== mode) {
+      this.patchTelegramConfig(workspaceId, { accessMode: mode })
+    }
     this.emitBindingChanged(workspaceId)
-  }
-
-  /**
-   * Walk all Telegram bindings and flip any with `accessMode === 'open'`
-   * to `inherit` (the safe default). Used when locking down the workspace.
-   * Telegram-only — other platforms don't yet have per-binding access.
-   */
-  private migrateOpenBindingsToInherit(workspaceId: string): void {
-    const state = this.workspaces.get(workspaceId)
-    if (!state) return
-    const store = state.gateway.getBindingStore()
-    for (const b of store.getAll()) {
-      if (b.platform !== 'telegram') continue
-      if (b.config.accessMode !== 'open') continue
-      store.updateBindingConfig(b.id, { accessMode: 'inherit', allowedSenderIds: [] })
-    }
   }
 
   /** Pending senders surface in Settings → Messaging as "Pending requests". */
@@ -1459,7 +1447,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   }
 
   /**
-   * Update the access policy on a single binding. Uses the in-place
+   * Update the access policy on a single binding. Uses the
    * `updateBindingConfig` method so the binding's `id` and `createdAt`
    * survive — anything keyed on bindingId (audit logs, deep links, stale
    * renderer closures) keeps working.
