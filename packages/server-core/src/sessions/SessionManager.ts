@@ -236,6 +236,8 @@ function localDateKey(timestamp: number): string {
   return `${date.getFullYear()}-${month}-${day}`
 }
 
+class QueuedReplaySupersededError extends Error {}
+
 export class SessionManager implements ISessionManager {
   constructor(
     private readonly resolveSessionRuntimeWorkspace: (
@@ -3379,25 +3381,21 @@ export class SessionManager implements ISessionManager {
     if (isQueuedReplay) {
       const queued = managed.messageQueue[0]
       if (!queued || queued.messageId !== (existingMessageId ?? undefined)) {
-        throw new Error(`Queued message ${existingMessageId ?? '(hidden)'} is no longer next`)
+        throw new QueuedReplaySupersededError(`Queued message ${existingMessageId ?? '(hidden)'} is no longer next`)
       }
-      managed.messageQueue.shift()
-
       if (existingMessageId !== null) {
         userMessage = managed.messages.find(m => m.id === existingMessageId)
         if (!userMessage) {
           throw new Error(`Existing message ${existingMessageId} not found`)
         }
-        const existingIndex = managed.messages.indexOf(userMessage)
-        userMessage.isQueued = false
-        userMessage.timestamp = this.monotonic()
-        managed.messages.splice(existingIndex, 1)
-        managed.messages.push(userMessage)
-
       }
 
-      this.persistSession(managed)
-      await this.flushSession(managed.id)
+      try {
+        await this.persistence.commitQueuedReplay(managed, existingMessageId, this.monotonic())
+      } catch (error) {
+        this.unsavedSessionSnapshots.add(managed)
+        throw error
+      }
       acceptSpan.mark('session.flushed')
       ackAccepted(userMessage?.id ?? generateMessageId(), userMessage ? 'accepted' : 'hidden')
       if (userMessage) {
@@ -4062,9 +4060,7 @@ export class SessionManager implements ISessionManager {
   }
 
   async sendQueuedMessageNow(sessionId: string, messageId: string): Promise<void> {
-    await this.withRequiredSessionOperation(sessionId, async managed => {
-      await this.ensureMessagesLoaded(managed)
-
+    await this.withQueuedMessageAdmission(sessionId, managed => {
       const queuedIndex = managed.messageQueue.findIndex(entry => entry.messageId === messageId)
       if (queuedIndex < 0) {
         throw new Error(`Queued message ${messageId} not found`)
@@ -4117,9 +4113,7 @@ export class SessionManager implements ISessionManager {
   }
 
   async removeQueuedMessage(sessionId: string, messageId: string): Promise<void> {
-    await this.withRequiredSessionOperation(sessionId, async managed => {
-      await this.ensureMessagesLoaded(managed)
-
+    await this.withQueuedMessageAdmission(sessionId, managed => {
       const queuedIndex = managed.messageQueue.findIndex(entry => entry.messageId === messageId)
       if (queuedIndex < 0) {
         throw new Error(`Queued message ${messageId} not found`)
@@ -4134,6 +4128,19 @@ export class SessionManager implements ISessionManager {
         sessionId,
         messageId,
       }, managed.workspace.id)
+    })
+  }
+
+  private async withQueuedMessageAdmission(sessionId: string, work: (managed: ManagedSession) => void): Promise<void> {
+    await this.withRequiredSessionOperation(sessionId, async managed => {
+      await this.ensureMessagesLoaded(managed)
+      // A replay must retain ownership of its staged head until the write settles.
+      const release = await this.agentLease.acquireSendAdmission(sessionId)
+      try {
+        work(managed)
+      } finally {
+        release()
+      }
     })
   }
 
@@ -4326,10 +4333,11 @@ export class SessionManager implements ISessionManager {
     getSessionLog().info('replay queued', {
       sessionId,
       messageId: next.messageId,
-      queueLengthAfterShift: managed.messageQueue.length - 1,
+      queueLength: managed.messageQueue.length,
     })
 
     // sendMessage acquires the freshness lease synchronously before its first await.
+    let superseded = false
     void this.sendMessage(
         sessionId,
         next.message,
@@ -4338,6 +4346,10 @@ export class SessionManager implements ISessionManager {
         next.options,
         next.messageId ?? null,
       ).catch(err => {
+        if (err instanceof QueuedReplaySupersededError) {
+          superseded = true
+          return
+        }
         getSessionLog().error('replay failed', {
           sessionId,
           messageId: next.messageId,
@@ -4353,14 +4365,17 @@ export class SessionManager implements ISessionManager {
           error: {
             code: 'queued_message_replay_failed',
             title: 'Queued message could not be sent',
-            message: 'A message you sent while the agent was running could not be re-sent automatically. Tap retry to send it now.',
-            actions: [{ key: 'r', label: 'Retry', action: 'retry' }],
-            canRetry: true,
+            message: 'The queued message could not start. After resolving the error, send another message to resume the queue.',
+            actions: [],
+            canRetry: false,
             originalError: err instanceof Error ? err.message : String(err),
           },
         }, managed.workspace.id)
       }).finally(() => {
-        if (this.queuedReplays.get(managed) === replay) this.queuedReplays.delete(managed)
+        if (this.queuedReplays.get(managed) !== replay) return
+        this.queuedReplays.delete(managed)
+        // A queue command admitted ahead of this replay may have changed its head.
+        if (superseded) this.processNextQueuedMessage(sessionId)
       })
   }
 

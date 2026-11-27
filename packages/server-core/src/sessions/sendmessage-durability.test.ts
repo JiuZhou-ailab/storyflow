@@ -7,6 +7,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'os'
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
+import type { StoredAttachment } from '@craft-agent/core/types'
+import type { FileAttachment, SendMessageOptions } from '@craft-agent/shared/protocol'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getSessionFilePath, sessionPersistenceQueue } from '@craft-agent/shared/sessions/storage'
 import { clearMetrics, configurePerfTracking } from '@craft-agent/shared/utils'
@@ -102,10 +104,12 @@ describe('sendMessage durability', () => {
     const entered = Promise.withResolvers<void>()
     const resume = Promise.withResolvers<void>()
     const chats: string[] = []
+    const inputs: Array<{ attachments?: FileAttachment[]; oneTimeContext?: string }> = []
     ;(sm as any).getOrCreateAgentLocked = async () => ({
       getModel: () => 'test-model', setAllSources() {}, getSessionId: () => undefined, dispose() {},
-      async *chat(message: string) {
+      async *chat(message: string, attachments?: FileAttachment[], options?: SendMessageOptions) {
         chats.push(message)
+        inputs.push({ attachments, oneTimeContext: options?.oneTimeContext })
         if (chats.length === 1) {
           entered.resolve()
           await resume.promise
@@ -114,19 +118,27 @@ describe('sendMessage durability', () => {
         yield { type: 'complete' }
       },
     })
-    return { entered: entered.promise, resume: resume.resolve, chats }
+    return { entered: entered.promise, resume: resume.resolve, chats, inputs }
   }
 
-  function injectDiskFull(shouldFail: () => boolean | Promise<boolean>) {
+  function injectDiskFull(shouldFail: (data: string) => boolean | Promise<boolean>) {
     // Fault the atomic writer's temp-file I/O, keeping the real write queue and rollback path.
-    return spyOn(sessionPersistenceQueue as unknown as { writeFile: typeof writeFile }, 'writeFile')
+    return spyOn(sessionPersistenceQueue as unknown as {
+      writeFile: (path: string, data: string, encoding: BufferEncoding) => Promise<void>
+    }, 'writeFile')
       .mockImplementation(async (path, data, encoding) => {
-        if (await shouldFail()) throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+        if (await shouldFail(data)) throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
         await writeFile(path, data, encoding)
       })
   }
 
-  function sendViaRpc(sessionId: string, content: string, optimisticMessageId?: string) {
+  function sendViaRpc(
+    sessionId: string,
+    content: string,
+    options?: SendMessageOptions,
+    attachments?: FileAttachment[],
+    storedAttachments?: StoredAttachment[],
+  ) {
     const handlers = new Map<string, HandlerFn>()
     const server: RpcServer = {
       handle: (channel, handler) => { handlers.set(channel, handler) },
@@ -140,7 +152,7 @@ describe('sendMessage durability', () => {
     })
     return handlers.get(RPC_CHANNELS.sessions.SEND_MESSAGE)!(
       { clientId: 'durability-test-client', workspaceId: 'ws_test', webContentsId: 1 },
-      sessionId, content, undefined, undefined, { optimisticMessageId },
+      sessionId, content, attachments, storedAttachments, options,
     )
   }
 
@@ -394,7 +406,7 @@ describe('sendMessage durability', () => {
       await failWrite.promise
       return true
     })
-    const rejected = sendViaRpc(managed.id, 'rejected', 'rejected')
+    const rejected = sendViaRpc(managed.id, 'rejected', { optimisticMessageId: 'rejected' })
     try {
       await writing.promise
       resume()
@@ -434,7 +446,7 @@ describe('sendMessage durability', () => {
       await finishWrite.promise
       return false
     })
-    const queued = sendViaRpc(managed.id, 'cancel this', 'cancel-this')
+    const queued = sendViaRpc(managed.id, 'cancel this', { optimisticMessageId: 'cancel-this' })
     const lease = (sm as any).agentLease
     const acquireAdmission = lease.acquireSendAdmission.bind(lease)
     const replay = spyOn(sm as any, 'processNextQueuedMessage')
@@ -548,6 +560,62 @@ describe('sendMessage durability', () => {
     expect(durableAtAck).toBe(true)
     expect(managed.messageQueue).toEqual([])
     expect(managed.messages.map(message => message.id)).toEqual(['answer-1', 'queued-1'])
+  })
+
+  it('retains the original queued sends when replay cannot write and executes them in order after recovery', async () => {
+    const managed = buildSession('replay-write-enospc')
+    const { entered, resume, chats, inputs } = blockFirstChat()
+    const attachment: FileAttachment = {
+      type: 'text', path: join(tmpRoot, 'notes.txt'), name: 'notes.txt', mimeType: 'text/plain', size: 5, text: 'notes',
+    }
+    const storedAttachment: StoredAttachment = {
+      id: 'notes', type: 'text', name: attachment.name, mimeType: attachment.mimeType, size: attachment.size,
+      storedPath: attachment.path,
+    }
+    const options = { optimisticMessageId: 'queued-head', oneTimeContext: 'original context' }
+    const failed = Promise.withResolvers<void>()
+    const recovered = Promise.withResolvers<void>()
+    const processedIds: string[] = []
+    sm.setEventSink((_channel, _target, event) => {
+      if (event?.type === 'typed_error' && event.error.code === 'queued_message_replay_failed') failed.resolve()
+      if (event?.type === 'user_message' && event.status === 'processing') processedIds.push(event.message.id)
+      if (event?.type === 'complete' && chats.length === 4) recovered.resolve()
+    })
+
+    await sendViaRpc(managed.id, 'first')
+    await entered
+    await expect(sendViaRpc(managed.id, 'head', options, [attachment], [storedAttachment]))
+      .resolves.toEqual({ accepted: true, messageId: 'queued-head' })
+    await sendViaRpc(managed.id, 'tail', { optimisticMessageId: 'queued-tail' })
+    const original = managed.messages.find(message => message.id === options.optimisticMessageId)!
+    const readPersistedHead = () => readFileSync(getSessionFilePath(tmpRoot, managed.id), 'utf-8')
+      .trim().split('\n').slice(1).map(line => JSON.parse(line)).find(message => message.id === original.id)
+
+    let diskFull = true
+    const writer = injectDiskFull(data => diskFull && data.trim().split('\n').slice(1)
+      .map(line => JSON.parse(line)).some(message => message.id === original.id && !message.isQueued))
+    try {
+      resume()
+      await failed.promise
+      expect(chats).toEqual(['first'])
+      expect(managed.messageQueue.map(entry => entry.messageId)).toEqual(['queued-head', 'queued-tail'])
+      expect(managed.messages.find(message => message.id === original.id)).toMatchObject({ isQueued: true })
+      expect(readPersistedHead()).toMatchObject({ isQueued: true, attachments: [storedAttachment] })
+
+      diskFull = false
+      await expect(sendViaRpc(managed.id, 'next', { optimisticMessageId: 'queued-next' }))
+        .resolves.toMatchObject({ accepted: true })
+      await recovered.promise
+      expect(chats).toEqual(['first', 'head', 'tail', 'next'])
+      expect(processedIds).toEqual(['queued-head', 'queued-tail', 'queued-next'])
+      expect(inputs[1]).toEqual({ attachments: [attachment], oneTimeContext: options.oneTimeContext })
+      expect(readPersistedHead()).toMatchObject({ isQueued: false, attachments: [storedAttachment] })
+      expect(managed.messageQueue).toEqual([])
+    } finally {
+      writer.mockRestore()
+      // Replace the rejected write tail when this test runs on the unfixed Host.
+      ;(sm as any).persistSession(managed)
+    }
   })
 
   it('briefs outside text changes and keeps one-time and interruption context out of the durable model message', async () => {
