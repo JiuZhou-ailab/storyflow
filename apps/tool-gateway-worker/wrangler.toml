@@ -30,8 +30,8 @@ service = "storyflow-auth-broker"
 entrypoint = "AccessAuthority"
 
 [vars]
-# Migration only; remove legacy acceptance at the managed-access cutover.
-STORYFLOW_ACCESS_ENFORCEMENT = "legacy"
+# Cut over to required (#116). Never return to legacy; see docs/managed-access-qa.md rollback rules.
+STORYFLOW_ACCESS_ENFORCEMENT = "required"
 STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_KEY_ID = "tool-access-2026-08"
 STORYFLOW_TOOL_GATEWAY_JWT_CURRENT_PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEo1/2AdM3Ps5yC/jZrnchi4mjKzOi
