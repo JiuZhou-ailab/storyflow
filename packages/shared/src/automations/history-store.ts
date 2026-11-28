@@ -12,10 +12,11 @@
  * prevents concurrent file corruption.
  */
 
-import { appendFile, readFile, writeFile } from 'fs/promises';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFile, readFile } from 'fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'path';
 import { createLogger } from '../utils/debug.ts';
+import { atomicWriteFileSync } from '../utils/files.ts';
 import {
   AUTOMATIONS_HISTORY_FILE,
   AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER,
@@ -101,6 +102,8 @@ export async function compactAutomationHistory(
  * Compact the history file synchronously (startup path).
  * Safe to call without the mutex — startup is single-threaded and runs
  * before any async appends.
+ * Replacement goes through a temp file and rename, so a mid-write failure
+ * leaves the previous history file byte-for-byte intact.
  */
 export function compactAutomationHistorySync(
   workspaceRootPath: string,
@@ -119,12 +122,13 @@ export function compactAutomationHistorySync(
   const result = compactEntries(content, maxPerMatcher, maxTotal);
   if (!result) return;
 
-  writeFileSync(resolveAutomationOwnedPath(workspaceRootPath, historyPath), result, 'utf-8');
+  atomicWriteFileSync(resolveAutomationOwnedPath(workspaceRootPath, historyPath), result);
   log.debug(`[HistoryStore] Startup compaction complete`);
 }
 
 /**
  * Internal async compaction — must be called inside withMutex.
+ * Same atomic replace as the startup path.
  */
 async function runCompaction(
   workspaceRootPath: string,
@@ -143,10 +147,9 @@ async function runCompaction(
   const result = compactEntries(content, maxPerMatcher, maxTotal);
   if (!result) return;
 
-  await writeFile(
+  atomicWriteFileSync(
     resolveAutomationOwnedPath(workspaceRootPath, historyPath),
     result,
-    'utf-8',
   );
   log.debug(`[HistoryStore] Compacted history`);
 }

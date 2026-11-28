@@ -2,11 +2,12 @@
  * Tests for history-store: append + compaction with two-tier retention.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
+import { mkdtempSync, readdirSync, rmSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { appendAutomationHistoryEntry, compactAutomationHistory } from './history-store.ts';
+import { appendAutomationHistoryEntry, compactAutomationHistory, compactAutomationHistorySync } from './history-store.ts';
 import { AUTOMATIONS_HISTORY_FILE } from './constants.ts';
 
 function readHistory(dir: string): Array<{ id: string; ts: number; [k: string]: unknown }> {
@@ -166,6 +167,39 @@ describe('history-store', () => {
     it('should no-op when file does not exist', async () => {
       // Should not throw
       await compactAutomationHistory(tempDir, 20, 1000);
+    });
+
+    it('keeps the original history bytes when a compaction write stops after 10 bytes with ENOSPC', async () => {
+      const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
+      const original = [
+        JSON.stringify(makeEntry('a1', 1)),
+        JSON.stringify(makeEntry('a1', 2)),
+      ].join('\n') + '\n';
+      writeFileSync(historyPath, original);
+      const originalBytes = readFileSync(historyPath);
+
+      const writeFile = fs.writeFileSync;
+      const spy = spyOn(fs, 'writeFileSync').mockImplementation(((path, data, options) => {
+        if (String(path).includes(AUTOMATIONS_HISTORY_FILE)) {
+          const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf-8');
+          writeFile(path, text.slice(0, 10), options as never);
+          const error = new Error('ENOSPC: no space left on device') as NodeJS.ErrnoException;
+          error.code = 'ENOSPC';
+          throw error;
+        }
+        return writeFile(path, data, options as never);
+      }) as never);
+
+      try {
+        expect(() => compactAutomationHistorySync(tempDir, 1, 1000)).toThrow(/ENOSPC/);
+        expect(readFileSync(historyPath).equals(originalBytes)).toBe(true);
+
+        await expect(compactAutomationHistory(tempDir, 1, 1000)).rejects.toThrow(/ENOSPC/);
+        expect(readFileSync(historyPath).equals(originalBytes)).toBe(true);
+        expect(readdirSync(tempDir)).toEqual([AUTOMATIONS_HISTORY_FILE]);
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it('should no-op when already within limits', async () => {
