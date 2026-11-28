@@ -245,6 +245,12 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const [inputValue, setInputValue] = React.useState(() => coerceInputText(getDraft(sessionId)))
   const inputValueRef = React.useRef(inputValue)
   inputValueRef.current = inputValue
+  // An in-flight queue edit can finish after the panel has switched sessions.
+  const draftSessionIdRef = React.useRef<string | null>(sessionId)
+  React.useLayoutEffect(() => {
+    draftSessionIdRef.current = sessionId
+    return () => { draftSessionIdRef.current = null }
+  }, [sessionId])
 
   // Re-sync from parent when session changes
   React.useEffect(() => {
@@ -267,8 +273,10 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   const handleInputChange = React.useCallback((value: string) => {
     const nextText = coerceInputText(value)
-    setInputValue(nextText)
-    inputValueRef.current = nextText
+    if (draftSessionIdRef.current === sessionId) {
+      setInputValue(nextText)
+      inputValueRef.current = nextText
+    }
     onInputChange(sessionId, nextText)
   }, [sessionId, onInputChange])
 
@@ -276,18 +284,23 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   // `[]` is the safe default while hydration is in flight; FreeFormInput seeds its
   // local state from this prop and swaps in the restored list when ready.
   const [attachmentsValue, setAttachmentsValue] = React.useState<import('../../shared/types').FileAttachment[]>([])
+  const attachmentDraftRevision = React.useRef(0)
 
   React.useEffect(() => {
     let cancelled = false
+    const revision = attachmentDraftRevision.current
     setAttachmentsValue([])
     hydrateDraftAttachments(sessionId).then((atts) => {
-      if (!cancelled) setAttachmentsValue(atts)
+      if (!cancelled && attachmentDraftRevision.current === revision) setAttachmentsValue(atts)
     })
     return () => { cancelled = true }
   }, [sessionId, hydrateDraftAttachments])
 
   const handleAttachmentsChange = React.useCallback((attachments: import('../../shared/types').FileAttachment[]) => {
-    setAttachmentsValue(attachments)
+    if (draftSessionIdRef.current === sessionId) {
+      attachmentDraftRevision.current++
+      setAttachmentsValue(attachments)
+    }
     onAttachmentsChange(sessionId, attachments)
   }, [sessionId, onAttachmentsChange])
 

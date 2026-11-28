@@ -449,7 +449,7 @@ export interface ElectronAPI {
   deleteWorkspaceEntry(input: DeleteWorkspaceEntryInput): Promise<DeleteWorkspaceEntryResult>
   createDirectory(path: string): Promise<void>
   /** Read a file as binary data (Uint8Array) */
-  readFileBinary(path: string): Promise<Uint8Array>
+  readFileBinary(path: string): Promise<Uint8Array<ArrayBuffer>>
   /** Read a file as a data URL (data:{mime};base64,...) for binary preview (images, PDFs) */
   readFileDataUrl(path: string): Promise<string>
   /** Read an image file as a size-bounded preview data URL for lightweight thumbnail rendering. */

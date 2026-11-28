@@ -1,5 +1,5 @@
 // input: Session state, transcript messages, tool activities, and chat input callbacks.
-// output: New-chat starters, transcript, action overlays, and composer with suggestions scoped to the latest reply.
+// output: New-chat starters, transcript, action overlays, and composer with next-message suggestions and queued draft restoration.
 // pos: Main renderer surface for session conversation panels.
 
 import * as React from "react"
@@ -54,11 +54,13 @@ import {
 } from "@craft-agent/ui"
 import { MemoizedAuthRequestCard } from "@/components/chat/AuthRequestCard"
 import { ChatInputZone, type QueuedInputMessage, type StructuredInputState, type StructuredResponse, type PermissionResponse, type AdminApprovalResponse } from "./input"
+import { readAttachmentBatch } from "./input/free-form-input-behavior"
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
 import { useNavigationActions } from "@/contexts/NavigationContext"
 import { routes } from "@/lib/navigate"
 import { loadSendMessageKeySetting } from "@/lib/input-settings"
+import { CONTENT_PERSIST_CAP } from "@/lib/drafts"
 import { CHAT_LAYOUT } from "@craft-agent/ui"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
@@ -1503,21 +1505,72 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     })
   }, [removeQueuedMessage, t])
 
-  const handleEditQueuedMessage = useCallback((message: QueuedInputMessage) => {
-    removeQueuedMessage(message.id)
-      .then(() => {
-        onInputChange?.(message.content)
-        onAttachmentsChange?.([])
-        requestAnimationFrame(() => {
-          textareaRef.current?.focus()
-        })
+  const queuedEditScopeRef = React.useRef<{ pending: boolean } | null>(null)
+  React.useLayoutEffect(() => {
+    queuedEditScopeRef.current = { pending: false }
+    return () => { queuedEditScopeRef.current = null }
+  }, [session?.id])
+
+  const handleEditQueuedMessage = useCallback(async (message: QueuedInputMessage) => {
+    const scope = queuedEditScopeRef.current
+    if (!scope || scope.pending || !onInputChange) return
+    if (message.attachments?.length && !onAttachmentsChange) return
+
+    scope.pending = true
+    let attachments: FileAttachment[] | undefined
+    try {
+      let restoreError: Error | undefined
+      const restored = await readAttachmentBatch(message.attachments ?? [], async (attachment) => {
+        if (restoreError || queuedEditScopeRef.current !== scope) return null
+        try {
+          const original = attachment.representations?.find(item => item.kind === 'original')
+          const originalPath = original?.path ?? attachment.storedPath
+          if (!originalPath || attachment.size <= 0 || attachment.size > CONTENT_PERSIST_CAP) {
+            throw new Error('Invalid stored original')
+          }
+          const bytes = await window.electronAPI.readFileBinary(originalPath)
+          if (bytes.byteLength !== attachment.size) throw new Error('Stored original size changed')
+          if (original?.sha256) {
+            const digest = await crypto.subtle.digest('SHA-256', bytes)
+            if (new Uint8Array(digest).toHex() !== original.sha256) {
+              throw new Error('Stored original checksum changed')
+            }
+          }
+          return {
+            // A content-backed draft works even when the original is on a remote Host.
+            path: `queued-${attachment.id}`,
+            name: attachment.name,
+            type: attachment.type,
+            mimeType: attachment.mimeType,
+            size: bytes.byteLength,
+            base64: bytes.toBase64(),
+            thumbnailBase64: attachment.thumbnailBase64,
+          }
+        } catch (cause) {
+          restoreError ??= new Error(attachment.name, { cause })
+          return null
+        }
       })
-      .catch(error => {
-        console.error('[ChatDisplay] Failed to edit queued message:', error)
-        toast.error(t('toast.cannotSendRightNow'), {
-          description: error instanceof Error ? error.message : 'Unknown error',
-        })
+      if (restoreError) throw restoreError
+      if (queuedEditScopeRef.current !== scope) return
+      attachments = restored
+      // Leave the queue intact until every original can be used in the composer.
+      await removeQueuedMessage(message.id)
+      onInputChange(message.content)
+      onAttachmentsChange?.(attachments)
+      requestAnimationFrame(() => {
+        if (queuedEditScopeRef.current === scope) textareaRef.current?.focus()
       })
+    } catch (error) {
+      console.error('[ChatDisplay] Failed to edit queued message:', error)
+      if (queuedEditScopeRef.current === scope) {
+        toast.error(attachments ? t('toast.cannotSendRightNow') : t('toast.failedToOpenFile'), {
+          description: error instanceof Error ? error.message : undefined,
+        })
+      }
+    } finally {
+      scope.pending = false
+    }
   }, [onAttachmentsChange, onInputChange, removeQueuedMessage, t, textareaRef])
 
   // Per-frame scroll compensation during input height animation
