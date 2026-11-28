@@ -12,12 +12,13 @@
  * prevents concurrent file corruption.
  */
 
+import { dlopen, FFIType, read } from 'bun:ffi';
 import { randomUUID } from 'node:crypto';
 import { appendFile, chmod, readFile, rename, unlink, writeFile } from 'fs/promises';
-import { chmodSync, existsSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'path';
 import { createLogger } from '../utils/debug.ts';
-import { atomicWriteFileSync, retryTransientFs } from '../utils/files.ts';
+import { retryTransientFs, retryTransientFsErrorSync } from '../utils/files.ts';
 import {
   AUTOMATIONS_HISTORY_FILE,
   AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER,
@@ -103,10 +104,9 @@ export async function compactAutomationHistory(
  * Compact the history file synchronously (startup path).
  * Safe to call without the mutex — startup is single-threaded and runs
  * before any async appends.
- * Replacement goes through a temp file and rename, so a mid-write failure
- * leaves the previous history file byte-for-byte intact. The previous mode
- * is copied onto the replacement; `writeFile` masks with umask, so chmod
- * restores bits such as group-write that the mask would drop.
+ * Replacement goes through a sibling temp file. Mode and any macOS ACL are
+ * applied to that temp file before rename. If those cannot be read or restored,
+ * the original file is left untouched and this compaction is skipped.
  */
 export function compactAutomationHistorySync(
   workspaceRootPath: string,
@@ -125,8 +125,9 @@ export function compactAutomationHistorySync(
   const result = compactEntries(content, maxPerMatcher, maxTotal);
   if (!result) return;
 
-  replaceHistoryFileSync(resolveAutomationOwnedPath(workspaceRootPath, historyPath), result);
-  log.debug(`[HistoryStore] Startup compaction complete`);
+  if (replaceHistoryFileSync(resolveAutomationOwnedPath(workspaceRootPath, historyPath), result)) {
+    log.debug(`[HistoryStore] Startup compaction complete`);
+  }
 }
 
 /**
@@ -150,11 +151,12 @@ async function runCompaction(
   const result = compactEntries(content, maxPerMatcher, maxTotal);
   if (!result) return;
 
-  await replaceHistoryFile(
+  if (await replaceHistoryFile(
     resolveAutomationOwnedPath(workspaceRootPath, historyPath),
     result,
-  );
-  log.debug(`[HistoryStore] Compacted history`);
+  )) {
+    log.debug(`[HistoryStore] Compacted history`);
+  }
 }
 
 /** Permission bits of an existing history file, without the file-type bits. */
@@ -166,28 +168,122 @@ function existingHistoryMode(filePath: string): number | undefined {
   }
 }
 
-function replaceHistoryFileSync(filePath: string, data: string): void {
-  const mode = existingHistoryMode(filePath);
-  atomicWriteFileSync(filePath, data, mode === undefined ? {} : { mode });
-  if (mode !== undefined) chmodSync(filePath, mode);
+const ACL_TYPE_EXTENDED = 0x00000100;
+const ENOENT = 2;
+
+function openDarwinAcl() {
+  return dlopen('/usr/lib/libc.dylib', {
+    acl_get_file: { args: [FFIType.ptr, FFIType.i32], returns: FFIType.ptr },
+    acl_set_file: { args: [FFIType.ptr, FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
+    acl_free: { args: [FFIType.ptr], returns: FFIType.i32 },
+    __error: { args: [], returns: FFIType.ptr },
+  }).symbols;
 }
 
-async function replaceHistoryFile(filePath: string, data: string): Promise<void> {
+type DarwinAclApi = ReturnType<typeof openDarwinAcl>;
+
+let darwinAclApi: DarwinAclApi | null | undefined;
+
+function loadDarwinAclApi(): DarwinAclApi | null {
+  if (darwinAclApi !== undefined) return darwinAclApi;
+  if (process.platform !== 'darwin') {
+    darwinAclApi = null;
+    return null;
+  }
+  try {
+    darwinAclApi = openDarwinAcl();
+  } catch {
+    darwinAclApi = null;
+  }
+  return darwinAclApi;
+}
+
+function cString(value: string): Buffer {
+  return Buffer.from(`${value}\0`);
+}
+
+/**
+ * Copy a macOS extended ACL onto the temp file. ENOENT means the source has
+ * no ACL. Any other read or write failure must abort the replacement.
+ */
+function copyExtendedAcl(source: string, dest: string): boolean {
+  if (process.platform !== 'darwin') return true;
+  const api = loadDarwinAclApi();
+  if (!api) return false;
+  const acl = api.acl_get_file(cString(source), ACL_TYPE_EXTENDED);
+  if (!acl) {
+    const slot = api.__error();
+    return slot !== null && read.i32(slot, 0) === ENOENT;
+  }
+  try {
+    return api.acl_set_file(cString(dest), ACL_TYPE_EXTENDED, acl) === 0;
+  } finally {
+    api.acl_free(acl);
+  }
+}
+
+function applyHistoryAccessSync(source: string, dest: string, mode: number): boolean {
+  try {
+    chmodSync(dest, mode);
+  } catch {
+    return false;
+  }
+  return copyExtendedAcl(source, dest);
+}
+
+async function applyHistoryAccess(source: string, dest: string, mode: number): Promise<boolean> {
+  try {
+    await chmod(dest, mode);
+  } catch {
+    return false;
+  }
+  return copyExtendedAcl(source, dest);
+}
+
+function replaceHistoryFileSync(filePath: string, data: string): boolean {
   const mode = existingHistoryMode(filePath);
+  if (mode === undefined) return false;
   const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    await writeFile(tmpPath, data, {
-      encoding: 'utf-8',
-      flag: 'wx',
-      ...(mode === undefined ? {} : { mode }),
-    });
-    // chmod before rename so the published file already has the old mode.
-    if (mode !== undefined) await chmod(tmpPath, mode);
+    writeFileSync(tmpPath, data, { encoding: 'utf-8', flag: 'wx', mode });
+  } catch (error) {
+    try { unlinkSync(tmpPath); } catch {}
+    throw error;
+  }
+  if (!applyHistoryAccessSync(filePath, tmpPath, mode)) {
+    try { unlinkSync(tmpPath); } catch {}
+    return false;
+  }
+  try {
+    retryTransientFsErrorSync(() => renameSync(tmpPath, filePath));
+  } catch (error) {
+    try { unlinkSync(tmpPath); } catch {}
+    throw error;
+  }
+  return true;
+}
+
+async function replaceHistoryFile(filePath: string, data: string): Promise<boolean> {
+  const mode = existingHistoryMode(filePath);
+  if (mode === undefined) return false;
+  const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tmpPath, data, { encoding: 'utf-8', flag: 'wx', mode });
+  } catch (error) {
+    try { await unlink(tmpPath); } catch {}
+    throw error;
+  }
+  if (!await applyHistoryAccess(filePath, tmpPath, mode)) {
+    try { await unlink(tmpPath); } catch {}
+    return false;
+  }
+  try {
     await retryTransientFs(() => rename(tmpPath, filePath));
   } catch (error) {
     try { await unlink(tmpPath); } catch {}
     throw error;
   }
+  return true;
 }
 
 // ============================================================================
