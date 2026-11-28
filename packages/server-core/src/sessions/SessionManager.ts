@@ -252,7 +252,7 @@ export class SessionManager implements ISessionManager {
   private readonly workspaceFreshness = new WorkspaceFreshness()
   private stoppingGenerations = new WeakMap<ManagedSession, number>()
   private queuedReplays = new WeakMap<ManagedSession, object>()
-  private queuedSendPublications = new WeakMap<ManagedSession, Promise<void>>()
+  private queuedMessagePublications = new WeakMap<ManagedSession, Promise<void>>()
   private unsavedSessionSnapshots = new WeakSet<ManagedSession>()
   private turnDrains = new WeakMap<ManagedSession, Promise<void>>()
 
@@ -3346,7 +3346,7 @@ export class SessionManager implements ISessionManager {
       }
 
       const publication = Promise.withResolvers<void>()
-      this.queuedSendPublications.set(managed, publication.promise)
+      this.queuedMessagePublications.set(managed, publication.promise)
       resolveQueuedPublication = publication.resolve
       try {
         await this.persistence.commitQueuedSend(managed, {
@@ -3960,7 +3960,7 @@ export class SessionManager implements ISessionManager {
     }
     } finally {
       if (resolveQueuedPublication) {
-        this.queuedSendPublications.delete(managed)
+        this.queuedMessagePublications.delete(managed)
         // Wake Stop waiters before releasing admission to completion or another send.
         resolveQueuedPublication()
       }
@@ -3975,7 +3975,7 @@ export class SessionManager implements ISessionManager {
       return // Not processing, nothing to cancel
     }
     const generation = managed.processingGeneration
-    const publication = this.queuedSendPublications.get(managed)
+    const publication = this.queuedMessagePublications.get(managed)
     if (publication) {
       await publication
       if (this.sessions.get(sessionId) !== managed || managed.processingGeneration !== generation || !managed.isProcessing) return
@@ -4113,15 +4113,24 @@ export class SessionManager implements ISessionManager {
   }
 
   async removeQueuedMessage(sessionId: string, messageId: string): Promise<void> {
-    await this.withQueuedMessageAdmission(sessionId, managed => {
+    await this.withQueuedMessageAdmission(sessionId, async managed => {
       const queuedIndex = managed.messageQueue.findIndex(entry => entry.messageId === messageId)
       if (queuedIndex < 0) {
         throw new Error(`Queued message ${messageId} not found`)
       }
 
-      managed.messageQueue.splice(queuedIndex, 1)
-      managed.messages = managed.messages.filter(message => message.id !== messageId)
-      this.persistSession(managed)
+      const publication = Promise.withResolvers<void>()
+      this.queuedMessagePublications.set(managed, publication.promise)
+      try {
+        await this.persistence.commitQueuedRemoval(managed, messageId, queuedIndex)
+      } catch (error) {
+        this.unsavedSessionSnapshots.add(managed)
+        throw error
+      } finally {
+        this.queuedMessagePublications.delete(managed)
+        // Stop restores the texts still queued after the removal settles.
+        publication.resolve()
+      }
 
       this.sendEvent({
         type: 'queued_message_removed',
@@ -4131,13 +4140,16 @@ export class SessionManager implements ISessionManager {
     })
   }
 
-  private async withQueuedMessageAdmission(sessionId: string, work: (managed: ManagedSession) => void): Promise<void> {
+  private async withQueuedMessageAdmission(
+    sessionId: string,
+    work: (managed: ManagedSession) => void | Promise<void>,
+  ): Promise<void> {
     await this.withRequiredSessionOperation(sessionId, async managed => {
       await this.ensureMessagesLoaded(managed)
       // A replay must retain ownership of its staged head until the write settles.
       const release = await this.agentLease.acquireSendAdmission(sessionId)
       try {
-        work(managed)
+        await work(managed)
       } finally {
         release()
       }

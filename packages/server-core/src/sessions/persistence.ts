@@ -1,5 +1,5 @@
 // input: Session registry access, disk session stores, Host execute grants, boot-service hooks, and a queue-recovery callback
-// output: Startup gating, lazy hydration, debounced writes, and durable queued-send acceptance and replay
+// output: Startup gating, lazy hydration, debounced writes, and durable queued-message acceptance, removal, and replay
 // pos: Persistence subdomain under the SessionManager facade; owns initGate and message-loading dedup state
 
 import { mkdirSync } from 'node:fs'
@@ -408,12 +408,31 @@ export class SessionPersistence {
     })
   }
 
+  /** Commit the transcript without the queued message before updating the live queue. */
+  async commitQueuedRemoval(managed: ManagedSession, messageId: string, queuedIndex: number): Promise<void> {
+    function removeMessage(messages: Array<Pick<Message, 'id'>>): void {
+      for (let index = messages.length - 1; index >= 0; index--) {
+        if (messages[index]?.id === messageId) messages.splice(index, 1)
+      }
+    }
+
+    // Removal already holds an operation lease. Invalidation drains that lease
+    // before changing the store or releasing ownership.
+    await this.commitQueuedMessageWrite(managed, removeMessage, () => {
+      removeMessage(managed.messages)
+      managed.messageQueue.splice(queuedIndex, 1)
+    }, { allowInvalidating: true })
+  }
+
   private async commitQueuedMessageWrite(
     managed: ManagedSession,
     project: (messages: StoredSession['messages']) => void,
     publish: () => void,
+    { allowInvalidating = false } = {},
   ): Promise<void> {
-    if (managed.runtimeState) throw new Error(`Session ${managed.id} is closing`)
+    if (managed.runtimeState && !(allowInvalidating && managed.runtimeState === 'invalidating')) {
+      throw new Error(`Session ${managed.id} is closing`)
+    }
     const snapshot = this.snapshot(managed, managed.messages)
     project(snapshot.messages)
     const settled = Promise.withResolvers<boolean>()
