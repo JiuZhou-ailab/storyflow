@@ -1,6 +1,6 @@
 /**
  * input: Incoming chat commands, workspace access policy, session manager, and binding store
- * output: Chat replies, session and binding changes, and recovery instructions for partial success
+ * output: Session and binding changes, chat replies, and recovery instructions on write failure
  * pos: Messaging gateway command handler for bound and unbound chats
  *
  * /new [name]    — create session + bind
@@ -360,15 +360,29 @@ export class Commands {
         return
       }
 
-      this.bindingStore.bind(
-        this.workspaceId,
-        session.id,
-        adapter.platform,
-        msg.channelId,
-        msg.senderName,
-        undefined,
-        msg.threadId,
-      )
+      try {
+        this.bindingStore.bind(
+          this.workspaceId,
+          session.id,
+          adapter.platform,
+          msg.channelId,
+          msg.senderName,
+          undefined,
+          msg.threadId,
+        )
+      } catch (error) {
+        this.log.error('failed to bind chat to existing session', {
+          event: 'chat_bind_failed',
+          workspaceId: this.workspaceId,
+          sessionId: session.id,
+          platform: adapter.platform,
+          channelId: msg.channelId,
+          threadId: msg.threadId,
+          error,
+        })
+        await adapter.sendText(msg.channelId, 'Could not bind this chat. Please try again later.', replyOpts)
+        return
+      }
 
       this.log.info('chat bound to existing session', {
         event: 'chat_bound',
@@ -529,15 +543,33 @@ export class Commands {
       return
     }
 
-    this.bindingStore.bind(
-      entry.workspaceId,
-      entry.sessionId,
-      adapter.platform,
-      msg.channelId,
-      msg.senderName,
-      undefined,
-      msg.threadId,
-    )
+    try {
+      this.bindingStore.bind(
+        entry.workspaceId,
+        entry.sessionId,
+        adapter.platform,
+        msg.channelId,
+        msg.senderName,
+        undefined,
+        msg.threadId,
+      )
+    } catch (error) {
+      this.log.error('failed to bind chat after redeeming pairing code', {
+        event: 'pairing_bind_failed',
+        workspaceId: entry.workspaceId,
+        sessionId: entry.sessionId,
+        platform: adapter.platform,
+        channelId: msg.channelId,
+        threadId: msg.threadId,
+        error,
+      })
+      await adapter.sendText(
+        msg.channelId,
+        'Could not pair this chat. Generate a new pairing code and try again later.',
+        replyOpts,
+      )
+      return
+    }
 
     this.log.info('pairing code redeemed', {
       event: 'pairing_redeemed',
@@ -627,7 +659,21 @@ export class Commands {
 
   private async handleUnbind(adapter: PlatformAdapter, msg: IncomingMessage): Promise<void> {
     const replyOpts = msg.threadId !== undefined ? { threadId: msg.threadId } : {}
-    const removed = this.bindingStore.unbind(adapter.platform, msg.channelId, msg.threadId)
+    let removed: boolean
+    try {
+      removed = this.bindingStore.unbind(adapter.platform, msg.channelId, msg.threadId)
+    } catch (error) {
+      this.log.error('failed to disconnect chat from session', {
+        event: 'chat_unbind_failed',
+        workspaceId: this.workspaceId,
+        platform: adapter.platform,
+        channelId: msg.channelId,
+        threadId: msg.threadId,
+        error,
+      })
+      await adapter.sendText(msg.channelId, 'Could not disconnect this chat. Please try again later.', replyOpts)
+      return
+    }
     if (removed) {
       await adapter.sendText(msg.channelId, 'Disconnected from session.', replyOpts)
     } else {

@@ -1,7 +1,7 @@
 /**
- * TelegramAdapter — in-process adapter using grammY.
- *
- * Phase 1: polling mode, text-only, DM-only.
+ * input: Telegram bot config, grammY updates, and gateway handlers
+ * output: Telegram messages and button events with per-update error isolation
+ * pos: In-process Telegram Bot API and long-polling boundary
  */
 
 import { writeFileSync } from 'node:fs'
@@ -250,6 +250,14 @@ export class TelegramAdapter implements PlatformAdapter {
 
     this.log = config.logger ?? NOOP_LOGGER
     this.bot = new Bot(config.token)
+    // grammY's default middleware error handler stops the entire poller.
+    this.bot.catch(({ ctx, error }) => {
+      this.log.error('Telegram update handler failed', {
+        event: 'telegram_update_handler_failed',
+        updateId: ctx.update.update_id,
+        error: describeError(error),
+      })
+    })
     if (config.acceptedSupergroupChatId) {
       this.supergroupChatId = config.acceptedSupergroupChatId
     }

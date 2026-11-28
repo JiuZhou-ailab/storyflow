@@ -1,6 +1,7 @@
 /**
- * WhatsAppAdapter — out-of-process adapter that spawns the
- * `@craft-agent/messaging-whatsapp-worker` subprocess.
+ * input: WhatsApp worker config, subprocess events, and gateway handlers
+ * output: Platform messages and connection events with handler rejection logging
+ * pos: Host boundary for the `@craft-agent/messaging-whatsapp-worker` subprocess
  *
  * WhatsApp has no official bot API usable by us. Baileys reimplements the
  * WA multi-device protocol — it runs in a child process so that:
@@ -458,7 +459,14 @@ export class WhatsAppAdapter implements PlatformAdapter {
             timestamp: ev.timestamp,
             raw: ev,
           }
-          void this.messageHandler(msg)
+          void this.messageHandler(msg).catch((error) => {
+            this.log.error('WhatsApp message handler failed', {
+              event: 'whatsapp_message_handler_failed',
+              channelId: msg.channelId,
+              messageId: msg.messageId,
+              error,
+            })
+          })
         }
         return
       case 'send_result': {

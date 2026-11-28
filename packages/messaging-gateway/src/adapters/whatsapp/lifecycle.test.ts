@@ -14,11 +14,12 @@
  *
  * `sendTimeoutMs` is injected via config so we don't wait 30s per test.
  */
-import { describe, it, expect, afterEach } from 'bun:test'
+import { describe, it, expect, afterEach, mock } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WhatsAppAdapter, type WhatsAppConfig } from './index'
+import type { MessagingLogger } from '../../types'
 
 const cleanups: Array<() => void> = []
 
@@ -119,4 +120,32 @@ describe('WhatsAppAdapter send lifecycle', () => {
       /worker exited|adapter destroyed/,
     )
   })
+})
+
+it('logs a rejected incoming WhatsApp handler and processes the next message', async () => {
+  const adapter = new WhatsAppAdapter()
+  const failure = new Error('message handling failed')
+  const error = mock(() => {})
+  const logger: MessagingLogger = { info: () => {}, warn: () => {}, error, child: () => logger }
+  adapter['log'] = logger
+  const handle = mock(async () => {}).mockRejectedValueOnce(failure)
+  adapter.onMessage(handle)
+  const event = {
+    type: 'incoming' as const,
+    channelId: 'chan-1',
+    messageId: 'msg-1',
+    senderId: 'sender-1',
+    text: '/bind sess-1',
+    timestamp: 0,
+  }
+
+  adapter['onWorkerEvent'](event)
+  await Promise.resolve()
+  expect(error).toHaveBeenCalledWith('WhatsApp message handler failed', expect.objectContaining({
+    channelId: 'chan-1',
+    messageId: 'msg-1',
+    error: failure,
+  }))
+  adapter['onWorkerEvent']({ ...event, messageId: 'msg-2', text: '/help' })
+  expect(handle).toHaveBeenCalledTimes(2)
 })

@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ISessionManager } from '@craft-agent/server-core/handlers'
@@ -125,6 +125,22 @@ function buildPress(overrides: Partial<ButtonPress> = {}): ButtonPress {
 }
 
 describe('MessagingGateway button-press access gate', () => {
+  it('replies to a bind: button when the binding write fails and accepts a retry', async () => {
+    const { gateway, adapter } = await makeHarness({ workspaceConfig: { enabled: true, platforms: {} } })
+    const path = join(storageDir, 'bindings.json')
+    mkdirSync(path)
+    const press = buildPress({ threadId: 7 })
+
+    await expect(adapter.fireButton(press)).resolves.toBeUndefined()
+    expect(adapter.sendText).toHaveBeenCalledWith('chat-1', 'Could not bind this chat. Please try again later.', { threadId: 7 })
+    expect(gateway.getBindingStore().getAll()).toEqual([])
+
+    rmSync(path, { recursive: true })
+    await adapter.fireButton(press)
+    expect(adapter.sent.at(-1)).toBe('Bound to "sess-A"')
+    expect(gateway.getBindingStore().findByChannel('telegram', 'chat-1', 7)?.sessionId).toBe('sess-A')
+  })
+
   it('rejects bind: button press from non-owner on locked-down workspace', async () => {
     const h = await makeHarness({
       workspaceConfig: {
