@@ -4,7 +4,7 @@
  * Two tracks, chosen per attachment at save time:
  *   - Track P (path-backed): absolute OS path captured via webUtils.getPathForFile.
  *     Persist just `{path, name}`. Re-read on hydrate via the readUserAttachment RPC.
- *   - Track C (content-backed): no real path exists (paste, web-drag). Persist the
+ *   - Track C (content-backed): no local path is needed (paste, web-drag, queue edit). Persist the
  *     bytes inline in `ref.content`. Hydrate reconstructs the FileAttachment from
  *     the stored bytes, no disk read.
  *
@@ -33,7 +33,8 @@ export function isAbsolutePath(p: string): boolean {
  * Used for the 20 MB cap check before we commit it to drafts.json.
  */
 function estimateContentBytes(a: FileAttachment): number {
-  const base64Bytes = a.base64 ? Math.floor(a.base64.length * 0.75) : 0
+  const padding = a.base64?.endsWith('==') ? 2 : a.base64?.endsWith('=') ? 1 : 0
+  const base64Bytes = a.base64 ? Math.floor(a.base64.length * 0.75) - padding : 0
   const textBytes = a.text ? a.text.length : 0
   return Math.max(base64Bytes, textBytes)
 }
