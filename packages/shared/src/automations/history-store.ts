@@ -12,10 +12,25 @@
  * prevents concurrent file corruption.
  */
 
-import { appendFile, readFile, writeFile } from 'fs/promises';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { appendFile, open, readFile, rename, stat, unlink, writeFile, type FileHandle } from 'fs/promises';
+import {
+  closeSync,
+  existsSync,
+  fchmodSync,
+  fchownSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'path';
 import { createLogger } from '../utils/debug.ts';
+import { readAccessSignature, readAccessSignatureSync } from '../utils/file-access.ts';
+import { retryTransientFs, retryTransientFsErrorSync } from '../utils/files.ts';
 import {
   AUTOMATIONS_HISTORY_FILE,
   AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER,
@@ -101,6 +116,8 @@ export async function compactAutomationHistory(
  * Compact the history file synchronously (startup path).
  * Safe to call without the mutex — startup is single-threaded and runs
  * before any async appends.
+ * Replacement goes through a sibling temp file; see `replaceHistoryFileSync`
+ * for how the original's access controls are kept.
  */
 export function compactAutomationHistorySync(
   workspaceRootPath: string,
@@ -119,12 +136,14 @@ export function compactAutomationHistorySync(
   const result = compactEntries(content, maxPerMatcher, maxTotal);
   if (!result) return;
 
-  writeFileSync(resolveAutomationOwnedPath(workspaceRootPath, historyPath), result, 'utf-8');
-  log.debug(`[HistoryStore] Startup compaction complete`);
+  if (replaceHistoryFileSync(resolveAutomationOwnedPath(workspaceRootPath, historyPath), result)) {
+    log.debug(`[HistoryStore] Startup compaction complete`);
+  }
 }
 
 /**
  * Internal async compaction — must be called inside withMutex.
+ * Writes a sibling temp file and renames it without blocking the event loop.
  */
 async function runCompaction(
   workspaceRootPath: string,
@@ -143,12 +162,135 @@ async function runCompaction(
   const result = compactEntries(content, maxPerMatcher, maxTotal);
   if (!result) return;
 
-  await writeFile(
+  if (await replaceHistoryFile(
     resolveAutomationOwnedPath(workspaceRootPath, historyPath),
     result,
-    'utf-8',
-  );
-  log.debug(`[HistoryStore] Compacted history`);
+  )) {
+    log.debug(`[HistoryStore] Compacted history`);
+  }
+}
+
+/**
+ * Access a replacement must carry before it is published. Mode and owner are
+ * copied with fs calls; extended access (macOS ACL, Linux ACL, Windows DACL)
+ * is compared by signature because it cannot be copied without native code.
+ */
+interface HistoryAccess {
+  mode: number;
+  uid: number;
+  gid: number;
+  signature: string;
+}
+
+function readHistoryAccessSync(filePath: string): HistoryAccess | null {
+  let stats;
+  try { stats = statSync(filePath); } catch { return null; }
+  const signature = readAccessSignatureSync(filePath);
+  if (signature === null) return null;
+  return { mode: stats.mode & 0o777, uid: stats.uid, gid: stats.gid, signature };
+}
+
+async function readHistoryAccess(filePath: string): Promise<HistoryAccess | null> {
+  let stats;
+  try { stats = await stat(filePath); } catch { return null; }
+  const signature = await readAccessSignature(filePath);
+  if (signature === null) return null;
+  return { mode: stats.mode & 0o777, uid: stats.uid, gid: stats.gid, signature };
+}
+
+function tempPathFor(filePath: string): string {
+  return `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+}
+
+function skipCompaction(filePath: string, reason: string): false {
+  log.warn(`[HistoryStore] Skipped compaction of ${filePath}: ${reason}`);
+  return false;
+}
+
+const TEMP_OWNER_MISMATCH = 'the temp file owner could not match the original';
+const TEMP_ACCESS_MISMATCH = 'the temp file access controls could not match the original';
+const TEMP_MODE_MISMATCH = 'the temp file mode could not match the original';
+
+/**
+ * Write `data` into a new owner-only temp file. Content goes in only after the
+ * temp file has the original's owner and extended access; the original mode is
+ * applied last. Returns why the temp file cannot stand in for the original, or
+ * null when it is ready to publish.
+ */
+function writeProtectedTempSync(tmpPath: string, data: string, access: HistoryAccess): string | null {
+  const fd = openSync(tmpPath, 'wx', 0o600);
+  try {
+    const stats = fstatSync(fd);
+    if (stats.uid !== access.uid || stats.gid !== access.gid) {
+      try { fchownSync(fd, access.uid, access.gid); } catch { return TEMP_OWNER_MISMATCH; }
+    }
+    if (readAccessSignatureSync(tmpPath) !== access.signature) return TEMP_ACCESS_MISMATCH;
+    writeFileSync(fd, data, 'utf-8');
+    try { fchmodSync(fd, access.mode); } catch { return TEMP_MODE_MISMATCH; }
+    return null;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+async function writeProtectedTemp(tmpPath: string, data: string, access: HistoryAccess): Promise<string | null> {
+  const handle: FileHandle = await open(tmpPath, 'wx', 0o600);
+  try {
+    const stats = await handle.stat();
+    if (stats.uid !== access.uid || stats.gid !== access.gid) {
+      try { await handle.chown(access.uid, access.gid); } catch { return TEMP_OWNER_MISMATCH; }
+    }
+    if (await readAccessSignature(tmpPath) !== access.signature) return TEMP_ACCESS_MISMATCH;
+    await writeFile(handle, data, 'utf-8');
+    try { await handle.chmod(access.mode); } catch { return TEMP_MODE_MISMATCH; }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Replace the history file without ever widening who can read it. The temp
+ * file is owner-only from creation and gets content only once its owner and
+ * extended access equal the original's. If the original's access cannot be
+ * read, or the temp file cannot match it (for example an ACL that differs from
+ * what the directory gives new files), the original stays untouched and this
+ * compaction is skipped. Write and rename failures throw.
+ */
+function replaceHistoryFileSync(filePath: string, data: string): boolean {
+  const access = readHistoryAccessSync(filePath);
+  if (!access) return skipCompaction(filePath, 'its access controls could not be read');
+  const tmpPath = tempPathFor(filePath);
+  let published = false;
+  try {
+    const mismatch = writeProtectedTempSync(tmpPath, data, access);
+    if (mismatch) return skipCompaction(filePath, mismatch);
+    retryTransientFsErrorSync(() => renameSync(tmpPath, filePath));
+    published = true;
+    return true;
+  } finally {
+    if (!published) {
+      try { unlinkSync(tmpPath); } catch {}
+    }
+  }
+}
+
+async function replaceHistoryFile(filePath: string, data: string): Promise<boolean> {
+  const access = await readHistoryAccess(filePath);
+  if (!access) return skipCompaction(filePath, 'its access controls could not be read');
+  const tmpPath = tempPathFor(filePath);
+  let published = false;
+  try {
+    const mismatch = await writeProtectedTemp(tmpPath, data, access);
+    if (mismatch) return skipCompaction(filePath, mismatch);
+    await retryTransientFs(() => rename(tmpPath, filePath));
+    published = true;
+    return true;
+  } finally {
+    if (!published) {
+      try { await unlink(tmpPath); } catch {}
+    }
+  }
 }
 
 // ============================================================================
