@@ -132,13 +132,7 @@ describe('sendMessage durability', () => {
       })
   }
 
-  function sendViaRpc(
-    sessionId: string,
-    content: string,
-    options?: SendMessageOptions,
-    attachments?: FileAttachment[],
-    storedAttachments?: StoredAttachment[],
-  ) {
+  function rpcHandlers() {
     const handlers = new Map<string, HandlerFn>()
     const server: RpcServer = {
       handle: (channel, handler) => { handlers.set(channel, handler) },
@@ -150,8 +144,20 @@ describe('sendMessage durability', () => {
       oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
       platform: { logger: { error() {} } } as HandlerDeps['platform'],
     })
-    return handlers.get(RPC_CHANNELS.sessions.SEND_MESSAGE)!(
-      { clientId: 'durability-test-client', workspaceId: 'ws_test', webContentsId: 1 },
+    return handlers
+  }
+
+  const rpcContext = { clientId: 'durability-test-client', workspaceId: 'ws_test', webContentsId: 1 }
+
+  function sendViaRpc(
+    sessionId: string,
+    content: string,
+    options?: SendMessageOptions,
+    attachments?: FileAttachment[],
+    storedAttachments?: StoredAttachment[],
+  ) {
+    return rpcHandlers().get(RPC_CHANNELS.sessions.SEND_MESSAGE)!(
+      rpcContext,
       sessionId, content, attachments, storedAttachments, options,
     )
   }
@@ -384,6 +390,71 @@ describe('sendMessage durability', () => {
       persistence: { loadMessagesFromDisk(session: typeof restored): Promise<void> }
     }).persistence).loadMessagesFromDisk(restored)
     expect(restored.messageQueue.map(entry => entry.messageId as string | null)).toEqual([ackedMessageId])
+  })
+
+  it('does not replay a deleted message after the Host process exits immediately', async () => {
+    const managed = buildSession('queue-removal-restart')
+    managed.messagesLoaded = false
+    const run = Bun.spawnSync([process.execPath, '--eval', `
+      import { SessionManager, createManagedSession } from ${JSON.stringify(import.meta.resolve('./SessionManager.ts'))};
+      import { registerSessionsHandlers } from ${JSON.stringify(import.meta.resolve('../handlers/rpc/sessions.ts'))};
+      import { RPC_CHANNELS } from '@craft-agent/shared/protocol';
+
+      const manager = new SessionManager((_id, session) => session.workspace);
+      const session = createManagedSession(
+        { id: ${JSON.stringify(managed.id)} },
+        ${JSON.stringify(managed.workspace)},
+        { messagesLoaded: true, isProcessing: true },
+      );
+      manager['sessions'].set(session.id, session);
+      const handlers = new Map();
+      registerSessionsHandlers({ handle: (channel, handler) => handlers.set(channel, handler) }, {
+        sessionManager: manager, platform: { logger: { error() {} } },
+      });
+      const ctx = ${JSON.stringify(rpcContext)};
+      for (const id of ['removed', 'retained']) {
+        await handlers.get(RPC_CHANNELS.sessions.SEND_MESSAGE)(ctx, session.id, id, undefined, undefined, { optimisticMessageId: id });
+      }
+      await handlers.get(RPC_CHANNELS.sessions.COMMAND)(ctx, session.id, { type: 'removeQueuedMessage', messageId: 'removed' });
+      process.exit(0);
+    `], { env: { ...process.env, CRAFT_CONFIG_DIR: join(tmpRoot, 'host') } })
+    if (run.exitCode !== 0) throw new Error(run.stderr.toString())
+
+    const replay = spyOn(sm, 'sendMessage').mockResolvedValue(undefined)
+    const reopened = await rpcHandlers().get(RPC_CHANNELS.sessions.GET_MESSAGES)!(rpcContext, managed.id)
+    await new Promise<void>(resolve => setImmediate(resolve))
+
+    expect(reopened.messages.map((message: { id: string }) => message.id)).toEqual(['retained'])
+    expect(replay.mock.calls.map(([, content]) => content)).toEqual(['retained'])
+  })
+
+  it('rejects queued removal on disk failure and preserves the accepted queue entry', async () => {
+    const managed = buildSession('queue-removal-enospc')
+    managed.isProcessing = true
+    await sendViaRpc(managed.id, 'keep me', { optimisticMessageId: 'keep-me' })
+    const originalQueue = [...managed.messageQueue]
+    const removedEvents: string[] = []
+    sm.setEventSink((_channel, _target, event) => {
+      if (event?.type === 'queued_message_removed') removedEvents.push(event.messageId)
+    })
+    const writer = injectDiskFull(() => true)
+    const remove = () => rpcHandlers().get(RPC_CHANNELS.sessions.COMMAND)!(
+      rpcContext, managed.id, { type: 'removeQueuedMessage', messageId: 'keep-me' },
+    )
+
+    try {
+      await expect(remove()).rejects.toThrow('ENOSPC')
+      expect(managed.messageQueue).toEqual(originalQueue)
+      expect(managed.messages.map(message => [message.id, message.isQueued])).toEqual([['keep-me', true]])
+      expect(readPersistedMessageIds(managed.id)).toEqual(['keep-me'])
+      expect(removedEvents).toEqual([])
+    } finally {
+      writer.mockRestore()
+      sm['persistSession'](managed)
+    }
+    await remove()
+    expect(removedEvents).toEqual(['keep-me'])
+    expect(readPersistedMessageIds(managed.id)).toEqual([])
   })
 
   it('discards a failed queued send even if the active turn completes while that write is pending', async () => {
