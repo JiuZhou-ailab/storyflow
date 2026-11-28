@@ -5,6 +5,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseAccessSignature, readAccessSignature, readAccessSignatureSync } from './file-access.ts';
 
+/** A label no policy defines: writable as a raw xattr only where no SELinux policy checks it. */
+const SECRET_LABEL = 'system_u:object_r:storyflow_secret_t:s0';
+
+function canWriteSecurityLabel(): boolean {
+  if (process.platform !== 'linux') return false;
+  const dir = mkdtempSync(join(tmpdir(), 'file-access-label-'));
+  try {
+    const file = join(dir, 'probe');
+    writeFileSync(file, '');
+    return spawnSync('setfattr', ['-n', 'security.selinux', '-v', SECRET_LABEL, file]).status === 0;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const canSetSecurityLabel = canWriteSecurityLabel();
+
 describe('parseAccessSignature', () => {
   it('reads macOS ACEs below the long listing', () => {
     const plain = '-rw-r--r--  1 dev  staff  78 Nov 28 10:00 /w/history.jsonl\n';
@@ -84,17 +101,15 @@ describe.skipIf(!['darwin', 'linux', 'win32'].includes(process.platform))('readA
     expect(await readAccessSignature(file)).toBe(readAccessSignatureSync(file));
   });
 
-  it.skipIf(process.platform !== 'linux')('reports a Linux security label that differs from a new sibling', async () => {
+  it.skipIf(!canSetSecurityLabel)('reports a Linux security label that differs from a new sibling', async () => {
     const file = join(dir, 'history.jsonl');
     const sibling = `${file}.1.x.tmp`;
     writeFileSync(file, 'x\n');
     writeFileSync(sibling, '');
-    // A label no policy defines: writable as a raw xattr only where no SELinux policy checks it.
-    const label = 'system_u:object_r:storyflow_secret_t:s0';
-    if (spawnSync('setfattr', ['-n', 'security.selinux', '-v', label, file]).status !== 0) return;
+    execFileSync('setfattr', ['-n', 'security.selinux', '-v', SECRET_LABEL, file]);
     const signature = readAccessSignatureSync(file);
     // GNU ls prints the label; uutils ls marks any extended attribute with "+".
-    expect([label, null]).toContain(signature);
+    expect([SECRET_LABEL, null]).toContain(signature);
     expect(signature).not.toBe(readAccessSignatureSync(sibling));
     expect(await readAccessSignature(file)).toBe(signature);
   });
