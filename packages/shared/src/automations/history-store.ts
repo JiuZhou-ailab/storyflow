@@ -12,11 +12,12 @@
  * prevents concurrent file corruption.
  */
 
-import { appendFile, readFile } from 'fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { appendFile, chmod, readFile, rename, unlink, writeFile } from 'fs/promises';
+import { chmodSync, existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'path';
 import { createLogger } from '../utils/debug.ts';
-import { atomicWriteFileSync } from '../utils/files.ts';
+import { atomicWriteFileSync, retryTransientFs } from '../utils/files.ts';
 import {
   AUTOMATIONS_HISTORY_FILE,
   AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER,
@@ -103,7 +104,9 @@ export async function compactAutomationHistory(
  * Safe to call without the mutex — startup is single-threaded and runs
  * before any async appends.
  * Replacement goes through a temp file and rename, so a mid-write failure
- * leaves the previous history file byte-for-byte intact.
+ * leaves the previous history file byte-for-byte intact. The previous mode
+ * is copied onto the replacement; `writeFile` masks with umask, so chmod
+ * restores bits such as group-write that the mask would drop.
  */
 export function compactAutomationHistorySync(
   workspaceRootPath: string,
@@ -122,13 +125,13 @@ export function compactAutomationHistorySync(
   const result = compactEntries(content, maxPerMatcher, maxTotal);
   if (!result) return;
 
-  atomicWriteFileSync(resolveAutomationOwnedPath(workspaceRootPath, historyPath), result);
+  replaceHistoryFileSync(resolveAutomationOwnedPath(workspaceRootPath, historyPath), result);
   log.debug(`[HistoryStore] Startup compaction complete`);
 }
 
 /**
  * Internal async compaction — must be called inside withMutex.
- * Same atomic replace as the startup path.
+ * Writes a sibling temp file and renames it without blocking the event loop.
  */
 async function runCompaction(
   workspaceRootPath: string,
@@ -147,11 +150,44 @@ async function runCompaction(
   const result = compactEntries(content, maxPerMatcher, maxTotal);
   if (!result) return;
 
-  atomicWriteFileSync(
+  await replaceHistoryFile(
     resolveAutomationOwnedPath(workspaceRootPath, historyPath),
     result,
   );
   log.debug(`[HistoryStore] Compacted history`);
+}
+
+/** Permission bits of an existing history file, without the file-type bits. */
+function existingHistoryMode(filePath: string): number | undefined {
+  try {
+    return statSync(filePath).mode & 0o777;
+  } catch {
+    return undefined;
+  }
+}
+
+function replaceHistoryFileSync(filePath: string, data: string): void {
+  const mode = existingHistoryMode(filePath);
+  atomicWriteFileSync(filePath, data, mode === undefined ? {} : { mode });
+  if (mode !== undefined) chmodSync(filePath, mode);
+}
+
+async function replaceHistoryFile(filePath: string, data: string): Promise<void> {
+  const mode = existingHistoryMode(filePath);
+  const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tmpPath, data, {
+      encoding: 'utf-8',
+      flag: 'wx',
+      ...(mode === undefined ? {} : { mode }),
+    });
+    // chmod before rename so the published file already has the old mode.
+    if (mode !== undefined) await chmod(tmpPath, mode);
+    await retryTransientFs(() => rename(tmpPath, filePath));
+  } catch (error) {
+    try { await unlink(tmpPath); } catch {}
+    throw error;
+  }
 }
 
 // ============================================================================

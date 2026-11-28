@@ -3,8 +3,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
-import { mkdtempSync, readdirSync, rmSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, mkdtempSync, readdirSync, rmSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import * as fs from 'node:fs';
+import * as fsPromises from 'fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { appendAutomationHistoryEntry, compactAutomationHistory, compactAutomationHistorySync } from './history-store.ts';
@@ -178,28 +179,66 @@ describe('history-store', () => {
       writeFileSync(historyPath, original);
       const originalBytes = readFileSync(historyPath);
 
-      const writeFile = fs.writeFileSync;
-      const spy = spyOn(fs, 'writeFileSync').mockImplementation(((path, data, options) => {
+      const enospc = Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+      const writeFileSyncOriginal = fs.writeFileSync;
+      let syncWrites = 0;
+      const syncSpy = spyOn(fs, 'writeFileSync').mockImplementation(((path, data, options) => {
         if (String(path).includes(AUTOMATIONS_HISTORY_FILE)) {
+          syncWrites += 1;
           const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf-8');
-          writeFile(path, text.slice(0, 10), options as never);
-          const error = new Error('ENOSPC: no space left on device') as NodeJS.ErrnoException;
-          error.code = 'ENOSPC';
-          throw error;
+          writeFileSyncOriginal(path, text.slice(0, 10), options as never);
+          throw enospc;
         }
-        return writeFile(path, data, options as never);
+        return writeFileSyncOriginal(path, data, options as never);
+      }) as never);
+      const writeFileAsync = fsPromises.writeFile.bind(fsPromises);
+      let asyncWrites = 0;
+      const asyncSpy = spyOn(fsPromises, 'writeFile').mockImplementation((async (path, data, options) => {
+        if (String(path).includes(AUTOMATIONS_HISTORY_FILE)) {
+          asyncWrites += 1;
+          const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf-8');
+          await writeFileAsync(path, text.slice(0, 10), options);
+          throw enospc;
+        }
+        return writeFileAsync(path, data, options);
       }) as never);
 
       try {
         expect(() => compactAutomationHistorySync(tempDir, 1, 1000)).toThrow(/ENOSPC/);
+        expect(syncWrites).toBe(1);
+        expect(asyncWrites).toBe(0);
         expect(readFileSync(historyPath).equals(originalBytes)).toBe(true);
 
+        const syncWritesAfterStartup = syncWrites;
         await expect(compactAutomationHistory(tempDir, 1, 1000)).rejects.toThrow(/ENOSPC/);
+        expect(asyncWrites).toBe(1);
+        expect(syncWrites).toBe(syncWritesAfterStartup);
         expect(readFileSync(historyPath).equals(originalBytes)).toBe(true);
         expect(readdirSync(tempDir)).toEqual([AUTOMATIONS_HISTORY_FILE]);
       } finally {
-        spy.mockRestore();
+        syncSpy.mockRestore();
+        asyncSpy.mockRestore();
       }
+    });
+
+    it.skipIf(process.platform === 'win32')('keeps the existing history file mode after startup and runtime compaction', async () => {
+      const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
+      const lines = Array.from({ length: 3 }, (_, i) => JSON.stringify(makeEntry('a1', i))).join('\n') + '\n';
+      writeFileSync(historyPath, lines);
+      chmodSync(historyPath, 0o600);
+
+      await compactAutomationHistory(tempDir, 1, 1000);
+
+      expect(statSync(historyPath).mode & 0o777).toBe(0o600);
+      expect(readHistory(tempDir)).toHaveLength(1);
+
+      // 0666 is wider than a typical umask, so this fails if the replacement keeps the masked temp mode.
+      chmodSync(historyPath, 0o666);
+      appendFileSync(historyPath, `${JSON.stringify(makeEntry('a1', 10))}\n${JSON.stringify(makeEntry('a1', 11))}\n`);
+      compactAutomationHistorySync(tempDir, 1, 1000);
+
+      expect(statSync(historyPath).mode & 0o777).toBe(0o666);
+      expect(readHistory(tempDir)).toHaveLength(1);
     });
 
     it('should no-op when already within limits', async () => {
