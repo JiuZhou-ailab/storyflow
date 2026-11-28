@@ -3,14 +3,15 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import * as childProcess from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, chmodSync, mkdtempSync, readdirSync, rmSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import * as fs from 'node:fs';
 import * as fsPromises from 'fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { appendAutomationHistoryEntry, compactAutomationHistory, compactAutomationHistorySync } from './history-store.ts';
-import { AUTOMATIONS_HISTORY_FILE } from './constants.ts';
+import { AUTOMATIONS_HISTORY_FILE, AUTOMATION_HISTORY_MAX_ENTRIES } from './constants.ts';
 
 function readHistory(dir: string): Array<{ id: string; ts: number; [k: string]: unknown }> {
   const path = join(dir, AUTOMATIONS_HISTORY_FILE);
@@ -28,6 +29,47 @@ function readHistory(dir: string): Array<{ id: string; ts: number; [k: string]: 
 function makeEntry(id: string, ts: number) {
   return { id, ts, ok: true };
 }
+
+function threeEntries(firstTs = 0): string {
+  return Array.from({ length: 3 }, (_, i) => JSON.stringify(makeEntry('a1', firstTs + i))).join('\n') + '\n';
+}
+
+/** Compaction writes temp files through a descriptor or FileHandle, never by path. */
+function isTempTarget(target: unknown): boolean {
+  return typeof target === 'number' || (typeof target === 'object' && target !== null && 'fd' in target);
+}
+
+/** Runs `inspect` on each unpublished temp file right after compaction writes its content. */
+function inspectTempWrites(dir: string, inspect: (tmpPath: string) => void): () => void {
+  const inspectAll = () => {
+    for (const name of readdirSync(dir)) {
+      if (name.endsWith('.tmp')) inspect(join(dir, name));
+    }
+  };
+  const writeFileSyncOriginal = fs.writeFileSync;
+  const syncSpy = spyOn(fs, 'writeFileSync').mockImplementation(((target, data, options) => {
+    writeFileSyncOriginal(target, data, options as never);
+    if (isTempTarget(target)) inspectAll();
+  }) as never);
+  const writeFileAsync = fsPromises.writeFile.bind(fsPromises);
+  const asyncSpy = spyOn(fsPromises, 'writeFile').mockImplementation((async (target, data, options) => {
+    await writeFileAsync(target, data, options);
+    if (isTempTarget(target)) inspectAll();
+  }) as never);
+  return () => {
+    syncSpy.mockRestore();
+    asyncSpy.mockRestore();
+  };
+}
+
+/** Drives the runtime path: the global-cap append that triggers compaction. */
+async function appendThroughRuntimeCompaction(dir: string): Promise<void> {
+  for (let i = 0; i < AUTOMATION_HISTORY_MAX_ENTRIES; i++) {
+    await appendAutomationHistoryEntry(dir, makeEntry('a1', 1000 + i));
+  }
+}
+
+const canSetPosixAcl = process.platform === 'linux' && spawnSync('setfacl', ['--version']).status === 0;
 
 describe('history-store', () => {
   let tempDir: string;
@@ -183,25 +225,25 @@ describe('history-store', () => {
       const enospc = Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
       const writeFileSyncOriginal = fs.writeFileSync;
       let syncWrites = 0;
-      const syncSpy = spyOn(fs, 'writeFileSync').mockImplementation(((path, data, options) => {
-        if (String(path).includes(AUTOMATIONS_HISTORY_FILE)) {
+      const syncSpy = spyOn(fs, 'writeFileSync').mockImplementation(((target, data, options) => {
+        if (isTempTarget(target)) {
           syncWrites += 1;
           const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf-8');
-          writeFileSyncOriginal(path, text.slice(0, 10), options as never);
+          writeFileSyncOriginal(target, text.slice(0, 10), options as never);
           throw enospc;
         }
-        return writeFileSyncOriginal(path, data, options as never);
+        return writeFileSyncOriginal(target, data, options as never);
       }) as never);
       const writeFileAsync = fsPromises.writeFile.bind(fsPromises);
       let asyncWrites = 0;
-      const asyncSpy = spyOn(fsPromises, 'writeFile').mockImplementation((async (path, data, options) => {
-        if (String(path).includes(AUTOMATIONS_HISTORY_FILE)) {
+      const asyncSpy = spyOn(fsPromises, 'writeFile').mockImplementation((async (target, data, options) => {
+        if (isTempTarget(target)) {
           asyncWrites += 1;
           const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf-8');
-          await writeFileAsync(path, text.slice(0, 10), options);
+          await writeFileAsync(target, text.slice(0, 10), options);
           throw enospc;
         }
-        return writeFileAsync(path, data, options);
+        return writeFileAsync(target, data, options);
       }) as never);
 
       try {
@@ -242,59 +284,118 @@ describe('history-store', () => {
       expect(readHistory(tempDir)).toHaveLength(1);
     });
 
+    it.skipIf(process.platform === 'win32')('writes compacted history only into an owner-only temp file, then publishes the original mode', async () => {
+      const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
+      writeFileSync(historyPath, threeEntries());
+      chmodSync(historyPath, 0o644);
+      const previousUmask = process.umask(0o022);
+      const seen: Array<{ mode: number; size: number }> = [];
+      const restore = inspectTempWrites(tempDir, tmpPath => {
+        const stats = statSync(tmpPath);
+        seen.push({ mode: stats.mode & 0o777, size: stats.size });
+      });
+
+      try {
+        compactAutomationHistorySync(tempDir, 1, 1000);
+        expect(statSync(historyPath).mode & 0o777).toBe(0o644);
+        expect(readHistory(tempDir)).toHaveLength(1);
+
+        appendFileSync(historyPath, threeEntries(10));
+        await compactAutomationHistory(tempDir, 1, 1000);
+        expect(statSync(historyPath).mode & 0o777).toBe(0o644);
+        expect(readHistory(tempDir)).toHaveLength(1);
+      } finally {
+        restore();
+        process.umask(previousUmask);
+      }
+
+      expect(seen).toHaveLength(2);
+      for (const temp of seen) {
+        expect(temp.size).toBeGreaterThan(0);
+        expect(temp.mode).toBe(0o600);
+      }
+      expect(readdirSync(tempDir)).toEqual([AUTOMATIONS_HISTORY_FILE]);
+    });
+
     it('skips compaction when the history mode cannot be read', async () => {
       const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
-      const original = [
-        JSON.stringify(makeEntry('a1', 1)),
-        JSON.stringify(makeEntry('a1', 2)),
-      ].join('\n') + '\n';
-      writeFileSync(historyPath, original);
+      writeFileSync(historyPath, threeEntries());
       chmodSync(historyPath, 0o600);
       const originalBytes = readFileSync(historyPath);
+      // Windows reports 0o666 here; compare against what the platform kept.
+      const originalMode = statSync(historyPath).mode & 0o777;
       const previousUmask = process.umask(0o022);
+      const eio = () => Object.assign(new Error('EIO: input/output error'), { code: 'EIO' });
       const stat = fs.statSync;
-      const spy = spyOn(fs, 'statSync').mockImplementation(((path, options) => {
-        if (String(path) === historyPath) {
-          const error = new Error('EIO: input/output error') as NodeJS.ErrnoException;
-          error.code = 'EIO';
-          throw error;
-        }
+      const syncSpy = spyOn(fs, 'statSync').mockImplementation(((path, options) => {
+        if (String(path) === historyPath) throw eio();
         return stat(path, options as never);
+      }) as never);
+      const statAsync = fsPromises.stat.bind(fsPromises);
+      const asyncSpy = spyOn(fsPromises, 'stat').mockImplementation((async (path, options) => {
+        if (String(path) === historyPath) throw eio();
+        return statAsync(path, options as never);
       }) as never);
 
       try {
         expect(() => compactAutomationHistorySync(tempDir, 1, 1000)).not.toThrow();
         expect(readFileSync(historyPath).equals(originalBytes)).toBe(true);
-        expect(stat(historyPath).mode & 0o777).toBe(0o600);
+        expect(stat(historyPath).mode & 0o777).toBe(originalMode);
 
         await compactAutomationHistory(tempDir, 1, 1000);
         expect(readFileSync(historyPath).equals(originalBytes)).toBe(true);
-        expect(stat(historyPath).mode & 0o777).toBe(0o600);
+        expect(stat(historyPath).mode & 0o777).toBe(originalMode);
+        expect(readdirSync(tempDir)).toEqual([AUTOMATIONS_HISTORY_FILE]);
       } finally {
-        spy.mockRestore();
+        syncSpy.mockRestore();
+        asyncSpy.mockRestore();
         process.umask(previousUmask);
       }
     });
 
+    it('skips compaction when the access controls cannot be probed', async () => {
+      const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
+      writeFileSync(historyPath, threeEntries());
+      const originalBytes = readFileSync(historyPath);
+      const spawnFailure = () => Object.assign(new Error('spawn ls ENOENT'), { code: 'ENOENT' });
+      const syncSpy = spyOn(childProcess, 'execFileSync').mockImplementation((() => {
+        throw spawnFailure();
+      }) as never);
+      const asyncSpy = spyOn(childProcess, 'execFile').mockImplementation(((...args: unknown[]) => {
+        const callback = args[args.length - 1] as (error: Error, stdout: string, stderr: string) => void;
+        queueMicrotask(() => callback(spawnFailure(), '', ''));
+        return {} as never;
+      }) as never);
+      let tempWrites = 0;
+      const restore = inspectTempWrites(tempDir, () => { tempWrites += 1; });
+
+      try {
+        expect(() => compactAutomationHistorySync(tempDir, 1, 1000)).not.toThrow();
+        await compactAutomationHistory(tempDir, 1, 1000);
+      } finally {
+        restore();
+        syncSpy.mockRestore();
+        asyncSpy.mockRestore();
+      }
+
+      expect(tempWrites).toBe(0);
+      expect(readFileSync(historyPath).equals(originalBytes)).toBe(true);
+      expect(readdirSync(tempDir)).toEqual([AUTOMATIONS_HISTORY_FILE]);
+    });
+
     it('does not publish a compaction when restoring the mode fails', async () => {
       const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
-      const original = [
-        JSON.stringify(makeEntry('a1', 1)),
-        JSON.stringify(makeEntry('a1', 2)),
-      ].join('\n') + '\n';
-      writeFileSync(historyPath, original);
+      writeFileSync(historyPath, threeEntries());
       chmodSync(historyPath, 0o666);
       const originalBytes = readFileSync(historyPath);
       const previousUmask = process.umask(0o022);
-      const chmodSyncOriginal = fs.chmodSync;
-      const syncSpy = spyOn(fs, 'chmodSync').mockImplementation(((path, mode) => {
-        if (String(path).includes(`${AUTOMATIONS_HISTORY_FILE}.`)) throw Object.assign(new Error('EIO'), { code: 'EIO' });
-        return chmodSyncOriginal(path, mode);
-      }) as never);
-      const chmodAsync = fsPromises.chmod.bind(fsPromises);
-      const asyncSpy = spyOn(fsPromises, 'chmod').mockImplementation((async (path, mode) => {
-        if (String(path).includes(`${AUTOMATIONS_HISTORY_FILE}.`)) throw Object.assign(new Error('EIO'), { code: 'EIO' });
-        return chmodAsync(path, mode);
+      const eio = () => Object.assign(new Error('EIO'), { code: 'EIO' });
+      const syncSpy = spyOn(fs, 'fchmodSync').mockImplementation((() => { throw eio(); }) as never);
+      const openAsync = fsPromises.open.bind(fsPromises);
+      const asyncSpy = spyOn(fsPromises, 'open').mockImplementation((async (...args: Parameters<typeof fsPromises.open>) => {
+        const handle = await openAsync(...args);
+        handle.chmod = async () => { throw eio(); };
+        return handle;
       }) as never);
 
       try {
@@ -314,25 +415,111 @@ describe('history-store', () => {
       }
     });
 
-    it.skipIf(process.platform !== 'darwin')('keeps a macOS deny-read ACL on the replaced history file', async () => {
+    it.skipIf(process.platform === 'win32')('keeps the original group on the replaced history file', async () => {
       const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
-      const lines = Array.from({ length: 3 }, (_, i) => JSON.stringify(makeEntry('a1', i))).join('\n') + '\n';
-      writeFileSync(historyPath, lines);
+      writeFileSync(historyPath, threeEntries());
+      const defaultGid = statSync(historyPath).gid;
+      const otherGid = process.getgroups?.().find(gid => gid !== defaultGid);
+      if (otherGid === undefined) return;
+      fs.chownSync(historyPath, process.getuid!(), otherGid);
+
+      compactAutomationHistorySync(tempDir, 1, 1000);
+      expect(readHistory(tempDir)).toHaveLength(1);
+      expect(statSync(historyPath).gid).toBe(otherGid);
+
+      appendFileSync(historyPath, threeEntries(10));
+      await compactAutomationHistory(tempDir, 1, 1000);
+      expect(readHistory(tempDir)).toHaveLength(1);
+      expect(statSync(historyPath).gid).toBe(otherGid);
+    });
+
+    it.skipIf(process.platform !== 'darwin')('skips compaction while the history file has a macOS ACL new files would not get', async () => {
+      const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
+      writeFileSync(historyPath, threeEntries());
       chmodSync(historyPath, 0o644);
       execFileSync('chmod', ['+a', 'nobody deny read', historyPath]);
+      const originalBytes = readFileSync(historyPath);
+      let tempWrites = 0;
+      const restore = inspectTempWrites(tempDir, () => { tempWrites += 1; });
 
-      await compactAutomationHistory(tempDir, 1, 1000);
+      try {
+        compactAutomationHistorySync(tempDir, 1, 1000);
+        await compactAutomationHistory(tempDir, 1, 1000);
+        appendFileSync(historyPath, threeEntries(10));
+        await appendThroughRuntimeCompaction(tempDir);
+      } finally {
+        restore();
+      }
 
-      expect(readHistory(tempDir)).toHaveLength(1);
+      expect(tempWrites).toBe(0);
+      expect(readFileSync(historyPath).subarray(0, originalBytes.length).equals(originalBytes)).toBe(true);
       expect(statSync(historyPath).mode & 0o777).toBe(0o644);
       expect(execFileSync('ls', ['-le', historyPath], { encoding: 'utf8' })).toContain('user:nobody deny read');
+      expect(readdirSync(tempDir)).toEqual([AUTOMATIONS_HISTORY_FILE]);
+    });
 
-      appendFileSync(historyPath, `${JSON.stringify(makeEntry('a1', 10))}\n${JSON.stringify(makeEntry('a1', 11))}\n`);
-      compactAutomationHistorySync(tempDir, 1, 1000);
+    it.skipIf(process.platform !== 'darwin')('compacts under an inherited macOS ACL that protects the temp file before it has content', async () => {
+      execFileSync('chmod', ['+a', 'nobody deny read,file_inherit', tempDir]);
+      const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
+      writeFileSync(historyPath, threeEntries());
+      chmodSync(historyPath, 0o644);
+      const inheritedAce = 'user:nobody inherited deny read';
+      expect(execFileSync('ls', ['-le', historyPath], { encoding: 'utf8' })).toContain(inheritedAce);
+      const previousUmask = process.umask(0o022);
+      const seen: Array<{ mode: number; size: number; acl: string }> = [];
+      const restore = inspectTempWrites(tempDir, tmpPath => {
+        const stats = statSync(tmpPath);
+        seen.push({
+          mode: stats.mode & 0o777,
+          size: stats.size,
+          acl: execFileSync('ls', ['-le', tmpPath], { encoding: 'utf8' }),
+        });
+      });
 
-      expect(readHistory(tempDir)).toHaveLength(1);
+      try {
+        compactAutomationHistorySync(tempDir, 1, 1000);
+        expect(readHistory(tempDir)).toHaveLength(1);
+        appendFileSync(historyPath, threeEntries(10));
+        await compactAutomationHistory(tempDir, 1, 1000);
+        expect(readHistory(tempDir)).toHaveLength(1);
+      } finally {
+        restore();
+        process.umask(previousUmask);
+      }
+
+      expect(seen).toHaveLength(2);
+      for (const temp of seen) {
+        expect(temp.size).toBeGreaterThan(0);
+        expect(temp.mode).toBe(0o600);
+        expect(temp.acl).toContain(inheritedAce);
+      }
       expect(statSync(historyPath).mode & 0o777).toBe(0o644);
-      expect(execFileSync('ls', ['-le', historyPath], { encoding: 'utf8' })).toContain('user:nobody deny read');
+      expect(execFileSync('ls', ['-le', historyPath], { encoding: 'utf8' })).toContain(inheritedAce);
+    });
+
+    it.skipIf(!canSetPosixAcl)('skips compaction while the history file has a Linux POSIX ACL', async () => {
+      const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
+      writeFileSync(historyPath, threeEntries());
+      chmodSync(historyPath, 0o644);
+      execFileSync('setfacl', ['-m', 'u:nobody:---', historyPath]);
+      const originalBytes = readFileSync(historyPath);
+      let tempWrites = 0;
+      const restore = inspectTempWrites(tempDir, () => { tempWrites += 1; });
+
+      try {
+        compactAutomationHistorySync(tempDir, 1, 1000);
+        await compactAutomationHistory(tempDir, 1, 1000);
+        appendFileSync(historyPath, threeEntries(10));
+        await appendThroughRuntimeCompaction(tempDir);
+      } finally {
+        restore();
+      }
+
+      expect(tempWrites).toBe(0);
+      expect(readFileSync(historyPath).subarray(0, originalBytes.length).equals(originalBytes)).toBe(true);
+      expect(statSync(historyPath).mode & 0o777).toBe(0o644);
+      expect(execFileSync('getfacl', ['-p', historyPath], { encoding: 'utf8' })).toContain('user:nobody:---');
+      expect(readdirSync(tempDir)).toEqual([AUTOMATIONS_HISTORY_FILE]);
     });
 
     it('should no-op when already within limits', async () => {

@@ -12,12 +12,24 @@
  * prevents concurrent file corruption.
  */
 
-import { dlopen, FFIType, read } from 'bun:ffi';
 import { randomUUID } from 'node:crypto';
-import { appendFile, chmod, readFile, rename, unlink, writeFile } from 'fs/promises';
-import { chmodSync, existsSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { appendFile, open, readFile, rename, stat, unlink, writeFile, type FileHandle } from 'fs/promises';
+import {
+  closeSync,
+  existsSync,
+  fchmodSync,
+  fchownSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'path';
 import { createLogger } from '../utils/debug.ts';
+import { readAccessSignature, readAccessSignatureSync } from '../utils/file-access.ts';
 import { retryTransientFs, retryTransientFsErrorSync } from '../utils/files.ts';
 import {
   AUTOMATIONS_HISTORY_FILE,
@@ -104,9 +116,8 @@ export async function compactAutomationHistory(
  * Compact the history file synchronously (startup path).
  * Safe to call without the mutex — startup is single-threaded and runs
  * before any async appends.
- * Replacement goes through a sibling temp file. Mode and any macOS ACL are
- * applied to that temp file before rename. If those cannot be read or restored,
- * the original file is left untouched and this compaction is skipped.
+ * Replacement goes through a sibling temp file; see `replaceHistoryFileSync`
+ * for how the original's access controls are kept.
  */
 export function compactAutomationHistorySync(
   workspaceRootPath: string,
@@ -159,131 +170,127 @@ async function runCompaction(
   }
 }
 
-/** Permission bits of an existing history file, without the file-type bits. */
-function existingHistoryMode(filePath: string): number | undefined {
+/**
+ * Access a replacement must carry before it is published. Mode and owner are
+ * copied with fs calls; extended access (macOS ACL, Linux ACL, Windows DACL)
+ * is compared by signature because it cannot be copied without native code.
+ */
+interface HistoryAccess {
+  mode: number;
+  uid: number;
+  gid: number;
+  signature: string;
+}
+
+function readHistoryAccessSync(filePath: string): HistoryAccess | null {
+  let stats;
+  try { stats = statSync(filePath); } catch { return null; }
+  const signature = readAccessSignatureSync(filePath);
+  if (signature === null) return null;
+  return { mode: stats.mode & 0o777, uid: stats.uid, gid: stats.gid, signature };
+}
+
+async function readHistoryAccess(filePath: string): Promise<HistoryAccess | null> {
+  let stats;
+  try { stats = await stat(filePath); } catch { return null; }
+  const signature = await readAccessSignature(filePath);
+  if (signature === null) return null;
+  return { mode: stats.mode & 0o777, uid: stats.uid, gid: stats.gid, signature };
+}
+
+function tempPathFor(filePath: string): string {
+  return `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+}
+
+function skipCompaction(filePath: string, reason: string): false {
+  log.warn(`[HistoryStore] Skipped compaction of ${filePath}: ${reason}`);
+  return false;
+}
+
+const TEMP_OWNER_MISMATCH = 'the temp file owner could not match the original';
+const TEMP_ACCESS_MISMATCH = 'the temp file access controls could not match the original';
+const TEMP_MODE_MISMATCH = 'the temp file mode could not match the original';
+
+/**
+ * Write `data` into a new owner-only temp file. Content goes in only after the
+ * temp file has the original's owner and extended access; the original mode is
+ * applied last. Returns why the temp file cannot stand in for the original, or
+ * null when it is ready to publish.
+ */
+function writeProtectedTempSync(tmpPath: string, data: string, access: HistoryAccess): string | null {
+  const fd = openSync(tmpPath, 'wx', 0o600);
   try {
-    return statSync(filePath).mode & 0o777;
-  } catch {
-    return undefined;
-  }
-}
-
-const ACL_TYPE_EXTENDED = 0x00000100;
-const ENOENT = 2;
-
-function openDarwinAcl() {
-  return dlopen('/usr/lib/libc.dylib', {
-    acl_get_file: { args: [FFIType.ptr, FFIType.i32], returns: FFIType.ptr },
-    acl_set_file: { args: [FFIType.ptr, FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
-    acl_free: { args: [FFIType.ptr], returns: FFIType.i32 },
-    __error: { args: [], returns: FFIType.ptr },
-  }).symbols;
-}
-
-type DarwinAclApi = ReturnType<typeof openDarwinAcl>;
-
-let darwinAclApi: DarwinAclApi | null | undefined;
-
-function loadDarwinAclApi(): DarwinAclApi | null {
-  if (darwinAclApi !== undefined) return darwinAclApi;
-  if (process.platform !== 'darwin') {
-    darwinAclApi = null;
+    const stats = fstatSync(fd);
+    if (stats.uid !== access.uid || stats.gid !== access.gid) {
+      try { fchownSync(fd, access.uid, access.gid); } catch { return TEMP_OWNER_MISMATCH; }
+    }
+    if (readAccessSignatureSync(tmpPath) !== access.signature) return TEMP_ACCESS_MISMATCH;
+    writeFileSync(fd, data, 'utf-8');
+    try { fchmodSync(fd, access.mode); } catch { return TEMP_MODE_MISMATCH; }
     return null;
+  } finally {
+    closeSync(fd);
   }
-  try {
-    darwinAclApi = openDarwinAcl();
-  } catch {
-    darwinAclApi = null;
-  }
-  return darwinAclApi;
 }
 
-function cString(value: string): Buffer {
-  return Buffer.from(`${value}\0`);
+async function writeProtectedTemp(tmpPath: string, data: string, access: HistoryAccess): Promise<string | null> {
+  const handle: FileHandle = await open(tmpPath, 'wx', 0o600);
+  try {
+    const stats = await handle.stat();
+    if (stats.uid !== access.uid || stats.gid !== access.gid) {
+      try { await handle.chown(access.uid, access.gid); } catch { return TEMP_OWNER_MISMATCH; }
+    }
+    if (await readAccessSignature(tmpPath) !== access.signature) return TEMP_ACCESS_MISMATCH;
+    await writeFile(handle, data, 'utf-8');
+    try { await handle.chmod(access.mode); } catch { return TEMP_MODE_MISMATCH; }
+    return null;
+  } finally {
+    await handle.close();
+  }
 }
 
 /**
- * Copy a macOS extended ACL onto the temp file. ENOENT means the source has
- * no ACL. Any other read or write failure must abort the replacement.
+ * Replace the history file without ever widening who can read it. The temp
+ * file is owner-only from creation and gets content only once its owner and
+ * extended access equal the original's. If the original's access cannot be
+ * read, or the temp file cannot match it (for example an ACL that differs from
+ * what the directory gives new files), the original stays untouched and this
+ * compaction is skipped. Write and rename failures throw.
  */
-function copyExtendedAcl(source: string, dest: string): boolean {
-  if (process.platform !== 'darwin') return true;
-  const api = loadDarwinAclApi();
-  if (!api) return false;
-  const acl = api.acl_get_file(cString(source), ACL_TYPE_EXTENDED);
-  if (!acl) {
-    const slot = api.__error();
-    return slot !== null && read.i32(slot, 0) === ENOENT;
-  }
-  try {
-    return api.acl_set_file(cString(dest), ACL_TYPE_EXTENDED, acl) === 0;
-  } finally {
-    api.acl_free(acl);
-  }
-}
-
-function applyHistoryAccessSync(source: string, dest: string, mode: number): boolean {
-  try {
-    chmodSync(dest, mode);
-  } catch {
-    return false;
-  }
-  return copyExtendedAcl(source, dest);
-}
-
-async function applyHistoryAccess(source: string, dest: string, mode: number): Promise<boolean> {
-  try {
-    await chmod(dest, mode);
-  } catch {
-    return false;
-  }
-  return copyExtendedAcl(source, dest);
-}
-
 function replaceHistoryFileSync(filePath: string, data: string): boolean {
-  const mode = existingHistoryMode(filePath);
-  if (mode === undefined) return false;
-  const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  const access = readHistoryAccessSync(filePath);
+  if (!access) return skipCompaction(filePath, 'its access controls could not be read');
+  const tmpPath = tempPathFor(filePath);
+  let published = false;
   try {
-    writeFileSync(tmpPath, data, { encoding: 'utf-8', flag: 'wx', mode });
-  } catch (error) {
-    try { unlinkSync(tmpPath); } catch {}
-    throw error;
-  }
-  if (!applyHistoryAccessSync(filePath, tmpPath, mode)) {
-    try { unlinkSync(tmpPath); } catch {}
-    return false;
-  }
-  try {
+    const mismatch = writeProtectedTempSync(tmpPath, data, access);
+    if (mismatch) return skipCompaction(filePath, mismatch);
     retryTransientFsErrorSync(() => renameSync(tmpPath, filePath));
-  } catch (error) {
-    try { unlinkSync(tmpPath); } catch {}
-    throw error;
+    published = true;
+    return true;
+  } finally {
+    if (!published) {
+      try { unlinkSync(tmpPath); } catch {}
+    }
   }
-  return true;
 }
 
 async function replaceHistoryFile(filePath: string, data: string): Promise<boolean> {
-  const mode = existingHistoryMode(filePath);
-  if (mode === undefined) return false;
-  const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  const access = await readHistoryAccess(filePath);
+  if (!access) return skipCompaction(filePath, 'its access controls could not be read');
+  const tmpPath = tempPathFor(filePath);
+  let published = false;
   try {
-    await writeFile(tmpPath, data, { encoding: 'utf-8', flag: 'wx', mode });
-  } catch (error) {
-    try { await unlink(tmpPath); } catch {}
-    throw error;
-  }
-  if (!await applyHistoryAccess(filePath, tmpPath, mode)) {
-    try { await unlink(tmpPath); } catch {}
-    return false;
-  }
-  try {
+    const mismatch = await writeProtectedTemp(tmpPath, data, access);
+    if (mismatch) return skipCompaction(filePath, mismatch);
     await retryTransientFs(() => rename(tmpPath, filePath));
-  } catch (error) {
-    try { await unlink(tmpPath); } catch {}
-    throw error;
+    published = true;
+    return true;
+  } finally {
+    if (!published) {
+      try { await unlink(tmpPath); } catch {}
+    }
   }
-  return true;
 }
 
 // ============================================================================
