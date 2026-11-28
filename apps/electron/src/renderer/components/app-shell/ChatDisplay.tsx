@@ -54,6 +54,7 @@ import {
 } from "@craft-agent/ui"
 import { MemoizedAuthRequestCard } from "@/components/chat/AuthRequestCard"
 import { ChatInputZone, type QueuedInputMessage, type StructuredInputState, type StructuredResponse, type PermissionResponse, type AdminApprovalResponse } from "./input"
+import { readAttachmentBatch } from "./input/free-form-input-behavior"
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
 import { useNavigationActions } from "@/contexts/NavigationContext"
@@ -1518,15 +1519,23 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     scope.pending = true
     let attachments: FileAttachment[] | undefined
     try {
-      attachments = await Promise.all((message.attachments ?? []).map(async (attachment): Promise<FileAttachment> => {
-        const originalPath = attachment.representations?.find(item => item.kind === 'original')?.path
-          ?? attachment.storedPath
+      let restoreError: Error | undefined
+      const restored = await readAttachmentBatch(message.attachments ?? [], async (attachment) => {
+        if (restoreError || queuedEditScopeRef.current !== scope) return null
         try {
+          const original = attachment.representations?.find(item => item.kind === 'original')
+          const originalPath = original?.path ?? attachment.storedPath
           if (!originalPath || attachment.size <= 0 || attachment.size > CONTENT_PERSIST_CAP) {
             throw new Error('Invalid stored original')
           }
           const bytes = await window.electronAPI.readFileBinary(originalPath)
           if (bytes.byteLength !== attachment.size) throw new Error('Stored original size changed')
+          if (original?.sha256) {
+            const digest = await crypto.subtle.digest('SHA-256', bytes)
+            if (new Uint8Array(digest).toHex() !== original.sha256) {
+              throw new Error('Stored original checksum changed')
+            }
+          }
           return {
             // A content-backed draft works even when the original is on a remote Host.
             path: `queued-${attachment.id}`,
@@ -1535,14 +1544,16 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             mimeType: attachment.mimeType,
             size: bytes.byteLength,
             base64: bytes.toBase64(),
-            text: attachment.type === 'text' ? new TextDecoder().decode(bytes) : undefined,
             thumbnailBase64: attachment.thumbnailBase64,
           }
         } catch (cause) {
-          throw new Error(attachment.name, { cause })
+          restoreError ??= new Error(attachment.name, { cause })
+          return null
         }
-      }))
+      })
+      if (restoreError) throw restoreError
       if (queuedEditScopeRef.current !== scope) return
+      attachments = restored
       // Leave the queue intact until every original can be used in the composer.
       await removeQueuedMessage(message.id)
       onInputChange(message.content)

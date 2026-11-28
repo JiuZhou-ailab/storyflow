@@ -125,9 +125,21 @@ try {
   await waitForQueueSize(2)
   const missing = (await getQueued(2))[1]!
   assert.deepEqual(missing.attachments?.map(attachment => attachment.name), ['with-text.png', 'missing.png'])
+  const corruptedPath = missing.attachments![0]!.storedPath
+  const originalBytes = readFileSync(corruptedPath)
+  const corruptedBytes = Buffer.from(originalBytes)
+  corruptedBytes[0] ^= 0xff
+  const waitForAttachmentError = (name: string) => waitFor(live, `Array.from(document.querySelectorAll('[data-sonner-toast][data-type="error"]')).some(toast => toast.textContent.includes(${JSON.stringify(name)}))`)
+  writeFileSync(corruptedPath, corruptedBytes)
+  await evalOn(live, `${editButtons}[1].click()`)
+  await waitForAttachmentError('with-text.png')
+  assert.deepEqual((await getQueued(2))[1], missing)
+  writeFileSync(corruptedPath, originalBytes)
+  console.log('PASS: a same-size modification fails the original checksum and keeps the queued message')
+
   unlinkSync(missing.attachments![1]!.storedPath)
   await evalOn(live, `${editButtons}[1].click()`)
-  await waitFor(live, `Array.from(document.querySelectorAll('[data-sonner-toast][data-type="error"]')).some(toast => toast.textContent.includes('missing.png'))`)
+  await waitForAttachmentError('missing.png')
   await waitForQueueSize(2)
   assert.deepEqual((await getQueued(2))[1], missing)
   assert.equal(await evalOn(live, `(${composer}).textContent === '' && !${preview('with-text.png')} && !${preview('missing.png')}`), true)
