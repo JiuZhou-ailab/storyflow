@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Session } from '@craft-agent/shared/protocol'
 import type { ISessionManager } from '@craft-agent/server-core/handlers'
 import { BindingStore } from '../binding-store'
-import { Commands } from '../commands'
+import { Commands, type PairingCodeConsumer } from '../commands'
 import type { IncomingMessage, PlatformAdapter, SentMessage } from '../types'
 
 function makeSession(id: string, name: string, lastMessageAt: number): Session {
@@ -93,6 +93,41 @@ function makeStore(): { store: BindingStore; dir: string } {
 }
 
 describe('Commands', () => {
+  it.each([
+    ['/bind sess-1', 'Could not bind this chat. Please try again later.'],
+    ['/pair 123456', 'Could not pair this chat. Generate a new pairing code and try again later.'],
+    ['/unbind', 'Could not disconnect this chat. Please try again later.'],
+  ])('replies to %s when the binding write fails', async (text, reply) => {
+    const { store, dir } = makeStore()
+    const adapter = makeAdapter('telegram', true)
+    const pairing: PairingCodeConsumer = {
+      canConsume: () => true,
+      consume: mock<PairingCodeConsumer['consume']>(() => null)
+        .mockReturnValueOnce({ kind: 'session', workspaceId: 'ws1', sessionId: 'sess-1' }),
+    }
+    const commands = new Commands(makeSessionManager([makeSession('sess-1', 'Reports', 100)]), store, 'ws1', pairing)
+    const existing = store.bind('ws1', 'sess-existing', 'telegram', 'chan-1', undefined, undefined, 7)
+    const path = join(dir, 'bindings.json')
+    renameSync(path, `${path}.saved`)
+    mkdirSync(path)
+    const msg = { ...makeMessage(text), platform: adapter.platform, threadId: 7 }
+    const sendText = mock(adapter.sendText)
+    adapter.sendText = sendText
+
+    await expect(commands.handleCommand(adapter, msg)).resolves.toBe(true)
+    expect(sendText).toHaveBeenCalledWith('chan-1', reply, { threadId: 7 })
+    expect(adapter.sent).toEqual([reply])
+    expect(store.findByChannel('telegram', 'chan-1', 7)).toEqual(existing)
+
+    rmSync(path, { recursive: true })
+    renameSync(`${path}.saved`, path)
+    expect(new BindingStore(dir).findByChannel('telegram', 'chan-1', 7)).toEqual(existing)
+    if (text.startsWith('/pair')) {
+      await expect(commands.handleCommand(adapter, msg)).resolves.toBe(true)
+      expect(adapter.sent.at(-1)).toBe('Invalid or expired pairing code.')
+    }
+  })
+
   it('reports a created session when binding fails and lets /bind recover it', async () => {
     const { store, dir } = makeStore()
     const sessions: Session[] = []

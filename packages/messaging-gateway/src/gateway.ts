@@ -1,5 +1,7 @@
 /**
- * MessagingGateway — orchestrator for messaging platform adapters.
+ * input: Workspace configuration, session manager, platform adapters, and inbound chat events
+ * output: Routed messages, session replies, and persisted bindings or chat failure notices
+ * pos: Workspace messaging orchestration across adapters, commands, router, and renderer
  *
  * Runs in-process alongside SessionManager. Wires adapters, router,
  * renderer, and binding store together. One instance per workspace.
@@ -370,15 +372,29 @@ export class MessagingGateway {
         return
       }
 
-      this.bindingStore.bind(
-        this.workspaceId,
-        session.id,
-        platform,
-        press.channelId,
-        undefined,
-        undefined,
-        press.threadId,
-      )
+      try {
+        this.bindingStore.bind(
+          this.workspaceId,
+          session.id,
+          platform,
+          press.channelId,
+          undefined,
+          undefined,
+          press.threadId,
+        )
+      } catch (error) {
+        this.log.error('failed to bind chat from button press', {
+          event: 'button_bind_failed',
+          workspaceId: this.workspaceId,
+          sessionId: session.id,
+          platform,
+          channelId: press.channelId,
+          threadId: press.threadId,
+          error,
+        })
+        await adapter.sendText(press.channelId, 'Could not bind this chat. Please try again later.', pressOpts)
+        return
+      }
 
       await adapter.sendText(
         press.channelId,
