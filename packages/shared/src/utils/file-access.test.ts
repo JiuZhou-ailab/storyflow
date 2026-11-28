@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,10 +14,17 @@ describe('parseAccessSignature', () => {
     expect(parseAccessSignature('darwin', 'history.jsonl', '')).toBeNull();
   });
 
-  it('treats a Linux ACL marker as unconfirmable', () => {
-    expect(parseAccessSignature('linux', 'h', '-rw-r--r-- 1 dev dev 78 Nov 28 10:00 /w/h\n')).toBe('');
-    expect(parseAccessSignature('linux', 'h', '-rw-r--r--. 1 dev dev 78 Nov 28 10:00 /w/h\n')).toBe('');
-    expect(parseAccessSignature('linux', 'h', '-rw-r--r--+ 1 dev dev 78 Nov 28 10:00 /w/h\n')).toBeNull();
+  it('compares Linux security labels and treats an ACL or a hidden label as unconfirmable', () => {
+    // Shapes printed by GNU ls 9.7 and uutils ls 0.2.2 for `ls -ldnZ`.
+    const listing = (marker: string, label: string) => `-rw-r--r--${marker} 1 1000 1000 ${label} 78 Nov 28 10:00 /w/h\n`;
+    const homeLabel = parseAccessSignature('linux', 'h', listing('.', 'unconfined_u:object_r:user_home_t:s0'));
+    expect(parseAccessSignature('linux', 'h', listing('', '?'))).toBe('');
+    expect(homeLabel).toBe('unconfined_u:object_r:user_home_t:s0');
+    expect(parseAccessSignature('linux', 'h', listing('.', 'system_u:object_r:secret_t:s0'))).not.toBe(homeLabel);
+    expect(parseAccessSignature('linux', 'h', listing('.', '?'))).toBeNull();
+    expect(parseAccessSignature('linux', 'h', listing('+', 'unconfined_u:object_r:user_home_t:s0'))).toBeNull();
+    expect(parseAccessSignature('linux', 'h', listing('+', '?'))).toBeNull();
+    expect(parseAccessSignature('linux', 'h', '-rw-r--r--.\n')).toBeNull();
     expect(parseAccessSignature('linux', 'h', 'ls: cannot access\n')).toBeNull();
   });
 
@@ -62,9 +69,9 @@ describe.skipIf(!['darwin', 'linux', 'win32'].includes(process.platform))('readA
     writeFileSync(sibling, '');
     const signature = readAccessSignatureSync(file);
     expect(signature).not.toBeNull();
-    // POSIX files without an ACL have nothing beyond mode bits; Windows files carry inherited ACEs.
+    // Windows files carry inherited ACEs; Linux files may carry the directory's default security label.
     if (process.platform === 'win32') expect(signature).toContain(':(I)');
-    else expect(signature).toBe('');
+    if (process.platform === 'darwin') expect(signature).toBe('');
     expect(readAccessSignatureSync(sibling)).toBe(signature);
     expect(await readAccessSignature(file)).toBe(signature);
   });
@@ -75,6 +82,21 @@ describe.skipIf(!['darwin', 'linux', 'win32'].includes(process.platform))('readA
     execFileSync('chmod', ['+a', 'nobody deny read', file]);
     expect(readAccessSignatureSync(file)).toContain('user:nobody deny read');
     expect(await readAccessSignature(file)).toBe(readAccessSignatureSync(file));
+  });
+
+  it.skipIf(process.platform !== 'linux')('reports a Linux security label that differs from a new sibling', async () => {
+    const file = join(dir, 'history.jsonl');
+    const sibling = `${file}.1.x.tmp`;
+    writeFileSync(file, 'x\n');
+    writeFileSync(sibling, '');
+    // A label no policy defines: writable as a raw xattr only where no SELinux policy checks it.
+    const label = 'system_u:object_r:storyflow_secret_t:s0';
+    if (spawnSync('setfattr', ['-n', 'security.selinux', '-v', label, file]).status !== 0) return;
+    const signature = readAccessSignatureSync(file);
+    // GNU ls prints the label; uutils ls marks any extended attribute with "+".
+    expect([label, null]).toContain(signature);
+    expect(signature).not.toBe(readAccessSignatureSync(sibling));
+    expect(await readAccessSignature(file)).toBe(signature);
   });
 
   it('cannot confirm a missing file', async () => {

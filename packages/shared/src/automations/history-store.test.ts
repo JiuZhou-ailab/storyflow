@@ -71,6 +71,38 @@ async function appendThroughRuntimeCompaction(dir: string): Promise<void> {
 
 const canSetPosixAcl = process.platform === 'linux' && spawnSync('setfacl', ['--version']).status === 0;
 
+/** A label no policy defines: writable as a raw xattr only where no SELinux policy checks it. */
+const SECRET_LABEL = 'system_u:object_r:storyflow_secret_t:s0';
+
+function canWriteSecurityLabel(): boolean {
+  if (process.platform !== 'linux') return false;
+  const dir = mkdtempSync(join(tmpdir(), 'history-store-label-'));
+  try {
+    const file = join(dir, 'probe');
+    writeFileSync(file, '');
+    return spawnSync('setfattr', ['-n', 'security.selinux', '-v', SECRET_LABEL, file]).status === 0;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const canSetSecurityLabel = canWriteSecurityLabel();
+
+/** Answers the Linux access probe with an `ls -ldnZ` line per probed path. */
+function fakeLinuxListing(listingFor: (path: string) => string): () => void {
+  const stdout = (args: readonly string[]) => listingFor(String(args[args.length - 1]));
+  const syncSpy = spyOn(childProcess, 'execFileSync').mockImplementation(((_file: string, args: string[]) => stdout(args)) as never);
+  const asyncSpy = spyOn(childProcess, 'execFile').mockImplementation(((_file: string, args: string[], ...rest: unknown[]) => {
+    const callback = rest[rest.length - 1] as (error: Error | null, stdout: string, stderr: string) => void;
+    queueMicrotask(() => callback(null, stdout(args), ''));
+    return {} as never;
+  }) as never);
+  return () => {
+    syncSpy.mockRestore();
+    asyncSpy.mockRestore();
+  };
+}
+
 describe('history-store', () => {
   let tempDir: string;
 
@@ -520,6 +552,68 @@ describe('history-store', () => {
       expect(statSync(historyPath).mode & 0o777).toBe(0o644);
       expect(execFileSync('getfacl', ['-p', historyPath], { encoding: 'utf8' })).toContain('user:nobody:---');
       expect(readdirSync(tempDir)).toEqual([AUTOMATIONS_HISTORY_FILE]);
+    });
+
+    it.skipIf(!canSetSecurityLabel)('skips compaction while the history file has a security label new files would not get', async () => {
+      const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
+      writeFileSync(historyPath, threeEntries());
+      chmodSync(historyPath, 0o644);
+      execFileSync('setfattr', ['-n', 'security.selinux', '-v', SECRET_LABEL, historyPath]);
+      const originalBytes = readFileSync(historyPath);
+      let tempWrites = 0;
+      const restore = inspectTempWrites(tempDir, () => { tempWrites += 1; });
+
+      try {
+        compactAutomationHistorySync(tempDir, 1, 1000);
+        await compactAutomationHistory(tempDir, 1, 1000);
+        appendFileSync(historyPath, threeEntries(10));
+        await appendThroughRuntimeCompaction(tempDir);
+      } finally {
+        restore();
+      }
+
+      expect(tempWrites).toBe(0);
+      expect(readFileSync(historyPath).subarray(0, originalBytes.length).equals(originalBytes)).toBe(true);
+      expect(execFileSync('getfattr', ['-n', 'security.selinux', '--only-values', historyPath], { encoding: 'utf8' }))
+        .toContain(SECRET_LABEL);
+      expect(readdirSync(tempDir)).toEqual([AUTOMATIONS_HISTORY_FILE]);
+    });
+
+    it.skipIf(process.platform !== 'linux')('compacts only when the temp file has the history file\'s confirmed security label', async () => {
+      const historyPath = join(tempDir, AUTOMATIONS_HISTORY_FILE);
+      const homeLabel = 'unconfined_u:object_r:user_home_t:s0';
+      const listing = (marker: string, label: string) => `-rw-r--r--${marker} 1 1000 1000 ${label} 78 Nov 28 10:00 /w/h\n`;
+      const cases = [
+        { name: 'different label', history: listing('.', SECRET_LABEL), temp: listing('.', homeLabel), compacts: false },
+        { name: 'label ls cannot show', history: listing('.', '?'), temp: listing('.', '?'), compacts: false },
+        { name: 'same label', history: listing('.', homeLabel), temp: listing('.', homeLabel), compacts: true },
+      ];
+
+      for (const { name, history, temp, compacts } of cases) {
+        writeFileSync(historyPath, threeEntries());
+        const originalBytes = readFileSync(historyPath);
+        let tempWrites = 0;
+        const restoreWrites = inspectTempWrites(tempDir, () => { tempWrites += 1; });
+        const restoreProbe = fakeLinuxListing(path => (path.endsWith('.tmp') ? temp : history));
+        const lengths: number[] = [];
+        let syncBytesKept = false;
+
+        try {
+          compactAutomationHistorySync(tempDir, 1, 1000);
+          lengths.push(readHistory(tempDir).length);
+          syncBytesKept = readFileSync(historyPath).equals(originalBytes);
+          appendFileSync(historyPath, threeEntries(10));
+          await compactAutomationHistory(tempDir, 1, 1000);
+          lengths.push(readHistory(tempDir).length);
+        } finally {
+          restoreProbe();
+          restoreWrites();
+        }
+
+        expect({ name, tempWrites, lengths }).toEqual({ name, tempWrites: compacts ? 2 : 0, lengths: compacts ? [1, 1] : [3, 6] });
+        expect({ name, syncBytesKept }).toEqual({ name, syncBytesKept: !compacts });
+        expect(readdirSync(tempDir)).toEqual([AUTOMATIONS_HISTORY_FILE]);
+      }
     });
 
     it('should no-op when already within limits', async () => {
